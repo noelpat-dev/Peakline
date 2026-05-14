@@ -26,16 +26,6 @@ struct RootTabView: View {
                     Label("History", systemImage: "clock.arrow.circlepath")
                 }
 
-            ProgressView()
-                .tabItem {
-                    Label("Progress", systemImage: "chart.line.uptrend.xyaxis")
-                }
-
-            CoachView()
-                .tabItem {
-                    Label("Coach", systemImage: "sparkles")
-                }
-
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")

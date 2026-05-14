@@ -28,6 +28,7 @@
 		001000000000000000000013 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000013 /* SettingsView.swift */; };
 		001000000000000000000014 /* WorkoutLoggerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000015 /* WorkoutLoggerView.swift */; };
 		001000000000000000000015 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000016 /* HistoryView.swift */; };
+		001000000000000000000016 /* ExerciseLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000017 /* ExerciseLibraryView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -53,6 +54,7 @@
 		002000000000000000000014 /* GymTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GymTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		002000000000000000000015 /* WorkoutLoggerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutLoggerView.swift; sourceTree = "<group>"; };
 		002000000000000000000016 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
+		002000000000000000000017 /* ExerciseLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseLibraryView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -172,6 +174,7 @@
 			isa = PBXGroup;
 			children = (
 				002000000000000000000013 /* SettingsView.swift */,
+				002000000000000000000017 /* ExerciseLibraryView.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -311,6 +314,7 @@
 				001000000000000000000013 /* SettingsView.swift in Sources */,
 				001000000000000000000014 /* WorkoutLoggerView.swift in Sources */,
 				001000000000000000000015 /* HistoryView.swift in Sources */,
+				001000000000000000000016 /* ExerciseLibraryView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -440,7 +444,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 272AN3AJLF;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = GymTracker;
@@ -471,7 +475,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 272AN3AJLF;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = GymTracker;

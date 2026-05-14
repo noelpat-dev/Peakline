@@ -8,6 +8,11 @@ struct TodayView: View {
     @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
     private var completedSessions: [WorkoutSession]
 
+    @Query(filter: #Predicate<WorkoutSession> { !$0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    private var unfinishedSessions: [WorkoutSession]
+
+    @State private var showingRestDayConfirmation = false
+
     var body: some View {
         NavigationStack {
             List {
@@ -16,7 +21,7 @@ struct TodayView: View {
                         Text("Suggested today")
                             .font(.headline)
 
-                        Text(activeSplits.first?.name ?? "Create a split")
+                        Text(suggestedSplit?.name ?? "Create a split")
                             .font(.largeTitle.bold())
 
                         Text(recommendationReason)
@@ -26,9 +31,28 @@ struct TodayView: View {
                 }
 
                 Section("Quick Actions") {
-                    Button("Start Workout") {}
-                    Button("Rest Day") {}
-                    Button("Daily Check-In") {}
+                    NavigationLink {
+                        StartWorkoutContentView()
+                    } label: {
+                        Label(unfinishedSessions.isEmpty ? "Start Workout" : "Resume Workout", systemImage: "figure.strengthtraining.traditional")
+                    }
+
+                    Button {
+                        showingRestDayConfirmation = true
+                    } label: {
+                        Label("Rest Day", systemImage: "moon")
+                    }
+
+                    NavigationLink {
+                        CoachContentView()
+                    } label: {
+                        Label("Coach Check-In", systemImage: "sparkles")
+                    }
+                }
+
+                Section("This Week") {
+                    LabeledContent("Workouts", value: "\(workoutsThisWeek)")
+                    LabeledContent("Working sets", value: "\(workingSetsThisWeek)")
                 }
 
                 Section("Last Workout") {
@@ -48,14 +72,87 @@ struct TodayView: View {
                 }
             }
             .navigationTitle("Today")
+            .alert("Rest day noted", isPresented: $showingRestDayConfirmation) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Persistent rest-day logging is still on the roadmap. For now, your workout history remains unchanged.")
+            }
         }
     }
 
     private var recommendationReason: String {
-        guard let split = activeSplits.first else {
+        guard let split = suggestedSplit else {
             return "Starter Push/Pull/Legs templates will appear after seed data is created."
         }
 
-        return "\(split.name) is ready from your active split templates."
+        if recentPPLCycleNames.isEmpty {
+            return "Start your Push/Pull/Legs rotation with \(split.name)."
+        }
+
+        if recentPPLCycleNames.contains(split.name) {
+            return "You have completed this PPL round. \(split.name) starts the next rotation."
+        }
+
+        return "\(split.name) is next because it has not been completed in your current Push/Pull/Legs rotation."
     }
+
+    private var suggestedSplit: TrainingSplit? {
+        let orderedSplits = pplOrderedSplits
+        guard !orderedSplits.isEmpty else { return activeSplits.first }
+
+        let completedNames = Set(recentPPLCycleNames)
+        if let missingSplit = orderedSplits.first(where: { !completedNames.contains($0.name) }) {
+            return missingSplit
+        }
+
+        guard
+            let mostRecentName = completedSessions.first(where: { PPLRotation.names.contains($0.splitNameSnapshot) })?.splitNameSnapshot,
+            let mostRecentIndex = PPLRotation.names.firstIndex(of: mostRecentName)
+        else {
+            return orderedSplits.first
+        }
+
+        let nextName = PPLRotation.names[(mostRecentIndex + 1) % PPLRotation.names.count]
+        return orderedSplits.first { $0.name == nextName } ?? orderedSplits.first
+    }
+
+    private var pplOrderedSplits: [TrainingSplit] {
+        PPLRotation.names.compactMap { name in
+            activeSplits.first { $0.name == name }
+        }
+    }
+
+    private var recentPPLCycleNames: [String] {
+        var names: [String] = []
+
+        for session in completedSessions where PPLRotation.names.contains(session.splitNameSnapshot) {
+            if names.contains(session.splitNameSnapshot) {
+                break
+            }
+
+            names.append(session.splitNameSnapshot)
+
+            if names.count == PPLRotation.names.count {
+                break
+            }
+        }
+
+        return names
+    }
+
+    private var workoutsThisWeek: Int {
+        completedSessions.filter { Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .weekOfYear) }.count
+    }
+
+    private var workingSetsThisWeek: Int {
+        completedSessions
+            .filter { Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .weekOfYear) }
+            .reduce(0) { total, session in
+                total + session.exerciseLogs.flatMap(\.setLogs).filter { $0.completed && !$0.isWarmup }.count
+            }
+    }
+}
+
+private enum PPLRotation {
+    static let names = ["Push", "Pull", "Legs"]
 }

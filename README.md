@@ -21,6 +21,30 @@ Compile and refine on Mac/Xcode:
 - Fix any compile issues from the Windows-authored project file.
 - Continue from `NEXT_CODEX_CHAT.md`.
 
+## Run And Test Locally
+
+1. Install Xcode from the Mac App Store or Apple Developer downloads.
+2. Open Xcode once and accept any first-launch prompts.
+3. In Terminal, make sure command-line builds point at full Xcode:
+
+```bash
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+xcodebuild -list -project GymTracker.xcodeproj
+```
+
+4. Open `GymTracker.xcodeproj` in Xcode.
+5. Select an iPhone simulator, such as iPhone 16.
+6. Press Cmd+B to build, then Cmd+R to run.
+
+Functional smoke test:
+
+- First launch should seed starter exercises plus Push, Pull, and Legs splits once.
+- Workout tab should start a split workout, start an empty workout, and resume an unfinished workout.
+- Logger should add/copy/delete sets, adjust weight/reps, add an extra exercise, copy last-session working sets after history exists, and finish the workout.
+- History should show finished workouts and allow editing them.
+- Splits should create/edit splits and add, delete, or reorder exercises.
+- Progress and Coach become useful after at least one completed workout.
+
 ## Publish To Private GitHub
 
 From this folder:
