@@ -32,13 +32,19 @@ git commit -m "Initial GymTracker iOS scaffold"
 gh repo create GymTracker --private --source=. --remote=origin --push
 ```
 
-If GitHub CLI is not installed, create a private empty repo on GitHub, then run:
+If GitHub CLI is not installed, create a private empty repo named `GymTracker` on GitHub under `ParadovT`, then run:
 
 ```bash
 git init
 git add .
 git commit -m "Initial GymTracker iOS scaffold"
 git branch -M main
-git remote add origin git@github.com:YOUR_USERNAME/GymTracker.git
+git remote add origin git@github.com:ParadovT/GymTracker.git
+git push -u origin main
+```
+
+This local repo is already initialized and committed, so from this machine you should only need:
+
+```bash
 git push -u origin main
 ```
