@@ -4,6 +4,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var profiles: [UserProfile]
+    @AppStorage("appTheme") private var storedTheme = AppTheme.appleGreen.rawValue
 
     var body: some View {
         NavigationStack {
@@ -49,8 +50,31 @@ struct SettingsView: View {
                     }
                 }
 
+                Section("Themes") {
+                    NavigationLink {
+                        ThemeSettingsView()
+                    } label: {
+                        HStack {
+                            Text("Theme")
+                            Spacer()
+                            Circle()
+                                .fill(selectedTheme.primaryColor)
+                                .frame(width: 18, height: 18)
+                            Text(selectedTheme.displayName)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 Section("Safety") {
                     Text("This app provides general fitness tracking and training suggestions based on your logged workouts. It is not medical advice. Stop exercising and seek professional advice if you experience pain, dizziness, or symptoms that concern you.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("iCloud Backup") {
+                    Label("iCloud sync planned", systemImage: "icloud")
+                    Text("Workout data is stored locally with SwiftData. iCloud/CloudKit sync should be enabled from Xcode Signing & Capabilities once this Apple ID has access to iCloud containers. Free personal signing may not support that capability.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -63,6 +87,68 @@ struct SettingsView: View {
     private func createProfile() {
         modelContext.insert(UserProfile())
         try? modelContext.save()
+    }
+
+    private var selectedTheme: AppTheme {
+        AppTheme(rawValue: storedTheme) ?? .appleGreen
+    }
+}
+
+private struct ThemeSettingsView: View {
+    @AppStorage("appTheme") private var storedTheme = AppTheme.appleGreen.rawValue
+    @AppStorage("appAppearance") private var storedAppearance = AppAppearance.system.rawValue
+
+    private var selectedTheme: Binding<AppTheme> {
+        Binding {
+            AppTheme(rawValue: storedTheme) ?? .appleGreen
+        } set: { newTheme in
+            storedTheme = newTheme.rawValue
+        }
+    }
+
+    private var selectedAppearance: Binding<AppAppearance> {
+        Binding {
+            AppAppearance(rawValue: storedAppearance) ?? .system
+        } set: { newAppearance in
+            storedAppearance = newAppearance.rawValue
+        }
+    }
+
+    var body: some View {
+        Form {
+            Section("Colour") {
+                ForEach(AppTheme.allCases) { theme in
+                    Button {
+                        selectedTheme.wrappedValue = theme
+                    } label: {
+                        HStack {
+                            Circle()
+                                .fill(theme.primaryColor)
+                                .frame(width: 22, height: 22)
+                            Text(theme.displayName)
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if selectedTheme.wrappedValue == theme {
+                                Image(systemName: "checkmark")
+                                    .font(.headline)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            Section("Appearance") {
+                Picker("Mode", selection: selectedAppearance) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(appearance.displayName).tag(appearance)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+        }
+        .navigationTitle("Themes")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

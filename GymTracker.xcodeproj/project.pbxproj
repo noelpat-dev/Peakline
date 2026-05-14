@@ -20,6 +20,7 @@
 		00100000000000000000000B /* BodyweightLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000000B /* BodyweightLog.swift */; };
 		00100000000000000000000C /* SeedDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000000C /* SeedDataService.swift */; };
 		00100000000000000000000D /* MetricPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000000D /* MetricPill.swift */; };
+		001000000000000000000017 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000018 /* AppTheme.swift */; };
 		00100000000000000000000E /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000000E /* TodayView.swift */; };
 		00100000000000000000000F /* StartWorkoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000000F /* StartWorkoutView.swift */; };
 		001000000000000000000010 /* SplitsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000010 /* SplitsView.swift */; };
@@ -29,6 +30,8 @@
 		001000000000000000000014 /* WorkoutLoggerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000015 /* WorkoutLoggerView.swift */; };
 		001000000000000000000015 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000016 /* HistoryView.swift */; };
 		001000000000000000000016 /* ExerciseLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000017 /* ExerciseLibraryView.swift */; };
+		001000000000000000000018 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000019 /* Assets.xcassets */; };
+		001000000000000000000019 /* CoachRecommendationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000001A /* CoachRecommendationEngine.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -45,6 +48,7 @@
 		00200000000000000000000B /* BodyweightLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodyweightLog.swift; sourceTree = "<group>"; };
 		00200000000000000000000C /* SeedDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeedDataService.swift; sourceTree = "<group>"; };
 		00200000000000000000000D /* MetricPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricPill.swift; sourceTree = "<group>"; };
+		002000000000000000000018 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
 		00200000000000000000000E /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
 		00200000000000000000000F /* StartWorkoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartWorkoutView.swift; sourceTree = "<group>"; };
 		002000000000000000000010 /* SplitsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitsView.swift; sourceTree = "<group>"; };
@@ -55,6 +59,8 @@
 		002000000000000000000015 /* WorkoutLoggerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutLoggerView.swift; sourceTree = "<group>"; };
 		002000000000000000000016 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
 		002000000000000000000017 /* ExerciseLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseLibraryView.swift; sourceTree = "<group>"; };
+		002000000000000000000019 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		00200000000000000000001A /* CoachRecommendationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachRecommendationEngine.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -79,6 +85,7 @@
 		004000000000000000000002 /* GymTracker */ = {
 			isa = PBXGroup;
 			children = (
+				002000000000000000000019 /* Assets.xcassets */,
 				004000000000000000000003 /* App */,
 				004000000000000000000004 /* Models */,
 				004000000000000000000005 /* Views */,
@@ -190,6 +197,7 @@
 			isa = PBXGroup;
 			children = (
 				00200000000000000000000C /* SeedDataService.swift */,
+				00200000000000000000001A /* CoachRecommendationEngine.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -213,6 +221,7 @@
 			isa = PBXGroup;
 			children = (
 				00200000000000000000000D /* MetricPill.swift */,
+				002000000000000000000018 /* AppTheme.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -283,6 +292,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				001000000000000000000018 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -306,6 +316,7 @@
 				00100000000000000000000B /* BodyweightLog.swift in Sources */,
 				00100000000000000000000C /* SeedDataService.swift in Sources */,
 				00100000000000000000000D /* MetricPill.swift in Sources */,
+				001000000000000000000017 /* AppTheme.swift in Sources */,
 				00100000000000000000000E /* TodayView.swift in Sources */,
 				00100000000000000000000F /* StartWorkoutView.swift in Sources */,
 				001000000000000000000010 /* SplitsView.swift in Sources */,
@@ -315,6 +326,7 @@
 				001000000000000000000014 /* WorkoutLoggerView.swift in Sources */,
 				001000000000000000000015 /* HistoryView.swift in Sources */,
 				001000000000000000000016 /* ExerciseLibraryView.swift in Sources */,
+				001000000000000000000019 /* CoachRecommendationEngine.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -452,7 +464,8 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -483,7 +496,8 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

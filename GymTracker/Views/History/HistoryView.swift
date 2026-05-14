@@ -148,6 +148,7 @@ private struct WorkoutCalendarView: View {
 }
 
 private struct CalendarDayCell: View {
+    @Environment(\.appTheme) private var appTheme
     let date: Date
     let isLogged: Bool
     let isToday: Bool
@@ -164,7 +165,7 @@ private struct CalendarDayCell: View {
             .frame(height: 34)
             .background {
                 if isLogged {
-                    Circle().fill(.blue)
+                    Circle().fill(appTheme.primaryColor)
                 } else if isToday {
                     Circle().stroke(.secondary, lineWidth: 1)
                 }

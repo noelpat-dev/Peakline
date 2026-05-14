@@ -27,7 +27,9 @@ struct GymTrackerApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootTabView()
+            AppThemeProvider {
+                RootTabView()
+            }
         }
         .modelContainer(sharedModelContainer)
     }

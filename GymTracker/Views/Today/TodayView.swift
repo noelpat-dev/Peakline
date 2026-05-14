@@ -48,6 +48,12 @@ struct TodayView: View {
                     } label: {
                         Label("Coach Check-In", systemImage: "sparkles")
                     }
+
+                    NavigationLink {
+                        ProgressContentView()
+                    } label: {
+                        Label("Progress & Charts", systemImage: "chart.xyaxis.line")
+                    }
                 }
 
                 Section("This Week") {

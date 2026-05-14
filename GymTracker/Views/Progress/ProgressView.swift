@@ -1,3 +1,4 @@
+import Charts
 import SwiftData
 import SwiftUI
 
@@ -18,6 +19,19 @@ struct ProgressContentView: View {
 
     var body: some View {
         List {
+            Section("Progress Charts") {
+                if exercises.isEmpty {
+                    Text("Add exercises to unlock progress charts.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    NavigationLink {
+                        ExerciseProgressChartsIndexView(exercises: exercises, sessions: completedSessions)
+                    } label: {
+                        Label("Exercise Progress Charts", systemImage: "chart.xyaxis.line")
+                    }
+                }
+            }
+
             Section("Exercises") {
                 ForEach(exercises) { exercise in
                     NavigationLink {
@@ -26,7 +40,7 @@ struct ProgressContentView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(exercise.name)
                                 .font(.headline)
-                            Text(summary(for: exercise))
+                            Text(exercise.primaryMuscleGroup.displayName)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -34,30 +48,6 @@ struct ProgressContentView: View {
             }
         }
         .navigationTitle("Progress")
-    }
-
-    private func summary(for exercise: Exercise) -> String {
-        let entries = progressEntries(for: exercise)
-        guard let latest = entries.first else {
-            return exercise.primaryMuscleGroup.displayName
-        }
-
-        return "Latest: \(latest.bestSetText) - \(latest.completedSets) sets"
-    }
-
-    private func progressEntries(for exercise: Exercise) -> [ExerciseProgressEntry] {
-        completedSessions.compactMap { session in
-            guard let exerciseLog = session.exerciseLogs.first(where: { $0.exerciseId == exercise.id }) else {
-                return nil
-            }
-
-            let sets = exerciseLog.setLogs
-                .filter { $0.completed && !$0.isWarmup }
-                .sorted { $0.setNumber < $1.setNumber }
-
-            guard !sets.isEmpty else { return nil }
-            return ExerciseProgressEntry(session: session, sets: sets)
-        }
     }
 }
 
@@ -86,8 +76,18 @@ private struct ExerciseProgressDetailView: View {
                 Section("Latest") {
                     LabeledContent("Best set", value: latest.bestSetText)
                     LabeledContent("Estimated 1RM", value: latest.estimatedOneRepMaxText)
-                    LabeledContent("Volume", value: latest.volumeText)
+                    LabeledContent("Best-set volume", value: latest.bestSetVolumeText)
                     LabeledContent("Sets", value: "\(latest.completedSets)")
+                }
+            }
+
+            Section("Chart") {
+                if entries.count < 2 {
+                    Text("Log this exercise at least twice to see a trend line.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ExerciseTrendChart(entries: entries.reversed())
+                        .frame(height: 220)
                 }
             }
 
@@ -102,7 +102,7 @@ private struct ExerciseProgressDetailView: View {
                                 .font(.headline)
                             Text(entry.setsText)
                                 .foregroundStyle(.secondary)
-                            Text("Volume \(entry.volumeText) - est. 1RM \(entry.estimatedOneRepMaxText)")
+                            Text("Best-set volume \(entry.bestSetVolumeText) - est. 1RM \(entry.estimatedOneRepMaxText)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -111,6 +111,53 @@ private struct ExerciseProgressDetailView: View {
             }
         }
         .navigationTitle(exercise.name)
+    }
+}
+
+private struct ExerciseProgressChartsIndexView: View {
+    let exercises: [Exercise]
+    let sessions: [WorkoutSession]
+
+    var body: some View {
+        List {
+            Section("Exercises") {
+                ForEach(exercises) { exercise in
+                    NavigationLink {
+                        ExerciseProgressDetailView(exercise: exercise, sessions: sessions)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(exercise.name)
+                                .font(.headline)
+                            Text(exercise.primaryMuscleGroup.displayName)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Progress Charts")
+    }
+}
+
+private struct ExerciseTrendChart: View {
+    @Environment(\.appTheme) private var appTheme
+    let entries: ReversedCollection<[ExerciseProgressEntry]>
+
+    var body: some View {
+        Chart(Array(entries)) { entry in
+            LineMark(
+                x: .value("Date", entry.session.date),
+                y: .value("Estimated 1RM", entry.estimatedOneRepMax)
+            )
+            .foregroundStyle(appTheme.primaryColor)
+
+            PointMark(
+                x: .value("Date", entry.session.date),
+                y: .value("Estimated 1RM", entry.estimatedOneRepMax)
+            )
+            .foregroundStyle(appTheme.primaryColor)
+        }
+        .chartYAxisLabel("Est. 1RM kg")
     }
 }
 
@@ -132,11 +179,19 @@ private struct ExerciseProgressEntry: Identifiable {
     }
 
     var estimatedOneRepMaxText: String {
-        "\(format(estimatedOneRepMax(for: bestSet)))kg"
+        "\(format(estimatedOneRepMax))kg"
     }
 
-    var volumeText: String {
-        "\(format(sets.reduce(0) { $0 + ($1.weight * Double($1.reps)) }))kg"
+    var estimatedOneRepMax: Double {
+        estimatedOneRepMax(for: bestSet)
+    }
+
+    var bestSetVolumeText: String {
+        "\(format(bestSetVolume))kg"
+    }
+
+    var bestSetVolume: Double {
+        bestSet.weight * Double(bestSet.reps)
     }
 
     var setsText: String {

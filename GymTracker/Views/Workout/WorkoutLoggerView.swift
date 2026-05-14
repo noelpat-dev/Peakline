@@ -355,6 +355,7 @@ private struct PreviousExercisePerformance {
 }
 
 private struct WorkoutTimerHeader: View {
+    @Environment(\.appTheme) private var appTheme
     let title: String
     let startedAt: Date
     let endedAt: Date?
@@ -379,7 +380,7 @@ private struct WorkoutTimerHeader: View {
 
                     Text(elapsedText(at: displayDate))
                         .font(.title3.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(appTheme.primaryColor)
                 }
 
                 SwiftUI.ProgressView(value: totalCount == 0 ? 0 : Double(completedCount), total: Double(max(totalCount, 1)))
@@ -403,6 +404,7 @@ private struct WorkoutTimerHeader: View {
 }
 
 private struct MotivationView: View {
+    @Environment(\.appTheme) private var appTheme
     let message: String
     let detail: String
     let buttonTitle: String
@@ -434,14 +436,14 @@ private struct MotivationView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(.white)
-            .foregroundStyle(.blue)
+            .foregroundStyle(appTheme.primaryColor)
             .padding(.top, 8)
         }
         .padding(28)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
             LinearGradient(
-                colors: [.blue, .indigo],
+                colors: [appTheme.primaryColor, appTheme.secondaryColor],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )

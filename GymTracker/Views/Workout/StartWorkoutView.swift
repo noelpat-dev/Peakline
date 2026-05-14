@@ -80,6 +80,7 @@ struct StartWorkoutContentView: View {
 
 private struct WorkoutPreviewView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.appTheme) private var appTheme
     @State private var activeSession: WorkoutSession?
     @State private var selectedExerciseIds: [UUID] = []
 
@@ -128,7 +129,7 @@ private struct WorkoutPreviewView: View {
                     } label: {
                         HStack(alignment: .top, spacing: 12) {
                             Image(systemName: selectedExerciseIds.contains(exercise.id) ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(selectedExerciseIds.contains(exercise.id) ? .blue : .secondary)
+                                .foregroundStyle(selectedExerciseIds.contains(exercise.id) ? appTheme.primaryColor : .secondary)
                                 .font(.title3)
 
                             VStack(alignment: .leading, spacing: 4) {

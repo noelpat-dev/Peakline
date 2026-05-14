@@ -1,74 +1,64 @@
 # GymTracker
 
-Local-first SwiftUI gym tracker scaffolded from `gym_tracker_ios_codex_development_brief.md`.
+GymTracker is a personal iOS lifting tracker for Noel's Push/Pull/Legs training. The app is built with SwiftUI and SwiftData, stays local-first, and is moving toward a rule-based coaching experience rather than a generic workout log.
 
-## Current Milestone
+## Current Focus
 
-- SwiftUI iOS app shell with six main tabs.
-- SwiftData model schema for the MVP entities.
-- Starter exercise library.
-- Push/Pull/Legs seed split templates.
-- Settings disclaimer copy from the brief.
-- Basic workout logger flow.
-- Completed workout History tab.
+- Personal Push/Pull/Legs rotation.
+- Live workout logging with timer, set entry, and post-workout rating.
+- History calendar and editable workout history.
+- Progress charts per exercise.
+- Rule-based Coach screen with PPL suggestions and progressive-overload guidance.
+- Theme support with Workout Green `#7CFC00`, Purple, Orange, and Blue.
 
-## Next Milestone
+## Requirements
 
-Compile and refine on Mac/Xcode:
+- macOS with Xcode installed.
+- iOS 17+ simulator or real iPhone.
+- For real-device installs, use Xcode signing with an Apple ID.
 
-- Open `GymTracker.xcodeproj`.
-- Build on an iOS simulator.
-- Fix any compile issues from the Windows-authored project file.
-- Continue from `NEXT_CODEX_CHAT.md`.
+## Run Locally
 
-## Run And Test Locally
-
-1. Install Xcode from the Mac App Store or Apple Developer downloads.
-2. Open Xcode once and accept any first-launch prompts.
-3. In Terminal, make sure command-line builds point at full Xcode:
+Open the project:
 
 ```bash
-sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-xcodebuild -list -project GymTracker.xcodeproj
+open GymTracker.xcodeproj
 ```
 
-4. Open `GymTracker.xcodeproj` in Xcode.
-5. Select an iPhone simulator, such as iPhone 16.
-6. Press Cmd+B to build, then Cmd+R to run.
+In Xcode:
 
-Functional smoke test:
+1. Select the `GymTracker` scheme.
+2. Select an iPhone simulator or your connected iPhone.
+3. Press `Cmd+B` to build.
+4. Press `Cmd+R` to run.
 
-- First launch should seed starter exercises plus Push, Pull, and Legs splits once.
-- Workout tab should start a split workout, start an empty workout, and resume an unfinished workout.
-- Logger should add/copy/delete sets, adjust weight/reps, add an extra exercise, copy last-session working sets after history exists, and finish the workout.
-- History should show finished workouts and allow editing them.
-- Splits should create/edit splits and add, delete, or reorder exercises.
-- Progress and Coach become useful after at least one completed workout.
-
-## Publish To Private GitHub
-
-From this folder:
+Command-line build:
 
 ```bash
-git init
-git add .
-git commit -m "Initial GymTracker iOS scaffold"
-gh repo create GymTracker --private --source=. --remote=origin --push
+xcodebuild -project GymTracker.xcodeproj \
+  -scheme GymTracker \
+  -configuration Debug \
+  -destination 'platform=iOS Simulator,id=B4892393-2EDB-4816-A09B-A18C3161823C' \
+  build
 ```
 
-If GitHub CLI is not installed, create a private empty repo named `GymTracker` on GitHub under `ParadovT`, then run:
+## Real iPhone Install
 
-```bash
-git init
-git add .
-git commit -m "Initial GymTracker iOS scaffold"
-git branch -M main
-git remote add origin git@github.com:ParadovT/GymTracker.git
-git push -u origin main
-```
+You can install with a free Apple ID through Xcode:
 
-This local repo is already initialized and committed, so from this machine you should only need:
+1. Plug in and unlock your iPhone.
+2. Select the real device in Xcode.
+3. Open the project target settings.
+4. Go to `Signing & Capabilities`.
+5. Enable automatic signing and select your personal team.
+6. Press `Cmd+R`.
 
-```bash
-git push -u origin main
-```
+Free Apple ID installs usually expire after about 7 days. A paid Apple Developer account is recommended for longer-lived development installs and future iCloud/CloudKit capabilities.
+
+## Documentation
+
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [FEATURE_SUMMARY.md](FEATURE_SUMMARY.md)
+- [ROADMAP.md](ROADMAP.md)
+- [KNOWN_ISSUES.md](KNOWN_ISSUES.md)
+- [NEXT_TASK.md](NEXT_TASK.md)
