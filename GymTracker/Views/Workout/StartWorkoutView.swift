@@ -83,10 +83,6 @@ private struct WorkoutPreviewView: View {
     @Environment(\.appTheme) private var appTheme
     @State private var activeSession: WorkoutSession?
     @State private var selectedExerciseIds: [UUID] = []
-    @State private var energyLevel = ReadinessLevel.normal
-    @State private var sorenessLevel = SorenessLevel.mild
-    @State private var availableMinutes = 60
-    @State private var motivationLevel = ReadinessLevel.normal
 
     @Query(filter: #Predicate<Exercise> { !$0.isArchived }, sort: \Exercise.name)
     private var exercises: [Exercise]
@@ -126,40 +122,6 @@ private struct WorkoutPreviewView: View {
 
     var body: some View {
         List {
-            Section {
-                Picker("Energy", selection: $energyLevel) {
-                    ForEach(ReadinessLevel.allCases) { level in
-                        Text(level.displayName).tag(level)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                Picker("Soreness", selection: $sorenessLevel) {
-                    ForEach(SorenessLevel.allCases) { level in
-                        Text(level.displayName).tag(level)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                Picker("Time", selection: $availableMinutes) {
-                    ForEach([20, 40, 60, 90], id: \.self) { minutes in
-                        Text("\(minutes)m").tag(minutes)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                Picker("Motivation", selection: $motivationLevel) {
-                    ForEach(ReadinessLevel.allCases) { level in
-                        Text(level.displayName).tag(level)
-                    }
-                }
-                .pickerStyle(.segmented)
-            } header: {
-                Text("Readiness")
-            } footer: {
-                Text("Quick check-in for coach recommendations. Defaults are ready to go if you want to start fast.")
-            }
-
             Section("Today's Exercises") {
                 ForEach(orderedExercises) { exercise in
                     Button {
@@ -225,9 +187,7 @@ private struct WorkoutPreviewView: View {
     private func createWorkout(from split: TrainingSplit) -> WorkoutSession {
         let session = WorkoutSession(
             splitId: split.id,
-            splitNameSnapshot: split.name,
-            energyLevel: energyLevel.rawValue,
-            sorenessLevel: sorenessLevel.rawValue
+            splitNameSnapshot: split.name
         )
 
         session.exerciseLogs = selectedExercises.enumerated().map { index, splitExercise in
@@ -245,14 +205,6 @@ private struct WorkoutPreviewView: View {
             return log
         }
 
-        let readinessCheck = ReadinessCheck(
-            energyLevel: energyLevel.rawValue,
-            sorenessLevel: sorenessLevel.rawValue,
-            availableMinutes: availableMinutes,
-            motivationLevel: motivationLevel.rawValue
-        )
-
-        modelContext.insert(readinessCheck)
         modelContext.insert(session)
         try? modelContext.save()
         return session

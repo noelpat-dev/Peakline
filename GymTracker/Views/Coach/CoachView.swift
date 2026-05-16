@@ -16,9 +16,6 @@ struct CoachContentView: View {
     @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
     private var completedSessions: [WorkoutSession]
 
-    @Query(sort: \ReadinessCheck.date, order: .reverse)
-    private var readinessChecks: [ReadinessCheck]
-
     private let coachEngine = CoachRecommendationEngine()
 
     private var summary: CoachRecommendationSummary {
@@ -35,21 +32,6 @@ struct CoachContentView: View {
                         .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 4)
-            }
-
-            Section("Readiness") {
-                if let latestReadiness = readinessChecks.first {
-                    LabeledContent("Energy", value: readinessText(ReadinessLevel(rawValue: latestReadiness.energyLevel)))
-                    LabeledContent("Soreness", value: sorenessText(SorenessLevel(rawValue: latestReadiness.sorenessLevel)))
-                    LabeledContent("Time", value: "\(latestReadiness.availableMinutes) min")
-                    LabeledContent("Motivation", value: readinessText(ReadinessLevel(rawValue: latestReadiness.motivationLevel)))
-                    Text(readinessMessage(for: latestReadiness))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("Start a workout with a readiness check to unlock this card.")
-                        .foregroundStyle(.secondary)
-                }
             }
 
             Section("Exercise Recommendations") {
@@ -121,25 +103,5 @@ struct CoachContentView: View {
         case .high:
             return .red
         }
-    }
-
-    private func readinessText(_ level: ReadinessLevel?) -> String {
-        level?.displayName ?? "Unknown"
-    }
-
-    private func sorenessText(_ level: SorenessLevel?) -> String {
-        level?.displayName ?? "Unknown"
-    }
-
-    private func readinessMessage(for check: ReadinessCheck) -> String {
-        if check.energyLevel == ReadinessLevel.low.rawValue || check.sorenessLevel == SorenessLevel.high.rawValue {
-            return "Consider a shorter, cleaner session today. Keep reps controlled and avoid forcing load jumps."
-        }
-
-        if check.energyLevel == ReadinessLevel.high.rawValue && check.motivationLevel == ReadinessLevel.high.rawValue {
-            return "Good day to push progression, as long as warm-ups move well."
-        }
-
-        return "A normal session fits today's check-in. Progress through reps before load."
     }
 }
