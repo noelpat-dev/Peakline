@@ -32,6 +32,7 @@
 		001000000000000000000016 /* ExerciseLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000017 /* ExerciseLibraryView.swift */; };
 		001000000000000000000018 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000019 /* Assets.xcassets */; };
 		001000000000000000000019 /* CoachRecommendationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000001A /* CoachRecommendationEngine.swift */; };
+		00100000000000000000001A /* ReadinessCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000001B /* ReadinessCheck.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -61,6 +62,7 @@
 		002000000000000000000017 /* ExerciseLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseLibraryView.swift; sourceTree = "<group>"; };
 		002000000000000000000019 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		00200000000000000000001A /* CoachRecommendationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachRecommendationEngine.swift; sourceTree = "<group>"; };
+		00200000000000000000001B /* ReadinessCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadinessCheck.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -117,6 +119,7 @@
 				002000000000000000000009 /* SetLog.swift */,
 				00200000000000000000000A /* Recommendation.swift */,
 				00200000000000000000000B /* BodyweightLog.swift */,
+				00200000000000000000001B /* ReadinessCheck.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -327,6 +330,7 @@
 				001000000000000000000015 /* HistoryView.swift in Sources */,
 				001000000000000000000016 /* ExerciseLibraryView.swift in Sources */,
 				001000000000000000000019 /* CoachRecommendationEngine.swift in Sources */,
+				00100000000000000000001A /* ReadinessCheck.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

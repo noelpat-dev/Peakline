@@ -118,8 +118,11 @@ struct WorkoutLoggerView: View {
                 title: session.splitNameSnapshot,
                 startedAt: session.startedAt ?? session.date,
                 endedAt: session.endedAt,
+                pausedAt: session.pausedAt,
+                accumulatedPausedSeconds: session.accumulatedPausedSeconds,
                 completedCount: min(currentExerciseIndex + 1, max(orderedExerciseLogs.count, 1)),
-                totalCount: orderedExerciseLogs.count
+                totalCount: orderedExerciseLogs.count,
+                togglePause: togglePause
             )
             TextField("Session notes", text: Binding($session.notes, replacingNilWith: ""))
         }
@@ -275,6 +278,7 @@ struct WorkoutLoggerView: View {
             session.endedAt = Date()
         }
 
+        finalizePausedTime(at: session.endedAt ?? Date())
         markEnteredSetsComplete()
         showingWorkoutRating = true
     }
@@ -282,18 +286,19 @@ struct WorkoutLoggerView: View {
     private func completeWorkout(rating: WorkoutRating) {
         let end = Date()
         session.endedAt = session.endedAt ?? end
+        finalizePausedTime(at: session.endedAt ?? end)
         session.completed = true
         session.perceivedDifficulty = rating.score
 
-        if let startedAt = session.startedAt {
-            session.durationMinutes = max(1, Int((session.endedAt ?? end).timeIntervalSince(startedAt) / 60))
-        }
+        let activeSeconds = activeDurationSeconds(at: session.endedAt ?? end)
+        session.durationSeconds = activeSeconds
+        session.durationMinutes = max(1, Int(ceil(Double(activeSeconds) / 60)))
 
         try? modelContext.save()
         shouldDismissAfterMotivation = true
         configureMotivation(
             message: rating.completionTitle,
-            detail: "\(rating.completionMessage) You spent \(durationText(startedAt: session.startedAt, endedAt: session.endedAt ?? end)) in the gym.",
+            detail: "\(rating.completionMessage) You spent \(durationText(seconds: activeSeconds)) in the gym.",
             buttonTitle: "Done",
             systemImage: rating.systemImage
         )
@@ -314,7 +319,43 @@ struct WorkoutLoggerView: View {
         motivationSystemImage = systemImage
     }
 
+    private func togglePause() {
+        let now = Date()
+
+        if let pausedAt = session.pausedAt {
+            session.accumulatedPausedSeconds += max(0, Int(now.timeIntervalSince(pausedAt)))
+            session.pausedAt = nil
+        } else {
+            session.pausedAt = now
+        }
+
+        try? modelContext.save()
+    }
+
+    private func finalizePausedTime(at date: Date) {
+        guard let pausedAt = session.pausedAt else { return }
+        session.accumulatedPausedSeconds += max(0, Int(date.timeIntervalSince(pausedAt)))
+        session.pausedAt = nil
+    }
+
+    private func activeDurationSeconds(at date: Date) -> Int {
+        guard let startedAt = session.startedAt else { return 0 }
+
+        let livePauseSeconds: Int
+        if let pausedAt = session.pausedAt {
+            livePauseSeconds = max(0, Int(date.timeIntervalSince(pausedAt)))
+        } else {
+            livePauseSeconds = 0
+        }
+
+        return max(0, Int(date.timeIntervalSince(startedAt)) - session.accumulatedPausedSeconds - livePauseSeconds)
+    }
+
     private var sessionDurationText: String? {
+        if let durationSeconds = session.durationSeconds {
+            return durationText(seconds: durationSeconds)
+        }
+
         if let startedAt = session.startedAt, let endedAt = session.endedAt {
             return durationText(startedAt: startedAt, endedAt: endedAt)
         }
@@ -333,6 +374,10 @@ struct WorkoutLoggerView: View {
 
     private func durationText(startedAt: Date, endedAt: Date) -> String {
         let totalSeconds = max(0, Int(endedAt.timeIntervalSince(startedAt)))
+        return durationText(seconds: totalSeconds)
+    }
+
+    private func durationText(seconds totalSeconds: Int) -> String {
         let hours = totalSeconds / 3600
         let minutes = (totalSeconds % 3600) / 60
         let seconds = totalSeconds % 60
@@ -359,12 +404,16 @@ private struct WorkoutTimerHeader: View {
     let title: String
     let startedAt: Date
     let endedAt: Date?
+    let pausedAt: Date?
+    let accumulatedPausedSeconds: Int
     let completedCount: Int
     let totalCount: Int
+    let togglePause: () -> Void
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { timeline in
             let displayDate = endedAt ?? timeline.date
+            let isPaused = pausedAt != nil
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -378,9 +427,20 @@ private struct WorkoutTimerHeader: View {
 
                     Spacer()
 
-                    Text(elapsedText(at: displayDate))
-                        .font(.title3.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(appTheme.primaryColor)
+                    VStack(alignment: .trailing, spacing: 6) {
+                        Text(elapsedText(at: displayDate))
+                            .font(.title3.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(isPaused ? .secondary : appTheme.primaryColor)
+
+                        Button {
+                            togglePause()
+                        } label: {
+                            Label(isPaused ? "Resume" : "Pause", systemImage: isPaused ? "play.fill" : "pause.fill")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(endedAt != nil)
+                    }
                 }
 
                 SwiftUI.ProgressView(value: totalCount == 0 ? 0 : Double(completedCount), total: Double(max(totalCount, 1)))
@@ -390,7 +450,14 @@ private struct WorkoutTimerHeader: View {
     }
 
     private func elapsedText(at date: Date) -> String {
-        let elapsed = max(0, Int(date.timeIntervalSince(startedAt)))
+        let livePauseSeconds: Int
+        if let pausedAt {
+            livePauseSeconds = max(0, Int(date.timeIntervalSince(pausedAt)))
+        } else {
+            livePauseSeconds = 0
+        }
+
+        let elapsed = max(0, Int(date.timeIntervalSince(startedAt)) - accumulatedPausedSeconds - livePauseSeconds)
         let hours = elapsed / 3600
         let minutes = (elapsed % 3600) / 60
         let seconds = elapsed % 60
@@ -413,19 +480,25 @@ private struct MotivationView: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            Image(systemName: "bolt.heart.fill")
-                .font(.system(size: 52))
-                .foregroundStyle(.white)
+            Spacer(minLength: 12)
 
-            Text(message)
-                .font(.largeTitle.bold())
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.white)
+            VStack(spacing: 20) {
+                Image(systemName: "bolt.heart.fill")
+                    .font(.system(size: 52))
+                    .foregroundStyle(.white)
 
-            Text(detail)
-                .font(.headline)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.white.opacity(0.82))
+                Text(message)
+                    .font(.largeTitle.bold())
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.white)
+
+                Text(detail)
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.white.opacity(0.82))
+            }
+
+            Spacer(minLength: 32)
 
             Button {
                 continueAction()
@@ -604,6 +677,7 @@ private struct ExerciseLoggerSection: View {
                 Button("Remove", role: .destructive) {
                     removeExerciseFromSession()
                 }
+                .tint(.red)
             }
 
             ForEach(orderedSets) { setLog in
@@ -612,6 +686,7 @@ private struct ExerciseLoggerSection: View {
                         Button("Delete", role: .destructive) {
                             delete(setLog)
                         }
+                        .tint(.red)
                     }
             }
 

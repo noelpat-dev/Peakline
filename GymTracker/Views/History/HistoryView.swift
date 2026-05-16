@@ -38,6 +38,7 @@ struct HistoryView: View {
                             Button("Delete", role: .destructive) {
                                 delete(session)
                             }
+                            .tint(.red)
                         }
                     }
                 }
@@ -245,6 +246,10 @@ private struct WorkoutHistoryDetailView: View {
     }
 
     private var durationText: String? {
+        if let durationSeconds = session.durationSeconds {
+            return formatDuration(seconds: durationSeconds)
+        }
+
         if let startedAt = session.startedAt, let endedAt = session.endedAt {
             return formatDuration(seconds: max(0, Int(endedAt.timeIntervalSince(startedAt))))
         }

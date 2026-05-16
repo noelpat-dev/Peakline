@@ -10,6 +10,9 @@ final class WorkoutSession {
     var startedAt: Date?
     var endedAt: Date?
     var durationMinutes: Int?
+    var durationSeconds: Int?
+    var pausedAt: Date?
+    var accumulatedPausedSeconds: Int = 0
     var perceivedDifficulty: Int?
     var energyLevel: Int?
     var sorenessLevel: Int?
@@ -27,6 +30,9 @@ final class WorkoutSession {
         startedAt: Date? = .now,
         endedAt: Date? = nil,
         durationMinutes: Int? = nil,
+        durationSeconds: Int? = nil,
+        pausedAt: Date? = nil,
+        accumulatedPausedSeconds: Int = 0,
         perceivedDifficulty: Int? = nil,
         energyLevel: Int? = nil,
         sorenessLevel: Int? = nil,
@@ -41,6 +47,9 @@ final class WorkoutSession {
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.durationMinutes = durationMinutes
+        self.durationSeconds = durationSeconds
+        self.pausedAt = pausedAt
+        self.accumulatedPausedSeconds = accumulatedPausedSeconds
         self.perceivedDifficulty = perceivedDifficulty
         self.energyLevel = energyLevel
         self.sorenessLevel = sorenessLevel
