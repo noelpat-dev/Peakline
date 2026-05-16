@@ -18,6 +18,7 @@ GymTracker is being developed as a proactive, local-first lifting coach. It shou
 - Start from Push, Pull, Legs, or an empty workout.
 - Select exercises before starting.
 - Selection order becomes the workout order.
+- Exercise selection shows last best performance and a suggested target before starting.
 - Live workout timer.
 - One-exercise-at-a-time logging flow.
 - Add set with weight, reps, and optional RPE.

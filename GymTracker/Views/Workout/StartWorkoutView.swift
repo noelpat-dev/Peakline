@@ -87,6 +87,9 @@ private struct WorkoutPreviewView: View {
     @Query(filter: #Predicate<Exercise> { !$0.isArchived }, sort: \Exercise.name)
     private var exercises: [Exercise]
 
+    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    private var completedSessions: [WorkoutSession]
+
     let split: TrainingSplit
 
     private var orderedExercises: [WorkoutSelectableExercise] {
@@ -138,6 +141,7 @@ private struct WorkoutPreviewView: View {
                                     .foregroundStyle(.primary)
                                 Text("\(exercise.targetSets) sets x \(exercise.minReps)-\(exercise.maxReps) reps")
                                     .foregroundStyle(.secondary)
+                                ExerciseTargetPreviewView(preview: targetPreview(for: exercise))
                                 if let notes = exercise.notes, !notes.isEmpty {
                                     Text(notes)
                                         .font(.caption)
@@ -209,6 +213,76 @@ private struct WorkoutPreviewView: View {
         try? modelContext.save()
         return session
     }
+
+    private func targetPreview(for exercise: WorkoutSelectableExercise) -> ExerciseTargetPreview {
+        guard let previousLog = lastCompletedLog(for: exercise) else {
+            return ExerciseTargetPreview(
+                lastPerformance: "Last time: no previous data",
+                target: "Today: establish a clean baseline",
+                priority: .baseline
+            )
+        }
+
+        let workingSets = completedWorkingSets(from: previousLog)
+        guard !workingSets.isEmpty else {
+            return ExerciseTargetPreview(
+                lastPerformance: "Last time: no completed working sets",
+                target: "Today: log controlled working sets",
+                priority: .baseline
+            )
+        }
+
+        let bestSet = workingSets.max { estimatedOneRepMax($0) < estimatedOneRepMax($1) } ?? workingSets[0]
+        let allAtTop = workingSets.allSatisfy { $0.reps >= exercise.maxReps }
+        let anyBelowRange = workingSets.contains { $0.reps < exercise.minReps }
+        let lastPerformance = "Last time: \(format(bestSet.weight))kg x \(bestSet.reps)"
+
+        if allAtTop, bestSet.weight > 0 {
+            return ExerciseTargetPreview(
+                lastPerformance: lastPerformance,
+                target: "Today: try \(format(bestSet.weight + 2.5))kg for \(exercise.minReps)+ reps",
+                priority: .increaseLoad
+            )
+        }
+
+        if anyBelowRange {
+            return ExerciseTargetPreview(
+                lastPerformance: lastPerformance,
+                target: "Today: repeat until every set reaches \(exercise.minReps)+ reps",
+                priority: .repeatLoad
+            )
+        }
+
+        return ExerciseTargetPreview(
+            lastPerformance: lastPerformance,
+            target: "Today: keep load and add reps toward \(exercise.maxReps)",
+            priority: .addReps
+        )
+    }
+
+    private func lastCompletedLog(for exercise: WorkoutSelectableExercise) -> ExerciseLog? {
+        for session in completedSessions {
+            if let log = session.exerciseLogs.first(where: { $0.exerciseId == exercise.exerciseId }) {
+                return log
+            }
+        }
+
+        return nil
+    }
+
+    private func completedWorkingSets(from exerciseLog: ExerciseLog) -> [SetLog] {
+        exerciseLog.setLogs
+            .filter { $0.completed && !$0.isWarmup }
+            .sorted { $0.setNumber < $1.setNumber }
+    }
+
+    private func estimatedOneRepMax(_ set: SetLog) -> Double {
+        set.weight * (1 + Double(set.reps) / 30)
+    }
+
+    private func format(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(value.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1)))
+    }
 }
 
 private struct WorkoutSelectableExercise: Identifiable {
@@ -242,5 +316,67 @@ private struct WorkoutSelectableExercise: Identifiable {
         self.minReps = minReps
         self.maxReps = maxReps
         self.notes = notes
+    }
+}
+
+private struct ExerciseTargetPreview {
+    let lastPerformance: String
+    let target: String
+    let priority: TargetPriority
+}
+
+private enum TargetPriority {
+    case baseline
+    case addReps
+    case repeatLoad
+    case increaseLoad
+
+    var systemImage: String {
+        switch self {
+        case .baseline:
+            return "scope"
+        case .addReps:
+            return "plusminus"
+        case .repeatLoad:
+            return "repeat"
+        case .increaseLoad:
+            return "arrow.up.circle.fill"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .baseline:
+            return "Baseline"
+        case .addReps:
+            return "Add reps"
+        case .repeatLoad:
+            return "Repeat"
+        case .increaseLoad:
+            return "Increase"
+        }
+    }
+}
+
+private struct ExerciseTargetPreviewView: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let preview: ExerciseTargetPreview
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(preview.lastPerformance)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 6) {
+                Image(systemName: preview.priority.systemImage)
+                    .font(.caption2.weight(.semibold))
+                Text(preview.target)
+                    .font(.caption)
+            }
+            .foregroundStyle(appTheme.primaryColor)
+            .accessibilityLabel("\(preview.priority.label). \(preview.target)")
+        }
     }
 }

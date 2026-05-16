@@ -1,10 +1,10 @@
 # Roadmap
 
-This roadmap follows the updated Coach V2 expansion spec in `NEXT_CODEX_CHAT.md`.
+This roadmap follows the current practical training-coach direction: progressive overload, clear Push/Pull/Legs rotation, fast logging, and useful history.
 
-## Phase 1: Coach V2 Foundation
+## Phase 1: Coach Foundation
 
-1. Add `CoachRecommendationEngine`.
+1. Add `CoachRecommendationEngine`. Done.
    - Recommend next split.
    - Explain recommendation reasoning.
    - Evaluate exercise progression.
@@ -12,21 +12,13 @@ This roadmap follows the updated Coach V2 expansion spec in `NEXT_CODEX_CHAT.md`
    - Detect plateaus.
    - Detect missed split frequency.
 
-2. Add `ReadinessCheck` SwiftData model.
-   - Date.
-   - Energy level.
-   - Soreness level.
-   - Available minutes.
-   - Motivation level.
+2. Keep coaching rule-based and explainable.
+   - No AI APIs.
+   - No hidden scoring that the user cannot understand.
+   - No multi-question readiness form in the workout start flow.
 
-3. Build readiness check UI before workout start.
-   - Fast tap-based input.
-   - Minimal friction.
-   - Store latest readiness values.
-
-4. Rebuild Coach screen with modular cards.
+3. Rebuild Coach screen with modular cards.
    - Next Workout card.
-   - Readiness card.
    - Exercise Recommendations card.
    - Weekly Summary card.
    - Recovery Warning card.
@@ -38,8 +30,8 @@ This roadmap follows the updated Coach V2 expansion spec in `NEXT_CODEX_CHAT.md`
    - Coach recommendation.
    - Estimated duration.
    - Exercise list.
-   - Suggested targets.
-   - Last performance summaries.
+   - Suggested targets. In progress.
+   - Last performance summaries. In progress.
    - Remove/reorder exercises.
    - Workout mode switching.
 
@@ -70,7 +62,7 @@ This roadmap follows the updated Coach V2 expansion spec in `NEXT_CODEX_CHAT.md`
    - Use recent ratings.
    - Use performance drops.
    - Use time since last workout.
-   - Use readiness values.
+   - Use chosen workout mode once modes exist.
 
 3. Add deload recommendations.
    - Condition-based deload prompt.
