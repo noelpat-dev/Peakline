@@ -5,6 +5,8 @@ import SwiftUI
 struct WorkoutLoggerView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var session: WorkoutSession
     var isEditingCompletedWorkout = false
 
@@ -26,8 +28,13 @@ struct WorkoutLoggerView: View {
     @State private var motivationSystemImage = "arrow.right.circle.fill"
     @State private var pendingExerciseIndex: Int?
     @State private var shouldDismissAfterMotivation = false
+    @State private var shouldShowSummaryAfterMotivation = false
+    @State private var summarySession: WorkoutSession?
     @State private var showingWorkoutRating = false
     @State private var pendingWorkoutRating: WorkoutRating?
+    @State private var restTimerState = RestTimerState()
+    @State private var showingSkippedExerciseConfirmation = false
+    @State private var showingWorkoutOrder = false
 
     private var orderedExerciseLogs: [ExerciseLog] {
         session.exerciseLogs.sorted { $0.orderIndex < $1.orderIndex }
@@ -80,7 +87,7 @@ struct WorkoutLoggerView: View {
 
             Section {
                 Button {
-                    finishWorkout()
+                    requestFinishWorkout()
                 } label: {
                     Label(isEditingCompletedWorkout ? "Save Changes" : "Finish Workout", systemImage: "checkmark.circle.fill")
                         .font(.headline)
@@ -89,15 +96,8 @@ struct WorkoutLoggerView: View {
         }
         .navigationTitle(session.splitNameSnapshot)
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showingMotivation, onDismiss: handleMotivationDismiss) {
-            MotivationView(
-                message: motivationMessage,
-                detail: motivationDetail,
-                buttonTitle: motivationButtonTitle,
-                systemImage: motivationSystemImage
-            ) {
-                showingMotivation = false
-            }
+        .navigationDestination(item: $summarySession) { session in
+            SessionSummaryView(session: session)
         }
         .sheet(isPresented: $showingWorkoutRating, onDismiss: handleRatingDismiss) {
             WorkoutRatingView { rating in
@@ -106,31 +106,97 @@ struct WorkoutLoggerView: View {
             }
             .interactiveDismissDisabled()
         }
+        .alert("Finish with skipped exercises?", isPresented: $showingSkippedExerciseConfirmation) {
+            Button("Keep Logging", role: .cancel) {}
+            Button("Finish", role: .destructive) {
+                finishWorkout()
+            }
+        } message: {
+            Text("Some planned exercises have no completed sets yet. You can finish anyway, or keep logging.")
+        }
         .onChange(of: orderedExerciseLogs.count) { _, _ in
             currentExerciseIndex = min(currentExerciseIndex, max(orderedExerciseLogs.count - 1, 0))
         }
+        .blur(radius: showingMotivation ? 2.5 : 0)
+        .disabled(showingMotivation)
+        .overlay {
+            if showingMotivation {
+                WorkoutCelebrationOverlay(
+                    title: motivationMessage,
+                    message: motivationDetail,
+                    icon: motivationSystemImage,
+                    primaryActionTitle: motivationButtonTitle,
+                    primaryActionIcon: motivationSystemImage,
+                    style: motivationButtonTitle == "Done" ? .completedWorkout : .nextExercise
+                ) {
+                    dismissMotivationOverlay()
+                }
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
+            }
+        }
+        .animation(.easeOut(duration: reduceMotion ? 0.01 : 0.18), value: showingMotivation)
     }
 
     @ViewBuilder
     private var liveSessionContent: some View {
         Section {
-            WorkoutTimerHeader(
+            LiveWorkoutHeader(
                 title: session.splitNameSnapshot,
                 startedAt: session.startedAt ?? session.date,
                 endedAt: session.endedAt,
                 pausedAt: session.pausedAt,
                 accumulatedPausedSeconds: session.accumulatedPausedSeconds,
-                completedCount: min(currentExerciseIndex + 1, max(orderedExerciseLogs.count, 1)),
-                totalCount: orderedExerciseLogs.count,
-                togglePause: togglePause
+                currentExerciseIndex: currentExerciseIndex,
+                totalExercises: orderedExerciseLogs.count,
+                togglePause: togglePause,
+                finish: requestFinishWorkout
             )
+        }
+
+        Section {
             TextField("Session notes", text: Binding($session.notes, replacingNilWith: ""))
+        }
+
+        Section("Rest Timer") {
+            RestTimerView(state: $restTimerState)
+        }
+
+        Section {
+            DisclosureGroup(isExpanded: $showingWorkoutOrder) {
+                ForEach(Array(orderedExerciseLogs.enumerated()), id: \.element.id) { index, exerciseLog in
+                    LiveWorkoutOrderRow(
+                        exerciseName: exerciseLog.exerciseNameSnapshot,
+                        iconKey: ExerciseIconMapper.iconKey(for: exerciseLog),
+                        positionText: "\(index + 1)",
+                        isCurrent: exerciseLog.id == currentExerciseLog?.id,
+                        canMoveUp: index > 0,
+                        canMoveDown: index < orderedExerciseLogs.count - 1,
+                        jump: {
+                            currentExerciseIndex = index
+                            showingWorkoutOrder = false
+                        },
+                        moveUp: {
+                            moveExerciseLog(exerciseLog, offset: -1)
+                        },
+                        moveDown: {
+                            moveExerciseLog(exerciseLog, offset: 1)
+                        }
+                    )
+                }
+            } label: {
+                Label("Workout Order", systemImage: "arrow.up.arrow.down")
+                    .font(.headline)
+            }
+            .tint(appTheme.actionColor)
+        } footer: {
+            Text("Reorder exercises if a station is busy, or jump straight to the machine that is free.")
         }
 
         if let currentExerciseLog {
             ExerciseLoggerSection(
                 exerciseLog: currentExerciseLog,
-                previousPerformance: previousPerformance(for: currentExerciseLog)
+                previousPerformance: previousPerformance(for: currentExerciseLog),
+                startRestTimer: startRestTimer
             )
 
             Section {
@@ -229,11 +295,32 @@ struct WorkoutLoggerView: View {
         try? modelContext.save()
     }
 
+    private func moveExerciseLog(_ exerciseLog: ExerciseLog, offset: Int) {
+        var logs = orderedExerciseLogs
+        guard let index = logs.firstIndex(where: { $0.id == exerciseLog.id }) else { return }
+
+        let newIndex = logs.index(index, offsetBy: offset)
+        guard logs.indices.contains(newIndex) else { return }
+
+        let currentId = currentExerciseLog?.id
+        logs.swapAt(index, newIndex)
+
+        for (orderIndex, log) in logs.enumerated() {
+            log.orderIndex = orderIndex
+        }
+
+        if let currentId, let updatedCurrentIndex = logs.firstIndex(where: { $0.id == currentId }) {
+            currentExerciseIndex = updatedCurrentIndex
+        }
+
+        try? modelContext.save()
+    }
+
     private func continueToNextExercise() {
         guard !orderedExerciseLogs.isEmpty else { return }
 
         if isLastExercise {
-            finishWorkout()
+            requestFinishWorkout()
             return
         }
 
@@ -248,6 +335,12 @@ struct WorkoutLoggerView: View {
     }
 
     private func handleMotivationDismiss() {
+        if shouldShowSummaryAfterMotivation {
+            shouldShowSummaryAfterMotivation = false
+            summarySession = session
+            return
+        }
+
         if shouldDismissAfterMotivation {
             shouldDismissAfterMotivation = false
             dismiss()
@@ -260,10 +353,26 @@ struct WorkoutLoggerView: View {
         }
     }
 
+    private func dismissMotivationOverlay() {
+        showingMotivation = false
+        DispatchQueue.main.async {
+            handleMotivationDismiss()
+        }
+    }
+
     private func handleRatingDismiss() {
         guard let pendingWorkoutRating else { return }
         self.pendingWorkoutRating = nil
         completeWorkout(rating: pendingWorkoutRating)
+    }
+
+    private func requestFinishWorkout() {
+        if !isEditingCompletedWorkout && hasSkippedPlannedExercises {
+            showingSkippedExerciseConfirmation = true
+            return
+        }
+
+        finishWorkout()
     }
 
     private func finishWorkout() {
@@ -280,6 +389,7 @@ struct WorkoutLoggerView: View {
 
         finalizePausedTime(at: session.endedAt ?? Date())
         markEnteredSetsComplete()
+        restTimerState = RestTimerState()
         showingWorkoutRating = true
     }
 
@@ -289,13 +399,14 @@ struct WorkoutLoggerView: View {
         finalizePausedTime(at: session.endedAt ?? end)
         session.completed = true
         session.perceivedDifficulty = rating.score
+        WorkoutSessionDateService.alignLoggedDateToStartDate(session)
 
         let activeSeconds = activeDurationSeconds(at: session.endedAt ?? end)
         session.durationSeconds = activeSeconds
         session.durationMinutes = max(1, Int(ceil(Double(activeSeconds) / 60)))
 
         try? modelContext.save()
-        shouldDismissAfterMotivation = true
+        shouldShowSummaryAfterMotivation = true
         configureMotivation(
             message: rating.completionTitle,
             detail: "\(rating.completionMessage) You spent \(durationText(seconds: activeSeconds)) in the gym.",
@@ -308,7 +419,6 @@ struct WorkoutLoggerView: View {
     private func markEnteredSetsComplete() {
         for set in session.exerciseLogs.flatMap(\.setLogs) where set.weight > 0 || set.reps > 0 || set.rpe != nil {
             set.completed = true
-            set.isWarmup = false
         }
     }
 
@@ -330,6 +440,25 @@ struct WorkoutLoggerView: View {
         }
 
         try? modelContext.save()
+    }
+
+    private func startRestTimer(exerciseName: String, nextSetNumber: Int) {
+        restTimerState = RestTimerState(
+            endDate: Date().addingTimeInterval(TimeInterval(restDuration(for: exerciseName))),
+            exerciseName: exerciseName,
+            nextSetNumber: nextSetNumber
+        )
+    }
+
+    private func restDuration(for exerciseName: String) -> Int {
+        guard let exercise = exercises.first(where: { $0.name == exerciseName }) else { return 90 }
+        return exercise.isCompound ? 120 : 75
+    }
+
+    private var hasSkippedPlannedExercises: Bool {
+        orderedExerciseLogs.contains { exerciseLog in
+            exerciseLog.setLogs.allSatisfy { !$0.completed && $0.weight == 0 && $0.reps == 0 && $0.rpe == nil }
+        }
     }
 
     private func finalizePausedTime(at date: Date) {
@@ -399,129 +528,68 @@ private struct PreviousExercisePerformance {
     let workingSets: [PreviousSetSnapshot]
 }
 
-private struct WorkoutTimerHeader: View {
+private struct LiveWorkoutOrderRow: View {
     @Environment(\.appTheme) private var appTheme
-    let title: String
-    let startedAt: Date
-    let endedAt: Date?
-    let pausedAt: Date?
-    let accumulatedPausedSeconds: Int
-    let completedCount: Int
-    let totalCount: Int
-    let togglePause: () -> Void
+
+    let exerciseName: String
+    let iconKey: ExerciseIconKey
+    let positionText: String
+    let isCurrent: Bool
+    let canMoveUp: Bool
+    let canMoveDown: Bool
+    let jump: () -> Void
+    let moveUp: () -> Void
+    let moveDown: () -> Void
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { timeline in
-            let displayDate = endedAt ?? timeline.date
-            let isPaused = pausedAt != nil
+        HStack(spacing: 10) {
+            ZStack(alignment: .topTrailing) {
+                ExerciseIconView(
+                    iconKey: iconKey,
+                    size: 36,
+                    tint: isCurrent ? appTheme.colors.accent : appTheme.colors.textSecondary,
+                    showBackground: true,
+                    isDecorative: true
+                )
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title)
-                            .font(.headline)
-                        Text(totalCount == 0 ? "No exercises selected" : "Exercise \(completedCount) of \(totalCount)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-
-                    VStack(alignment: .trailing, spacing: 6) {
-                        Text(elapsedText(at: displayDate))
-                            .font(.title3.monospacedDigit().weight(.semibold))
-                            .foregroundStyle(isPaused ? .secondary : appTheme.primaryColor)
-
-                        Button {
-                            togglePause()
-                        } label: {
-                            Label(isPaused ? "Resume" : "Pause", systemImage: isPaused ? "play.fill" : "pause.fill")
-                                .font(.caption.weight(.semibold))
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(endedAt != nil)
-                    }
-                }
-
-                SwiftUI.ProgressView(value: totalCount == 0 ? 0 : Double(completedCount), total: Double(max(totalCount, 1)))
+                Text(positionText)
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(isCurrent ? .white : appTheme.actionColor)
+                    .frame(width: 16, height: 16)
+                    .background(isCurrent ? appTheme.actionColor : appTheme.actionColor.opacity(0.14), in: Circle())
+                    .offset(x: 4, y: -4)
             }
-            .padding(.vertical, 4)
-        }
-    }
-
-    private func elapsedText(at date: Date) -> String {
-        let livePauseSeconds: Int
-        if let pausedAt {
-            livePauseSeconds = max(0, Int(date.timeIntervalSince(pausedAt)))
-        } else {
-            livePauseSeconds = 0
-        }
-
-        let elapsed = max(0, Int(date.timeIntervalSince(startedAt)) - accumulatedPausedSeconds - livePauseSeconds)
-        let hours = elapsed / 3600
-        let minutes = (elapsed % 3600) / 60
-        let seconds = elapsed % 60
-
-        if hours > 0 {
-            return "\(hours):\(String(format: "%02d", minutes)):\(String(format: "%02d", seconds))"
-        }
-
-        return "\(minutes):\(String(format: "%02d", seconds))"
-    }
-}
-
-private struct MotivationView: View {
-    @Environment(\.appTheme) private var appTheme
-    let message: String
-    let detail: String
-    let buttonTitle: String
-    let systemImage: String
-    let continueAction: () -> Void
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Spacer(minLength: 12)
-
-            VStack(spacing: 20) {
-                Image(systemName: "bolt.heart.fill")
-                    .font(.system(size: 52))
-                    .foregroundStyle(.white)
-
-                Text(message)
-                    .font(.largeTitle.bold())
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.white)
-
-                Text(detail)
-                    .font(.headline)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.white.opacity(0.82))
-            }
-
-            Spacer(minLength: 32)
 
             Button {
-                continueAction()
+                jump()
             } label: {
-                Label(buttonTitle, systemImage: systemImage)
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(exerciseName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(isCurrent ? "Current exercise" : "Tap to jump here")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.white)
-            .foregroundStyle(appTheme.primaryColor)
-            .padding(.top, 8)
+            .buttonStyle(.plain)
+
+            HStack(spacing: 6) {
+                Button(action: moveUp) {
+                    Image(systemName: "chevron.up")
+                }
+                .disabled(!canMoveUp)
+
+                Button(action: moveDown) {
+                    Image(systemName: "chevron.down")
+                }
+                .disabled(!canMoveDown)
+            }
+            .buttonStyle(.borderless)
+            .tint(appTheme.actionColor)
         }
-        .padding(28)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            LinearGradient(
-                colors: [appTheme.primaryColor, appTheme.secondaryColor],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .presentationDetents([.medium])
+        .padding(.vertical, 4)
     }
 }
 
@@ -648,8 +716,15 @@ private struct PreviousSetSnapshot {
 
 private struct ExerciseLoggerSection: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.appTheme) private var appTheme
     @Bindable var exerciseLog: ExerciseLog
     let previousPerformance: PreviousExercisePerformance?
+    var startRestTimer: (String, Int) -> Void = { _, _ in }
+
+    @Query(filter: #Predicate<Exercise> { !$0.isArchived }, sort: \Exercise.name)
+    private var exercises: [Exercise]
+
+    private let substitutionService = ExerciseSubstitutionService()
 
     private var orderedSets: [SetLog] {
         exerciseLog.setLogs.sorted { $0.setNumber < $1.setNumber }
@@ -657,22 +732,74 @@ private struct ExerciseLoggerSection: View {
 
     var body: some View {
         Section {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(exerciseLog.exerciseNameSnapshot)
-                    .font(.headline)
-                Text(targetText)
-                    .foregroundStyle(.secondary)
-                Text("Last time: \(previousPerformance?.summary ?? "No previous data")")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 12) {
+                    ExerciseIconView(
+                        iconKey: ExerciseIconMapper.iconKey(for: exerciseLog),
+                        size: 50,
+                        showBackground: true,
+                        isDecorative: true
+                    )
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(exerciseLog.exerciseNameSnapshot)
+                            .font(.system(.title3, design: .rounded).weight(.bold))
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                            .lineLimit(2)
+
+                        Text(targetText)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                    }
+
+                    Spacer()
+
+                    if !substitutionOptions.isEmpty {
+                        Menu {
+                            ForEach(substitutionOptions) { exercise in
+                                Button(exercise.name) {
+                                    substitute(with: exercise)
+                                }
+                            }
+                        } label: {
+                            Label("Substitute", systemImage: "arrow.triangle.2.circlepath")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .labelStyle(.titleAndIcon)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Last time: \(previousPerformance?.summary ?? "No previous data")")
+                        .font(.caption)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                    Text(coachCue)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(appTheme.colors.accent)
+                        .lineLimit(2)
+                }
+
                 if let notes = exerciseLog.notes, !notes.isEmpty {
                     Text(notes)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Stepper("Today's target sets: \(exerciseLog.targetSets)", value: $exerciseLog.targetSets, in: 1...10)
-                    .font(.subheadline)
+
+                HStack(spacing: 10) {
+                    Text("Target sets")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(appTheme.colors.textSecondary)
+
+                    Spacer()
+
+                    CompactTargetSetStepper(
+                        value: exerciseLog.targetSets,
+                        decrement: { exerciseLog.targetSets = max(1, exerciseLog.targetSets - 1) },
+                        increment: { exerciseLog.targetSets = min(10, exerciseLog.targetSets + 1) }
+                    )
+                }
             }
+            .padding(.vertical, 6)
             .swipeActions(edge: .trailing) {
                 Button("Remove", role: .destructive) {
                     removeExerciseFromSession()
@@ -681,7 +808,12 @@ private struct ExerciseLoggerSection: View {
             }
 
             ForEach(orderedSets) { setLog in
-                SetRowView(setLog: setLog)
+                SetRowView(
+                    setLog: setLog,
+                    deleteAction: { delete(setLog) }
+                ) {
+                    startRestTimer(exerciseLog.exerciseNameSnapshot, nextSetNumber(after: setLog))
+                }
                     .swipeActions(edge: .trailing) {
                         Button("Delete", role: .destructive) {
                             delete(setLog)
@@ -704,6 +836,26 @@ private struct ExerciseLoggerSection: View {
     private var targetText: String {
         guard exerciseLog.targetSets > 0 else { return "No target set" }
         return "Target: \(exerciseLog.targetSets) sets x \(exerciseLog.minReps)-\(exerciseLog.maxReps) reps"
+    }
+
+    private var coachCue: String {
+        guard let previousPerformance, let first = previousPerformance.workingSets.first else {
+            return "Establish a controlled baseline today."
+        }
+
+        if orderedSets.isEmpty {
+            return "Start near last session: \(first.formattedWeight)kg x \(first.reps)."
+        }
+
+        if orderedSets.contains(where: { $0.rpe ?? 0 >= 9 }) {
+            return "High effort logged. Hold load steady and protect form."
+        }
+
+        return "If reps stay clean, aim for the top of the range before adding load."
+    }
+
+    private var substitutionOptions: [Exercise] {
+        substitutionService.alternatives(for: exerciseLog.exerciseId, in: exercises)
     }
 
     private func addSet(copyPrevious: Bool) {
@@ -767,43 +919,394 @@ private struct ExerciseLoggerSection: View {
 
         try? modelContext.save()
     }
+
+    private func substitute(with exercise: Exercise) {
+        exerciseLog.exerciseId = exercise.id
+        exerciseLog.exerciseNameSnapshot = exercise.name
+        try? modelContext.save()
+    }
+
+    private func nextSetNumber(after setLog: SetLog) -> Int {
+        let next = setLog.setNumber + 1
+        return min(next, max(exerciseLog.targetSets, next))
+    }
 }
 
 private struct SetRowView: View {
+    @Environment(\.appTheme) private var appTheme
     @Bindable var setLog: SetLog
+    let deleteAction: () -> Void
+    let completedAction: () -> Void
+
+    @State private var activeSheet: SetRowSheet?
+
+    private var hasLoggedData: Bool {
+        setLog.weight > 0 || setLog.reps > 0
+    }
+
+    private var effort: EffortLevel? {
+        EffortLevel(rpe: setLog.rpe)
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Set \(setLog.setNumber)")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 10) {
+                Text("Set \(setLog.setNumber)")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(appTheme.colors.textPrimary)
 
-            HStack(alignment: .top, spacing: 12) {
-                SetValueEditor(
-                    title: "Weight kg",
+                Spacer()
+
+                if setLog.isWarmup {
+                    SetStatusChip(title: "Warm-up", systemImage: "flame", color: appTheme.warningColor)
+                }
+
+                if hasLoggedData {
+                    SetStatusChip(title: "Logged", systemImage: "checkmark.circle.fill", color: appTheme.successColor)
+                }
+            }
+
+            HStack(alignment: .top, spacing: 10) {
+                StepperValueControl(
+                    label: "Weight",
                     valueText: format(setLog.weight),
-                    decrement: { setLog.weight = max(0, setLog.weight - 2.5) },
-                    increment: { setLog.weight += 2.5 }
-                ) {
-                    NumberField(title: "Weight kg", value: $setLog.weight)
-                }
+                    unitSuffix: "kg",
+                    canDecrement: setLog.weight > 0,
+                    decrement: { updateWeight(max(0, setLog.weight - 2.5)) },
+                    increment: { updateWeight(setLog.weight + 2.5) },
+                    edit: { activeSheet = .weight }
+                )
 
-                SetValueEditor(
-                    title: "Reps",
+                StepperValueControl(
+                    label: "Reps",
                     valueText: "\(setLog.reps)",
-                    decrement: { setLog.reps = max(0, setLog.reps - 1) },
-                    increment: { setLog.reps += 1 }
-                ) {
-                    StepperNumberField(title: "Reps", value: $setLog.reps)
-                }
+                    unitSuffix: "reps",
+                    canDecrement: setLog.reps > 0,
+                    decrement: { updateReps(max(0, setLog.reps - 1)) },
+                    increment: { updateReps(setLog.reps + 1) },
+                    edit: { activeSheet = .reps }
+                )
+            }
 
-                OptionalNumberField(title: "RPE", value: $setLog.rpe)
+            HStack(spacing: 8) {
+                Button {
+                    activeSheet = .effort
+                } label: {
+                    Text(effort.map { "Effort: \($0.title)" } ?? "Effort Optional")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(effort == nil ? appTheme.colors.textSecondary : appTheme.colors.textPrimary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(effort == nil ? appTheme.colors.cardBackgroundElevated : appTheme.colors.accentSurface, in: Capsule())
+                        .overlay(
+                            Capsule()
+                                .stroke(effort == nil ? appTheme.colors.cardBorder : appTheme.colors.accent.opacity(0.36), lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.borderless)
+
+                Spacer()
+
+                Menu {
+                    Button {
+                        setLog.isWarmup.toggle()
+                    } label: {
+                        Label(setLog.isWarmup ? "Remove Warm-up" : "Mark Warm-up", systemImage: "flame")
+                    }
+
+                    Button {
+                        activeSheet = .effort
+                    } label: {
+                        Label("Edit Effort", systemImage: "gauge.with.dots.needle.33percent")
+                    }
+
+                    Button {
+                        activeSheet = .plates
+                    } label: {
+                        Label("Plate Calculator", systemImage: "scalemass")
+                    }
+
+                    Button(role: .destructive) {
+                        deleteAction()
+                    } label: {
+                        Label("Delete Set", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.title3)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .frame(width: 36, height: 32)
+                }
+                .buttonStyle(.borderless)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
+        .onAppear {
+            syncCompletedState()
+        }
+        .onChange(of: setLog.isWarmup) { _, _ in
+            syncCompletedState()
+        }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .weight:
+                NumericEntrySheet(
+                    title: "Edit Weight",
+                    value: format(setLog.weight),
+                    keyboardType: .decimalPad,
+                    save: { updateWeight(Double($0) ?? setLog.weight) }
+                )
+            case .reps:
+                NumericEntrySheet(
+                    title: "Edit Reps",
+                    value: "\(setLog.reps)",
+                    keyboardType: .numberPad,
+                    save: { updateReps(Int($0) ?? setLog.reps) }
+                )
+            case .effort:
+                EffortPickerSheet(selectedRPE: setLog.rpe) { rpe in
+                    setLog.rpe = rpe
+                    syncCompletedState()
+                    activeSheet = nil
+                }
+            case .plates:
+                NavigationStack {
+                    PlateCalculatorView(targetWeight: setLog.weight)
+                }
+            }
+        }
     }
 
     private func format(_ weight: Double) -> String {
         weight.formatted(.number.precision(.fractionLength(weight.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1)))
+    }
+
+    private func updateWeight(_ weight: Double) {
+        setLog.weight = max(0, weight)
+        syncCompletedState(triggerAction: true)
+    }
+
+    private func updateReps(_ reps: Int) {
+        setLog.reps = max(0, reps)
+        syncCompletedState(triggerAction: true)
+    }
+
+    private func syncCompletedState(triggerAction: Bool = false) {
+        let shouldBeCompleted = hasLoggedData
+        let wasCompleted = setLog.completed
+        setLog.completed = shouldBeCompleted
+
+        if triggerAction, shouldBeCompleted, !wasCompleted, !setLog.isWarmup {
+            completedAction()
+        }
+    }
+}
+
+private enum SetRowSheet: Identifiable {
+    case weight
+    case reps
+    case effort
+    case plates
+
+    var id: String {
+        switch self {
+        case .weight:
+            return "weight"
+        case .reps:
+            return "reps"
+        case .effort:
+            return "effort"
+        case .plates:
+            return "plates"
+        }
+    }
+}
+
+private enum EffortLevel: Double, CaseIterable, Identifiable {
+    case easy = 6
+    case moderate = 7
+    case hard = 8
+    case veryHard = 9
+    case max = 10
+
+    var id: Double { rawValue }
+
+    init?(rpe: Double?) {
+        guard let rpe else { return nil }
+        self.init(rawValue: rpe.rounded())
+    }
+
+    var title: String {
+        switch self {
+        case .easy:
+            return "Easy"
+        case .moderate:
+            return "Moderate"
+        case .hard:
+            return "Hard"
+        case .veryHard:
+            return "Very Hard"
+        case .max:
+            return "Max"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .easy:
+            return "RPE 6"
+        case .moderate:
+            return "RPE 7"
+        case .hard:
+            return "RPE 8"
+        case .veryHard:
+            return "RPE 9"
+        case .max:
+            return "RPE 10"
+        }
+    }
+}
+
+private struct EffortPickerSheet: View {
+    @Environment(\.appTheme) private var appTheme
+    let selectedRPE: Double?
+    let select: (Double?) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Effort")
+                    .font(.title2.weight(.bold))
+                Text("Optional intensity for coaching and progression.")
+                    .font(.subheadline)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+            }
+
+            VStack(spacing: 8) {
+                ForEach(EffortLevel.allCases) { effort in
+                    Button {
+                        select(effort.rawValue)
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(effort.title)
+                                    .font(.headline)
+                                Text(effort.detail)
+                                    .font(.caption)
+                                    .foregroundStyle(appTheme.colors.textSecondary)
+                            }
+
+                            Spacer()
+
+                            if EffortLevel(rpe: selectedRPE) == effort {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(appTheme.actionColor)
+                            }
+                        }
+                        .padding(12)
+                        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            Button(role: .destructive) {
+                select(nil)
+            } label: {
+                Label("Clear Effort", systemImage: "xmark.circle")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(selectedRPE == nil)
+        }
+        .padding(22)
+        .presentationDetents([.medium])
+    }
+}
+
+private struct NumericEntrySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let title: String
+    @State var value: String
+    let keyboardType: UIKeyboardType
+    let save: (String) -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField(title, text: $value)
+                        .keyboardType(keyboardType)
+                }
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        save(value)
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .presentationDetents([.height(220)])
+    }
+}
+
+private struct SetStatusChip: View {
+    let title: String
+    let systemImage: String
+    let color: Color
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .font(.caption2.weight(.bold))
+            .labelStyle(.titleAndIcon)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .foregroundStyle(color)
+            .background(color.opacity(0.14), in: Capsule())
+    }
+}
+
+private struct CompactTargetSetStepper: View {
+    @Environment(\.appTheme) private var appTheme
+    let value: Int
+    let decrement: () -> Void
+    let increment: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button(action: decrement) {
+                Image(systemName: "minus")
+                    .frame(width: 34, height: 32)
+            }
+            .disabled(value <= 1)
+
+            Text("\(value)")
+                .font(.headline.monospacedDigit().weight(.bold))
+                .frame(minWidth: 30)
+
+            Button(action: increment) {
+                Image(systemName: "plus")
+                    .frame(width: 34, height: 32)
+            }
+            .disabled(value >= 10)
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(appTheme.colors.textPrimary)
+        .background(appTheme.colors.cardBackgroundElevated, in: Capsule())
+        .overlay(
+            Capsule()
+                .stroke(appTheme.colors.cardBorder, lineWidth: 1)
+        )
     }
 }
 
@@ -853,6 +1356,46 @@ private struct SetValueEditor<Field: View>: View {
 
             field()
         }
+    }
+}
+
+private struct TargetSetStepper: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let value: Int
+    let decrement: () -> Void
+    let increment: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button(action: decrement) {
+                Image(systemName: "minus")
+                    .font(.caption.weight(.bold))
+                    .frame(width: 28, height: 28)
+            }
+            .disabled(value <= 1)
+
+            Text("\(value)")
+                .font(.headline.monospacedDigit())
+                .frame(minWidth: 24)
+                .foregroundStyle(appTheme.colors.textPrimary)
+
+            Button(action: increment) {
+                Image(systemName: "plus")
+                    .font(.caption.weight(.bold))
+                    .frame(width: 28, height: 28)
+            }
+            .disabled(value >= 10)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .foregroundStyle(appTheme.colors.accent)
+        .background(appTheme.colors.accentSurface, in: Capsule())
+        .overlay {
+            Capsule()
+                .stroke(appTheme.cardBorder, lineWidth: 1)
+        }
+        .buttonStyle(.plain)
     }
 }
 

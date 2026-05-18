@@ -3,6 +3,7 @@ import SwiftUI
 
 struct RootTabView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.appTheme) private var appTheme
 
     var body: some View {
         TabView {
@@ -31,8 +32,12 @@ struct RootTabView: View {
                     Label("Settings", systemImage: "gearshape")
                 }
         }
+        .tint(appTheme.colors.accent)
+        .toolbarBackground(appTheme.colors.backgroundSecondary, for: .tabBar)
+        .toolbarBackground(.visible, for: .tabBar)
         .task {
             await SeedDataService.seedIfNeeded(in: modelContext)
+            WorkoutSessionDateService.repairCompletedSessionDates(in: modelContext)
         }
     }
 }

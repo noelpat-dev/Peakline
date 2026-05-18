@@ -3,37 +3,66 @@ import SwiftUI
 
 struct HistoryView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.appTheme) private var appTheme
 
     @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
     private var sessions: [WorkoutSession]
 
     @State private var displayedMonth = Date()
+    @State private var filters = HistoryFilters()
+    @State private var useDateRange = false
+    @State private var showingFilters = false
+
+    private let filterService = HistoryFilterService()
+
+    private var filteredSessions: [WorkoutSession] {
+        filterService.filter(sessions, using: filters)
+    }
+
+    private var splitOptions: [String] {
+        Array(Set(sessions.map { $0.splitNameSnapshot.components(separatedBy: " - ").first ?? $0.splitNameSnapshot })).sorted()
+    }
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    WorkoutCalendarView(displayedMonth: $displayedMonth, sessions: sessions)
+            FitnessScreen(title: "History", subtitle: "Review training trends and recent sessions.", systemImage: "clock.arrow.circlepath") {
+                FitnessCard {
+                    WorkoutCalendarView(displayedMonth: $displayedMonth, sessions: filteredSessions)
                 }
 
-                if sessions.isEmpty {
+                filterChips
+
+                if filteredSessions.isEmpty {
                     ContentUnavailableView(
-                        "No Workouts Yet",
+                        sessions.isEmpty ? "No Workouts Yet" : "No Matching Workouts",
                         systemImage: "clock",
-                        description: Text("Finished workouts will appear here.")
+                        description: Text(sessions.isEmpty ? "Finished workouts will appear here." : "Adjust filters to see more sessions.")
                     )
                 } else {
-                    ForEach(sessions) { session in
+                    ForEach(filteredSessions) { session in
                         NavigationLink {
                             WorkoutHistoryDetailView(session: session)
                         } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(session.splitNameSnapshot)
-                                    .font(.headline)
-                                Text(summary(for: session))
-                                    .foregroundStyle(.secondary)
+                            FitnessCard {
+                                HStack(alignment: .top, spacing: 12) {
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        Text(session.splitNameSnapshot)
+                                            .font(.headline)
+                                            .foregroundStyle(appTheme.colors.textPrimary)
+                                        Text(summary(for: session))
+                                            .font(.subheadline)
+                                            .foregroundStyle(appTheme.mutedText)
+                                    }
+
+                                    Spacer()
+
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(appTheme.colors.textTertiary)
+                                }
                             }
                         }
+                        .buttonStyle(.plain)
                         .swipeActions(edge: .trailing) {
                             Button("Delete", role: .destructive) {
                                 delete(session)
@@ -44,6 +73,153 @@ struct HistoryView: View {
                 }
             }
             .navigationTitle("History")
+            .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showingFilters) {
+                filterSheet
+                    .presentationDetents([.medium, .large])
+            }
+        }
+    }
+
+    private var filterChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                FilterChip("All", systemImage: "line.3.horizontal.decrease.circle", isSelected: !filters.isActive) {
+                    filters = HistoryFilters()
+                    useDateRange = false
+                }
+
+                ForEach(splitOptions.prefix(4), id: \.self) { splitName in
+                    FilterChip(splitName, isSelected: filters.splitName == splitName) {
+                        filters.splitName = filters.splitName == splitName ? nil : splitName
+                    }
+                }
+
+                FilterChip(ratingChipTitle, systemImage: "star", isSelected: filters.minimumRating != nil) {
+                    showingFilters = true
+                }
+
+                FilterChip(exerciseChipTitle, systemImage: "magnifyingglass", isSelected: !filters.exerciseNameQuery.isEmpty) {
+                    showingFilters = true
+                }
+
+                FilterChip("Date", systemImage: "calendar", isSelected: useDateRange) {
+                    showingFilters = true
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    private var filterSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    FitnessCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Split")
+                                .font(.headline)
+
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 86), spacing: 8)], alignment: .leading, spacing: 8) {
+                                FilterChip("All", isSelected: filters.splitName == nil) {
+                                    filters.splitName = nil
+                                }
+                                ForEach(splitOptions, id: \.self) { splitName in
+                                    FilterChip(splitName, isSelected: filters.splitName == splitName) {
+                                        filters.splitName = splitName
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    FitnessCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Exercise")
+                                .font(.headline)
+
+                            HStack(spacing: 10) {
+                                Image(systemName: "magnifyingglass")
+                                    .foregroundStyle(appTheme.colors.textTertiary)
+                                TextField("Exercise name", text: $filters.exerciseNameQuery)
+                                    .textInputAutocapitalization(.words)
+                            }
+                            .padding(12)
+                            .background(appTheme.elevatedCardBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
+                    }
+
+                    FitnessCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Rating")
+                                .font(.headline)
+
+                            HStack(spacing: 8) {
+                                FilterChip("Any", isSelected: filters.minimumRating == nil) {
+                                    filters.minimumRating = nil
+                                }
+                                ForEach([3, 4, 5], id: \.self) { rating in
+                                    FilterChip(rating == 5 ? "5" : "\(rating)+", systemImage: "star.fill", isSelected: filters.minimumRating == rating) {
+                                        filters.minimumRating = rating
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    FitnessCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Toggle("Date range", isOn: $useDateRange)
+                                .tint(appTheme.colors.accent)
+                                .onChange(of: useDateRange) { _, enabled in
+                                    updateDateRange(enabled: enabled)
+                                }
+
+                            if useDateRange {
+                                DatePicker("From", selection: startDateBinding, displayedComponents: .date)
+                                DatePicker("To", selection: endDateBinding, displayedComponents: .date)
+                            }
+                        }
+                    }
+                }
+                .padding()
+            }
+            .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
+            .navigationTitle("Filters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Clear") {
+                        filters = HistoryFilters()
+                        useDateRange = false
+                    }
+                    .disabled(!filters.isActive)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        showingFilters = false
+                    }
+                }
+            }
+        }
+    }
+
+    private var ratingChipTitle: String {
+        guard let minimumRating = filters.minimumRating else { return "Rating" }
+        return minimumRating == 5 ? "5" : "\(minimumRating)+"
+    }
+
+    private var exerciseChipTitle: String {
+        filters.exerciseNameQuery.isEmpty ? "Exercise" : filters.exerciseNameQuery
+    }
+
+    private func updateDateRange(enabled: Bool) {
+        if enabled {
+            filters.startDate = filters.startDate ?? Calendar.current.date(byAdding: .month, value: -1, to: .now)
+            filters.endDate = filters.endDate ?? .now
+        } else {
+            filters.startDate = nil
+            filters.endDate = nil
         }
     }
 
@@ -59,6 +235,38 @@ struct HistoryView: View {
     private func delete(_ session: WorkoutSession) {
         modelContext.delete(session)
         try? modelContext.save()
+    }
+
+    private var splitFilterBinding: Binding<String?> {
+        Binding {
+            filters.splitName
+        } set: { newValue in
+            filters.splitName = newValue
+        }
+    }
+
+    private var ratingFilterBinding: Binding<Int?> {
+        Binding {
+            filters.minimumRating
+        } set: { newValue in
+            filters.minimumRating = newValue
+        }
+    }
+
+    private var startDateBinding: Binding<Date> {
+        Binding {
+            filters.startDate ?? Calendar.current.date(byAdding: .month, value: -1, to: .now) ?? .now
+        } set: { newValue in
+            filters.startDate = newValue
+        }
+    }
+
+    private var endDateBinding: Binding<Date> {
+        Binding {
+            filters.endDate ?? .now
+        } set: { newValue in
+            filters.endDate = newValue
+        }
     }
 }
 
@@ -161,14 +369,14 @@ private struct CalendarDayCell: View {
     var body: some View {
         Text(dayNumber)
             .font(.subheadline.weight(isLogged ? .semibold : .regular))
-            .foregroundStyle(isLogged ? .white : .primary)
+            .foregroundStyle(isLogged ? .black : appTheme.colors.textPrimary)
             .frame(maxWidth: .infinity)
             .frame(height: 34)
             .background {
                 if isLogged {
-                    Circle().fill(appTheme.primaryColor)
+                    Circle().fill(appTheme.colors.accent)
                 } else if isToday {
-                    Circle().stroke(.secondary, lineWidth: 1)
+                    Circle().stroke(appTheme.colors.textTertiary, lineWidth: 1)
                 }
             }
     }
@@ -217,8 +425,17 @@ private struct WorkoutHistoryDetailView: View {
             if !plannedExerciseLogs.isEmpty {
                 Section("Planned But Not Logged") {
                     ForEach(plannedExerciseLogs) { exerciseLog in
-                        Text(exerciseLog.exerciseNameSnapshot)
-                            .foregroundStyle(.secondary)
+                        HStack(spacing: 10) {
+                            ExerciseIconView(
+                                iconKey: ExerciseIconMapper.iconKey(for: exerciseLog),
+                                size: 30,
+                                showBackground: true,
+                                isDisabled: true,
+                                isDecorative: true
+                            )
+                            Text(exerciseLog.exerciseNameSnapshot)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
@@ -311,28 +528,38 @@ private struct ExerciseHistorySummary: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(exerciseLog.exerciseNameSnapshot)
-                .font(.headline)
+        HStack(alignment: .top, spacing: 12) {
+            ExerciseIconView(
+                iconKey: ExerciseIconMapper.iconKey(for: exerciseLog),
+                size: 36,
+                showBackground: true,
+                isDecorative: true
+            )
 
-            if sets.isEmpty {
-                Text("No sets logged")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(sets) { set in
-                    HStack {
-                        Text("Set \(set.setNumber)")
-                        Spacer()
-                        Text("\(formatWeight(set.weight))kg x \(set.reps)")
-                            .font(.headline)
-                        if let rpe = set.rpe {
-                            Text("RPE \(formatWeight(rpe))")
-                                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(exerciseLog.exerciseNameSnapshot)
+                    .font(.headline)
+
+                if sets.isEmpty {
+                    Text("No sets logged")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(sets) { set in
+                        HStack {
+                            Text("Set \(set.setNumber)")
+                            Spacer()
+                            Text("\(formatWeight(set.weight))kg x \(set.reps)")
+                                .font(.headline)
+                            if let rpe = set.rpe {
+                                Text("RPE \(formatWeight(rpe))")
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
             }
         }
+        .accessibilityElement(children: .combine)
     }
 
     private func formatWeight(_ value: Double) -> String {

@@ -63,21 +63,33 @@ private struct ExerciseLibraryRow: View {
     let exercise: Exercise
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(exercise.name)
-                    .font(.headline)
+        HStack(spacing: 12) {
+            ExerciseIconView(
+                iconKey: ExerciseIconMapper.iconKey(for: exercise),
+                size: 34,
+                showBackground: true,
+                isDecorative: true
+            )
 
-                if exercise.isArchived {
-                    Text("Archived")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(exercise.name)
+                        .font(.headline)
+
+                    if exercise.isArchived {
+                        Text("Archived")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-            }
 
-            Text("\(exercise.primaryMuscleGroup.displayName) - \(exercise.equipment.displayName) - \(exercise.movementPattern.displayName)")
-                .foregroundStyle(.secondary)
+                Text("\(exercise.primaryMuscleGroup.displayName) - \(exercise.equipment.displayName) - \(exercise.movementPattern.displayName)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .accessibilityElement(children: .combine)
     }
 }
 

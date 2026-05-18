@@ -27,7 +27,7 @@ final class WorkoutSession {
         date: Date = .now,
         splitId: UUID? = nil,
         splitNameSnapshot: String = "Empty Workout",
-        startedAt: Date? = .now,
+        startedAt: Date? = nil,
         endedAt: Date? = nil,
         durationMinutes: Int? = nil,
         durationSeconds: Int? = nil,
@@ -44,7 +44,7 @@ final class WorkoutSession {
         self.date = date
         self.splitId = splitId
         self.splitNameSnapshot = splitNameSnapshot
-        self.startedAt = startedAt
+        self.startedAt = startedAt ?? date
         self.endedAt = endedAt
         self.durationMinutes = durationMinutes
         self.durationSeconds = durationSeconds

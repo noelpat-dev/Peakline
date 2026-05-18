@@ -9,17 +9,23 @@ struct CoachRecommendationSummary {
 }
 
 struct ExerciseRecommendation: Identifiable, Hashable {
-    let id = UUID()
     let exerciseName: String
     let message: String
     let priority: CoachPriority
+
+    var id: String {
+        "\(exerciseName)-\(priority.rawValue)-\(message)"
+    }
 }
 
 struct CoachWarning: Identifiable, Hashable {
-    let id = UUID()
     let title: String
     let message: String
     let severity: CoachPriority
+
+    var id: String {
+        "\(title)-\(severity.rawValue)-\(message)"
+    }
 }
 
 enum CoachPriority: String, Hashable {
@@ -73,7 +79,7 @@ struct CoachRecommendationEngine {
         }
 
         guard
-            let mostRecentName = completedSessions.first(where: { PPLRotation.names.contains($0.splitNameSnapshot) })?.splitNameSnapshot,
+            let mostRecentName = completedSessions.compactMap({ pplName(for: $0.splitNameSnapshot) }).first,
             let mostRecentIndex = PPLRotation.names.firstIndex(of: mostRecentName)
         else {
             return orderedSplits.first
@@ -234,7 +240,7 @@ struct CoachRecommendationEngine {
         now: Date
     ) -> [CoachWarning] {
         pplOrderedSplits(from: activeSplits).compactMap { split in
-            guard let lastSession = completedSessions.first(where: { $0.splitNameSnapshot == split.name }) else {
+            guard let lastSession = completedSessions.first(where: { pplName(for: $0.splitNameSnapshot) == split.name }) else {
                 return CoachWarning(
                     title: "\(split.name) has no history yet",
                     message: "Log one \(split.name) workout so the coach can track your rotation.",
@@ -313,12 +319,14 @@ struct CoachRecommendationEngine {
     private func recentPPLCycleNames(from completedSessions: [WorkoutSession]) -> [String] {
         var names: [String] = []
 
-        for session in completedSessions where PPLRotation.names.contains(session.splitNameSnapshot) {
-            if names.contains(session.splitNameSnapshot) {
+        for session in completedSessions {
+            guard let name = pplName(for: session.splitNameSnapshot) else { continue }
+
+            if names.contains(name) {
                 break
             }
 
-            names.append(session.splitNameSnapshot)
+            names.append(name)
 
             if names.count == PPLRotation.names.count {
                 break
@@ -326,6 +334,12 @@ struct CoachRecommendationEngine {
         }
 
         return names
+    }
+
+    private func pplName(for splitNameSnapshot: String) -> String? {
+        PPLRotation.names.first { name in
+            splitNameSnapshot == name || splitNameSnapshot.hasPrefix("\(name) - ")
+        }
     }
 
     private func estimatedOneRepMax(_ set: SetLog) -> Double {

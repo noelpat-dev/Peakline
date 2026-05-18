@@ -149,22 +149,25 @@ private struct ExerciseTrendChart: View {
                 x: .value("Date", entry.session.date),
                 y: .value("Estimated 1RM", entry.estimatedOneRepMax)
             )
-            .foregroundStyle(appTheme.primaryColor)
+            .foregroundStyle(appTheme.colors.accent)
 
             PointMark(
                 x: .value("Date", entry.session.date),
                 y: .value("Estimated 1RM", entry.estimatedOneRepMax)
             )
-            .foregroundStyle(appTheme.primaryColor)
+            .foregroundStyle(appTheme.colors.accent)
         }
         .chartYAxisLabel("Est. 1RM kg")
     }
 }
 
 private struct ExerciseProgressEntry: Identifiable {
-    let id = UUID()
     let session: WorkoutSession
     let sets: [SetLog]
+
+    var id: UUID {
+        session.id
+    }
 
     var completedSets: Int {
         sets.count

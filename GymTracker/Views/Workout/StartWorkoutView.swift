@@ -11,6 +11,7 @@ struct StartWorkoutView: View {
 
 struct StartWorkoutContentView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.appTheme) private var appTheme
 
     @Query(filter: #Predicate<TrainingSplit> { $0.isActive }, sort: \TrainingSplit.name)
     private var activeSplits: [TrainingSplit]
@@ -18,192 +19,353 @@ struct StartWorkoutContentView: View {
     @Query(filter: #Predicate<WorkoutSession> { !$0.completed }, sort: \WorkoutSession.date, order: .reverse)
     private var unfinishedSessions: [WorkoutSession]
 
-    @State private var activeSession: WorkoutSession?
-
-    var body: some View {
-        List {
-            if let unfinishedSession = unfinishedSessions.first {
-                Section("Resume") {
-                    Button {
-                        activeSession = unfinishedSession
-                    } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(unfinishedSession.splitNameSnapshot)
-                                .font(.headline)
-                            Text(resumeSummary(for: unfinishedSession))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-
-            Section("Start From Split") {
-                ForEach(activeSplits) { split in
-                    NavigationLink {
-                        WorkoutPreviewView(split: split)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(split.name)
-                                .font(.headline)
-                            Text("\(split.exercises.count) exercises")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-
-            Section {
-                Button("Start Empty Workout") {
-                    activeSession = createEmptyWorkout()
-                }
-            }
-        }
-        .navigationTitle("Workout")
-        .navigationDestination(item: $activeSession) { session in
-            WorkoutLoggerView(session: session)
-        }
-    }
-
-    private func resumeSummary(for session: WorkoutSession) -> String {
-        let started = (session.startedAt ?? session.date).formatted(date: .abbreviated, time: .shortened)
-        let completedSets = session.exerciseLogs.flatMap(\.setLogs).filter(\.completed).count
-        return "Started \(started) - \(completedSets) completed sets"
-    }
-
-    private func createEmptyWorkout() -> WorkoutSession {
-        let session = WorkoutSession()
-        modelContext.insert(session)
-        try? modelContext.save()
-        return session
-    }
-}
-
-private struct WorkoutPreviewView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Environment(\.appTheme) private var appTheme
-    @State private var activeSession: WorkoutSession?
-    @State private var selectedExerciseIds: [UUID] = []
-
-    @Query(filter: #Predicate<Exercise> { !$0.isArchived }, sort: \Exercise.name)
-    private var exercises: [Exercise]
-
     @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
     private var completedSessions: [WorkoutSession]
 
-    let split: TrainingSplit
+    @State private var activeSession: WorkoutSession?
+    @State private var pendingDiscardSession: WorkoutSession?
+    @State private var previewSplit: WorkoutPreviewSplit?
+    @State private var route: StartWorkoutRoute?
 
-    private var orderedExercises: [WorkoutSelectableExercise] {
-        var items = split.exercises
-            .sorted { $0.orderIndex < $1.orderIndex }
-            .map(WorkoutSelectableExercise.init)
+    private let coachEngine = CoachRecommendationEngine()
+    private let modePlanner = WorkoutModePlanner()
+    private let summaryBuilder = SessionSummaryBuilder()
 
-        if
-            !items.contains(where: { $0.name == "Abdominal Crunch" }),
-            let abdominalCrunch = exercises.first(where: { $0.name == "Abdominal Crunch" })
-        {
-            items.append(
-                WorkoutSelectableExercise(
-                    id: abdominalCrunch.id,
-                    exerciseId: abdominalCrunch.id,
-                    name: abdominalCrunch.name,
-                    targetSets: 2,
-                    minReps: 8,
-                    maxReps: 15,
-                    notes: "Optional core work."
-                )
-            )
-        }
-
-        return items
+    private var coachSummary: CoachRecommendationSummary {
+        coachEngine.makeSummary(activeSplits: activeSplits, completedSessions: completedSessions)
     }
 
-    private var selectedExercises: [WorkoutSelectableExercise] {
-        selectedExerciseIds.compactMap { selectedId in
-            orderedExercises.first { $0.id == selectedId }
-        }
+    private var recommendedSplit: TrainingSplit? {
+        guard let name = coachSummary.recommendedSplitName else { return nil }
+        return activeSplits.first { $0.name == name }
+    }
+
+    private var displayedSplits: [TrainingSplit] {
+        let pplNames = ["Push", "Pull", "Legs"]
+        let pplSplits = pplNames.compactMap { name in activeSplits.first { $0.name == name } }
+        return pplSplits.isEmpty ? activeSplits : pplSplits
     }
 
     var body: some View {
-        List {
-            Section("Today's Exercises") {
-                ForEach(orderedExercises) { exercise in
-                    Button {
-                        toggle(exercise)
-                    } label: {
-                        HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: selectedExerciseIds.contains(exercise.id) ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(selectedExerciseIds.contains(exercise.id) ? appTheme.primaryColor : .secondary)
-                                .font(.title3)
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(exercise.exerciseNameSnapshot)
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-                                Text("\(exercise.targetSets) sets x \(exercise.minReps)-\(exercise.maxReps) reps")
-                                    .foregroundStyle(.secondary)
-                                ExerciseTargetPreviewView(preview: targetPreview(for: exercise))
-                                if let notes = exercise.notes, !notes.isEmpty {
-                                    Text(notes)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
+        FitnessScreen(
+            title: "Workout",
+            subtitle: "Prepare the right session, then log fast.",
+            systemImage: "figure.strengthtraining.traditional"
+        ) {
+            if let unfinishedSession = unfinishedSessions.first {
+                activeWorkoutCard(unfinishedSession)
             }
 
-            Section {
-                HStack {
-                    Button("Select All") {
-                        selectedExerciseIds = orderedExercises.map(\.id)
-                    }
-                    .buttonStyle(.borderless)
-                }
-            } footer: {
-                Text(selectedExercises.isEmpty ? "Choose the exercises you plan to do today before starting." : "\(selectedExercises.count) selected for this session.")
+            if let recommendedSplit {
+                recommendedWorkoutCard(recommendedSplit)
             }
 
-            Section {
-                Button("Start \(split.name)") {
-                    activeSession = createWorkout(from: split)
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Start")
+                    .font(.headline)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+
+                ForEach(displayedSplits) { split in
+                    splitStartCard(split)
                 }
-                .font(.headline)
-                .disabled(selectedExercises.isEmpty)
-                .buttonStyle(.borderless)
+
+                emptyWorkoutCard
+            }
+
+            if let lastSession = completedSessions.first {
+                recentSessionCard(lastSession)
             }
         }
-        .navigationTitle(split.name)
+        .navigationTitle("Workout")
+        .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $activeSession) { session in
             WorkoutLoggerView(session: session)
         }
-    }
-
-    private func toggle(_ exercise: WorkoutSelectableExercise) {
-        if selectedExerciseIds.contains(exercise.id) {
-            selectedExerciseIds.removeAll { $0 == exercise.id }
-        } else {
-            selectedExerciseIds.append(exercise.id)
+        .navigationDestination(item: $previewSplit) { split in
+            WorkoutPreviewView(split: split)
+        }
+        .navigationDestination(item: $route) { route in
+            switch route {
+            case .coach:
+                CoachContentView()
+            }
+        }
+        .alert("Discard active workout?", isPresented: discardAlertBinding) {
+            Button("Cancel", role: .cancel) {
+                pendingDiscardSession = nil
+            }
+            Button("Discard", role: .destructive) {
+                discardPendingWorkout()
+            }
+        } message: {
+            Text("This removes the unfinished workout and its logged sets.")
         }
     }
 
-    private func createWorkout(from split: TrainingSplit) -> WorkoutSession {
+    private func activeWorkoutCard(_ session: WorkoutSession) -> some View {
+        FitnessCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top) {
+                    ExerciseIconView(
+                        iconKey: ExerciseIconMapper.splitIconKey(for: session.splitNameSnapshot),
+                        size: 46,
+                        showBackground: true,
+                        isDecorative: true
+                    )
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Active Workout")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(appTheme.mutedText)
+                            .textCase(.uppercase)
+                        Text(session.splitNameSnapshot)
+                            .font(.title2.bold())
+                    }
+
+                    Spacer()
+
+                    MetricTile(label: "Elapsed", value: activeElapsedText(for: session), caption: nil, systemImage: "timer")
+                        .frame(maxWidth: 150)
+                }
+
+                Text(resumeSummary(for: session))
+                    .font(.subheadline)
+                    .foregroundStyle(appTheme.mutedText)
+
+                HStack {
+                    Button {
+                        activeSession = session
+                    } label: {
+                        Label("Resume", systemImage: "play.circle.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(PrimaryFitnessButtonStyle())
+
+                    Button(role: .destructive) {
+                        pendingDiscardSession = session
+                    } label: {
+                        Label("Discard", systemImage: "trash")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(NeutralFitnessButtonStyle())
+                    .foregroundStyle(appTheme.colors.danger)
+                }
+            }
+        }
+    }
+
+    private func recommendedWorkoutCard(_ split: TrainingSplit) -> some View {
+        FitnessCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top) {
+                    ExerciseIconTile(
+                        iconKey: ExerciseIconMapper.splitIconKey(for: split.name),
+                        title: nil,
+                        size: 58,
+                        style: .compact
+                    )
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Recommended Today")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(appTheme.mutedText)
+                            .textCase(.uppercase)
+                        Text(split.name)
+                            .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                    }
+
+                    Spacer()
+                    CoachBadgeView(state: .ready)
+                }
+
+                Text(coachSummary.reason)
+                    .font(.subheadline)
+                    .foregroundStyle(appTheme.mutedText)
+
+                HStack {
+                    Button {
+                        preview(split)
+                    } label: {
+                        Label("Preview", systemImage: "target")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(PrimaryFitnessButtonStyle())
+
+                    Button {
+                        route = .coach
+                    } label: {
+                        Label("Coach", systemImage: "sparkles")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryFitnessButtonStyle())
+                }
+            }
+        }
+    }
+
+    private func splitStartCard(_ split: TrainingSplit) -> some View {
+        Button {
+            preview(split)
+        } label: {
+            SplitCardView(
+                splitName: split.name,
+                lastTrainedText: lastTrainedText(for: split),
+                estimatedDurationText: estimatedDurationText(for: split),
+                exerciseCount: split.exercises.count,
+                badgeState: badgeState(for: split),
+                actionTitle: nil,
+                action: nil
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func preview(_ split: TrainingSplit) {
+        previewSplit = WorkoutPreviewSplit(split)
+    }
+
+    private var emptyWorkoutCard: some View {
+        FitnessCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    ExerciseIconView(
+                        iconKey: .genericExercise,
+                        size: 44,
+                        showBackground: true,
+                        isDecorative: true
+                    )
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Empty Workout")
+                            .font(.title3.bold())
+                        Text("Build a one-off session from scratch.")
+                            .font(.subheadline)
+                            .foregroundStyle(appTheme.mutedText)
+                    }
+
+                    Spacer()
+                    CoachBadgeView(state: .baseline)
+                }
+
+                Button {
+                    activeSession = createEmptyWorkout()
+                } label: {
+                    Label("Start Empty", systemImage: "plus.circle.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(NeutralFitnessButtonStyle())
+            }
+        }
+    }
+
+    private func recentSessionCard(_ session: WorkoutSession) -> some View {
+        let summary = summaryBuilder.build(from: session, completedSessions: completedSessions, activeSplits: activeSplits)
+
+        return FitnessCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    ExerciseIconView(
+                        iconKey: ExerciseIconMapper.splitIconKey(for: session.splitNameSnapshot),
+                        size: 44,
+                        showBackground: true,
+                        isDecorative: true
+                    )
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Recent Session")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(appTheme.mutedText)
+                            .textCase(.uppercase)
+                        Text(session.splitNameSnapshot)
+                            .font(.title3.bold())
+                    }
+
+                    Spacer()
+                    CoachBadgeView(state: summary.bestSetImprovements.isEmpty ? .ready : .pr)
+                }
+
+                HStack(spacing: 10) {
+                    MetricTile(label: "Duration", value: summary.durationText, caption: nil, systemImage: "timer")
+                    MetricTile(label: "Rating", value: summary.ratingText ?? "-", caption: nil, systemImage: "face.smiling")
+                }
+
+                Text(summary.bestSetImprovements.first ?? summary.takeaway)
+                    .font(.subheadline)
+                    .foregroundStyle(appTheme.mutedText)
+
+                Button {
+                    activeSession = repeatWorkout(from: session)
+                } label: {
+                    Label("Repeat Last Workout", systemImage: "repeat")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(SecondaryFitnessButtonStyle())
+            }
+        }
+    }
+
+    private func lastTrainedText(for split: TrainingSplit) -> String {
+        guard let session = completedSessions.first(where: { baseSplitName($0.splitNameSnapshot) == split.name }) else {
+            return "No history yet"
+        }
+
+        return "Last trained \(session.date.formatted(date: .abbreviated, time: .omitted))"
+    }
+
+    private func estimatedDurationText(for split: TrainingSplit) -> String {
+        let selectable = split.exercises.sorted { $0.orderIndex < $1.orderIndex }.map(WorkoutSelectableExercise.init)
+        let planned = modePlanner.plannedExercises(from: selectable, mode: .full)
+        let duration = modePlanner.estimatedDurationMinutes(for: planned, mode: .full)
+        return "\(duration.lowerBound)-\(duration.upperBound)m"
+    }
+
+    private func badgeState(for split: TrainingSplit) -> CoachBadgeState {
+        guard let recommendedName = coachSummary.recommendedSplitName else { return .baseline }
+        return recommendedName == split.name ? .ready : .repeatTarget
+    }
+
+    private func activeElapsedText(for session: WorkoutSession) -> String {
+        guard let startedAt = session.startedAt else { return "0:00" }
+        let elapsed = max(0, Int(Date().timeIntervalSince(startedAt)) - session.accumulatedPausedSeconds)
+        return "\(elapsed / 60):\(String(format: "%02d", elapsed % 60))"
+    }
+
+    private var discardAlertBinding: Binding<Bool> {
+        Binding {
+            pendingDiscardSession != nil
+        } set: { showing in
+            if !showing {
+                pendingDiscardSession = nil
+            }
+        }
+    }
+
+    private func discardPendingWorkout() {
+        guard let pendingDiscardSession else { return }
+        modelContext.delete(pendingDiscardSession)
+        try? modelContext.save()
+        self.pendingDiscardSession = nil
+    }
+
+    private func repeatWorkout(from previousSession: WorkoutSession) -> WorkoutSession {
+        let startDate = Date()
         let session = WorkoutSession(
-            splitId: split.id,
-            splitNameSnapshot: split.name
+            date: startDate,
+            splitId: previousSession.splitId,
+            splitNameSnapshot: "\(baseSplitName(previousSession.splitNameSnapshot)) - Repeat",
+            startedAt: startDate
         )
 
-        session.exerciseLogs = selectedExercises.enumerated().map { index, splitExercise in
+        session.exerciseLogs = previousSession.exerciseLogs.sorted { $0.orderIndex < $1.orderIndex }.enumerated().map { index, previousLog in
             let log = ExerciseLog(
                 workoutSessionId: session.id,
-                exerciseId: splitExercise.exerciseId,
-                exerciseNameSnapshot: splitExercise.exerciseNameSnapshot,
+                exerciseId: previousLog.exerciseId,
+                exerciseNameSnapshot: previousLog.exerciseNameSnapshot,
                 orderIndex: index,
-                targetSets: splitExercise.targetSets,
-                minReps: splitExercise.minReps,
-                maxReps: splitExercise.maxReps,
-                notes: splitExercise.notes
+                targetSets: previousLog.targetSets,
+                minReps: previousLog.minReps,
+                maxReps: previousLog.maxReps,
+                notes: previousLog.notes
             )
             log.workoutSession = session
             return log
@@ -214,169 +376,27 @@ private struct WorkoutPreviewView: View {
         return session
     }
 
-    private func targetPreview(for exercise: WorkoutSelectableExercise) -> ExerciseTargetPreview {
-        guard let previousLog = lastCompletedLog(for: exercise) else {
-            return ExerciseTargetPreview(
-                lastPerformance: "Last time: no previous data",
-                target: "Today: establish a clean baseline",
-                priority: .baseline
-            )
-        }
-
-        let workingSets = completedWorkingSets(from: previousLog)
-        guard !workingSets.isEmpty else {
-            return ExerciseTargetPreview(
-                lastPerformance: "Last time: no completed working sets",
-                target: "Today: log controlled working sets",
-                priority: .baseline
-            )
-        }
-
-        let bestSet = workingSets.max { estimatedOneRepMax($0) < estimatedOneRepMax($1) } ?? workingSets[0]
-        let allAtTop = workingSets.allSatisfy { $0.reps >= exercise.maxReps }
-        let anyBelowRange = workingSets.contains { $0.reps < exercise.minReps }
-        let lastPerformance = "Last time: \(format(bestSet.weight))kg x \(bestSet.reps)"
-
-        if allAtTop, bestSet.weight > 0 {
-            return ExerciseTargetPreview(
-                lastPerformance: lastPerformance,
-                target: "Today: try \(format(bestSet.weight + 2.5))kg for \(exercise.minReps)+ reps",
-                priority: .increaseLoad
-            )
-        }
-
-        if anyBelowRange {
-            return ExerciseTargetPreview(
-                lastPerformance: lastPerformance,
-                target: "Today: repeat until every set reaches \(exercise.minReps)+ reps",
-                priority: .repeatLoad
-            )
-        }
-
-        return ExerciseTargetPreview(
-            lastPerformance: lastPerformance,
-            target: "Today: keep load and add reps toward \(exercise.maxReps)",
-            priority: .addReps
-        )
+    private func resumeSummary(for session: WorkoutSession) -> String {
+        let started = (session.startedAt ?? session.date).formatted(date: .abbreviated, time: .shortened)
+        let completedSets = session.exerciseLogs.flatMap(\.setLogs).filter(\.completed).count
+        return "Started \(started) - \(completedSets) completed sets"
     }
 
-    private func lastCompletedLog(for exercise: WorkoutSelectableExercise) -> ExerciseLog? {
-        for session in completedSessions {
-            if let log = session.exerciseLogs.first(where: { $0.exerciseId == exercise.exerciseId }) {
-                return log
-            }
-        }
-
-        return nil
+    private func createEmptyWorkout() -> WorkoutSession {
+        let startDate = Date()
+        let session = WorkoutSession(date: startDate, startedAt: startDate)
+        modelContext.insert(session)
+        try? modelContext.save()
+        return session
     }
 
-    private func completedWorkingSets(from exerciseLog: ExerciseLog) -> [SetLog] {
-        exerciseLog.setLogs
-            .filter { $0.completed && !$0.isWarmup }
-            .sorted { $0.setNumber < $1.setNumber }
-    }
-
-    private func estimatedOneRepMax(_ set: SetLog) -> Double {
-        set.weight * (1 + Double(set.reps) / 30)
-    }
-
-    private func format(_ value: Double) -> String {
-        value.formatted(.number.precision(.fractionLength(value.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1)))
+    private func baseSplitName(_ snapshot: String) -> String {
+        snapshot.components(separatedBy: " - ").first ?? snapshot
     }
 }
 
-private struct WorkoutSelectableExercise: Identifiable {
-    let id: UUID
-    let exerciseId: UUID
-    let name: String
-    let targetSets: Int
-    let minReps: Int
-    let maxReps: Int
-    let notes: String?
+private enum StartWorkoutRoute: Hashable, Identifiable {
+    case coach
 
-    var exerciseNameSnapshot: String {
-        name
-    }
-
-    init(_ splitExercise: SplitExercise) {
-        id = splitExercise.id
-        exerciseId = splitExercise.exerciseId
-        name = splitExercise.exerciseNameSnapshot
-        targetSets = splitExercise.targetSets
-        minReps = splitExercise.minReps
-        maxReps = splitExercise.maxReps
-        notes = splitExercise.notes
-    }
-
-    init(id: UUID, exerciseId: UUID, name: String, targetSets: Int, minReps: Int, maxReps: Int, notes: String?) {
-        self.id = id
-        self.exerciseId = exerciseId
-        self.name = name
-        self.targetSets = targetSets
-        self.minReps = minReps
-        self.maxReps = maxReps
-        self.notes = notes
-    }
-}
-
-private struct ExerciseTargetPreview {
-    let lastPerformance: String
-    let target: String
-    let priority: TargetPriority
-}
-
-private enum TargetPriority {
-    case baseline
-    case addReps
-    case repeatLoad
-    case increaseLoad
-
-    var systemImage: String {
-        switch self {
-        case .baseline:
-            return "scope"
-        case .addReps:
-            return "plusminus"
-        case .repeatLoad:
-            return "repeat"
-        case .increaseLoad:
-            return "arrow.up.circle.fill"
-        }
-    }
-
-    var label: String {
-        switch self {
-        case .baseline:
-            return "Baseline"
-        case .addReps:
-            return "Add reps"
-        case .repeatLoad:
-            return "Repeat"
-        case .increaseLoad:
-            return "Increase"
-        }
-    }
-}
-
-private struct ExerciseTargetPreviewView: View {
-    @Environment(\.appTheme) private var appTheme
-
-    let preview: ExerciseTargetPreview
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(preview.lastPerformance)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 6) {
-                Image(systemName: preview.priority.systemImage)
-                    .font(.caption2.weight(.semibold))
-                Text(preview.target)
-                    .font(.caption)
-            }
-            .foregroundStyle(appTheme.primaryColor)
-            .accessibilityLabel("\(preview.priority.label). \(preview.target)")
-        }
-    }
+    var id: Self { self }
 }

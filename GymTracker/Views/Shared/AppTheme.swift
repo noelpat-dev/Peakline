@@ -1,4 +1,23 @@
 import SwiftUI
+import UIKit
+
+struct AppThemeColors {
+    let accent: Color
+    let accentHighlight: Color
+    let accentSurface: Color
+    let accentSurfaceStrong: Color
+    let backgroundPrimary: Color
+    let backgroundSecondary: Color
+    let cardBackground: Color
+    let cardBackgroundElevated: Color
+    let cardBorder: Color
+    let textPrimary: Color
+    let textSecondary: Color
+    let textTertiary: Color
+    let success: Color
+    let warning: Color
+    let danger: Color
+}
 
 enum AppTheme: String, CaseIterable, Identifiable {
     case appleGreen
@@ -11,7 +30,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .appleGreen:
-            return "Workout Green"
+            return "Fitness Green"
         case .purple:
             return "Purple"
         case .orange:
@@ -22,29 +41,43 @@ enum AppTheme: String, CaseIterable, Identifiable {
     }
 
     var primaryColor: Color {
-        switch self {
-        case .appleGreen:
-            return Color(red: 124.0 / 255.0, green: 252.0 / 255.0, blue: 0.0)
-        case .purple:
-            return Color(red: 0.54, green: 0.32, blue: 0.92)
-        case .orange:
-            return Color(red: 0.95, green: 0.45, blue: 0.16)
-        case .blue:
-            return .blue
-        }
+        colors.accent
     }
 
     var secondaryColor: Color {
+        colors.accentSurfaceStrong
+    }
+
+    var colors: AppThemeColors {
+        let accent: Color
         switch self {
         case .appleGreen:
-            return Color(red: 0.24, green: 0.52, blue: 0.0)
+            accent = Color(hex: 0x30D158)
         case .purple:
-            return Color(red: 0.30, green: 0.18, blue: 0.60)
+            accent = Color(hex: 0xBF5AF2)
         case .orange:
-            return Color(red: 0.62, green: 0.25, blue: 0.06)
+            accent = Color(hex: 0xFF9F0A)
         case .blue:
-            return .indigo
+            accent = Color(hex: 0x0A84FF)
         }
+
+        return AppThemeColors(
+            accent: accent,
+            accentHighlight: self == .appleGreen ? Color(hex: 0x64D80A) : accent.opacity(0.86),
+            accentSurface: accent.opacity(0.16),
+            accentSurfaceStrong: accent.opacity(0.26),
+            backgroundPrimary: Color(light: 0xF7F7F9, dark: 0x000000),
+            backgroundSecondary: Color(light: 0xFFFFFF, dark: 0x0B0B0D),
+            cardBackground: Color(light: 0xFFFFFF, dark: 0x1C1C1E),
+            cardBackgroundElevated: Color(light: 0xF0F0F5, dark: 0x242426),
+            cardBorder: Color(light: 0xDEDEE6, dark: 0x2F2F33),
+            textPrimary: Color(light: 0x111114, dark: 0xFFFFFF),
+            textSecondary: Color(light: 0x66666D, dark: 0xA1A1A6),
+            textTertiary: Color(light: 0x8B8B92, dark: 0x6E6E73),
+            success: Color(hex: 0x30D158),
+            warning: Color(hex: 0xFF9F0A),
+            danger: Color(hex: 0xFF453A)
+        )
     }
 }
 
@@ -75,6 +108,73 @@ enum AppAppearance: String, CaseIterable, Identifiable {
         case .dark:
             return .dark
         }
+    }
+}
+
+extension AppTheme {
+    var cardBackground: Color {
+        colors.cardBackground
+    }
+
+    var elevatedCardBackground: Color {
+        colors.cardBackgroundElevated
+    }
+
+    var cardBorder: Color {
+        colors.cardBorder
+    }
+
+    var mutedText: Color {
+        colors.textSecondary
+    }
+
+    var successColor: Color {
+        colors.success
+    }
+
+    var actionColor: Color {
+        colors.accent
+    }
+
+    var warningColor: Color {
+        colors.warning
+    }
+
+    var dangerColor: Color {
+        colors.danger
+    }
+}
+
+private extension Color {
+    init(light: UInt, dark: UInt) {
+        self.init(
+            uiColor: UIColor { traits in
+                traits.userInterfaceStyle == .dark
+                    ? UIColor(hex: dark)
+                    : UIColor(hex: light)
+            }
+        )
+    }
+
+    init(hex: UInt, opacity: Double = 1) {
+        self.init(
+            .sRGB,
+            red: Double((hex >> 16) & 0xFF) / 255,
+            green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255,
+            opacity: opacity
+        )
+    }
+}
+
+private extension UIColor {
+    convenience init(hex: UInt, opacity: CGFloat = 1) {
+        self.init(
+            red: CGFloat((hex >> 16) & 0xFF) / 255,
+            green: CGFloat((hex >> 8) & 0xFF) / 255,
+            blue: CGFloat(hex & 0xFF) / 255,
+            alpha: opacity
+        )
     }
 }
 
@@ -109,7 +209,7 @@ struct AppThemeProvider<Content: View>: View {
     var body: some View {
         content
             .environment(\.appTheme, theme)
-            .tint(theme.primaryColor)
+            .tint(theme.actionColor)
             .preferredColorScheme(appearance.colorScheme)
     }
 }

@@ -32,6 +32,40 @@
 		001000000000000000000016 /* ExerciseLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000017 /* ExerciseLibraryView.swift */; };
 		001000000000000000000018 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000019 /* Assets.xcassets */; };
 		001000000000000000000019 /* CoachRecommendationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000001A /* CoachRecommendationEngine.swift */; };
+		00100000000000000000001A /* FitnessCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000001B /* FitnessCard.swift */; };
+		00100000000000000000001B /* MetricTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000001C /* MetricTile.swift */; };
+		00100000000000000000001C /* CoachBadgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000001D /* CoachBadgeView.swift */; };
+		00100000000000000000001D /* ExerciseTargetRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000001E /* ExerciseTargetRow.swift */; };
+		00100000000000000000001E /* TargetSuggestionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000001F /* TargetSuggestionService.swift */; };
+		00100000000000000000001F /* WorkoutModePlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000020 /* WorkoutModePlanner.swift */; };
+		001000000000000000000020 /* FitnessScreenHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000021 /* FitnessScreenHeader.swift */; };
+		001000000000000000000021 /* WorkoutModePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000022 /* WorkoutModePicker.swift */; };
+		001000000000000000000022 /* ProgressArcView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000023 /* ProgressArcView.swift */; };
+		001000000000000000000023 /* SplitCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000024 /* SplitCardView.swift */; };
+		001000000000000000000024 /* LiveWorkoutHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000025 /* LiveWorkoutHeader.swift */; };
+		001000000000000000000025 /* WorkoutPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000026 /* WorkoutPreviewView.swift */; };
+		001000000000000000000026 /* SessionSummaryBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000027 /* SessionSummaryBuilder.swift */; };
+		001000000000000000000027 /* SessionSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000028 /* SessionSummaryView.swift */; };
+		001000000000000000000028 /* HistoryFilterService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000029 /* HistoryFilterService.swift */; };
+		001000000000000000000029 /* PlateCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000002A /* PlateCalculator.swift */; };
+		00100000000000000000002A /* ExerciseSubstitutionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000002B /* ExerciseSubstitutionService.swift */; };
+		00100000000000000000002B /* RestTimerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000002C /* RestTimerManager.swift */; };
+		00100000000000000000002C /* PlateCalculatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000002D /* PlateCalculatorView.swift */; };
+		00100000000000000000002D /* RestTimerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000002E /* RestTimerView.swift */; };
+		00100000000000000000002E /* StepperValueControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000002F /* StepperValueControl.swift */; };
+		00100000000000000000002F /* WorkoutSessionDateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000030 /* WorkoutSessionDateService.swift */; };
+		001000000000000000000030 /* ExerciseIconKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000031 /* ExerciseIconKey.swift */; };
+		001000000000000000000031 /* ExerciseIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000032 /* ExerciseIconView.swift */; };
+		001000000000000000000032 /* ExerciseIconTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000033 /* ExerciseIconTile.swift */; };
+		001000000000000000000033 /* ExerciseIconMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000034 /* ExerciseIconMapper.swift */; };
+		001000000000000000000034 /* SplitStatusBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000035 /* SplitStatusBadge.swift */; };
+		001000000000000000000035 /* SplitProgrammeCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000036 /* SplitProgrammeCard.swift */; };
+		001000000000000000000036 /* SplitTrainingDayCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000037 /* SplitTrainingDayCard.swift */; };
+		001000000000000000000037 /* SplitExerciseRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000038 /* SplitExerciseRow.swift */; };
+		001000000000000000000038 /* WorkoutPreviewExerciseCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000039 /* WorkoutPreviewExerciseCard.swift */; };
+		001000000000000000000039 /* GlassCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000003A /* GlassCard.swift */; };
+		00100000000000000000003A /* GlassIconBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000003B /* GlassIconBadge.swift */; };
+		00100000000000000000003B /* WorkoutCelebrationOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000003C /* WorkoutCelebrationOverlay.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -61,6 +95,40 @@
 		002000000000000000000017 /* ExerciseLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseLibraryView.swift; sourceTree = "<group>"; };
 		002000000000000000000019 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		00200000000000000000001A /* CoachRecommendationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachRecommendationEngine.swift; sourceTree = "<group>"; };
+		00200000000000000000001B /* FitnessCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FitnessCard.swift; sourceTree = "<group>"; };
+		00200000000000000000001C /* MetricTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricTile.swift; sourceTree = "<group>"; };
+		00200000000000000000001D /* CoachBadgeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachBadgeView.swift; sourceTree = "<group>"; };
+		00200000000000000000001E /* ExerciseTargetRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseTargetRow.swift; sourceTree = "<group>"; };
+		00200000000000000000001F /* TargetSuggestionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TargetSuggestionService.swift; sourceTree = "<group>"; };
+		002000000000000000000020 /* WorkoutModePlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutModePlanner.swift; sourceTree = "<group>"; };
+		002000000000000000000021 /* FitnessScreenHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FitnessScreenHeader.swift; sourceTree = "<group>"; };
+		002000000000000000000022 /* WorkoutModePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutModePicker.swift; sourceTree = "<group>"; };
+		002000000000000000000023 /* ProgressArcView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressArcView.swift; sourceTree = "<group>"; };
+		002000000000000000000024 /* SplitCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitCardView.swift; sourceTree = "<group>"; };
+		002000000000000000000025 /* LiveWorkoutHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveWorkoutHeader.swift; sourceTree = "<group>"; };
+		002000000000000000000026 /* WorkoutPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutPreviewView.swift; sourceTree = "<group>"; };
+		002000000000000000000027 /* SessionSummaryBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionSummaryBuilder.swift; sourceTree = "<group>"; };
+		002000000000000000000028 /* SessionSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionSummaryView.swift; sourceTree = "<group>"; };
+		002000000000000000000029 /* HistoryFilterService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryFilterService.swift; sourceTree = "<group>"; };
+		00200000000000000000002A /* PlateCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlateCalculator.swift; sourceTree = "<group>"; };
+		00200000000000000000002B /* ExerciseSubstitutionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseSubstitutionService.swift; sourceTree = "<group>"; };
+		00200000000000000000002C /* RestTimerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestTimerManager.swift; sourceTree = "<group>"; };
+		00200000000000000000002D /* PlateCalculatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlateCalculatorView.swift; sourceTree = "<group>"; };
+		00200000000000000000002E /* RestTimerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestTimerView.swift; sourceTree = "<group>"; };
+		00200000000000000000002F /* StepperValueControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StepperValueControl.swift; sourceTree = "<group>"; };
+		002000000000000000000030 /* WorkoutSessionDateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutSessionDateService.swift; sourceTree = "<group>"; };
+		002000000000000000000031 /* ExerciseIconKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseIconKey.swift; sourceTree = "<group>"; };
+		002000000000000000000032 /* ExerciseIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseIconView.swift; sourceTree = "<group>"; };
+		002000000000000000000033 /* ExerciseIconTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseIconTile.swift; sourceTree = "<group>"; };
+		002000000000000000000034 /* ExerciseIconMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseIconMapper.swift; sourceTree = "<group>"; };
+		002000000000000000000035 /* SplitStatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitStatusBadge.swift; sourceTree = "<group>"; };
+		002000000000000000000036 /* SplitProgrammeCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitProgrammeCard.swift; sourceTree = "<group>"; };
+		002000000000000000000037 /* SplitTrainingDayCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitTrainingDayCard.swift; sourceTree = "<group>"; };
+		002000000000000000000038 /* SplitExerciseRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitExerciseRow.swift; sourceTree = "<group>"; };
+		002000000000000000000039 /* WorkoutPreviewExerciseCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutPreviewExerciseCard.swift; sourceTree = "<group>"; };
+		00200000000000000000003A /* GlassCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassCard.swift; sourceTree = "<group>"; };
+		00200000000000000000003B /* GlassIconBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassIconBadge.swift; sourceTree = "<group>"; };
+		00200000000000000000003C /* WorkoutCelebrationOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutCelebrationOverlay.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -148,7 +216,13 @@
 			isa = PBXGroup;
 			children = (
 				00200000000000000000000F /* StartWorkoutView.swift */,
+				002000000000000000000026 /* WorkoutPreviewView.swift */,
+				002000000000000000000039 /* WorkoutPreviewExerciseCard.swift */,
 				002000000000000000000015 /* WorkoutLoggerView.swift */,
+				00200000000000000000003C /* WorkoutCelebrationOverlay.swift */,
+				002000000000000000000028 /* SessionSummaryView.swift */,
+				00200000000000000000002D /* PlateCalculatorView.swift */,
+				00200000000000000000002E /* RestTimerView.swift */,
 			);
 			path = Workout;
 			sourceTree = "<group>";
@@ -157,6 +231,10 @@
 			isa = PBXGroup;
 			children = (
 				002000000000000000000010 /* SplitsView.swift */,
+				002000000000000000000035 /* SplitStatusBadge.swift */,
+				002000000000000000000036 /* SplitProgrammeCard.swift */,
+				002000000000000000000037 /* SplitTrainingDayCard.swift */,
+				002000000000000000000038 /* SplitExerciseRow.swift */,
 			);
 			path = Splits;
 			sourceTree = "<group>";
@@ -198,6 +276,15 @@
 			children = (
 				00200000000000000000000C /* SeedDataService.swift */,
 				00200000000000000000001A /* CoachRecommendationEngine.swift */,
+				00200000000000000000001F /* TargetSuggestionService.swift */,
+				002000000000000000000020 /* WorkoutModePlanner.swift */,
+				002000000000000000000027 /* SessionSummaryBuilder.swift */,
+				002000000000000000000029 /* HistoryFilterService.swift */,
+				00200000000000000000002A /* PlateCalculator.swift */,
+				00200000000000000000002B /* ExerciseSubstitutionService.swift */,
+				00200000000000000000002C /* RestTimerManager.swift */,
+				002000000000000000000030 /* WorkoutSessionDateService.swift */,
+				002000000000000000000034 /* ExerciseIconMapper.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -222,6 +309,21 @@
 			children = (
 				00200000000000000000000D /* MetricPill.swift */,
 				002000000000000000000018 /* AppTheme.swift */,
+				00200000000000000000001B /* FitnessCard.swift */,
+				00200000000000000000001C /* MetricTile.swift */,
+				00200000000000000000001D /* CoachBadgeView.swift */,
+				00200000000000000000001E /* ExerciseTargetRow.swift */,
+				002000000000000000000021 /* FitnessScreenHeader.swift */,
+				002000000000000000000022 /* WorkoutModePicker.swift */,
+				002000000000000000000023 /* ProgressArcView.swift */,
+				002000000000000000000024 /* SplitCardView.swift */,
+				002000000000000000000025 /* LiveWorkoutHeader.swift */,
+				00200000000000000000002F /* StepperValueControl.swift */,
+				002000000000000000000031 /* ExerciseIconKey.swift */,
+				002000000000000000000032 /* ExerciseIconView.swift */,
+				002000000000000000000033 /* ExerciseIconTile.swift */,
+				00200000000000000000003A /* GlassCard.swift */,
+				00200000000000000000003B /* GlassIconBadge.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -327,6 +429,40 @@
 				001000000000000000000015 /* HistoryView.swift in Sources */,
 				001000000000000000000016 /* ExerciseLibraryView.swift in Sources */,
 				001000000000000000000019 /* CoachRecommendationEngine.swift in Sources */,
+				00100000000000000000001A /* FitnessCard.swift in Sources */,
+				00100000000000000000001B /* MetricTile.swift in Sources */,
+				00100000000000000000001C /* CoachBadgeView.swift in Sources */,
+				00100000000000000000001D /* ExerciseTargetRow.swift in Sources */,
+				00100000000000000000001E /* TargetSuggestionService.swift in Sources */,
+				00100000000000000000001F /* WorkoutModePlanner.swift in Sources */,
+				001000000000000000000020 /* FitnessScreenHeader.swift in Sources */,
+				001000000000000000000021 /* WorkoutModePicker.swift in Sources */,
+				001000000000000000000022 /* ProgressArcView.swift in Sources */,
+				001000000000000000000023 /* SplitCardView.swift in Sources */,
+				001000000000000000000024 /* LiveWorkoutHeader.swift in Sources */,
+				001000000000000000000025 /* WorkoutPreviewView.swift in Sources */,
+				001000000000000000000026 /* SessionSummaryBuilder.swift in Sources */,
+				001000000000000000000027 /* SessionSummaryView.swift in Sources */,
+				001000000000000000000028 /* HistoryFilterService.swift in Sources */,
+				001000000000000000000029 /* PlateCalculator.swift in Sources */,
+				00100000000000000000002A /* ExerciseSubstitutionService.swift in Sources */,
+				00100000000000000000002B /* RestTimerManager.swift in Sources */,
+				00100000000000000000002C /* PlateCalculatorView.swift in Sources */,
+				00100000000000000000002D /* RestTimerView.swift in Sources */,
+				00100000000000000000002E /* StepperValueControl.swift in Sources */,
+				00100000000000000000002F /* WorkoutSessionDateService.swift in Sources */,
+				001000000000000000000030 /* ExerciseIconKey.swift in Sources */,
+				001000000000000000000031 /* ExerciseIconView.swift in Sources */,
+				001000000000000000000032 /* ExerciseIconTile.swift in Sources */,
+				001000000000000000000033 /* ExerciseIconMapper.swift in Sources */,
+				001000000000000000000034 /* SplitStatusBadge.swift in Sources */,
+				001000000000000000000035 /* SplitProgrammeCard.swift in Sources */,
+				001000000000000000000036 /* SplitTrainingDayCard.swift in Sources */,
+				001000000000000000000037 /* SplitExerciseRow.swift in Sources */,
+				001000000000000000000038 /* WorkoutPreviewExerciseCard.swift in Sources */,
+				001000000000000000000039 /* GlassCard.swift in Sources */,
+				00100000000000000000003A /* GlassIconBadge.swift in Sources */,
+				00100000000000000000003B /* WorkoutCelebrationOverlay.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -459,7 +595,7 @@
 				DEVELOPMENT_TEAM = 272AN3AJLF;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = GymTracker;
+				INFOPLIST_KEY_CFBundleDisplayName = Peakline;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -491,7 +627,7 @@
 				DEVELOPMENT_TEAM = 272AN3AJLF;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = GymTracker;
+				INFOPLIST_KEY_CFBundleDisplayName = Peakline;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

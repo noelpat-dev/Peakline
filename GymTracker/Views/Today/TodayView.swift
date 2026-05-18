@@ -31,9 +31,7 @@ struct TodayView: View {
                 }
 
                 Section("Quick Actions") {
-                    NavigationLink {
-                        StartWorkoutContentView()
-                    } label: {
+                    NavigationLink(value: TodayRoute.workout) {
                         Label(unfinishedSessions.isEmpty ? "Start Workout" : "Resume Workout", systemImage: "figure.strengthtraining.traditional")
                     }
 
@@ -43,15 +41,11 @@ struct TodayView: View {
                         Label("Rest Day", systemImage: "moon")
                     }
 
-                    NavigationLink {
-                        CoachContentView()
-                    } label: {
+                    NavigationLink(value: TodayRoute.coach) {
                         Label("Coach Check-In", systemImage: "sparkles")
                     }
 
-                    NavigationLink {
-                        ProgressContentView()
-                    } label: {
+                    NavigationLink(value: TodayRoute.progress) {
                         Label("Progress & Charts", systemImage: "chart.xyaxis.line")
                     }
                 }
@@ -78,6 +72,16 @@ struct TodayView: View {
                 }
             }
             .navigationTitle("Today")
+            .navigationDestination(for: TodayRoute.self) { route in
+                switch route {
+                case .workout:
+                    StartWorkoutContentView()
+                case .coach:
+                    CoachContentView()
+                case .progress:
+                    ProgressContentView()
+                }
+            }
             .alert("Rest day noted", isPresented: $showingRestDayConfirmation) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -112,7 +116,7 @@ struct TodayView: View {
         }
 
         guard
-            let mostRecentName = completedSessions.first(where: { PPLRotation.names.contains($0.splitNameSnapshot) })?.splitNameSnapshot,
+            let mostRecentName = completedSessions.compactMap({ pplName(for: $0.splitNameSnapshot) }).first,
             let mostRecentIndex = PPLRotation.names.firstIndex(of: mostRecentName)
         else {
             return orderedSplits.first
@@ -131,12 +135,14 @@ struct TodayView: View {
     private var recentPPLCycleNames: [String] {
         var names: [String] = []
 
-        for session in completedSessions where PPLRotation.names.contains(session.splitNameSnapshot) {
-            if names.contains(session.splitNameSnapshot) {
+        for session in completedSessions {
+            guard let name = pplName(for: session.splitNameSnapshot) else { continue }
+
+            if names.contains(name) {
                 break
             }
 
-            names.append(session.splitNameSnapshot)
+            names.append(name)
 
             if names.count == PPLRotation.names.count {
                 break
@@ -144,6 +150,12 @@ struct TodayView: View {
         }
 
         return names
+    }
+
+    private func pplName(for splitNameSnapshot: String) -> String? {
+        PPLRotation.names.first { name in
+            splitNameSnapshot == name || splitNameSnapshot.hasPrefix("\(name) - ")
+        }
     }
 
     private var workoutsThisWeek: Int {
@@ -161,4 +173,12 @@ struct TodayView: View {
 
 private enum PPLRotation {
     static let names = ["Push", "Pull", "Legs"]
+}
+
+private enum TodayRoute: Hashable, Identifiable {
+    case workout
+    case coach
+    case progress
+
+    var id: Self { self }
 }

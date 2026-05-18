@@ -2,26 +2,25 @@
 
 ## Overview
 
-GymTracker is a personal iOS lifting tracker built around a Push/Pull/Legs workflow, progressive overload, workout history, and lightweight rule-based coaching. The app is local-first and designed for one primary user rather than a broad public audience.
+GymTracker is a personal iOS lifting tracker built around a Push/Pull/Legs workflow, progressive overload, workout history, progress charts, and lightweight rule-based coaching. The app is local-first and designed for one primary user rather than a broad public audience.
 
-The current product shape is:
+The product direction is now:
 
-- Pick a split day: Push, Pull, or Legs.
-- Select only the exercises planned for today.
-- Log one exercise at a time during a live workout.
-- Track sets, reps, kg, optional RPE, rating, and exact active duration.
-- Review history, progress charts, and coach suggestions.
-- Customize the visual theme.
+- Keep the fast workout logger.
+- Make Coach and Workout share the same target logic.
+- Introduce workout modes instead of a multi-question readiness form.
+- Refresh the UI with an Apple Fitness-inspired but original card-based design.
+- Keep all recommendations deterministic, explainable, and local.
 
 ## Technical Stack
 
-- Platform: iOS
-- UI: SwiftUI
-- Persistence: SwiftData
-- Charts: Swift Charts
-- Architecture style: feature-folder SwiftUI views with shared SwiftData models and small services
-- Coaching strategy: deterministic rule-based logic, no AI APIs
-- Data strategy: local-first SwiftData storage
+- Platform: iOS.
+- UI: SwiftUI.
+- Persistence: SwiftData.
+- Charts: Swift Charts.
+- Architecture style: feature-folder SwiftUI views with shared SwiftData models and small services.
+- Coaching strategy: deterministic rule-based logic, no AI APIs.
+- Data strategy: local-first SwiftData storage.
 
 ## App Entry
 
@@ -35,13 +34,27 @@ GymTracker/App/
 
 `RootTabView` owns the main tab structure:
 
-- Today
-- Workout
-- Splits
-- History
-- Settings
+- Today.
+- Workout.
+- Splits.
+- History.
+- Settings.
 
-Progress and Coach are reachable through Today and Settings rather than being primary tabs, which keeps the bottom navigation focused and avoids iOS pushing extra tabs into More.
+Progress and Coach are reachable through Today and Settings rather than being primary tabs. This keeps the bottom navigation focused and avoids iOS pushing extra tabs into More.
+
+## Core Architectural Rule
+
+Views should not own coaching decisions.
+
+Use this separation:
+
+```text
+Views = presentation and user input
+ViewModels = screen state and coordination when needed
+Services = business logic and calculations
+Models = SwiftData persistence
+Shared Views = reusable UI components
+```
 
 ## Data Model
 
@@ -76,17 +89,82 @@ Important `WorkoutSession` fields:
 - `durationMinutes` remains for compatibility and summary use.
 - `perceivedDifficulty` stores the post-workout facial rating score.
 
+## Planned Model Additions
+
+### WorkoutMode
+
+Add an enum, ideally in `Enums.swift`:
+
+```swift
+enum WorkoutMode: String, Codable, CaseIterable {
+    case full
+    case quick
+    case recovery
+    case heavy
+}
+```
+
+Store the selected mode on `WorkoutSession` as a raw string if needed for SwiftData compatibility.
+
+Purpose:
+
+- Replace the removed multi-question readiness flow.
+- Let the user adapt the session in one tap.
+- Help Coach explain why volume or targets changed.
+
+### TargetSuggestion
+
+This may be a non-persistent struct rather than a SwiftData model.
+
+Suggested fields:
+
+```swift
+struct TargetSuggestion {
+    let exerciseName: String
+    let lastBestSetDescription: String?
+    let suggestedWeight: Double?
+    let suggestedReps: Int?
+    let recommendationType: TargetRecommendationType
+    let reason: String
+    let confidence: Double
+}
+```
+
+### TargetRecommendationType
+
+Add enum:
+
+```swift
+enum TargetRecommendationType: String, Codable, CaseIterable {
+    case baseline
+    case addReps
+    case repeatTarget
+    case increaseLoad
+    case reduceLoad
+    case possiblePlateau
+    case fatigueRisk
+}
+```
+
 ## Services
 
 ```text
 GymTracker/Services/
   SeedDataService.swift
   CoachRecommendationEngine.swift
+  TargetSuggestionService.swift      Planned
+  WorkoutModePlanner.swift           Planned
+  SessionSummaryBuilder.swift        Planned
+  HistoryFilterService.swift         Planned
 ```
 
-`SeedDataService` seeds the personal exercise library and active Push/Pull/Legs split templates. It contains the current baseline exercises, rep ranges, target sets, and notes.
+### SeedDataService
 
-`CoachRecommendationEngine` owns deterministic coaching logic outside the views. It currently:
+Seeds the personal exercise library and active Push/Pull/Legs split templates. It contains the current baseline exercises, rep ranges, target sets, and notes.
+
+### CoachRecommendationEngine
+
+Owns deterministic coaching logic outside views. It currently:
 
 - Recommends the next Push/Pull/Legs day.
 - Explains why that split is suggested.
@@ -95,6 +173,61 @@ GymTracker/Services/
 - Flags missed split frequency.
 - Detects early plateau signals.
 - Produces weekly summary insights.
+
+Future role:
+
+- Use `TargetSuggestionService` for exercise targets.
+- Use `WorkoutModePlanner` to interpret Full/Quick/Recovery/Heavy.
+- Output card-ready recommendation data.
+
+### TargetSuggestionService
+
+Planned shared service.
+
+Responsibilities:
+
+- Find the latest useful exercise history.
+- Determine last best set.
+- Apply progression rules.
+- Return target suggestions for Coach, Workout Preview, and Splits.
+
+This avoids duplicated logic across views.
+
+### WorkoutModePlanner
+
+Planned shared service.
+
+Responsibilities:
+
+- Adjust target set count by mode.
+- Adjust target messaging by mode.
+- Estimate duration.
+- Prioritise exercises in Quick mode.
+- Reduce volume in Recovery mode.
+- Prioritise compounds in Heavy mode.
+
+### SessionSummaryBuilder
+
+Planned shared service.
+
+Responsibilities:
+
+- Build post-workout summary data.
+- Identify PRs and best set improvements.
+- Count working sets.
+- Produce motivational message.
+- Suggest next split after finishing.
+
+### HistoryFilterService
+
+Planned shared service.
+
+Responsibilities:
+
+- Filter workouts by split.
+- Filter by exercise.
+- Filter by rating.
+- Filter by date range.
 
 ## Views
 
@@ -110,14 +243,84 @@ GymTracker/Views/
   Shared/
 ```
 
+## Shared UI Components
+
+Create reusable components before broad redesign.
+
+Planned files:
+
+```text
+GymTracker/Views/Shared/
+  FitnessCard.swift
+  MetricTile.swift
+  CoachBadgeView.swift
+  ProgressArcView.swift
+  SplitCardView.swift
+  ExerciseTargetRow.swift
+  LiveWorkoutHeader.swift
+```
+
+### FitnessCard
+
+Reusable rounded card used in Today, Coach, Progress, History, and Summary.
+
+### MetricTile
+
+Large metric with title and caption.
+
+Examples:
+
+- Duration.
+- Working sets.
+- Best set.
+- Weekly workouts.
+
+### CoachBadgeView
+
+Small badge for recommendation state:
+
+- Increase.
+- Repeat.
+- Reduce.
+- Plateau.
+- Fatigue.
+- Ready.
+
+### ProgressArcView
+
+Original GymTracker circular progress visual.
+
+Do not copy Apple Activity Rings exactly.
+
+### ExerciseTargetRow
+
+Reusable row for Workout Preview, Splits, and Coach.
+
+### LiveWorkoutHeader
+
+Persistent workout controls:
+
+- Timer.
+- Pause/resume.
+- Current exercise count.
+- Finish.
+
 ## Today
 
-The Today screen is the app’s overview. It shows the suggested training day, recent weekly context, and shortcuts into Coach and Progress.
+The Today screen is the app's overview. It should answer:
 
-Design purpose:
+- What should I train?
+- Why?
+- What is my week looking like?
+- What is the fastest way to start?
 
-- Fast answer to “what should I train?”
-- A lightweight dashboard, not a landing page.
+Planned UI:
+
+- Large suggested split card.
+- Weekly progress arc/card.
+- Recent workout summary.
+- Coach shortcut.
+- Progress shortcut.
 
 ## Workout
 
@@ -125,7 +328,7 @@ Workout contains the main session flow:
 
 - Resume unfinished workout.
 - Start from Push, Pull, or Legs.
-- Select today’s exercises manually.
+- Select today's exercises manually.
 - Preserve selected exercise order.
 - Add optional Abdominal Crunch across split days.
 - Log one current exercise at a time.
@@ -134,20 +337,25 @@ Workout contains the main session flow:
 - Finish with a facial workout rating.
 - Show a motivational transition popup between exercises and after finishing.
 
-The timer now tracks active time rather than raw wall-clock time, so paused time does not inflate the final session duration.
+Planned improvements:
 
-Current design note:
-
-- The previous readiness section was removed because it added friction without a clear enough purpose. Future readiness work should be redesigned as a single low-friction control or coach interpretation rather than several segmented rows.
+- Add workout mode selector: Full, Quick, Recovery, Heavy.
+- Add Workout Preview before live logging.
+- Use `TargetSuggestionService` for target rows.
+- Add persistent `LiveWorkoutHeader`.
+- Add full Session Summary screen after finishing.
 
 ## Splits
 
 Splits presents Push, Pull, and Legs as training days within the personal PPL programme.
 
-Design purpose:
+Planned improvements:
 
-- Keep the mental model simple.
-- Avoid treating Push/Pull/Legs as unrelated programmes.
+- Present each split as a larger card.
+- Show last performed date.
+- Show exercise count.
+- Show coach badge.
+- Show per-exercise target sets, rep range, latest best set, and progression badge.
 
 ## History
 
@@ -160,7 +368,11 @@ History includes:
 - Historic workout editing without the live continue/motivation flow.
 - Exact duration display when available.
 
-Delete swipe actions use standard Apple destructive red rather than the selected app theme colour.
+Planned improvements:
+
+- Filters by split, exercise, rating, and date range.
+- More visual session cards.
+- PR/improvement markers in workout detail.
 
 ## Progress
 
@@ -170,7 +382,14 @@ Progress includes:
 - Per-exercise trend details.
 - Swift Charts for estimated 1RM and best-set history.
 
-The chart navigation is intentionally lazy: the app opens an exercise picker first and renders charts only after selecting one exercise. This avoids freezing from trying to mount many Swift Charts at once.
+Planned improvements:
+
+- Weekly training overview.
+- Split consistency trend.
+- PR list.
+- Muscle-group volume balance if enough metadata exists.
+
+Keep chart rendering lazy to avoid performance issues.
 
 ## Coach
 
@@ -181,9 +400,18 @@ Coach uses `CoachRecommendationEngine` and currently shows:
 - Recovery Warnings card.
 - Weekly Summary card.
 
-Removed/paused idea:
+Planned improvements:
 
-- Readiness check was removed from the visible UX. It can return later, but it should be redesigned around a clearer training decision, such as “Full / Quick / Recovery / Heavy,” instead of asking several separate questions.
+- Use `FitnessCard` styling.
+- Pull exercise targets from `TargetSuggestionService`.
+- Display action-focused cards rather than raw analytics.
+- Explain every recommendation in one short sentence.
+- Support workout mode context.
+
+Readiness note:
+
+- Do not bring back the multi-question readiness form.
+- If recovery logic is needed, express it through workout mode and simple coach warnings.
 
 ## Settings
 
@@ -195,6 +423,12 @@ Settings owns:
 - Progress/Coach links.
 - Safety copy.
 - Profile and local data notes.
+
+Planned improvements:
+
+- Theme preview cards.
+- UI style settings only if they do not complicate the product.
+- Backup/export once data grows.
 
 ## Theme System
 
@@ -215,21 +449,18 @@ Current Workout Green primary accent:
 #7CFC00
 ```
 
-Because the app applies a global tint, destructive actions should explicitly use `.tint(.red)` when Apple’s standard delete styling is expected.
+Planned theme improvement:
 
-## Assets
-
-```text
-GymTracker/Assets.xcassets/
-  AppIcon.appiconset/
-  AccentColor.colorset/
-```
-
-The app icon is a white-background green lifting symbol. Accent colour is aligned with Workout Green.
+- Add semantic colour helpers.
+- Add card background/border tokens.
+- Add Fitness-inspired dark dashboard surfaces.
+- Keep destructive actions explicitly `.tint(.red)`.
 
 ## Persistence
 
-The app currently uses local SwiftData storage. iCloud/CloudKit sync is not enabled in code because it requires correct Apple signing, capabilities, and container setup. This keeps the project stable for free Apple ID installs and simulator testing.
+The app currently uses local SwiftData storage. iCloud/CloudKit sync is not enabled in code because it requires correct Apple signing, capabilities, and container setup.
+
+Before adding new SwiftData models or stored enum fields, test migration behaviour in the simulator.
 
 ## Current Design Constraints
 
@@ -241,13 +472,15 @@ The app currently uses local SwiftData storage. iCloud/CloudKit sync is not enab
 - Keep chart rendering lazy.
 - Use standard iOS destructive styling for deletion.
 - Keep coaching deterministic and explainable.
+- Do not copy Apple's exact Fitness/Activity Rings UI.
 
 ## Good Next Design Directions
 
-- Replace readiness with workout modes: Full, Quick, Recovery, Heavy.
+- Add Apple Fitness-inspired shared card components.
+- Add workout modes.
 - Add a cleaner pre-workout preview showing selected exercises, prior bests, and suggested targets.
 - Add a persistent live-session header with timer, pause, exercise count, and finish action.
 - Add per-exercise progression badges: increase load, repeat, reduce, possible plateau.
-- Add a session summary screen after finishing instead of only a popup.
+- Add a session summary screen after finishing.
 - Add richer history filtering by split day, exercise, and rating.
-- Add bodyweight trend charts if bodyweight logging becomes a regular habit.
+- Add rest timer and plate calculator after the core coaching UX is stable.
