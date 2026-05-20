@@ -26,10 +26,13 @@ struct StartWorkoutContentView: View {
     @State private var pendingDiscardSession: WorkoutSession?
     @State private var previewSplit: WorkoutPreviewSplit?
     @State private var route: StartWorkoutRoute?
+    @State private var templateCount = 0
 
     private let coachEngine = CoachRecommendationEngine()
     private let modePlanner = WorkoutModePlanner()
     private let summaryBuilder = SessionSummaryBuilder()
+    private let reuseBuilder = WorkoutReuseBuilder()
+    private let templateStore = WorkoutTemplateStore()
 
     private var coachSummary: CoachRecommendationSummary {
         coachEngine.makeSummary(activeSplits: activeSplits, completedSessions: completedSessions)
@@ -60,11 +63,9 @@ struct StartWorkoutContentView: View {
                 recommendedWorkoutCard(recommendedSplit)
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Start")
-                    .font(.headline)
-                    .foregroundStyle(appTheme.colors.textPrimary)
+            reuseCard
 
+            DashboardSection(title: "Start") {
                 ForEach(displayedSplits) { split in
                     splitStartCard(split)
                 }
@@ -88,6 +89,8 @@ struct StartWorkoutContentView: View {
             switch route {
             case .coach:
                 CoachContentView()
+            case .templates:
+                WorkoutTemplateLibraryView()
             }
         }
         .alert("Discard active workout?", isPresented: discardAlertBinding) {
@@ -99,6 +102,9 @@ struct StartWorkoutContentView: View {
             }
         } message: {
             Text("This removes the unfinished workout and its logged sets.")
+        }
+        .onAppear {
+            templateCount = templateStore.loadTemplates().count
         }
     }
 
@@ -258,6 +264,56 @@ struct StartWorkoutContentView: View {
         }
     }
 
+    private var reuseCard: some View {
+        FitnessCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
+                    ExerciseIconView(
+                        iconKey: .genericExercise,
+                        size: 44,
+                        showBackground: true,
+                        isDecorative: true
+                    )
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Reuse")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(appTheme.mutedText)
+                            .textCase(.uppercase)
+                        Text("Repeat or start from a template")
+                            .font(.title3.bold())
+                        Text(templateCount == 0 ? "No saved templates yet" : "\(templateCount) saved templates")
+                            .font(.subheadline)
+                            .foregroundStyle(appTheme.mutedText)
+                    }
+
+                    Spacer()
+                }
+
+                HStack {
+                    Button {
+                        if let lastSession = completedSessions.first {
+                            previewSplit = reuseBuilder.previewSplit(from: lastSession)
+                        }
+                    } label: {
+                        Label("Repeat Last", systemImage: "repeat")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryFitnessButtonStyle())
+                    .disabled(completedSessions.isEmpty)
+
+                    Button {
+                        route = .templates
+                    } label: {
+                        Label("Templates", systemImage: "rectangle.stack")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryFitnessButtonStyle())
+                }
+            }
+        }
+    }
+
     private func recentSessionCard(_ session: WorkoutSession) -> some View {
         let summary = summaryBuilder.build(from: session, completedSessions: completedSessions, activeSplits: activeSplits)
 
@@ -294,7 +350,7 @@ struct StartWorkoutContentView: View {
                     .foregroundStyle(appTheme.mutedText)
 
                 Button {
-                    activeSession = repeatWorkout(from: session)
+                    previewSplit = reuseBuilder.previewSplit(from: session)
                 } label: {
                     Label("Repeat Last Workout", systemImage: "repeat")
                         .frame(maxWidth: .infinity)
@@ -347,35 +403,6 @@ struct StartWorkoutContentView: View {
         self.pendingDiscardSession = nil
     }
 
-    private func repeatWorkout(from previousSession: WorkoutSession) -> WorkoutSession {
-        let startDate = Date()
-        let session = WorkoutSession(
-            date: startDate,
-            splitId: previousSession.splitId,
-            splitNameSnapshot: "\(baseSplitName(previousSession.splitNameSnapshot)) - Repeat",
-            startedAt: startDate
-        )
-
-        session.exerciseLogs = previousSession.exerciseLogs.sorted { $0.orderIndex < $1.orderIndex }.enumerated().map { index, previousLog in
-            let log = ExerciseLog(
-                workoutSessionId: session.id,
-                exerciseId: previousLog.exerciseId,
-                exerciseNameSnapshot: previousLog.exerciseNameSnapshot,
-                orderIndex: index,
-                targetSets: previousLog.targetSets,
-                minReps: previousLog.minReps,
-                maxReps: previousLog.maxReps,
-                notes: previousLog.notes
-            )
-            log.workoutSession = session
-            return log
-        }
-
-        modelContext.insert(session)
-        try? modelContext.save()
-        return session
-    }
-
     private func resumeSummary(for session: WorkoutSession) -> String {
         let started = (session.startedAt ?? session.date).formatted(date: .abbreviated, time: .shortened)
         let completedSets = session.exerciseLogs.flatMap(\.setLogs).filter(\.completed).count
@@ -397,6 +424,7 @@ struct StartWorkoutContentView: View {
 
 private enum StartWorkoutRoute: Hashable, Identifiable {
     case coach
+    case templates
 
     var id: Self { self }
 }

@@ -11,6 +11,8 @@ struct WorkoutPreviewView: View {
     @State private var selectedMode: WorkoutMode = .full
     @State private var optionalExerciseId: UUID?
     @State private var draggingExerciseId: UUID?
+    @State private var pendingSubstitutionExercise: PlannedWorkoutExercise?
+    @State private var substitutionNotesByExerciseId: [UUID: String] = [:]
 
     @Query(filter: #Predicate<Exercise> { !$0.isArchived }, sort: \Exercise.name)
     private var exercises: [Exercise]
@@ -58,7 +60,15 @@ struct WorkoutPreviewView: View {
     private var selectedBaseExercises: [WorkoutSelectableExercise] {
         selectedExerciseIds.compactMap { selectedId in
             if let planned = orderedExercises.first(where: { $0.id == selectedId }) {
-                return planned
+                return WorkoutSelectableExercise(
+                    id: planned.id,
+                    exerciseId: planned.exerciseId,
+                    name: planned.name,
+                    targetSets: planned.targetSets,
+                    minReps: planned.minReps,
+                    maxReps: planned.maxReps,
+                    notes: substitutionNotesByExerciseId[planned.exerciseId] ?? planned.notes
+                )
             }
 
             guard let exercise = exercises.first(where: { $0.id == selectedId }) else { return nil }
@@ -70,7 +80,7 @@ struct WorkoutPreviewView: View {
                 targetSets: exercise.primaryMuscleGroup == .core ? 2 : 2,
                 minReps: exercise.primaryMuscleGroup == .core ? 8 : 8,
                 maxReps: exercise.primaryMuscleGroup == .core ? 15 : 12,
-                notes: "Added for today's workout."
+                notes: substitutionNotesByExerciseId[exercise.id]
             )
         }
     }
@@ -102,6 +112,9 @@ struct WorkoutPreviewView: View {
             isLast: index == plannedCount - 1,
             substitute: { alternative in
                 substitute(exercise, with: alternative)
+            },
+            requestSubstitute: {
+                pendingSubstitutionExercise = exercise
             },
             moveToTop: {
                 moveToTop(exercise)
@@ -141,19 +154,22 @@ struct WorkoutPreviewView: View {
         let alternatives = alternativesByExerciseId(for: plannedList)
 
         FitnessScreen(
-            title: split.name,
-            subtitle: "Choose mode, confirm exercises, then start logging.",
+            title: "\(split.name) Preview",
+            subtitle: "\(selectedMode.displayName) mode - ~\(estimatedDuration.lowerBound)-\(estimatedDuration.upperBound)m",
             systemImage: "figure.strengthtraining.traditional"
         ) {
-            FitnessCard {
+            DashboardSection(title: "Mode") {
+                FitnessCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Workout Mode")
                             .font(.headline)
                         WorkoutModePicker(selection: $selectedMode)
                     }
                 }
+            }
 
-            FitnessCard {
+            DashboardSection(title: "Coach Brief") {
+                FitnessCard {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text("Coach Summary")
@@ -167,16 +183,15 @@ struct WorkoutPreviewView: View {
                             .foregroundStyle(appTheme.mutedText)
                     }
                 }
+            }
 
             HStack(spacing: 10) {
                 MetricTile(label: "Exercises", value: "\(plannedList.count)", caption: "\(selectedMode.displayName) mode", systemImage: "list.bullet")
                 MetricTile(label: "Estimate", value: "\(estimatedDuration.lowerBound)-\(estimatedDuration.upperBound)m", caption: "Session time", systemImage: "clock")
             }
 
-            VStack(alignment: .leading, spacing: 10) {
+            DashboardSection(title: "Exercise Order") {
                     HStack {
-                        Text("Exercise Order")
-                            .font(.headline)
                         Spacer()
                         Button("Select All") {
                             selectedExerciseIds = orderedExercises.map(\.id)
@@ -186,11 +201,11 @@ struct WorkoutPreviewView: View {
                     }
 
                     if plannedList.isEmpty {
-                        FitnessCard {
-                            Text("Choose at least one exercise before starting.")
-                                .font(.subheadline)
-                                .foregroundStyle(appTheme.mutedText)
-                        }
+                        DashboardEmptyStateCard(
+                            title: "No exercises selected",
+                            message: "Choose at least one exercise before starting.",
+                            systemImage: "list.bullet"
+                        )
                     } else {
                         LazyVStack(spacing: 12) {
                             ForEach(Array(plannedList.enumerated()), id: \.element.id) { index, exercise in
@@ -204,7 +219,7 @@ struct WorkoutPreviewView: View {
                             }
                         }
                     }
-                }
+            }
 
             FitnessCard {
                     VStack(alignment: .leading, spacing: 12) {
@@ -263,6 +278,24 @@ struct WorkoutPreviewView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $activeSession) { session in
             WorkoutLoggerView(session: session)
+        }
+        .sheet(item: $pendingSubstitutionExercise) { exercise in
+            SubstitutionPickerSheet(
+                title: "Substitute \(exercise.exerciseNameSnapshot)",
+                candidatesProvider: { reason in
+                    substitutionService.candidates(
+                        for: exercise.exerciseId,
+                        in: exercises,
+                        completedSessions: recentCompletedSessions,
+                        reason: reason
+                    )
+                },
+                select: { candidate, reason in
+                    if let replacement = exercises.first(where: { $0.id == candidate.exerciseId }) {
+                        substitute(exercise, with: replacement, reason: reason)
+                    }
+                }
+            )
         }
         .onAppear {
             if selectedExerciseIds.isEmpty {
@@ -380,8 +413,17 @@ struct WorkoutPreviewView: View {
     }
 
     private func substitute(_ exercise: PlannedWorkoutExercise, with alternative: Exercise) {
+        substitute(exercise, with: alternative, reason: .preferAlternative)
+    }
+
+    private func substitute(_ exercise: PlannedWorkoutExercise, with alternative: Exercise, reason: ExerciseSubstitutionReason) {
         guard let index = selectedExerciseIds.firstIndex(of: exercise.id) else { return }
         selectedExerciseIds[index] = alternative.id
+        substitutionNotesByExerciseId[alternative.id] = substitutionService.substitutionNote(
+            originalName: exercise.exerciseNameSnapshot,
+            replacementName: alternative.name,
+            reason: reason
+        )
     }
 
     private func createWorkout(from split: WorkoutPreviewSplit) -> WorkoutSession {
@@ -461,6 +503,12 @@ struct WorkoutPreviewSplit: Identifiable, Hashable {
     let id: UUID
     let name: String
     let exercises: [WorkoutSelectableExercise]
+
+    init(id: UUID, name: String, exercises: [WorkoutSelectableExercise]) {
+        self.id = id
+        self.name = name
+        self.exercises = exercises
+    }
 
     init(_ split: TrainingSplit) {
         id = split.id

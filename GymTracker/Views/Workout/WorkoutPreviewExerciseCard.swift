@@ -9,6 +9,7 @@ struct WorkoutPreviewExerciseCard: View {
     let isFirst: Bool
     let isLast: Bool
     let substitute: (Exercise) -> Void
+    let requestSubstitute: () -> Void
     let moveToTop: () -> Void
     let moveToBottom: () -> Void
     let remove: () -> Void
@@ -49,6 +50,14 @@ struct WorkoutPreviewExerciseCard: View {
                         .foregroundStyle(appTheme.mutedText)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    if let notes = exercise.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Label(notes, systemImage: "note.text")
+                            .font(.caption)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }
@@ -62,6 +71,12 @@ struct WorkoutPreviewExerciseCard: View {
                 Text("No close alternatives")
             } else {
                 Section("Substitute") {
+                    Button {
+                        requestSubstitute()
+                    } label: {
+                        Label("Choose with Reason", systemImage: "arrow.triangle.2.circlepath")
+                    }
+
                     ForEach(alternatives) { alternative in
                         Button(alternative.name) {
                             substitute(alternative)

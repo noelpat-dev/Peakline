@@ -33,10 +33,10 @@ struct HistoryView: View {
                 filterChips
 
                 if filteredSessions.isEmpty {
-                    ContentUnavailableView(
-                        sessions.isEmpty ? "No Workouts Yet" : "No Matching Workouts",
-                        systemImage: "clock",
-                        description: Text(sessions.isEmpty ? "Finished workouts will appear here." : "Adjust filters to see more sessions.")
+                    DashboardEmptyStateCard(
+                        title: sessions.isEmpty ? "No workouts logged yet" : "No matching workouts",
+                        message: sessions.isEmpty ? "Start Push, Pull, or Legs to build your first training history." : "Adjust filters to see more sessions.",
+                        systemImage: "clock"
                     )
                 } else {
                     ForEach(filteredSessions) { session in
@@ -385,7 +385,23 @@ private struct CalendarDayCell: View {
 private struct WorkoutHistoryDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.appTheme) private var appTheme
     @Bindable var session: WorkoutSession
+    @State private var previewSplit: WorkoutPreviewSplit?
+    @State private var reopenedSession: WorkoutSession?
+    @State private var showingTemplateSave = false
+    @State private var showingReopenConfirmation = false
+
+    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    private var completedSessions: [WorkoutSession]
+
+    private let reuseBuilder = WorkoutReuseBuilder()
+    private let reopenService = WorkoutSessionReopenService()
+    private let analytics = TrainingAnalyticsService()
+
+    private var sessionPRs: [PRRecord] {
+        analytics.prs(for: session, in: completedSessions)
+    }
 
     private var orderedExerciseLogs: [ExerciseLog] {
         session.exerciseLogs.sorted { $0.orderIndex < $1.orderIndex }
@@ -410,14 +426,17 @@ private struct WorkoutHistoryDetailView: View {
                     LabeledContent("Rating", value: ratingText)
                 }
                 if let notes = session.notes, !notes.isEmpty {
-                    Text(notes)
+                    Label(notes, systemImage: "note.text")
                 }
             }
 
             if !completedExerciseLogs.isEmpty {
                 Section("Exercises Done") {
                     ForEach(completedExerciseLogs) { exerciseLog in
-                        ExerciseHistorySummary(exerciseLog: exerciseLog)
+                        ExerciseHistorySummary(
+                            exerciseLog: exerciseLog,
+                            prs: sessionPRs.filter { $0.exerciseLogId == exerciseLog.id }
+                        )
                     }
                 }
             }
@@ -440,8 +459,42 @@ private struct WorkoutHistoryDetailView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
+        .listSectionSpacing(12)
         .navigationTitle(session.splitNameSnapshot)
+        .navigationDestination(item: $previewSplit) { split in
+            WorkoutPreviewView(split: split)
+        }
+        .navigationDestination(item: $reopenedSession) { session in
+            WorkoutLoggerView(session: session)
+        }
+        .sheet(isPresented: $showingTemplateSave) {
+            WorkoutTemplateSaveSheet(session: session)
+        }
+        .alert("Reopen this workout?", isPresented: $showingReopenConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Reopen") {
+                reopenWorkout()
+            }
+        } message: {
+            Text("This moves it back into the live workout logger so you can add or edit sets before finishing again.")
+        }
         .toolbar {
+            ToolbarItemGroup(placement: .bottomBar) {
+                Button {
+                    previewSplit = reuseBuilder.previewSplit(from: session)
+                } label: {
+                    Label("Repeat", systemImage: "repeat")
+                }
+
+                Button {
+                    showingTemplateSave = true
+                } label: {
+                    Label("Save Template", systemImage: "rectangle.stack.badge.plus")
+                }
+            }
+
             ToolbarItemGroup(placement: .topBarTrailing) {
                 NavigationLink {
                     WorkoutLoggerView(session: session, isEditingCompletedWorkout: true)
@@ -453,6 +506,13 @@ private struct WorkoutHistoryDetailView: View {
                     deleteWorkout()
                 } label: {
                     Label("Delete", systemImage: "trash")
+                }
+            }
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    showingReopenConfirmation = true
+                } label: {
+                    Label("Reopen", systemImage: "arrow.uturn.backward.circle")
                 }
             }
         }
@@ -503,6 +563,12 @@ private struct WorkoutHistoryDetailView: View {
         dismiss()
     }
 
+    private func reopenWorkout() {
+        reopenService.reopen(session)
+        try? modelContext.save()
+        reopenedSession = session
+    }
+
     private func formatDuration(seconds totalSeconds: Int) -> String {
         let hours = totalSeconds / 3600
         let minutes = (totalSeconds % 3600) / 60
@@ -521,7 +587,10 @@ private struct WorkoutHistoryDetailView: View {
 }
 
 private struct ExerciseHistorySummary: View {
+    @Environment(\.appTheme) private var appTheme
+
     let exerciseLog: ExerciseLog
+    let prs: [PRRecord]
 
     private var sets: [SetLog] {
         exerciseLog.setLogs.sorted { $0.setNumber < $1.setNumber }
@@ -540,6 +609,12 @@ private struct ExerciseHistorySummary: View {
                 Text(exerciseLog.exerciseNameSnapshot)
                     .font(.headline)
 
+                if let firstPR = prs.first {
+                    Label(firstPR.improvementDescription, systemImage: "trophy.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(appTheme.colors.warning)
+                }
+
                 if sets.isEmpty {
                     Text("No sets logged")
                         .foregroundStyle(.secondary)
@@ -556,6 +631,14 @@ private struct ExerciseHistorySummary: View {
                             }
                         }
                     }
+                }
+
+                if let notes = exerciseLog.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Label(notes, systemImage: "note.text")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }

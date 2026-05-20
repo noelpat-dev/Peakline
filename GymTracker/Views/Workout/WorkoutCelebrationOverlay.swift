@@ -9,7 +9,6 @@ enum CelebrationStyle {
 
 struct WorkoutCelebrationOverlay: View {
     @Environment(\.appTheme) private var appTheme
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let title: String
@@ -18,17 +17,21 @@ struct WorkoutCelebrationOverlay: View {
     let primaryActionTitle: String
     let primaryActionIcon: String?
     var style: CelebrationStyle = .nextExercise
+    var isPrimaryActionDisabled = false
     let primaryAction: () -> Void
 
     @State private var hasAppeared = false
+    @State private var iconPulse = false
+    @State private var contentRevealed = false
+    @State private var buttonRevealed = false
 
     var body: some View {
         ZStack {
             backdrop
 
-            GlassCard(cornerRadius: 34, padding: 24) {
+            LiquidGlassPopupCard(cornerRadius: 34, padding: 24) {
                 VStack(spacing: 18) {
-                    GlassIconBadge(systemName: iconName, size: 70)
+                    celebrationIcon
 
                     VStack(spacing: 8) {
                         Text(title)
@@ -44,6 +47,9 @@ struct WorkoutCelebrationOverlay: View {
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                    .scaleEffect(reduceMotion ? 1 : (contentRevealed ? 1 : 0.98))
+                    .opacity(contentRevealed ? 1 : 0)
+                    .offset(y: reduceMotion ? 0 : (contentRevealed ? 0 : 6))
 
                     Button(action: primaryAction) {
                         Label {
@@ -55,40 +61,87 @@ struct WorkoutCelebrationOverlay: View {
                         }
                         .font(.headline.weight(.semibold))
                         .frame(maxWidth: .infinity)
+                        .contentShape(Capsule())
                     }
                     .buttonStyle(GlassPrimaryButtonStyle())
+                    .disabled(isPrimaryActionDisabled)
                     .accessibilityLabel(primaryActionTitle)
+                    .scaleEffect(reduceMotion ? 1 : (buttonRevealed ? 1 : 0.96))
+                    .opacity(buttonRevealed ? 1 : 0)
+                    .offset(y: reduceMotion ? 0 : (buttonRevealed ? 0 : 8))
                 }
             }
             .frame(maxWidth: 430)
             .padding(.horizontal, 20)
             .scaleEffect(reduceMotion ? 1 : (hasAppeared ? 1 : 0.96))
             .opacity(hasAppeared ? 1 : 0)
+            .offset(y: reduceMotion ? 0 : (hasAppeared ? 0 : 18))
         }
         .ignoresSafeArea()
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(title). \(message)")
         .onAppear {
             if reduceMotion {
                 hasAppeared = true
+                iconPulse = true
+                contentRevealed = true
+                buttonRevealed = true
             } else {
-                withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
                     hasAppeared = true
+                }
+
+                withAnimation(.easeOut(duration: 0.72)) {
+                    iconPulse = true
+                }
+
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 40_000_000)
+                    withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
+                        contentRevealed = true
+                    }
+
+                    try? await Task.sleep(nanoseconds: 80_000_000)
+                    withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
+                        buttonRevealed = true
+                    }
                 }
             }
         }
     }
 
-    private var backdrop: some View {
+    private var celebrationIcon: some View {
         ZStack {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .opacity(colorScheme == .dark ? 0.18 : 0.28)
+            Circle()
+                .stroke(iconTint.opacity(0.28), lineWidth: 1.5)
+                .frame(width: 92, height: 92)
+                .scaleEffect(reduceMotion ? 1 : (iconPulse ? 1.45 : 0.72))
+                .opacity(reduceMotion ? 0.24 : (iconPulse ? 0 : 0.62))
 
-            Color.black
-                .opacity(colorScheme == .dark ? 0.45 : 0.22)
+            Circle()
+                .fill(iconTint.opacity(0.10))
+                .frame(width: 88, height: 88)
+                .scaleEffect(reduceMotion ? 1 : (hasAppeared ? 1 : 0.82))
+
+            GlassIconBadge(systemName: iconName, size: 70)
+                .scaleEffect(reduceMotion ? 1 : (hasAppeared ? 1 : 0.78))
         }
         .accessibilityHidden(true)
+    }
+
+    private var backdrop: some View {
+        LiquidGlassPopupBackdrop(isVisible: hasAppeared)
+    }
+
+    private var iconTint: Color {
+        switch style {
+        case .completedWorkout:
+            return appTheme.successColor
+        case .pr:
+            return appTheme.warningColor
+        case .recovery:
+            return appTheme.colors.accent
+        case .nextExercise:
+            return appTheme.colors.accent
+        }
     }
 
     private var iconName: String {
@@ -106,21 +159,5 @@ struct WorkoutCelebrationOverlay: View {
         case .recovery:
             return "bolt.heart.fill"
         }
-    }
-}
-
-private struct GlassPrimaryButtonStyle: ButtonStyle {
-    @Environment(\.appTheme) private var appTheme
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(.black)
-            .padding(.horizontal, 18)
-            .frame(minHeight: 54)
-            .background(appTheme.colors.accent.opacity(configuration.isPressed ? 0.78 : 1), in: Capsule())
-            .overlay {
-                Capsule()
-                    .stroke(.white.opacity(0.24), lineWidth: 1)
-            }
     }
 }

@@ -13,7 +13,9 @@ struct GymTrackerApp: App {
             ExerciseLog.self,
             SetLog.self,
             Recommendation.self,
-            BodyweightLog.self
+            BodyweightLog.self,
+            FoodItem.self,
+            FoodLogEntry.self
         ])
 
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)

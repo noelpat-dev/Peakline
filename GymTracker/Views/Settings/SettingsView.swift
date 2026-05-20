@@ -3,86 +3,179 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.appTheme) private var appTheme
     @Query private var profiles: [UserProfile]
     @AppStorage("appTheme") private var storedTheme = AppTheme.appleGreen.rawValue
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Profile") {
+            FitnessScreen(
+                title: "Settings",
+                subtitle: "Preferences, utilities, and local data.",
+                systemImage: "gearshape"
+            ) {
+                DashboardSection(title: "Profile") {
                     if let profile = profiles.first {
                         NavigationLink {
                             ProfileEditorView(profile: profile)
                         } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(profile.goal.displayName)
-                                    .font(.headline)
-                                Text("\(profile.experienceLevel.displayName) - \(profile.trainingDaysPerWeek) days/week")
-                                    .foregroundStyle(.secondary)
-                            }
+                            SettingsCardRow(
+                                title: profile.goal.displayName,
+                                subtitle: "\(profile.experienceLevel.displayName) - \(profile.trainingDaysPerWeek) days/week",
+                                systemImage: "person.crop.circle"
+                            )
                         }
+                        .buttonStyle(.plain)
                     } else {
                         Button {
                             createProfile()
                         } label: {
-                            Label("Create Profile", systemImage: "person.crop.circle.badge.plus")
+                            SettingsCardRow(
+                                title: "Create Profile",
+                                subtitle: "Set goal, training days, and unit preferences.",
+                                systemImage: "person.crop.circle.badge.plus",
+                                showsChevron: false
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                DashboardSection(title: "Training Setup") {
+                    FitnessCard(padding: 12) {
+                        VStack(spacing: 0) {
+                            NavigationLink {
+                                ExerciseLibraryView()
+                            } label: {
+                                SettingsInlineRow(title: "Exercise Library", subtitle: "Manage exercises and icons", systemImage: "dumbbell")
+                            }
+                            .buttonStyle(.plain)
+
+                            SettingsDivider()
+
+                            NavigationLink {
+                                ProgressContentView()
+                            } label: {
+                                SettingsInlineRow(title: "Progress", subtitle: "Charts, PRs, and lift trends", systemImage: "chart.line.uptrend.xyaxis")
+                            }
+                            .buttonStyle(.plain)
+
+                            SettingsDivider()
+
+                            NavigationLink(value: SettingsRoute.coach) {
+                                SettingsInlineRow(title: "Coach", subtitle: "Targets, warnings, and weekly review", systemImage: "sparkles")
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
 
-                Section("Training Setup") {
-                    NavigationLink {
-                        ExerciseLibraryView()
-                    } label: {
-                        Label("Exercise Library", systemImage: "dumbbell")
-                    }
+                DashboardSection(title: "Gym Utilities") {
+                    HStack(spacing: 12) {
+                        NavigationLink {
+                            PlateCalculatorView()
+                        } label: {
+                            SettingsUtilityTile(title: "Plate Calculator", subtitle: "Load the bar quickly", systemImage: "scalemass")
+                        }
+                        .buttonStyle(.plain)
 
-                    NavigationLink {
-                        ProgressContentView()
-                    } label: {
-                        Label("Progress", systemImage: "chart.line.uptrend.xyaxis")
-                    }
-
-                    NavigationLink(value: SettingsRoute.coach) {
-                        Label("Coach", systemImage: "sparkles")
-                    }
-                }
-
-                Section("Gym Utilities") {
-                    NavigationLink {
-                        PlateCalculatorView()
-                    } label: {
-                        Label("Plate Calculator", systemImage: "scalemass")
+                        NavigationLink {
+                            ThemeSettingsView()
+                        } label: {
+                            SettingsUtilityTile(title: "Themes", subtitle: selectedTheme.displayName, systemImage: "paintpalette")
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
 
-                Section("Themes") {
+                DashboardSection(title: "Apple Health") {
                     NavigationLink {
-                        ThemeSettingsView()
+                        HealthKitSettingsView()
                     } label: {
-                        HStack {
-                            Text("Theme")
-                            Spacer()
+                        SettingsCardRow(
+                            title: "Apple Health Sync",
+                            subtitle: "Optional nutrition sharing and labeled activity context.",
+                            systemImage: "heart.text.square"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                DashboardSection(title: "Safety") {
+                    FitnessCard {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "cross.case")
+                                .font(.title3.weight(.semibold))
+                                .foregroundStyle(appTheme.colors.warning)
+                                .frame(width: 42, height: 42)
+                                .background(appTheme.colors.warning.opacity(0.16), in: Circle())
+
+                            Text("This app provides general fitness tracking and training suggestions based on your logged workouts. It is not medical advice. Stop exercising and seek professional advice if you experience pain, dizziness, or symptoms that concern you.")
+                                .font(.footnote)
+                                .foregroundStyle(appTheme.colors.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+
+                DashboardSection(title: "Local Data") {
+                    FitnessCard(padding: 12) {
+                        VStack(spacing: 0) {
+                            NavigationLink {
+                                BackupExportView()
+                            } label: {
+                                SettingsInlineRow(title: "Backup & Export", subtitle: "Create local files you can save", systemImage: "square.and.arrow.up")
+                            }
+                            .buttonStyle(.plain)
+
+                            SettingsDivider()
+
+                            HStack(spacing: 12) {
+                                Image(systemName: "icloud")
+                                    .font(.headline.weight(.semibold))
+                                    .foregroundStyle(appTheme.colors.textSecondary)
+                                    .frame(width: 36, height: 36)
+                                    .background(appTheme.colors.cardBackgroundElevated, in: Circle())
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("iCloud sync planned")
+                                        .font(.headline)
+                                        .foregroundStyle(appTheme.colors.textPrimary)
+                                    Text("Workout data is stored locally with SwiftData. Backup & Export creates local files you can save yourself.")
+                                        .font(.caption)
+                                        .foregroundStyle(appTheme.colors.textSecondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 12)
+                        }
+                    }
+                }
+
+                FitnessCard(padding: 16) {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Current Theme")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(appTheme.colors.textSecondary)
+                                .textCase(.uppercase)
+                            Text(selectedTheme.displayName)
+                                .font(.headline)
+                                .foregroundStyle(appTheme.colors.textPrimary)
+                        }
+
+                        Spacer()
+
+                        ZStack {
                             Circle()
                                 .fill(selectedTheme.colors.accent)
-                                .frame(width: 18, height: 18)
-                            Text(selectedTheme.displayName)
-                                .foregroundStyle(.secondary)
+                                .frame(width: 28, height: 28)
+                            Circle()
+                                .stroke(appTheme.colors.cardBorder, lineWidth: 1)
+                                .frame(width: 42, height: 42)
                         }
                     }
-                }
-
-                Section("Safety") {
-                    Text("This app provides general fitness tracking and training suggestions based on your logged workouts. It is not medical advice. Stop exercising and seek professional advice if you experience pain, dizziness, or symptoms that concern you.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("iCloud Backup") {
-                    Label("iCloud sync planned", systemImage: "icloud")
-                    Text("Workout data is stored locally with SwiftData. iCloud/CloudKit sync should be enabled from Xcode Signing & Capabilities once this Apple ID has access to iCloud containers. Free personal signing may not support that capability.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("Settings")
@@ -103,6 +196,128 @@ struct SettingsView: View {
 
     private var selectedTheme: AppTheme {
         AppTheme(rawValue: storedTheme) ?? .appleGreen
+    }
+}
+
+private struct SettingsCardRow: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    var showsChevron = true
+
+    var body: some View {
+        FitnessCard {
+            HStack(spacing: 12) {
+                SettingsRowIcon(systemImage: systemImage)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                }
+
+                Spacer()
+
+                if showsChevron {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(appTheme.colors.textTertiary)
+                }
+            }
+        }
+    }
+}
+
+private struct SettingsInlineRow: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let title: String
+    let subtitle: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            SettingsRowIcon(systemImage: systemImage)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(appTheme.colors.textTertiary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 12)
+    }
+}
+
+private struct SettingsUtilityTile: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let title: String
+    let subtitle: String
+    let systemImage: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SettingsRowIcon(systemImage: systemImage)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, minHeight: 136, alignment: .topLeading)
+        .background(appTheme.colors.cardBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(appTheme.colors.cardBorder, lineWidth: 1)
+        }
+    }
+}
+
+private struct SettingsRowIcon: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let systemImage: String
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.headline.weight(.semibold))
+            .foregroundStyle(appTheme.colors.accent)
+            .frame(width: 38, height: 38)
+            .background(appTheme.colors.accentSurface, in: Circle())
+    }
+}
+
+private struct SettingsDivider: View {
+    @Environment(\.appTheme) private var appTheme
+
+    var body: some View {
+        Divider()
+            .overlay(appTheme.colors.cardBorder)
+            .padding(.leading, 58)
     }
 }
 

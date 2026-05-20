@@ -1,6 +1,9 @@
 import Foundation
 import SwiftData
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct WorkoutLoggerView: View {
     @Environment(\.dismiss) private var dismiss
@@ -31,10 +34,13 @@ struct WorkoutLoggerView: View {
     @State private var shouldShowSummaryAfterMotivation = false
     @State private var summarySession: WorkoutSession?
     @State private var showingWorkoutRating = false
-    @State private var pendingWorkoutRating: WorkoutRating?
     @State private var restTimerState = RestTimerState()
     @State private var showingSkippedExerciseConfirmation = false
+    @State private var showingSkippedReasonSheet = false
     @State private var showingWorkoutOrder = false
+    @State private var motivationActionInFlight = false
+
+    private let skippedReasonService = SkippedExerciseReasonService()
 
     private var orderedExerciseLogs: [ExerciseLog] {
         session.exerciseLogs.sorted { $0.orderIndex < $1.orderIndex }
@@ -61,6 +67,62 @@ struct WorkoutLoggerView: View {
     }
 
     var body: some View {
+        ZStack {
+            workoutList
+                .blur(radius: reduceMotion ? 0 : (isPopupPresented ? 8 : 0))
+                .allowsHitTesting(!isPopupPresented)
+
+            if showingMotivation {
+                motivationOverlay
+                    .zIndex(10)
+                    .transition(motivationTransition)
+            }
+
+            if showingWorkoutRating {
+                WorkoutRatingOverlay { rating in
+                    showingWorkoutRating = false
+                    completeWorkout(rating: rating)
+                }
+                .zIndex(20)
+            }
+        }
+        .animation(motivationAnimation, value: showingMotivation)
+        .animation(motivationAnimation, value: showingWorkoutRating)
+        .navigationTitle(session.splitNameSnapshot)
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(item: $summarySession) { session in
+            SessionSummaryView(session: session)
+        }
+        .sheet(isPresented: $showingSkippedReasonSheet) {
+            SkippedExerciseReasonSheet(
+                skippedLogs: skippedReasonService.skippedLogs(in: session),
+                save: applySkippedReasonsAndFinish,
+                finishWithoutReasons: finishWorkout
+            )
+        }
+        .alert("Finish with skipped exercises?", isPresented: $showingSkippedExerciseConfirmation) {
+            Button("Keep Logging", role: .cancel) {}
+            Button("Finish Anyway") {
+                finishWorkout()
+            }
+            Button("Add Reasons") {
+                showingSkippedReasonSheet = true
+            }
+        } message: {
+            Text("Some planned exercises have no completed sets yet. You can finish anyway, or tag why they were skipped.")
+        }
+        .onChange(of: orderedExerciseLogs.count) { _, _ in
+            withExerciseChangeAnimation {
+                currentExerciseIndex = min(currentExerciseIndex, max(orderedExerciseLogs.count - 1, 0))
+            }
+        }
+    }
+
+    private var isPopupPresented: Bool {
+        showingMotivation || showingWorkoutRating
+    }
+
+    private var workoutList: some View {
         List {
             if isEditingCompletedWorkout {
                 editSessionContent
@@ -91,50 +153,39 @@ struct WorkoutLoggerView: View {
                 } label: {
                     Label(isEditingCompletedWorkout ? "Save Changes" : "Finish Workout", systemImage: "checkmark.circle.fill")
                         .font(.headline)
+                        .frame(maxWidth: .infinity)
                 }
+                .buttonStyle(PrimaryFitnessButtonStyle())
             }
         }
-        .navigationTitle(session.splitNameSnapshot)
-        .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(item: $summarySession) { session in
-            SessionSummaryView(session: session)
+        .scrollContentBackground(.hidden)
+        .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
+        .listSectionSpacing(12)
+    }
+
+    private var motivationOverlay: some View {
+        WorkoutCelebrationOverlay(
+            title: motivationMessage,
+            message: motivationDetail,
+            icon: motivationSystemImage,
+            primaryActionTitle: motivationButtonTitle,
+            primaryActionIcon: motivationSystemImage,
+            style: motivationButtonTitle == "Done" ? .completedWorkout : .nextExercise,
+            isPrimaryActionDisabled: motivationActionInFlight
+        ) {
+            dismissMotivationOverlay()
         }
-        .sheet(isPresented: $showingWorkoutRating, onDismiss: handleRatingDismiss) {
-            WorkoutRatingView { rating in
-                pendingWorkoutRating = rating
-                showingWorkoutRating = false
-            }
-            .interactiveDismissDisabled()
-        }
-        .alert("Finish with skipped exercises?", isPresented: $showingSkippedExerciseConfirmation) {
-            Button("Keep Logging", role: .cancel) {}
-            Button("Finish", role: .destructive) {
-                finishWorkout()
-            }
-        } message: {
-            Text("Some planned exercises have no completed sets yet. You can finish anyway, or keep logging.")
-        }
-        .onChange(of: orderedExerciseLogs.count) { _, _ in
-            currentExerciseIndex = min(currentExerciseIndex, max(orderedExerciseLogs.count - 1, 0))
-        }
-        .blur(radius: showingMotivation ? 2.5 : 0)
-        .disabled(showingMotivation)
-        .overlay {
-            if showingMotivation {
-                WorkoutCelebrationOverlay(
-                    title: motivationMessage,
-                    message: motivationDetail,
-                    icon: motivationSystemImage,
-                    primaryActionTitle: motivationButtonTitle,
-                    primaryActionIcon: motivationSystemImage,
-                    style: motivationButtonTitle == "Done" ? .completedWorkout : .nextExercise
-                ) {
-                    dismissMotivationOverlay()
-                }
-                .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
-            }
-        }
-        .animation(.easeOut(duration: reduceMotion ? 0.01 : 0.18), value: showingMotivation)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .allowsHitTesting(true)
+    }
+
+    private var motivationAnimation: Animation {
+        AppMotion.popupEntrance(reduceMotion: reduceMotion)
+    }
+
+    private var motivationTransition: AnyTransition {
+        AppMotion.popupTransition(reduceMotion: reduceMotion)
     }
 
     @ViewBuilder
@@ -154,7 +205,10 @@ struct WorkoutLoggerView: View {
         }
 
         Section {
-            TextField("Session notes", text: Binding($session.notes, replacingNilWith: ""))
+            VStack(alignment: .leading, spacing: 10) {
+                TextField("Session notes", text: Binding($session.notes, replacingNilWith: ""))
+                QuickNoteChipsView(text: Binding($session.notes, replacingNilWith: ""))
+            }
         }
 
         Section("Rest Timer") {
@@ -172,7 +226,9 @@ struct WorkoutLoggerView: View {
                         canMoveUp: index > 0,
                         canMoveDown: index < orderedExerciseLogs.count - 1,
                         jump: {
-                            currentExerciseIndex = index
+                            withExerciseChangeAnimation {
+                                currentExerciseIndex = index
+                            }
                             showingWorkoutOrder = false
                         },
                         moveUp: {
@@ -195,9 +251,12 @@ struct WorkoutLoggerView: View {
         if let currentExerciseLog {
             ExerciseLoggerSection(
                 exerciseLog: currentExerciseLog,
+                templateNote: templateNote(for: currentExerciseLog),
                 previousPerformance: previousPerformance(for: currentExerciseLog),
+                completedSessions: completedSessions,
                 startRestTimer: startRestTimer
             )
+            .id(currentExerciseLog.id)
 
             Section {
                 Button {
@@ -238,7 +297,9 @@ struct WorkoutLoggerView: View {
             ForEach(orderedExerciseLogs) { exerciseLog in
                 ExerciseLoggerSection(
                     exerciseLog: exerciseLog,
-                    previousPerformance: previousPerformance(for: exerciseLog)
+                    templateNote: templateNote(for: exerciseLog),
+                    previousPerformance: previousPerformance(for: exerciseLog),
+                    completedSessions: completedSessions
                 )
             }
         }
@@ -295,6 +356,17 @@ struct WorkoutLoggerView: View {
         try? modelContext.save()
     }
 
+    private func templateNote(for exerciseLog: ExerciseLog) -> String? {
+        guard
+            let splitId = session.splitId,
+            let split = activeSplits.first(where: { $0.id == splitId })
+        else { return nil }
+
+        return split.exercises.first { splitExercise in
+            splitExercise.exerciseId == exerciseLog.exerciseId
+        }?.notes
+    }
+
     private func moveExerciseLog(_ exerciseLog: ExerciseLog, offset: Int) {
         var logs = orderedExerciseLogs
         guard let index = logs.firstIndex(where: { $0.id == exerciseLog.id }) else { return }
@@ -310,14 +382,16 @@ struct WorkoutLoggerView: View {
         }
 
         if let currentId, let updatedCurrentIndex = logs.firstIndex(where: { $0.id == currentId }) {
-            currentExerciseIndex = updatedCurrentIndex
+            withExerciseChangeAnimation {
+                currentExerciseIndex = updatedCurrentIndex
+            }
         }
 
         try? modelContext.save()
     }
 
     private func continueToNextExercise() {
-        guard !orderedExerciseLogs.isEmpty else { return }
+        guard !orderedExerciseLogs.isEmpty, !motivationActionInFlight, !showingMotivation else { return }
 
         if isLastExercise {
             requestFinishWorkout()
@@ -325,13 +399,16 @@ struct WorkoutLoggerView: View {
         }
 
         pendingExerciseIndex = currentExerciseIndex + 1
+        WorkoutFeedback.lightImpact()
         configureMotivation(
             message: MotivationMessage.next(),
             detail: "One exercise banked. Keep the reps clean and own the next set.",
             buttonTitle: "Next Exercise",
             systemImage: "arrow.right.circle.fill"
         )
-        showingMotivation = true
+        withAnimation(motivationAnimation) {
+            showingMotivation = true
+        }
     }
 
     private func handleMotivationDismiss() {
@@ -348,22 +425,26 @@ struct WorkoutLoggerView: View {
         }
 
         if let pendingExerciseIndex {
-            currentExerciseIndex = min(pendingExerciseIndex, max(orderedExerciseLogs.count - 1, 0))
+            withExerciseChangeAnimation {
+                currentExerciseIndex = min(pendingExerciseIndex, max(orderedExerciseLogs.count - 1, 0))
+            }
             self.pendingExerciseIndex = nil
         }
     }
 
     private func dismissMotivationOverlay() {
-        showingMotivation = false
-        DispatchQueue.main.async {
-            handleMotivationDismiss()
-        }
-    }
+        guard showingMotivation, !motivationActionInFlight else { return }
+        motivationActionInFlight = true
 
-    private func handleRatingDismiss() {
-        guard let pendingWorkoutRating else { return }
-        self.pendingWorkoutRating = nil
-        completeWorkout(rating: pendingWorkoutRating)
+        Task { @MainActor in
+            withAnimation(AppMotion.popupExit(reduceMotion: reduceMotion)) {
+                showingMotivation = false
+            }
+
+            try? await Task.sleep(nanoseconds: reduceMotion ? 10_000_000 : AppMotion.popupExitDuration)
+            handleMotivationDismiss()
+            motivationActionInFlight = false
+        }
     }
 
     private func requestFinishWorkout() {
@@ -393,6 +474,17 @@ struct WorkoutLoggerView: View {
         showingWorkoutRating = true
     }
 
+    private func applySkippedReasonsAndFinish(_ selections: [UUID: SkippedExerciseReason]) {
+        for log in skippedReasonService.skippedLogs(in: session) {
+            if let reason = selections[log.id] {
+                skippedReasonService.append(reason: reason, to: log)
+            }
+        }
+
+        try? modelContext.save()
+        finishWorkout()
+    }
+
     private func completeWorkout(rating: WorkoutRating) {
         let end = Date()
         session.endedAt = session.endedAt ?? end
@@ -407,13 +499,16 @@ struct WorkoutLoggerView: View {
 
         try? modelContext.save()
         shouldShowSummaryAfterMotivation = true
+        WorkoutFeedback.success()
         configureMotivation(
             message: rating.completionTitle,
             detail: "\(rating.completionMessage) You spent \(durationText(seconds: activeSeconds)) in the gym.",
             buttonTitle: "Done",
             systemImage: rating.systemImage
         )
-        showingMotivation = true
+        withAnimation(motivationAnimation) {
+            showingMotivation = true
+        }
     }
 
     private func markEnteredSetsComplete() {
@@ -427,6 +522,10 @@ struct WorkoutLoggerView: View {
         motivationDetail = detail
         motivationButtonTitle = buttonTitle
         motivationSystemImage = systemImage
+    }
+
+    private func withExerciseChangeAnimation(_ update: @escaping () -> Void) {
+        update()
     }
 
     private func togglePause() {
@@ -520,6 +619,26 @@ struct WorkoutLoggerView: View {
         }
 
         return "\(seconds) sec"
+    }
+}
+
+private enum WorkoutFeedback {
+    static func lightImpact() {
+        #if canImport(UIKit)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        #endif
+    }
+
+    static func selectionChanged() {
+        #if canImport(UIKit)
+        UISelectionFeedbackGenerator().selectionChanged()
+        #endif
+    }
+
+    static func success() {
+        #if canImport(UIKit)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        #endif
     }
 }
 
@@ -647,46 +766,158 @@ private struct WorkoutRating: Identifiable {
     ]
 }
 
-private struct WorkoutRatingView: View {
+private struct WorkoutRatingOverlay: View {
+    @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let selectRating: (WorkoutRating) -> Void
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("How did it go?")
-                    .font(.largeTitle.bold())
-                Text("Rate the workout so the app can remember how the session felt, not just what you lifted.")
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-            }
+    @State private var selectedRating: WorkoutRating?
+    @State private var hasAppeared = false
+    @State private var contentRevealed = false
+    @State private var isTransitioning = false
 
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            LiquidGlassPopupBackdrop(isVisible: hasAppeared)
+                .ignoresSafeArea()
+
+            LiquidGlassPopupCard(cornerRadius: 32, padding: 22) {
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("How did it go?")
+                            .font(.system(.title, design: .rounded).weight(.bold))
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                            .minimumScaleFactor(0.82)
+
+                        Text("Rate the workout so Peakline remembers how the session felt, not just what you lifted.")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    ratingOptions
+
+                    Text("Saved with this workout and used for the completion message.")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .opacity(contentRevealed ? 1 : 0)
+                .offset(y: reduceMotion ? 0 : (contentRevealed ? 0 : 8))
+            }
+            .frame(maxWidth: 460)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+            .scaleEffect(reduceMotion ? 1 : (hasAppeared ? 1 : 0.94), anchor: .bottom)
+            .opacity(hasAppeared ? 1 : 0)
+            .offset(y: reduceMotion ? 0 : (hasAppeared ? 0 : 30))
+        }
+        .onAppear {
+            if reduceMotion {
+                hasAppeared = true
+                contentRevealed = true
+            } else {
+                withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
+                    hasAppeared = true
+                }
+
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 70_000_000)
+                    withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
+                        contentRevealed = true
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var ratingOptions: some View {
+        ViewThatFits(in: .horizontal) {
             HStack(spacing: 10) {
                 ForEach(WorkoutRating.options) { rating in
-                    Button {
-                        selectRating(rating)
-                    } label: {
-                        VStack(spacing: 8) {
-                            Text(rating.face)
-                                .font(.system(size: 34))
-                            Text(rating.title)
-                                .font(.caption.weight(.semibold))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.75)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-                    }
-                    .buttonStyle(.plain)
+                    ratingButton(for: rating)
                 }
             }
 
-            Text("Your rating changes the completion message and is saved with this workout.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 86), spacing: 10)], spacing: 10) {
+                ForEach(WorkoutRating.options) { rating in
+                    ratingButton(for: rating)
+                }
+            }
         }
-        .padding(24)
-        .presentationDetents([.medium])
+    }
+
+    private func ratingButton(for rating: WorkoutRating) -> some View {
+        let isSelected = selectedRating?.id == rating.id
+
+        return Button {
+            choose(rating)
+        } label: {
+            VStack(spacing: 8) {
+                Text(rating.face)
+                    .font(.system(size: 34))
+
+                Text(rating.title)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .frame(maxWidth: .infinity, minHeight: 68)
+            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(WorkoutRatingButtonStyle(isSelected: isSelected))
+        .disabled(selectedRating != nil || isTransitioning)
+        .accessibilityLabel("\(rating.title) workout rating")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private func choose(_ rating: WorkoutRating) {
+        guard selectedRating == nil, !isTransitioning else { return }
+
+        isTransitioning = true
+        WorkoutFeedback.selectionChanged()
+        withAnimation(AppMotion.quickSpring(reduceMotion: reduceMotion)) {
+            selectedRating = rating
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: reduceMotion ? 40_000_000 : AppMotion.ratingSelectionDelay)
+            withAnimation(AppMotion.popupExit(reduceMotion: reduceMotion)) {
+                contentRevealed = false
+                hasAppeared = false
+            }
+
+            try? await Task.sleep(nanoseconds: reduceMotion ? 10_000_000 : AppMotion.popupExitDuration)
+            selectRating(rating)
+        }
+    }
+}
+
+private struct WorkoutRatingButtonStyle: ButtonStyle {
+    @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let isSelected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(appTheme.colors.textPrimary)
+            .padding(.vertical, 12)
+            .padding(.horizontal, 8)
+            .background {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(isSelected ? appTheme.colors.accent.opacity(0.10) : .white.opacity(0.012))
+            }
+            .shadow(color: isSelected ? appTheme.colors.accent.opacity(0.14) : .black.opacity(0.08), radius: isSelected ? 12 : 5, y: isSelected ? 7 : 3)
+            .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.96 : (isSelected ? 1.04 : 1)))
+            .animation(AppMotion.quickSpring(reduceMotion: reduceMotion), value: configuration.isPressed)
+            .animation(AppMotion.quickSpring(reduceMotion: reduceMotion), value: isSelected)
     }
 }
 
@@ -718,8 +949,13 @@ private struct ExerciseLoggerSection: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
     @Bindable var exerciseLog: ExerciseLog
+    let templateNote: String?
     let previousPerformance: PreviousExercisePerformance?
+    let completedSessions: [WorkoutSession]
     var startRestTimer: (String, Int) -> Void = { _, _ in }
+
+    @State private var showingNotes = false
+    @State private var showingSubstitutionSheet = false
 
     @Query(filter: #Predicate<Exercise> { !$0.isArchived }, sort: \Exercise.name)
     private var exercises: [Exercise]
@@ -755,17 +991,14 @@ private struct ExerciseLoggerSection: View {
                     Spacer()
 
                     if !substitutionOptions.isEmpty {
-                        Menu {
-                            ForEach(substitutionOptions) { exercise in
-                                Button(exercise.name) {
-                                    substitute(with: exercise)
-                                }
-                            }
+                        Button {
+                            showingSubstitutionSheet = true
                         } label: {
                             Label("Substitute", systemImage: "arrow.triangle.2.circlepath")
                                 .font(.caption.weight(.semibold))
                         }
                         .labelStyle(.titleAndIcon)
+                        .buttonStyle(.borderless)
                     }
                 }
 
@@ -779,10 +1012,25 @@ private struct ExerciseLoggerSection: View {
                         .lineLimit(2)
                 }
 
-                if let notes = exerciseLog.notes, !notes.isEmpty {
-                    Text(notes)
+                if let templateNote, !templateNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Label(templateNote, systemImage: "lightbulb")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                DisclosureGroup(isExpanded: $showingNotes) {
+                    ExerciseNotesEditor(
+                        text: Binding($exerciseLog.notes, replacingNilWith: ""),
+                        title: "Session exercise note",
+                        placeholder: "Add setup changes, discomfort, or what to adjust next time."
+                    )
+                    .padding(.top, 8)
+                } label: {
+                    Label(noteLabel, systemImage: "note.text")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(appTheme.actionColor)
                 }
 
                 HStack(spacing: 10) {
@@ -807,9 +1055,11 @@ private struct ExerciseLoggerSection: View {
                 .tint(.red)
             }
 
-            ForEach(orderedSets) { setLog in
+            ForEach(Array(orderedSets.enumerated()), id: \.element.id) { index, setLog in
                 SetRowView(
                     setLog: setLog,
+                    previousSet: index > 0 ? orderedSets[index - 1] : nil,
+                    lastSessionSet: previousPerformance?.workingSets[safe: index] ?? previousPerformance?.workingSets.last,
                     deleteAction: { delete(setLog) }
                 ) {
                     startRestTimer(exerciseLog.exerciseNameSnapshot, nextSetNumber(after: setLog))
@@ -831,11 +1081,33 @@ private struct ExerciseLoggerSection: View {
                 .buttonStyle(.borderless)
             }
         }
+        .sheet(isPresented: $showingSubstitutionSheet) {
+            SubstitutionPickerSheet(
+                title: "Substitute \(exerciseLog.exerciseNameSnapshot)",
+                candidatesProvider: { reason in
+                    substitutionService.candidates(
+                        for: exerciseLog.exerciseId,
+                        in: exercises,
+                        completedSessions: completedSessions,
+                        reason: reason
+                    )
+                },
+                select: substitute
+            )
+        }
     }
 
     private var targetText: String {
         guard exerciseLog.targetSets > 0 else { return "No target set" }
         return "Target: \(exerciseLog.targetSets) sets x \(exerciseLog.minReps)-\(exerciseLog.maxReps) reps"
+    }
+
+    private var noteLabel: String {
+        guard let notes = exerciseLog.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return "Add exercise note"
+        }
+
+        return "Edit exercise note"
     }
 
     private var coachCue: String {
@@ -926,6 +1198,53 @@ private struct ExerciseLoggerSection: View {
         try? modelContext.save()
     }
 
+    private func substitute(candidate: ExerciseSubstitutionCandidate, reason: ExerciseSubstitutionReason) {
+        guard let exercise = exercises.first(where: { $0.id == candidate.exerciseId }) else { return }
+        let originalName = exerciseLog.exerciseNameSnapshot
+        let note = substitutionService.substitutionNote(
+            originalName: originalName,
+            replacementName: exercise.name,
+            reason: reason
+        )
+
+        if hasLoggedSets {
+            guard let session = exerciseLog.workoutSession else { return }
+            append(note, to: exerciseLog)
+            let replacement = ExerciseLog(
+                workoutSessionId: session.id,
+                exerciseId: exercise.id,
+                exerciseNameSnapshot: exercise.name,
+                orderIndex: exerciseLog.orderIndex + 1,
+                targetSets: exerciseLog.targetSets,
+                minReps: exerciseLog.minReps,
+                maxReps: exerciseLog.maxReps,
+                notes: note
+            )
+            replacement.workoutSession = session
+            session.exerciseLogs.append(replacement)
+
+            for (index, log) in session.exerciseLogs.sorted(by: { $0.orderIndex < $1.orderIndex }).enumerated() {
+                log.orderIndex = index
+            }
+        } else {
+            exerciseLog.exerciseId = exercise.id
+            exerciseLog.exerciseNameSnapshot = exercise.name
+            append(note, to: exerciseLog)
+        }
+
+        try? modelContext.save()
+    }
+
+    private var hasLoggedSets: Bool {
+        exerciseLog.setLogs.contains { $0.completed || $0.weight > 0 || $0.reps > 0 || $0.rpe != nil }
+    }
+
+    private func append(_ text: String, to exerciseLog: ExerciseLog) {
+        let existing = exerciseLog.notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !existing.localizedCaseInsensitiveContains(text) else { return }
+        exerciseLog.notes = existing.isEmpty ? text : "\(existing)\n\(text)"
+    }
+
     private func nextSetNumber(after setLog: SetLog) -> Int {
         let next = setLog.setNumber + 1
         return min(next, max(exerciseLog.targetSets, next))
@@ -935,6 +1254,8 @@ private struct ExerciseLoggerSection: View {
 private struct SetRowView: View {
     @Environment(\.appTheme) private var appTheme
     @Bindable var setLog: SetLog
+    let previousSet: SetLog?
+    let lastSessionSet: PreviousSetSnapshot?
     let deleteAction: () -> Void
     let completedAction: () -> Void
 
@@ -987,6 +1308,15 @@ private struct SetRowView: View {
                     edit: { activeSheet = .reps }
                 )
             }
+
+            QuickSetControlsView(
+                canCopyPrevious: previousSet != nil,
+                canCopyLastSession: lastSessionSet != nil,
+                suggestion: nextSetSuggestion,
+                copyPrevious: copyPreviousSet,
+                copyLastSession: copyLastSessionSet,
+                markComplete: markComplete
+            )
 
             HStack(spacing: 8) {
                 Button {
@@ -1089,6 +1419,62 @@ private struct SetRowView: View {
     private func updateReps(_ reps: Int) {
         setLog.reps = max(0, reps)
         syncCompletedState(triggerAction: true)
+    }
+
+    private func copyPreviousSet() {
+        guard let previousSet else { return }
+        setLog.weight = previousSet.weight
+        setLog.reps = previousSet.reps
+        setLog.rpe = previousSet.rpe
+        syncCompletedState()
+    }
+
+    private func copyLastSessionSet() {
+        guard let lastSessionSet else { return }
+        setLog.weight = lastSessionSet.weight
+        setLog.reps = lastSessionSet.reps
+        setLog.rpe = lastSessionSet.rpe
+        syncCompletedState()
+    }
+
+    private func markComplete() {
+        if !hasLoggedData {
+            if let previousSet {
+                setLog.weight = previousSet.weight
+                setLog.reps = previousSet.reps
+                setLog.rpe = previousSet.rpe
+            } else if let lastSessionSet {
+                setLog.weight = lastSessionSet.weight
+                setLog.reps = lastSessionSet.reps
+                setLog.rpe = lastSessionSet.rpe
+            }
+        }
+
+        let wasCompleted = setLog.completed
+        setLog.completed = hasLoggedData
+        if setLog.completed, !wasCompleted, !setLog.isWarmup {
+            completedAction()
+        }
+    }
+
+    private var nextSetSuggestion: String {
+        if let effort, effort.rawValue >= 9 {
+            return "Drop 2.5kg or repeat if that felt too heavy."
+        }
+
+        if setLog.completed || hasLoggedData {
+            return "Repeat \(format(setLog.weight))kg x \(setLog.reps), or add 1 rep if it moved well."
+        }
+
+        if let previousSet {
+            return "Repeat \(format(previousSet.weight))kg x \(previousSet.reps)."
+        }
+
+        if let lastSessionSet {
+            return "Start near last session: \(lastSessionSet.formattedWeight)kg x \(lastSessionSet.reps)."
+        }
+
+        return "Set a clean baseline, then adjust with the main controls."
     }
 
     private func syncCompletedState(triggerAction: Bool = false) {
@@ -1204,7 +1590,7 @@ private struct EffortPickerSheet: View {
                             }
                         }
                         .padding(12)
-                        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 8))
+                        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                     }
                     .buttonStyle(.plain)
                 }

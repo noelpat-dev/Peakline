@@ -4,7 +4,7 @@ This roadmap follows the current practical training-coach direction: progressive
 
 ## Product North Star
 
-GymTracker should become the app that tells Noel:
+Peakline should become the app that tells Noel:
 
 - What to train today.
 - What target to aim for.
@@ -32,7 +32,7 @@ Tasks:
 
 ## Phase 1: Apple Fitness-Inspired Design Foundation
 
-Status: Next recommended foundation.
+Status: Mostly done.
 
 Goal: create reusable UI components before redesigning screens.
 
@@ -66,7 +66,7 @@ Acceptance criteria:
 
 ## Phase 2: Shared Target Suggestion Logic
 
-Status: High priority.
+Status: Done, continuing to refine rules as real workouts expose edge cases.
 
 Goal: remove duplicated target logic and make Coach/Workout consistent.
 
@@ -96,7 +96,7 @@ Acceptance criteria:
 
 ## Phase 3: Workout Modes and Workout Preview
 
-Status: Main product upgrade.
+Status: Mostly done.
 
 Goal: make the app adaptable without reintroducing a friction-heavy readiness form.
 
@@ -136,7 +136,7 @@ Acceptance criteria:
 
 ## Phase 4: Coach Cards V2
 
-Status: Partially implemented, needs UI and service integration.
+Status: Mostly done, needs ongoing copy and layout polish.
 
 Goal: make Coach action-focused.
 
@@ -165,7 +165,7 @@ Acceptance criteria:
 
 ## Phase 5: Session Summary Screen
 
-Status: Planned.
+Status: Done, polish as needed.
 
 Goal: make finishing a workout more useful and motivating.
 
@@ -190,7 +190,7 @@ Acceptance criteria:
 
 ## Phase 6: Split UI Improvements
 
-Status: Planned.
+Status: Mostly done.
 
 Goal: make Push/Pull/Legs pages feel useful, not static.
 
@@ -209,11 +209,11 @@ Acceptance criteria:
 
 ## Phase 7: History and Analytics Improvements
 
-Status: Planned.
+Status: Partially done.
 
 Tasks:
 
-- Add History filters:
+- History filters:
   - Split.
   - Exercise.
   - Rating.
@@ -231,22 +231,32 @@ Acceptance criteria:
 
 ## Phase 8: Gym Utilities
 
-Status: Later, high practical value.
+Status: Partially done.
 
 Tasks:
 
-- Rest timer.
-- Plate calculator.
-- Equipment-busy substitutions.
+- Rest timer: implemented.
+- Plate calculator: implemented.
+- Equipment-busy substitutions: implemented.
 - Exercise notes/templates.
 - Local backup/export.
 
-Suggested order:
+Remaining practical utility:
 
-1. Rest timer.
-2. Plate calculator.
-3. Exercise substitutions.
-4. Backup/export.
+1. Local backup/export.
+2. Exercise notes/templates.
+3. More analytics only after visual QA is stable.
+
+## Current Near-Term Task
+
+Status: Next.
+
+Run visual QA and cleanup after the UI/icon overhaul:
+
+- Verify light and dark mode across Today, Workout, Workout Preview, Logger, Splits, History, Settings, and Themes.
+- Confirm exact icon coverage for seeded exercises.
+- Fix small visual bugs only.
+- Keep SwiftData schema stable.
 
 ## Phase 9: Optional Advanced Features
 

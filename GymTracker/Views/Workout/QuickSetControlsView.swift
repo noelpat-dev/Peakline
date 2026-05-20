@@ -1,0 +1,49 @@
+import SwiftUI
+
+struct QuickSetControlsView: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let canCopyPrevious: Bool
+    let canCopyLastSession: Bool
+    let suggestion: String
+    let copyPrevious: () -> Void
+    let copyLastSession: () -> Void
+    let markComplete: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                quickButton("Copy previous", systemImage: "doc.on.doc", action: copyPrevious)
+                    .disabled(!canCopyPrevious)
+                quickButton("Copy last", systemImage: "clock.arrow.circlepath", action: copyLastSession)
+                    .disabled(!canCopyLastSession)
+                quickButton("Complete", systemImage: "checkmark.circle.fill", action: markComplete)
+            }
+
+            Text(suggestion)
+                .font(.caption)
+                .foregroundStyle(appTheme.colors.textSecondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func quickButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 7)
+                .background(appTheme.colors.cardBackgroundElevated, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(appTheme.colors.cardBorder, lineWidth: 1)
+                }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(appTheme.colors.textPrimary)
+    }
+}

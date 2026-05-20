@@ -21,38 +21,34 @@ The technical direction now lives in:
 
 ## Current Product Direction
 
-GymTracker should become a personal, local-first lifting coach for Noel's Push/Pull/Legs training. The app should keep the fast workout logger that already exists, but the long-term value should come from coaching: clear next-session targets, useful split recommendations, simple fatigue warnings, and a clean Apple Fitness-inspired visual style.
+Peakline should be a personal, local-first lifting coach for Noel's Push/Pull/Legs training. The app should keep the fast workout logger that already exists, but the long-term value should come from coaching: clear next-session targets, useful split recommendations, simple fatigue warnings, exact exercise visuals, and a clean Apple Fitness-inspired visual style.
 
 The app should not become a generic social fitness app, a nutrition app, or an AI chatbot in the first serious version.
 
 ## Current Implementation Focus
 
-The next development cycle should focus on four connected improvements:
+The next development cycle should focus on a visual QA and polish pass now that the main UI/coaching foundations are in place:
 
-1. **Apple Fitness-inspired UI refresh**
-   - Dark-first dashboard feel.
-   - High-contrast cards.
-   - Rounded panels.
-   - Large metric typography.
-   - Accent-driven progress visuals.
-   - Smooth, simple SwiftUI transitions.
+1. **Light and dark mode QA**
+   - Today.
+   - Workout.
+   - Workout Preview.
+   - Live Workout Logger.
+   - Splits.
+   - History.
+   - Settings.
 
-2. **Workout modes**
-   - Full.
-   - Quick.
-   - Recovery.
-   - Heavy.
+2. **Exact exercise icon coverage**
+   - Source PNGs live in `GymTracker/IconSource/ExerciseIcons/`.
+   - Generated assets live in `GymTracker/Assets.xcassets/ExerciseIcons/`.
+   - Add source filenames to `Scripts/prepare_exercise_icons.py`.
+   - Map exercise names through `ExerciseIconMapper`.
 
-3. **Shared target suggestion logic**
-   - Workout selection and Coach should use the same target rules.
-   - Avoid duplicate progression logic inside views.
-
-4. **Better coaching cards**
-   - Next workout.
-   - Exercise targets.
-   - Recovery warnings.
-   - Weekly summary.
-   - Session recap after finishing.
+3. **Small polish fixes only**
+   - Unreadable text.
+   - Wrong card surfaces.
+   - Destructive buttons using accent blue.
+   - Icons that are too small or generic when an exact PNG exists.
 
 ## Important Product Constraint
 

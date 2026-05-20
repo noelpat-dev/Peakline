@@ -37,6 +37,14 @@ struct SplitExerciseRow: View {
                     .font(.caption)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .lineLimit(2)
+
+                if let notes = exercise.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Label(notes, systemImage: "note.text")
+                        .font(.caption)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .padding(.vertical, 8)
@@ -46,10 +54,6 @@ struct SplitExerciseRow: View {
     private var detailText: String {
         if let lastBest = suggestion?.lastBestSetDescription {
             return "Latest best: \(lastBest)"
-        }
-
-        if let notes = exercise.notes, !notes.isEmpty {
-            return notes
         }
 
         return "Target controlled reps before adding load."

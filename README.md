@@ -1,6 +1,6 @@
-# GymTracker
+# Peakline
 
-GymTracker is a personal iOS lifting tracker for Noel's Push/Pull/Legs training. It is built with SwiftUI and SwiftData, stays local-first, and is moving toward a rule-based coaching experience rather than a generic workout log.
+Peakline is a personal iOS lifting coach for Noel's Push/Pull/Legs training. It is built with SwiftUI and SwiftData, stays local-first, and uses deterministic coaching rather than a generic workout log or cloud service.
 
 ## Product Goal
 
@@ -14,17 +14,19 @@ The long-term direction is a practical coaching app: fast logging during the wor
 
 ## Current Focus
 
-- Personal Push/Pull/Legs rotation.
-- Live workout logging with timer, set entry, and post-workout rating.
-- History calendar and editable workout history.
+- Personal Push/Pull/Legs rotation and next-split recommendations.
+- Workout Preview with Full, Quick, Recovery, and Heavy modes.
+- Shared target suggestions for Coach, Splits, and Workout Preview.
+- Live workout logging with timer, pause/resume, set entry, rest timer, and post-workout rating.
+- Glass celebration overlay and session summary after finishing.
+- History calendar, filters, editable workout history, and start-date based workout logging.
 - Progress charts per exercise.
-- Rule-based Coach screen with PPL suggestions and progressive-overload guidance.
-- Theme support with Workout Green `#7CFC00`, Purple, Orange, and Blue.
-- Move toward an Apple Fitness-inspired interface without copying Apple's exact UI.
+- Theme support with Fitness Green, Purple, Orange, and Blue.
+- Exact PNG exercise icons sourced from `GymTracker/IconSource/ExerciseIcons/`.
 
-## Planned UI Direction
+## UI Direction
 
-GymTracker should feel visually close to the Apple Fitness / Workout style in broad principles:
+Peakline should feel visually close to the Apple Fitness / Workout style in broad principles:
 
 - Dark-first screens.
 - Big metric typography.
@@ -32,12 +34,37 @@ GymTracker should feel visually close to the Apple Fitness / Workout style in br
 - High-contrast accent colours.
 - Rounded, soft panels.
 - Glanceable progress visuals.
-- SF Symbols for lightweight iconography.
+- SF Symbols for app controls plus exact PNG assets for exercise-specific icons.
 - Simple, motivating summaries.
 
 Do not clone Apple's exact Activity Rings, icons, screen layouts, or branded colours. The app should use an original lifting-focused version of that design language.
 
 See [UI_STYLE_GUIDE.md](UI_STYLE_GUIDE.md) for implementation details.
+
+## Exercise Icon Assets
+
+Exact source PNGs live in:
+
+```text
+GymTracker/IconSource/ExerciseIcons/
+```
+
+Generated asset-catalog icons live in:
+
+```text
+GymTracker/Assets.xcassets/ExerciseIcons/
+```
+
+To map a new or replaced icon:
+
+1. Add the source filename to `Scripts/prepare_exercise_icons.py`.
+2. Confirm the asset case in `GymTracker/Views/Shared/ExerciseIconKey.swift`.
+3. Add the exact-name rule in `GymTracker/Services/ExerciseIconMapper.swift`.
+4. Run:
+
+```bash
+python3 Scripts/prepare_exercise_icons.py
+```
 
 ## Requirements
 

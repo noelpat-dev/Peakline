@@ -12,7 +12,9 @@ SOURCE_DIR = ROOT / "GymTracker" / "IconSource" / "ExerciseIcons"
 ASSET_DIR = ROOT / "GymTracker" / "Assets.xcassets" / "ExerciseIcons"
 
 ICON_MAP = {
+    "Abdominal Crunch.png": "icon_exercise_abdominal_crunch",
     "Bicep Curl.png": "icon_exercise_bicep_curl",
+    "Cable Lateral Raise.png": "icon_exercise_cable_lateral_raise",
     "Chest fly.png": "icon_exercise_chest_fly",
     "Diverging Row.png": "icon_exercise_diverging_row",
     "Dumbel Shoulder Press.png": "icon_exercise_dumbbell_shoulder_press",

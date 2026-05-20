@@ -47,11 +47,7 @@ struct SplitsView: View {
                 if !pplSplits.isEmpty {
                     SplitProgrammeCard(splits: pplSplits, statuses: splitStatuses)
 
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Training Days")
-                            .font(.headline)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-
+                    DashboardSection(title: "Training Days") {
                         ForEach(pplSplits) { split in
                             NavigationLink {
                                 SplitDetailView(split: split)
@@ -67,72 +63,84 @@ struct SplitsView: View {
                         }
                     }
                 } else {
-                    FitnessCard {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("No Active Programme")
-                                .font(.headline)
-                            Text("Create or activate Push, Pull, and Legs splits to build your programme dashboard.")
-                                .font(.subheadline)
-                                .foregroundStyle(appTheme.colors.textSecondary)
-                        }
-                    }
+                    DashboardEmptyStateCard(
+                        title: "No active programme",
+                        message: "Create or activate Push, Pull, and Legs splits to build your programme dashboard.",
+                        systemImage: "list.bullet.rectangle"
+                    )
                 }
 
                 if !otherSplits.isEmpty {
                     FitnessCard(padding: 0) {
-                        DisclosureGroup(isExpanded: $showingOtherSplits) {
-                            VStack(spacing: 0) {
-                                Text("Inactive templates are not used by today's recommendations.")
-                                    .font(.footnote)
-                                    .foregroundStyle(appTheme.colors.textSecondary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 18)
-                                    .padding(.bottom, 8)
-
-                                ForEach(otherSplits) { split in
-                                    Divider()
-                                        .padding(.leading, 66)
-
-                                    NavigationLink {
-                                        SplitDetailView(split: split)
-                                    } label: {
-                                        inactiveSplitRow(split)
+                        VStack(spacing: 0) {
+                            Button {
+                                withAnimation(.snappy) {
+                                    showingOtherSplits.toggle()
+                                }
+                            } label: {
+                                HStack(spacing: 14) {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Other Splits")
+                                            .font(.headline)
+                                            .foregroundStyle(appTheme.colors.textPrimary)
+                                        Text("\(otherSplits.count) inactive or custom templates")
+                                            .font(.subheadline)
+                                            .foregroundStyle(appTheme.colors.textSecondary)
                                     }
-                                    .buttonStyle(.plain)
-                                    .contextMenu {
-                                        Button(role: .destructive) {
-                                            delete(split)
+
+                                    Spacer(minLength: 12)
+
+                                    Text(showingOtherSplits ? "Hide" : "Show")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(showingOtherSplits ? appTheme.colors.accent : appTheme.colors.textSecondary)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 9)
+                                        .background(
+                                            showingOtherSplits ? appTheme.colors.accentSurfaceStrong : appTheme.elevatedCardBackground,
+                                            in: Capsule()
+                                        )
+
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(appTheme.colors.textTertiary)
+                                        .rotationEffect(.degrees(showingOtherSplits ? 90 : 0))
+                                }
+                                .padding(18)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(showingOtherSplits ? "Hide other splits" : "Show other splits")
+
+                            if showingOtherSplits {
+                                VStack(spacing: 0) {
+                                    Text("Inactive templates are not used by today's recommendations.")
+                                        .font(.footnote)
+                                        .foregroundStyle(appTheme.colors.textSecondary)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(.horizontal, 18)
+                                        .padding(.bottom, 8)
+
+                                    ForEach(otherSplits) { split in
+                                        Divider()
+                                            .padding(.leading, 66)
+
+                                        NavigationLink {
+                                            SplitDetailView(split: split)
                                         } label: {
-                                            Label("Delete Split", systemImage: "trash")
+                                            inactiveSplitRow(split)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .contextMenu {
+                                            Button(role: .destructive) {
+                                                delete(split)
+                                            } label: {
+                                                Label("Delete Split", systemImage: "trash")
+                                            }
                                         }
                                     }
                                 }
+                                .padding(.bottom, 12)
                             }
-                            .padding(.bottom, 12)
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Other Splits")
-                                        .font(.headline)
-                                        .foregroundStyle(appTheme.colors.textPrimary)
-                                    Text("\(otherSplits.count) inactive or custom templates")
-                                        .font(.subheadline)
-                                        .foregroundStyle(appTheme.colors.textSecondary)
-                                }
-
-                                Spacer()
-
-                                Text(showingOtherSplits ? "Hide" : "Show")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(showingOtherSplits ? appTheme.colors.accent : appTheme.colors.textSecondary)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 9)
-                                    .background(
-                                        showingOtherSplits ? appTheme.colors.accentSurfaceStrong : appTheme.elevatedCardBackground,
-                                        in: Capsule()
-                                    )
-                            }
-                            .padding(18)
                         }
                     }
                 }
@@ -305,17 +313,13 @@ private struct SplitDetailView: View {
         FitnessScreen {
             splitHeroCard
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Exercises")
-                    .font(.headline)
-                    .foregroundStyle(appTheme.colors.textPrimary)
-
+            DashboardSection(title: "Exercises") {
                 if orderedExercises.isEmpty {
-                    FitnessCard {
-                        Text("No exercises yet")
-                            .font(.subheadline)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                    }
+                    DashboardEmptyStateCard(
+                        title: "No exercises yet",
+                        message: "Add exercises to make this split useful in previews and coaching.",
+                        systemImage: "dumbbell"
+                    )
                 } else {
                     FitnessCard(padding: 14) {
                         VStack(spacing: 0) {
@@ -617,8 +621,11 @@ private struct SplitExerciseEditorRow: View {
                 Stepper("Min reps: \(splitExercise.minReps)", value: $splitExercise.minReps, in: 1...50)
                 Stepper("Max reps: \(splitExercise.maxReps)", value: $splitExercise.maxReps, in: max(splitExercise.minReps, 1)...50)
                 Stepper("Rest: \(restText)", value: Binding($splitExercise.restSeconds, replacingNilWith: 120), in: 30...300, step: 15)
-                TextField("Progression note", text: Binding($splitExercise.notes, replacingNilWith: ""), axis: .vertical)
-                    .lineLimit(2...4)
+                ExerciseNotesEditor(
+                    text: Binding($splitExercise.notes, replacingNilWith: ""),
+                    title: "Template note",
+                    placeholder: "Seat height, grip, setup cue, or progression reminder."
+                )
             }
         }
         .padding(.vertical, 4)

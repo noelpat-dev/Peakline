@@ -1,0 +1,89 @@
+import ImageIO
+import UIKit
+import Vision
+
+protocol NutritionLabelOCRServicing {
+    func recognizeText(from image: UIImage) async throws -> NutritionOCRResult
+}
+
+struct NutritionLabelOCRService: NutritionLabelOCRServicing {
+    func recognizeText(from image: UIImage) async throws -> NutritionOCRResult {
+        guard let cgImage = image.normalizedCGImage else {
+            throw NutritionLabelOCRError.invalidImage
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.usesLanguageCorrection = false
+
+                let handler = VNImageRequestHandler(
+                    cgImage: cgImage,
+                    orientation: .up,
+                    options: [:]
+                )
+
+                do {
+                    try handler.perform([request])
+                    let observations = request.results ?? []
+                    let lines = Self.cleanedLines(from: observations)
+
+                    guard !lines.isEmpty else {
+                        continuation.resume(throwing: NutritionLabelOCRError.noTextDetected)
+                        return
+                    }
+
+                    continuation.resume(returning: NutritionOCRResult(
+                        rawText: lines.map(\.text).joined(separator: "\n"),
+                        lines: lines,
+                        processedAt: Date.now
+                    ))
+                } catch {
+                    continuation.resume(throwing: NutritionLabelOCRError.requestFailed(error.localizedDescription))
+                }
+            }
+        }
+    }
+
+    private static func cleanedLines(from observations: [VNRecognizedTextObservation]) -> [NutritionOCRLine] {
+        observations
+            .sorted { lhs, rhs in
+                let yDelta = abs(lhs.boundingBox.minY - rhs.boundingBox.minY)
+                if yDelta > 0.015 {
+                    return lhs.boundingBox.minY > rhs.boundingBox.minY
+                }
+                return lhs.boundingBox.minX < rhs.boundingBox.minX
+            }
+            .compactMap { observation in
+                guard let candidate = observation.topCandidates(1).first else { return nil }
+                let text = normalizedLine(candidate.string)
+                guard !text.isEmpty else { return nil }
+                return NutritionOCRLine(
+                    text: text,
+                    confidence: candidate.confidence,
+                    boundingBox: observation.boundingBox
+                )
+            }
+    }
+
+    static func normalizedLine(_ line: String) -> String {
+        line.trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+}
+
+private extension UIImage {
+    var normalizedCGImage: CGImage? {
+        if imageOrientation == .up, let cgImage {
+            return cgImage
+        }
+
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { _ in
+            draw(in: CGRect(origin: .zero, size: size))
+        }.cgImage
+    }
+}

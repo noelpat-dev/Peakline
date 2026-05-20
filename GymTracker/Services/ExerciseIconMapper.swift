@@ -59,8 +59,9 @@ enum ExerciseIconMapper {
         if name.contains("shoulder press") { return .dumbbellShoulderPress }
         if name.contains("overhead triceps") { return .tricepPushDown }
         if name.contains("rear delt") || name.contains("seated row") || name.contains("lower lat row") { return .divergingRow }
+        if name.contains("abdominal crunch") { return .abdominalCrunch }
+        if name.contains("cable lateral raise") || name.contains("lateral raise") { return .cableLateralRaise }
         if name.contains("abdominal") || name.contains("core") { return .genericCore }
-        if name.contains("cable lateral raise") || name.contains("lateral raise") { return .genericCable }
         if name.contains("squat") { return .hackSquat }
 
         if let primaryMuscleGroup {
