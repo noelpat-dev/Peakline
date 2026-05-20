@@ -126,20 +126,22 @@ struct OpenFoodFactsMapper {
     func draft(from response: OpenFoodFactsProductResponse, product: OpenFoodFactsProductDTO) -> FoodImportDraft {
         let servingInfo = servingSize(from: product.servingSize) ?? servingSize(from: product.quantity)
         let nutriments = product.nutriments
+        let baseUnit = foodBaseUnit(for: servingInfo)
+        let servingMultiplier = max(servingInfo?.amount ?? 0, 0) / 100
 
         return FoodImportDraft(
             barcode: BarcodeFoodLookupService.normalizedBarcode(response.code ?? ""),
             name: product.productName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             brand: cleaned(product.brands),
             servingSize: servingInfo?.amount,
-            baseUnit: servingInfo?.unit ?? .grams,
-            caloriesPer100g: NutritionDataIntegrityService.sanitizedNonNegative(nutriments?.energyKcal100g),
-            proteinPer100g: NutritionDataIntegrityService.sanitizedNonNegative(nutriments?.proteins100g),
-            carbsPer100g: NutritionDataIntegrityService.sanitizedNonNegative(nutriments?.carbohydrates100g),
-            fatPer100g: NutritionDataIntegrityService.sanitizedNonNegative(nutriments?.fat100g),
-            sugarPer100g: NutritionDataIntegrityService.sanitizedNonNegative(nutriments?.sugars100g),
-            fibrePer100g: NutritionDataIntegrityService.sanitizedNonNegative(nutriments?.fiber100g ?? nutriments?.fibre100g),
-            saltPer100g: NutritionDataIntegrityService.sanitizedNonNegative(nutriments?.salt100g),
+            baseUnit: baseUnit,
+            caloriesPer100g: mappedNutritionValue(nutriments?.energyKcal100g, baseUnit: baseUnit, servingMultiplier: servingMultiplier),
+            proteinPer100g: mappedNutritionValue(nutriments?.proteins100g, baseUnit: baseUnit, servingMultiplier: servingMultiplier),
+            carbsPer100g: mappedNutritionValue(nutriments?.carbohydrates100g, baseUnit: baseUnit, servingMultiplier: servingMultiplier),
+            fatPer100g: mappedNutritionValue(nutriments?.fat100g, baseUnit: baseUnit, servingMultiplier: servingMultiplier),
+            sugarPer100g: mappedNutritionValue(nutriments?.sugars100g, baseUnit: baseUnit, servingMultiplier: servingMultiplier),
+            fibrePer100g: mappedNutritionValue(nutriments?.fiber100g ?? nutriments?.fibre100g, baseUnit: baseUnit, servingMultiplier: servingMultiplier),
+            saltPer100g: mappedNutritionValue(nutriments?.salt100g, baseUnit: baseUnit, servingMultiplier: servingMultiplier),
             source: .openFoodFacts
         )
     }
@@ -147,6 +149,25 @@ struct OpenFoodFactsMapper {
     private func cleaned(_ value: String?) -> String? {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func foodBaseUnit(for servingInfo: (amount: Double, unit: FoodAmountUnit)?) -> FoodAmountUnit {
+        guard let servingInfo else { return .grams }
+
+        switch servingInfo.unit {
+        case .grams:
+            return .serving
+        case .millilitres:
+            return .millilitres
+        case .serving:
+            return .serving
+        }
+    }
+
+    private func mappedNutritionValue(_ value: Double?, baseUnit: FoodAmountUnit, servingMultiplier: Double) -> Double? {
+        guard let sanitized = NutritionDataIntegrityService.sanitizedNonNegative(value) else { return nil }
+        guard baseUnit == .serving, servingMultiplier > 0 else { return sanitized }
+        return sanitized * servingMultiplier
     }
 
     private func servingSize(from text: String?) -> (amount: Double, unit: FoodAmountUnit)? {

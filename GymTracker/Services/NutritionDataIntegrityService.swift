@@ -31,7 +31,15 @@ struct NutritionDataIntegrityService {
         salt: Double?,
         baseUnit: FoodAmountUnit
     ) -> String? {
-        let basis = baseUnit == .millilitres ? "per 100ml" : "per 100g"
+        let basis: String
+        switch baseUnit {
+        case .grams:
+            basis = "per 100g"
+        case .millilitres:
+            basis = "per 100ml"
+        case .serving:
+            basis = "per serving"
+        }
 
         if (calories ?? 0) > 900 {
             return "Calories look unusually high \(basis). Check the label before saving."

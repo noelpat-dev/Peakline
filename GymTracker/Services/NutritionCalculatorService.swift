@@ -13,16 +13,22 @@ struct NutritionMacroSnapshot {
 struct NutritionCalculatorService {
     func calculate(for food: FoodItem, consumedAmount: Double, unit: FoodAmountUnit) -> NutritionMacroSnapshot {
         let clampedAmount = max(consumedAmount, 0)
-        let amountForPer100Calculation: Double
+        let multiplier: Double
 
-        switch unit {
-        case .grams, .millilitres:
-            amountForPer100Calculation = clampedAmount
-        case .serving:
-            amountForPer100Calculation = clampedAmount * max(food.servingSize ?? 100, 0)
+        if usesServingBasedNutrition(food) {
+            multiplier = servingMultiplier(for: food, consumedAmount: clampedAmount, unit: unit)
+        } else {
+            let amountForPer100Calculation: Double
+
+            switch unit {
+            case .grams, .millilitres:
+                amountForPer100Calculation = clampedAmount
+            case .serving:
+                amountForPer100Calculation = clampedAmount * max(food.servingSize ?? 100, 0)
+            }
+
+            multiplier = amountForPer100Calculation / 100
         }
-
-        let multiplier = amountForPer100Calculation / 100
 
         return NutritionMacroSnapshot(
             calories: scaled(food.caloriesPer100g, multiplier: multiplier),
@@ -33,6 +39,39 @@ struct NutritionCalculatorService {
             fibre: scaledOptional(food.fibrePer100g, multiplier: multiplier),
             salt: scaledOptional(food.saltPer100g, multiplier: multiplier)
         )
+    }
+
+    private func usesServingBasedNutrition(_ food: FoodItem) -> Bool {
+        if food.baseUnit == .serving {
+            return true
+        }
+
+        guard
+            food.baseUnit == .grams,
+            food.barcode?.isEmpty == false,
+            (food.servingSize ?? 0) > 0
+        else {
+            return false
+        }
+
+        if food.source == .editedOpenFoodFacts {
+            return true
+        }
+
+        return food.source == .manual && food.verificationStatus == .edited
+    }
+
+    private func servingMultiplier(for food: FoodItem, consumedAmount: Double, unit: FoodAmountUnit) -> Double {
+        switch unit {
+        case .serving:
+            return consumedAmount
+        case .grams, .millilitres:
+            guard let servingSize = food.servingSize, servingSize > 0 else {
+                return consumedAmount / 100
+            }
+
+            return consumedAmount / servingSize
+        }
     }
 
     func totals(from entries: [FoodLogEntry]) -> NutritionMacroSnapshot {

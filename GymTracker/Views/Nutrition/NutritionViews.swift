@@ -404,7 +404,7 @@ struct ManualFoodEntryView: View {
                 DashboardSection(title: "Nutrition Basis") {
                     FitnessCard {
                         VStack(alignment: .leading, spacing: 14) {
-                            Text("Choose the base unit used for logging. Macro values below remain per 100g or 100ml for predictable scaling.")
+                            Text("Choose the base unit used for logging. Serving-based foods keep the values you enter for one serving.")
                                 .font(.footnote)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -477,7 +477,14 @@ struct ManualFoodEntryView: View {
     }
 
     private var macroSectionTitle: String {
-        baseUnit == .millilitres ? "Macros per 100ml" : "Macros per 100g"
+        switch baseUnit {
+        case .grams:
+            return "Macros per 100g"
+        case .millilitres:
+            return "Macros per 100ml"
+        case .serving:
+            return "Macros per serving"
+        }
     }
 
     private var validationWarning: String? {
@@ -660,7 +667,7 @@ struct LogFoodView: View {
                 MacroSummaryGrid(totals: preview)
             }
 
-            if amountUnit == .serving && food.servingSize == nil {
+            if amountUnit == .serving && food.baseUnit != .serving && food.servingSize == nil {
                 NutritionNoticeCard(
                     message: "Serving logs use 100g unless this food has a serving size.",
                     systemImage: "info.circle",

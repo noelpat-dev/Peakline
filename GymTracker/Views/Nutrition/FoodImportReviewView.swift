@@ -93,7 +93,7 @@ struct FoodImportReviewView: View {
                 }
             }
 
-            DashboardSection(title: baseUnit == .millilitres ? "Macros per 100ml" : "Macros per 100g") {
+            DashboardSection(title: macroSectionTitle) {
                 FitnessCard {
                     VStack(spacing: 14) {
                         ReviewTextField(title: "Calories", text: $calories, placeholder: missingPlaceholder(draft.caloriesPer100g), suffix: "kcal", keyboardType: .decimalPad)
@@ -466,6 +466,17 @@ struct FoodImportReviewView: View {
 
     private var displayedDetectedText: String {
         detectedRawText.isEmpty ? "No detected text." : detectedRawText
+    }
+
+    private var macroSectionTitle: String {
+        switch baseUnit {
+        case .grams:
+            return "Macros per 100g"
+        case .millilitres:
+            return "Macros per 100ml"
+        case .serving:
+            return "Macros per serving"
+        }
     }
 
     private var parsedValues: ParsedReviewValues? {
