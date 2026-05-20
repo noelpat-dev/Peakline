@@ -25,6 +25,7 @@ struct WorkoutLoggerView: View {
     @State private var selectedExerciseId: UUID?
     @State private var currentExerciseIndex = 0
     @State private var showingMotivation = false
+    @State private var motivationPopupVisible = false
     @State private var motivationMessage = "Keep going."
     @State private var motivationDetail = "One exercise banked. Keep the reps clean and own the next set."
     @State private var motivationButtonTitle = "Next Exercise"
@@ -34,6 +35,7 @@ struct WorkoutLoggerView: View {
     @State private var shouldShowSummaryAfterMotivation = false
     @State private var summarySession: WorkoutSession?
     @State private var showingWorkoutRating = false
+    @State private var ratingPopupVisible = false
     @State private var restTimerState = RestTimerState()
     @State private var showingSkippedExerciseConfirmation = false
     @State private var showingSkippedReasonSheet = false
@@ -69,25 +71,23 @@ struct WorkoutLoggerView: View {
     var body: some View {
         ZStack {
             workoutList
-                .blur(radius: reduceMotion ? 0 : (isPopupPresented ? 8 : 0))
-                .allowsHitTesting(!isPopupPresented)
+                .blur(radius: reduceMotion ? 0 : (isPopupVisible ? 8 : 0))
+                .allowsHitTesting(!isPopupMounted)
 
             if showingMotivation {
                 motivationOverlay
                     .zIndex(10)
-                    .transition(motivationTransition)
             }
 
             if showingWorkoutRating {
-                WorkoutRatingOverlay { rating in
-                    showingWorkoutRating = false
-                    completeWorkout(rating: rating)
+                WorkoutRatingOverlay(isVisible: ratingPopupVisible) { rating in
+                    handleRatingSelection(rating)
                 }
                 .zIndex(20)
             }
         }
-        .animation(motivationAnimation, value: showingMotivation)
-        .animation(motivationAnimation, value: showingWorkoutRating)
+        .animation(AppMotion.popupEntrance(reduceMotion: reduceMotion), value: motivationPopupVisible)
+        .animation(AppMotion.popupEntrance(reduceMotion: reduceMotion), value: ratingPopupVisible)
         .navigationTitle(session.splitNameSnapshot)
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $summarySession) { session in
@@ -118,8 +118,12 @@ struct WorkoutLoggerView: View {
         }
     }
 
-    private var isPopupPresented: Bool {
+    private var isPopupMounted: Bool {
         showingMotivation || showingWorkoutRating
+    }
+
+    private var isPopupVisible: Bool {
+        motivationPopupVisible || ratingPopupVisible
     }
 
     private var workoutList: some View {
@@ -171,6 +175,7 @@ struct WorkoutLoggerView: View {
             primaryActionTitle: motivationButtonTitle,
             primaryActionIcon: motivationSystemImage,
             style: motivationButtonTitle == "Done" ? .completedWorkout : .nextExercise,
+            isVisible: motivationPopupVisible,
             isPrimaryActionDisabled: motivationActionInFlight
         ) {
             dismissMotivationOverlay()
@@ -178,14 +183,6 @@ struct WorkoutLoggerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
         .allowsHitTesting(true)
-    }
-
-    private var motivationAnimation: Animation {
-        AppMotion.popupEntrance(reduceMotion: reduceMotion)
-    }
-
-    private var motivationTransition: AnyTransition {
-        AppMotion.popupTransition(reduceMotion: reduceMotion)
     }
 
     @ViewBuilder
@@ -406,9 +403,7 @@ struct WorkoutLoggerView: View {
             buttonTitle: "Next Exercise",
             systemImage: "arrow.right.circle.fill"
         )
-        withAnimation(motivationAnimation) {
-            showingMotivation = true
-        }
+        presentMotivationOverlay()
     }
 
     private func handleMotivationDismiss() {
@@ -433,17 +428,50 @@ struct WorkoutLoggerView: View {
     }
 
     private func dismissMotivationOverlay() {
-        guard showingMotivation, !motivationActionInFlight else { return }
+        guard showingMotivation, motivationPopupVisible, !motivationActionInFlight else { return }
         motivationActionInFlight = true
 
         Task { @MainActor in
             withAnimation(AppMotion.popupExit(reduceMotion: reduceMotion)) {
-                showingMotivation = false
+                motivationPopupVisible = false
             }
 
             try? await Task.sleep(nanoseconds: reduceMotion ? 10_000_000 : AppMotion.popupExitDuration)
+            showingMotivation = false
             handleMotivationDismiss()
             motivationActionInFlight = false
+        }
+    }
+
+    private func presentMotivationOverlay() {
+        guard !showingMotivation else { return }
+
+        showingMotivation = true
+        motivationPopupVisible = false
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: AppMotion.popupMountDelay)
+            guard showingMotivation else { return }
+
+            withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
+                motivationPopupVisible = true
+            }
+        }
+    }
+
+    private func presentRatingOverlay() {
+        guard !showingWorkoutRating else { return }
+
+        showingWorkoutRating = true
+        ratingPopupVisible = false
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: AppMotion.popupMountDelay)
+            guard showingWorkoutRating else { return }
+
+            withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
+                ratingPopupVisible = true
+            }
         }
     }
 
@@ -471,7 +499,19 @@ struct WorkoutLoggerView: View {
         finalizePausedTime(at: session.endedAt ?? Date())
         markEnteredSetsComplete()
         restTimerState = RestTimerState()
-        showingWorkoutRating = true
+        presentRatingOverlay()
+    }
+
+    private func handleRatingSelection(_ rating: WorkoutRating) {
+        Task { @MainActor in
+            withAnimation(AppMotion.popupExit(reduceMotion: reduceMotion)) {
+                ratingPopupVisible = false
+            }
+
+            try? await Task.sleep(nanoseconds: reduceMotion ? 10_000_000 : AppMotion.popupExitDuration)
+            showingWorkoutRating = false
+            completeWorkout(rating: rating)
+        }
     }
 
     private func applySkippedReasonsAndFinish(_ selections: [UUID: SkippedExerciseReason]) {
@@ -506,9 +546,7 @@ struct WorkoutLoggerView: View {
             buttonTitle: "Done",
             systemImage: rating.systemImage
         )
-        withAnimation(motivationAnimation) {
-            showingMotivation = true
-        }
+        presentMotivationOverlay()
     }
 
     private func markEnteredSetsComplete() {
@@ -770,16 +808,16 @@ private struct WorkoutRatingOverlay: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    let isVisible: Bool
     let selectRating: (WorkoutRating) -> Void
 
     @State private var selectedRating: WorkoutRating?
-    @State private var hasAppeared = false
     @State private var contentRevealed = false
     @State private var isTransitioning = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            LiquidGlassPopupBackdrop(isVisible: hasAppeared)
+            LiquidGlassPopupBackdrop(isVisible: isVisible)
                 .ignoresSafeArea()
 
             LiquidGlassPopupCard(cornerRadius: 32, padding: 22) {
@@ -809,26 +847,19 @@ private struct WorkoutRatingOverlay: View {
             .frame(maxWidth: 460)
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
-            .scaleEffect(reduceMotion ? 1 : (hasAppeared ? 1 : 0.94), anchor: .bottom)
-            .opacity(hasAppeared ? 1 : 0)
-            .offset(y: reduceMotion ? 0 : (hasAppeared ? 0 : 30))
+            .smoothPopupCardMotion(
+                isVisible: isVisible,
+                reduceMotion: reduceMotion,
+                hiddenScale: 0.94,
+                hiddenOffset: 30,
+                anchor: .bottom
+            )
         }
         .onAppear {
-            if reduceMotion {
-                hasAppeared = true
-                contentRevealed = true
-            } else {
-                withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
-                    hasAppeared = true
-                }
-
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 70_000_000)
-                    withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
-                        contentRevealed = true
-                    }
-                }
-            }
+            updateContentVisibility(isVisible)
+        }
+        .onChange(of: isVisible) { _, newValue in
+            updateContentVisibility(newValue)
         }
     }
 
@@ -884,13 +915,29 @@ private struct WorkoutRatingOverlay: View {
 
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: reduceMotion ? 40_000_000 : AppMotion.ratingSelectionDelay)
+            selectRating(rating)
+        }
+    }
+
+    private func updateContentVisibility(_ visible: Bool) {
+        if reduceMotion {
+            contentRevealed = visible
+            return
+        }
+
+        if visible {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 70_000_000)
+                guard isVisible else { return }
+
+                withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
+                    contentRevealed = true
+                }
+            }
+        } else {
             withAnimation(AppMotion.popupExit(reduceMotion: reduceMotion)) {
                 contentRevealed = false
-                hasAppeared = false
             }
-
-            try? await Task.sleep(nanoseconds: reduceMotion ? 10_000_000 : AppMotion.popupExitDuration)
-            selectRating(rating)
         }
     }
 }

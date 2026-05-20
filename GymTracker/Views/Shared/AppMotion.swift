@@ -1,19 +1,20 @@
 import SwiftUI
 
 enum AppMotion {
-    static let popupExitDuration: UInt64 = 220_000_000
+    static let popupMountDelay: UInt64 = 16_000_000
+    static let popupExitDuration: UInt64 = 280_000_000
     static let ratingSelectionDelay: UInt64 = 150_000_000
 
     static func popupEntrance(reduceMotion: Bool) -> Animation {
         reduceMotion
             ? .easeOut(duration: 0.01)
-            : .interactiveSpring(response: 0.42, dampingFraction: 0.82, blendDuration: 0.12)
+            : .snappy(duration: 0.42, extraBounce: 0.08)
     }
 
     static func popupExit(reduceMotion: Bool) -> Animation {
         reduceMotion
             ? .easeOut(duration: 0.01)
-            : .easeInOut(duration: 0.20)
+            : .smooth(duration: 0.28)
     }
 
     static func quickSpring(reduceMotion: Bool) -> Animation {
@@ -33,6 +34,41 @@ enum AppMotion {
                     .combined(with: .scale(scale: 0.96, anchor: .center))
                     .combined(with: .offset(y: 18))
             )
+    }
+}
+
+private struct SmoothPopupCardMotion: ViewModifier {
+    let isVisible: Bool
+    let reduceMotion: Bool
+    let hiddenScale: CGFloat
+    let hiddenOffset: CGFloat
+    let anchor: UnitPoint
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(reduceMotion ? 1 : (isVisible ? 1 : hiddenScale), anchor: anchor)
+            .opacity(isVisible ? 1 : 0)
+            .offset(y: reduceMotion ? 0 : (isVisible ? 0 : hiddenOffset))
+    }
+}
+
+extension View {
+    func smoothPopupCardMotion(
+        isVisible: Bool,
+        reduceMotion: Bool,
+        hiddenScale: CGFloat = 0.94,
+        hiddenOffset: CGFloat = 28,
+        anchor: UnitPoint = .center
+    ) -> some View {
+        modifier(
+            SmoothPopupCardMotion(
+                isVisible: isVisible,
+                reduceMotion: reduceMotion,
+                hiddenScale: hiddenScale,
+                hiddenOffset: hiddenOffset,
+                anchor: anchor
+            )
+        )
     }
 }
 

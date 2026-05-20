@@ -17,10 +17,10 @@ struct WorkoutCelebrationOverlay: View {
     let primaryActionTitle: String
     let primaryActionIcon: String?
     var style: CelebrationStyle = .nextExercise
+    let isVisible: Bool
     var isPrimaryActionDisabled = false
     let primaryAction: () -> Void
 
-    @State private var hasAppeared = false
     @State private var iconPulse = false
     @State private var contentRevealed = false
     @State private var buttonRevealed = false
@@ -73,38 +73,19 @@ struct WorkoutCelebrationOverlay: View {
             }
             .frame(maxWidth: 430)
             .padding(.horizontal, 20)
-            .scaleEffect(reduceMotion ? 1 : (hasAppeared ? 1 : 0.96))
-            .opacity(hasAppeared ? 1 : 0)
-            .offset(y: reduceMotion ? 0 : (hasAppeared ? 0 : 18))
+            .smoothPopupCardMotion(
+                isVisible: isVisible,
+                reduceMotion: reduceMotion,
+                hiddenScale: 0.94,
+                hiddenOffset: 28
+            )
         }
         .ignoresSafeArea()
         .onAppear {
-            if reduceMotion {
-                hasAppeared = true
-                iconPulse = true
-                contentRevealed = true
-                buttonRevealed = true
-            } else {
-                withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
-                    hasAppeared = true
-                }
-
-                withAnimation(.easeOut(duration: 0.72)) {
-                    iconPulse = true
-                }
-
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 40_000_000)
-                    withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
-                        contentRevealed = true
-                    }
-
-                    try? await Task.sleep(nanoseconds: 80_000_000)
-                    withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
-                        buttonRevealed = true
-                    }
-                }
-            }
+            updateContentVisibility(isVisible)
+        }
+        .onChange(of: isVisible) { _, newValue in
+            updateContentVisibility(newValue)
         }
     }
 
@@ -119,16 +100,16 @@ struct WorkoutCelebrationOverlay: View {
             Circle()
                 .fill(iconTint.opacity(0.10))
                 .frame(width: 88, height: 88)
-                .scaleEffect(reduceMotion ? 1 : (hasAppeared ? 1 : 0.82))
+                .scaleEffect(reduceMotion ? 1 : (isVisible ? 1 : 0.82))
 
             GlassIconBadge(systemName: iconName, size: 70)
-                .scaleEffect(reduceMotion ? 1 : (hasAppeared ? 1 : 0.78))
+                .scaleEffect(reduceMotion ? 1 : (isVisible ? 1 : 0.78))
         }
         .accessibilityHidden(true)
     }
 
     private var backdrop: some View {
-        LiquidGlassPopupBackdrop(isVisible: hasAppeared)
+        LiquidGlassPopupBackdrop(isVisible: isVisible)
     }
 
     private var iconTint: Color {
@@ -158,6 +139,43 @@ struct WorkoutCelebrationOverlay: View {
             return "star.fill"
         case .recovery:
             return "bolt.heart.fill"
+        }
+    }
+
+    private func updateContentVisibility(_ visible: Bool) {
+        if reduceMotion {
+            iconPulse = visible
+            contentRevealed = visible
+            buttonRevealed = visible
+            return
+        }
+
+        if visible {
+            withAnimation(.easeOut(duration: 0.72)) {
+                iconPulse = true
+            }
+
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 40_000_000)
+                guard isVisible else { return }
+
+                withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
+                    contentRevealed = true
+                }
+
+                try? await Task.sleep(nanoseconds: 80_000_000)
+                guard isVisible else { return }
+
+                withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
+                    buttonRevealed = true
+                }
+            }
+        } else {
+            withAnimation(AppMotion.popupExit(reduceMotion: reduceMotion)) {
+                iconPulse = false
+                contentRevealed = false
+                buttonRevealed = false
+            }
         }
     }
 }
