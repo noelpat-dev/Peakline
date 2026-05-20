@@ -2,6 +2,8 @@ import SwiftData
 import SwiftUI
 
 struct NutritionDashboardView: View {
+    @Environment(\.modelContext) private var modelContext
+
     @Query(sort: \FoodItem.name)
     private var foodItems: [FoodItem]
 
@@ -9,6 +11,7 @@ struct NutritionDashboardView: View {
     private var logEntries: [FoodLogEntry]
 
     private let calculator = NutritionCalculatorService()
+    @State private var pendingDeleteLogEntry: FoodLogEntry?
 
     private var todaysEntries: [FoodLogEntry] {
         logEntries.filter { Calendar.current.isDateInToday($0.loggedAt) }
@@ -142,7 +145,11 @@ struct NutritionDashboardView: View {
                                 .sorted { $0.loggedAt < $1.loggedAt }
 
                             if !entries.isEmpty {
-                                MealSectionCard(mealType: mealType, entries: entries)
+                                MealSectionCard(
+                                    mealType: mealType,
+                                    entries: entries,
+                                    requestDelete: { pendingDeleteLogEntry = $0 }
+                                )
                             }
                         }
                     }
@@ -151,6 +158,16 @@ struct NutritionDashboardView: View {
         }
         .navigationTitle("Nutrition")
         .navigationBarTitleDisplayMode(.inline)
+        .alert("Remove food log?", isPresented: deleteLogAlertBinding) {
+            Button("Cancel", role: .cancel) {
+                pendingDeleteLogEntry = nil
+            }
+            Button("Remove Log", role: .destructive) {
+                deletePendingLogEntry()
+            }
+        } message: {
+            Text("This removes the logged entry from your daily totals. The saved food stays in your food database.")
+        }
     }
 
     private var actionColumns: [GridItem] {
@@ -162,6 +179,24 @@ struct NutritionDashboardView: View {
 
     private var todayDateText: String {
         Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide))
+    }
+
+    private var deleteLogAlertBinding: Binding<Bool> {
+        Binding {
+            pendingDeleteLogEntry != nil
+        } set: { isShowing in
+            if !isShowing {
+                pendingDeleteLogEntry = nil
+            }
+        }
+    }
+
+    private func deletePendingLogEntry() {
+        guard let pendingDeleteLogEntry else { return }
+        HealthKitSyncStateStore().removeRecord(for: pendingDeleteLogEntry.id)
+        modelContext.delete(pendingDeleteLogEntry)
+        try? modelContext.save()
+        self.pendingDeleteLogEntry = nil
     }
 }
 
@@ -915,6 +950,7 @@ private struct MealSectionCard: View {
 
     let mealType: MealType
     let entries: [FoodLogEntry]
+    let requestDelete: (FoodLogEntry) -> Void
 
     private let calculator = NutritionCalculatorService()
 
@@ -954,7 +990,10 @@ private struct MealSectionCard: View {
 
                 VStack(spacing: 10) {
                     ForEach(entries) { entry in
-                        FoodLogRow(entry: entry)
+                        FoodLogRow(
+                            entry: entry,
+                            requestDelete: { requestDelete(entry) }
+                        )
                     }
                 }
             }
@@ -964,8 +1003,15 @@ private struct MealSectionCard: View {
 
 private struct FoodLogRow: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let entry: FoodLogEntry
+    let requestDelete: () -> Void
+
+    @State private var horizontalOffset: CGFloat = 0
+    @GestureState private var dragTranslation: CGFloat = 0
+
+    private let deleteRevealWidth: CGFloat = 82
 
     private var syncRecord: HealthKitFoodLogSyncRecord? {
         HealthKitSyncStateStore().record(for: entry.id)
@@ -976,6 +1022,28 @@ private struct FoodLogRow: View {
     }
 
     var body: some View {
+        ZStack(alignment: .trailing) {
+            deleteAction
+                .frame(width: deleteRevealWidth)
+
+            rowContent
+                .offset(x: visibleOffset)
+                .gesture(swipeGesture)
+                .onTapGesture {
+                    guard horizontalOffset != 0 else { return }
+                    closeSwipe()
+                }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contextMenu {
+            Button(role: .destructive, action: requestDelete) {
+                Label("Remove Log", systemImage: "trash")
+            }
+        }
+        .accessibilityAction(named: "Remove Log", requestDelete)
+    }
+
+    private var rowContent: some View {
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 5) {
                 Text(entry.foodNameSnapshot)
@@ -1006,10 +1074,63 @@ private struct FoodLogRow: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contentShape(Rectangle())
+    }
+
+    private var deleteAction: some View {
+        Button(role: .destructive, action: requestDelete) {
+            VStack(spacing: 4) {
+                Image(systemName: "trash")
+                    .font(.headline.weight(.semibold))
+
+                Text("Delete")
+                    .font(.caption2.weight(.bold))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(appTheme.colors.danger)
+        .background(appTheme.colors.danger.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .accessibilityLabel("Remove \(entry.foodNameSnapshot) log")
     }
 
     private var amountText: String {
         "\(entry.consumedAmount.formatted(.number.precision(.fractionLength(0...1)))) \(entry.amountUnit.shortName)"
+    }
+
+    private var visibleOffset: CGFloat {
+        clampedOffset(horizontalOffset + dragTranslation)
+    }
+
+    private var swipeGesture: some Gesture {
+        DragGesture(minimumDistance: 14, coordinateSpace: .local)
+            .updating($dragTranslation) { value, state, _ in
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                state = value.translation.width
+            }
+            .onEnded { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else {
+                    closeSwipe()
+                    return
+                }
+
+                let projectedOffset = horizontalOffset + value.predictedEndTranslation.width
+                let shouldOpen = projectedOffset < -(deleteRevealWidth * 0.45) || value.translation.width < -36
+
+                withAnimation(AppMotion.quickSpring(reduceMotion: reduceMotion)) {
+                    horizontalOffset = shouldOpen ? -deleteRevealWidth : 0
+                }
+            }
+    }
+
+    private func clampedOffset(_ offset: CGFloat) -> CGFloat {
+        min(0, max(-deleteRevealWidth, offset))
+    }
+
+    private func closeSwipe() {
+        withAnimation(AppMotion.quickSpring(reduceMotion: reduceMotion)) {
+            horizontalOffset = 0
+        }
     }
 }
 

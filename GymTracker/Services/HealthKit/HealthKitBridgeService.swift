@@ -59,6 +59,12 @@ struct HealthKitSyncStateStore {
         saveRecords(records)
     }
 
+    func removeRecord(for foodLogEntryId: UUID) {
+        var records = loadRecords()
+        records.removeValue(forKey: foodLogEntryId.uuidString)
+        saveRecords(records)
+    }
+
     func reset() {
         defaults.removeObject(forKey: key)
     }
