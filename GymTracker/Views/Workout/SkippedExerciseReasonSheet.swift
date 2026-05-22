@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SkippedExerciseReasonSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.appTheme) private var appTheme
 
     let skippedLogs: [ExerciseLog]
     let save: ([UUID: SkippedExerciseReason]) -> Void
@@ -15,7 +16,7 @@ struct SkippedExerciseReasonSheet: View {
                 Section {
                     Text("You can tag why planned exercises were skipped. This appends a short note and keeps your workout history intact.")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(appTheme.colors.textSecondary)
                 }
 
                 Section("Skipped Exercises") {

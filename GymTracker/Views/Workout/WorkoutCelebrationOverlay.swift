@@ -151,19 +151,19 @@ struct WorkoutCelebrationOverlay: View {
         }
 
         if visible {
-            withAnimation(.easeOut(duration: 0.72)) {
+            withAnimation(reduceMotion ? .easeOut(duration: 0.01) : .easeOut(duration: AppMotion.celebrationIconPulseDuration)) {
                 iconPulse = true
             }
 
             Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 40_000_000)
+                try? await Task.sleep(nanoseconds: AppMotion.popupContentRevealDelay)
                 guard isVisible else { return }
 
                 withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
                     contentRevealed = true
                 }
 
-                try? await Task.sleep(nanoseconds: 80_000_000)
+                try? await Task.sleep(nanoseconds: AppMotion.popupSecondaryRevealDelay)
                 guard isVisible else { return }
 
                 withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {

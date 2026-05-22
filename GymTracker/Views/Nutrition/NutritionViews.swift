@@ -66,7 +66,7 @@ struct NutritionDashboardView: View {
                             systemImage: "plus.circle.fill"
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableCardButtonStyle())
 
                     NavigationLink {
                         FoodDatabaseView()
@@ -77,7 +77,7 @@ struct NutritionDashboardView: View {
                             systemImage: "tray.full.fill"
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableCardButtonStyle())
 
                     NavigationLink {
                         NutritionInsightsDashboardView()
@@ -88,7 +88,7 @@ struct NutritionDashboardView: View {
                             systemImage: "sparkles"
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableCardButtonStyle())
 
                     NavigationLink {
                         NutritionTargetsView()
@@ -99,7 +99,7 @@ struct NutritionDashboardView: View {
                             systemImage: "target"
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableCardButtonStyle())
                 }
             }
 
@@ -113,7 +113,7 @@ struct NutritionDashboardView: View {
                                 } label: {
                                     QuickLogFoodCard(food: food)
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(PressableCardButtonStyle())
                             }
                         }
                         .padding(.vertical, 1)
@@ -136,7 +136,7 @@ struct NutritionDashboardView: View {
                             actionTitle: foodItems.isEmpty ? "Create Food" : "Log Food"
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableCardButtonStyle())
                 } else {
                     LazyVStack(spacing: 12) {
                         ForEach(MealType.allCases) { mealType in
@@ -225,7 +225,7 @@ struct AddFoodHubView: View {
                             isEnabled: true
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableCardButtonStyle())
 
                     NavigationLink {
                         NutritionLabelScanView()
@@ -238,7 +238,7 @@ struct AddFoodHubView: View {
                             isEnabled: true
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableCardButtonStyle())
 
                     Button {
                         showingManualEntry = true
@@ -251,7 +251,7 @@ struct AddFoodHubView: View {
                             isEnabled: true
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableCardButtonStyle())
 
                     NavigationLink {
                         FoodDatabaseView()
@@ -264,7 +264,7 @@ struct AddFoodHubView: View {
                             isEnabled: true
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableCardButtonStyle())
                 }
             }
         }
@@ -802,64 +802,44 @@ private struct NutritionHeroCard: View {
     let entryCount: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("Today's Intake")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                        .textCase(.uppercase)
-
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(kcalText(totals.calories))
-                            .font(.system(size: 48, weight: .bold, design: .rounded))
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.65)
-
-                        Text("kcal")
-                            .font(.headline.weight(.semibold))
+        FitnessCard(style: .hero) {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("Today's Intake")
+                            .font(.caption.weight(.semibold))
                             .foregroundStyle(appTheme.colors.textSecondary)
+                            .textCase(.uppercase)
+
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(kcalText(totals.calories))
+                                .font(.system(size: 44, weight: .bold, design: .rounded))
+                                .foregroundStyle(appTheme.colors.textPrimary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.65)
+
+                            Text("kcal")
+                                .font(.headline.weight(.semibold))
+                                .foregroundStyle(appTheme.colors.textSecondary)
+                        }
                     }
+
+                    Spacer(minLength: 12)
+
+                    FitnessIconBadge(systemImage: "flame.fill", size: 54)
                 }
 
-                Spacer(minLength: 12)
+                Text(heroMessage)
+                    .font(.headline)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                Image(systemName: "flame.fill")
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.accent)
-                    .frame(width: 56, height: 56)
-                    .background(appTheme.colors.accentSurface, in: Circle())
-            }
-
-            Text(heroMessage)
-                .font(.headline)
-                .foregroundStyle(appTheme.colors.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: 8) {
-                NutritionMiniMacroPill(label: "Protein", value: "\(gramsText(totals.protein))g", systemImage: "bolt.heart.fill")
-                NutritionMiniMacroPill(label: "Carbs", value: "\(gramsText(totals.carbs))g", systemImage: "leaf.fill")
-                NutritionMiniMacroPill(label: "Fat", value: "\(gramsText(totals.fat))g", systemImage: "drop.fill")
-            }
-        }
-        .padding(22)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .fill(appTheme.colors.cardBackground)
-                .overlay(alignment: .topTrailing) {
-                    Circle()
-                        .fill(appTheme.colors.accent.opacity(0.16))
-                        .frame(width: 170, height: 170)
-                        .blur(radius: 36)
-                        .offset(x: 54, y: -68)
+                HStack(spacing: 8) {
+                    NutritionMiniMacroPill(label: "Protein", value: "\(gramsText(totals.protein))g", systemImage: "bolt.heart.fill")
+                    NutritionMiniMacroPill(label: "Carbs", value: "\(gramsText(totals.carbs))g", systemImage: "leaf.fill")
+                    NutritionMiniMacroPill(label: "Fat", value: "\(gramsText(totals.fat))g", systemImage: "drop.fill")
                 }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .stroke(appTheme.colors.accent.opacity(0.22), lineWidth: 1)
+            }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Today's intake, \(kcalText(totals.calories)) calories, \(gramsText(totals.protein)) grams protein")
@@ -891,7 +871,7 @@ private struct MacroSummaryGrid: View {
             NutritionMetricCard(label: "Calories", value: kcalText(totals.calories), caption: "kcal logged", systemImage: "flame.fill")
             NutritionMetricCard(label: "Protein", value: "\(gramsText(totals.protein))g", caption: "recovery focus", systemImage: "bolt.heart.fill")
             NutritionMetricCard(label: "Carbs", value: "\(gramsText(totals.carbs))g", caption: "training fuel", systemImage: "leaf.fill")
-            NutritionMetricCard(label: "Fat", value: "\(gramsText(totals.fat))g", caption: "daily intake", systemImage: "drop.fill")
+            NutritionMetricCard(label: "Fibre", value: "\(gramsText(totals.fibre ?? 0))g", caption: "daily target", systemImage: "chart.bar.fill")
         }
     }
 }
@@ -905,40 +885,36 @@ private struct NutritionMetricCard: View {
     let systemImage: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack {
-                Image(systemName: systemImage)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.accent)
+        FitnessCard(style: .compact, padding: 14) {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack {
+                    Image(systemName: systemImage)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(appTheme.colors.accent)
 
-                Spacer()
-            }
+                    Spacer()
+                }
 
-            Text(value)
-                .font(.system(.title2, design: .rounded).weight(.bold))
-                .foregroundStyle(appTheme.colors.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                    .font(.caption.weight(.semibold))
+                Text(value)
+                    .font(.system(.title2, design: .rounded).weight(.bold))
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.7)
 
-                Text(caption)
-                    .font(.caption2)
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .lineLimit(1)
+
+                    Text(caption)
+                        .font(.caption2)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
             }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, minHeight: 118, alignment: .topLeading)
-        .background(appTheme.colors.cardBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(appTheme.colors.cardBorder, lineWidth: 1)
+            .frame(maxWidth: .infinity, minHeight: 90, alignment: .topLeading)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(label), \(value), \(caption)")
@@ -1011,8 +987,6 @@ private struct FoodLogRow: View {
     @State private var horizontalOffset: CGFloat = 0
     @GestureState private var dragTranslation: CGFloat = 0
 
-    private let deleteRevealWidth: CGFloat = 82
-
     private var syncRecord: HealthKitFoodLogSyncRecord? {
         HealthKitSyncStateStore().record(for: entry.id)
     }
@@ -1024,7 +998,8 @@ private struct FoodLogRow: View {
     var body: some View {
         ZStack(alignment: .trailing) {
             deleteAction
-                .frame(width: deleteRevealWidth)
+                .padding(.trailing, appTheme.metrics.swipeRevealActionTrailingPadding)
+                .opacity(deleteRevealProgress)
 
             rowContent
                 .offset(x: visibleOffset)
@@ -1034,7 +1009,6 @@ private struct FoodLogRow: View {
                     closeSwipe()
                 }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .contextMenu {
             Button(role: .destructive, action: requestDelete) {
                 Label("Remove Log", systemImage: "trash")
@@ -1079,18 +1053,13 @@ private struct FoodLogRow: View {
 
     private var deleteAction: some View {
         Button(role: .destructive, action: requestDelete) {
-            VStack(spacing: 4) {
-                Image(systemName: "trash")
-                    .font(.headline.weight(.semibold))
-
-                Text("Delete")
-                    .font(.caption2.weight(.bold))
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Image(systemName: "trash")
+                .font(.title3.weight(.semibold))
+                .frame(width: appTheme.metrics.swipeRevealActionSize, height: appTheme.metrics.swipeRevealActionSize)
+                .foregroundStyle(.white)
+                .background(appTheme.colors.danger, in: Circle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(appTheme.colors.danger)
-        .background(appTheme.colors.danger.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .accessibilityLabel("Remove \(entry.foodNameSnapshot) log")
     }
 
@@ -1100,6 +1069,14 @@ private struct FoodLogRow: View {
 
     private var visibleOffset: CGFloat {
         clampedOffset(horizontalOffset + dragTranslation)
+    }
+
+    private var deleteRevealWidth: CGFloat {
+        appTheme.metrics.swipeRevealWidth
+    }
+
+    private var deleteRevealProgress: CGFloat {
+        min(1, abs(visibleOffset) / deleteRevealWidth)
     }
 
     private var swipeGesture: some Gesture {
@@ -1117,7 +1094,7 @@ private struct FoodLogRow: View {
                 let projectedOffset = horizontalOffset + value.predictedEndTranslation.width
                 let shouldOpen = projectedOffset < -(deleteRevealWidth * 0.45) || value.translation.width < -36
 
-                withAnimation(AppMotion.quickSpring(reduceMotion: reduceMotion)) {
+                withAnimation(AppMotion.swipeRevealSnap(reduceMotion: reduceMotion)) {
                     horizontalOffset = shouldOpen ? -deleteRevealWidth : 0
                 }
             }
@@ -1128,7 +1105,7 @@ private struct FoodLogRow: View {
     }
 
     private func closeSwipe() {
-        withAnimation(AppMotion.quickSpring(reduceMotion: reduceMotion)) {
+        withAnimation(AppMotion.swipeRevealSnap(reduceMotion: reduceMotion)) {
             horizontalOffset = 0
         }
     }
@@ -1136,12 +1113,32 @@ private struct FoodLogRow: View {
 
 private struct SavedFoodCard: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let food: FoodItem
     let edit: () -> Void
     let delete: () -> Void
 
+    @State private var horizontalOffset: CGFloat = 0
+    @GestureState private var dragTranslation: CGFloat = 0
+
     var body: some View {
+        ZStack(alignment: .trailing) {
+            deleteAction
+                .padding(.trailing, appTheme.metrics.swipeRevealActionTrailingPadding)
+                .opacity(deleteRevealProgress)
+
+            cardContent
+                .offset(x: visibleOffset)
+                .gesture(swipeGesture)
+                .onTapGesture {
+                    guard horizontalOffset != 0 else { return }
+                    closeSwipe()
+                }
+        }
+    }
+
+    private var cardContent: some View {
         FitnessCard(padding: 16) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 12) {
@@ -1196,17 +1193,63 @@ private struct SavedFoodCard: View {
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .background(appTheme.colors.cardBackgroundElevated, in: Circle())
                     .accessibilityLabel("Edit \(food.name)")
-
-                    Button(role: .destructive, action: delete) {
-                        Image(systemName: "trash")
-                            .frame(width: 46, height: 46)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(appTheme.colors.danger)
-                    .background(appTheme.colors.danger.opacity(0.12), in: Circle())
-                    .accessibilityLabel("Delete \(food.name)")
                 }
             }
+        }
+    }
+
+    private var deleteAction: some View {
+        Button(role: .destructive, action: delete) {
+            Image(systemName: "trash")
+                .font(.title3.weight(.semibold))
+                .frame(width: appTheme.metrics.swipeRevealActionSize, height: appTheme.metrics.swipeRevealActionSize)
+                .foregroundStyle(.white)
+                .background(appTheme.colors.danger, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Delete \(food.name)")
+    }
+
+    private var visibleOffset: CGFloat {
+        clampedOffset(horizontalOffset + dragTranslation)
+    }
+
+    private var deleteRevealWidth: CGFloat {
+        appTheme.metrics.swipeRevealWidth
+    }
+
+    private var deleteRevealProgress: CGFloat {
+        min(1, abs(visibleOffset) / deleteRevealWidth)
+    }
+
+    private var swipeGesture: some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .local)
+            .updating($dragTranslation) { value, state, _ in
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                state = value.translation.width
+            }
+            .onEnded { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else {
+                    closeSwipe()
+                    return
+                }
+
+                let projectedOffset = horizontalOffset + value.predictedEndTranslation.width
+                let shouldOpen = projectedOffset < -(deleteRevealWidth * 0.45) || value.translation.width < -36
+
+                withAnimation(AppMotion.swipeRevealSnap(reduceMotion: reduceMotion)) {
+                    horizontalOffset = shouldOpen ? -deleteRevealWidth : 0
+                }
+            }
+    }
+
+    private func clampedOffset(_ offset: CGFloat) -> CGFloat {
+        min(0, max(-deleteRevealWidth, offset))
+    }
+
+    private func closeSwipe() {
+        withAnimation(AppMotion.swipeRevealSnap(reduceMotion: reduceMotion)) {
+            horizontalOffset = 0
         }
     }
 }
@@ -1300,87 +1343,31 @@ private struct ManualFoodTrustCard: View {
 }
 
 private struct QuickLogFoodCard: View {
-    @Environment(\.appTheme) private var appTheme
-
     let food: FoodItem
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            NutritionFoodIcon(systemImage: "fork.knife")
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(food.name)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.textPrimary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-
-                Text("\(kcalText(food.caloriesPer100g ?? 0)) kcal - \(gramsText(food.proteinPer100g ?? 0))g protein")
-                    .font(.caption)
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .lineLimit(2)
-            }
-        }
-        .padding(16)
-        .frame(width: 168, height: 142, alignment: .topLeading)
-        .background(appTheme.colors.cardBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(appTheme.colors.cardBorder, lineWidth: 1)
-        }
+        DashboardActionTile(
+            title: food.name,
+            subtitle: "\(kcalText(food.caloriesPer100g ?? 0)) kcal - \(gramsText(food.proteinPer100g ?? 0))g protein",
+            systemImage: "fork.knife",
+            showsChevron: false,
+            width: 168,
+            iconSize: 42
+        )
     }
 }
 
 private struct NutritionActionCard: View {
-    @Environment(\.appTheme) private var appTheme
-
     let title: String
     let subtitle: String
     let systemImage: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: systemImage)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.accent)
-                    .frame(width: 38, height: 38)
-                    .background(appTheme.colors.accentSurface, in: Circle())
-
-                Spacer(minLength: 8)
-
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(appTheme.colors.textTertiary)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.textPrimary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
-        .background(appTheme.colors.cardBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(appTheme.colors.accent.opacity(0.18), lineWidth: 1)
-        }
+        DashboardActionTile(title: title, subtitle: subtitle, systemImage: systemImage)
     }
 }
 
 private struct NutritionHubActionCard: View {
-    @Environment(\.appTheme) private var appTheme
-
     let title: String
     let subtitle: String
     let systemImage: String
@@ -1388,49 +1375,14 @@ private struct NutritionHubActionCard: View {
     let isEnabled: Bool
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(isEnabled ? appTheme.colors.accent : appTheme.colors.textTertiary)
-                .frame(width: 44, height: 44)
-                .background(isEnabled ? appTheme.colors.accentSurface : appTheme.colors.cardBackgroundElevated, in: Circle())
-
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 8) {
-                    Text(title)
-                        .font(.headline)
-                        .foregroundStyle(isEnabled ? appTheme.colors.textPrimary : appTheme.colors.textSecondary)
-
-                    Text(status)
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(isEnabled ? appTheme.colors.accent : appTheme.colors.textTertiary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(isEnabled ? appTheme.colors.accentSurface : appTheme.colors.cardBackgroundElevated, in: Capsule())
-                        .lineLimit(1)
-                }
-
-                Text(subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 8)
-
-            Image(systemName: isEnabled ? "chevron.right" : "lock.fill")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(appTheme.colors.textTertiary)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(appTheme.colors.cardBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(isEnabled ? appTheme.colors.cardBorder : appTheme.colors.cardBorder.opacity(0.8), lineWidth: 1)
-        }
-        .opacity(isEnabled ? 1 : 0.62)
-        .accessibilityElement(children: .combine)
+        DashboardActionTile(
+            title: title,
+            subtitle: subtitle,
+            systemImage: systemImage,
+            status: status,
+            isEnabled: isEnabled,
+            layout: .horizontal
+        )
     }
 }
 
@@ -1445,11 +1397,7 @@ private struct NutritionEmptyState: View {
     var body: some View {
         FitnessCard {
             VStack(alignment: .leading, spacing: 14) {
-                Image(systemName: systemImage)
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.accent)
-                    .frame(width: 48, height: 48)
-                    .background(appTheme.colors.accentSurface, in: Circle())
+                FitnessIconBadge(systemImage: systemImage, size: 48)
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title)
@@ -1622,16 +1570,10 @@ private struct VerificationStatusBadge: View {
 }
 
 private struct NutritionFoodIcon: View {
-    @Environment(\.appTheme) private var appTheme
-
     let systemImage: String
 
     var body: some View {
-        Image(systemName: systemImage)
-            .font(.headline.weight(.semibold))
-            .foregroundStyle(appTheme.colors.accent)
-            .frame(width: 42, height: 42)
-            .background(appTheme.colors.accentSurface, in: Circle())
+        FitnessIconBadge(systemImage: systemImage, size: 42)
     }
 }
 

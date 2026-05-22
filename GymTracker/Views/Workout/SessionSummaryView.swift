@@ -41,7 +41,7 @@ struct SessionSummaryView: View {
             subtitle: session.date.formatted(date: .abbreviated, time: .omitted),
             systemImage: "checkmark.circle.fill"
         ) {
-            FitnessCard {
+            FitnessCard(style: .hero) {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .top, spacing: 14) {
                         ExerciseIconView(
@@ -92,72 +92,73 @@ struct SessionSummaryView: View {
                 }
             }
 
-            FitnessCard {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Text("Today's Improvements")
-                            .font(.headline)
-                        Spacer()
-                        CoachBadgeView(state: sessionPRs.isEmpty ? .ready : .pr)
-                    }
+            DashboardSection(title: "Today's Improvements") {
+                FitnessCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text(sessionPRs.isEmpty ? "Completed Work" : "New Bests")
+                                .font(.headline)
+                            Spacer()
+                            CoachBadgeView(state: sessionPRs.isEmpty ? .ready : .pr)
+                        }
 
-                    if sessionPRs.isEmpty {
-                        Text("No PRs today, but you completed \(summary.workingSetCount) working sets.")
-                            .font(.subheadline)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                    } else {
-                        ForEach(sessionPRs.prefix(5)) { pr in
-                            Label("\(pr.exerciseName) - \(pr.improvementDescription)", systemImage: "arrow.up.circle.fill")
+                        if sessionPRs.isEmpty {
+                            Text("No PRs today, but you completed \(summary.workingSetCount) working sets.")
                                 .font(.subheadline)
+                                .foregroundStyle(appTheme.colors.textSecondary)
+                        } else {
+                            ForEach(sessionPRs.prefix(5)) { pr in
+                                Label("\(pr.exerciseName) - \(pr.improvementDescription)", systemImage: "arrow.up.circle.fill")
+                                    .font(.subheadline)
+                            }
                         }
                     }
                 }
             }
 
             if let suggestedNextSplit = summary.suggestedNextSplit {
-                FitnessCard {
-                    HStack {
-                        ExerciseIconView(
-                            iconKey: ExerciseIconMapper.splitIconKey(for: suggestedNextSplit),
-                            size: 44,
-                            showBackground: true,
-                            isDecorative: true
-                        )
+                DashboardSection(title: "Next Up") {
+                    FitnessCard {
+                        HStack {
+                            ExerciseIconView(
+                                iconKey: ExerciseIconMapper.splitIconKey(for: suggestedNextSplit),
+                                size: 44,
+                                showBackground: true,
+                                isDecorative: true
+                            )
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Next up")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(appTheme.colors.textSecondary)
-                                .textCase(.uppercase)
-                            Text(suggestedNextSplit)
-                                .font(.title2.bold())
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Suggested split")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(appTheme.colors.textSecondary)
+                                    .textCase(.uppercase)
+                                Text(suggestedNextSplit)
+                                    .font(.title2.bold())
+                            }
+
+                            Spacer()
+                            CoachBadgeView(state: .ready)
                         }
-
-                        Spacer()
-                        CoachBadgeView(state: .ready)
                     }
                 }
             }
 
-            FitnessCard {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Next Decision")
-                        .font(.headline)
-                    Text("Next suggested session: \(weeklyReview.nextDecision.recommendedSplitName ?? "Any split")")
-                        .font(.subheadline.weight(.semibold))
-                    Text("Suggested mode: \(weeklyReview.nextDecision.recommendedMode.displayName)")
-                        .font(.subheadline)
-                    Text(weeklyReview.nextDecision.reason)
-                        .font(.footnote)
-                        .foregroundStyle(appTheme.colors.textSecondary)
+            DashboardSection(title: "Next Decision") {
+                FitnessCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Next suggested session: \(weeklyReview.nextDecision.recommendedSplitName ?? "Any split")")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Suggested mode: \(weeklyReview.nextDecision.recommendedMode.displayName)")
+                            .font(.subheadline)
+                        Text(weeklyReview.nextDecision.reason)
+                            .font(.footnote)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                    }
                 }
             }
 
             if !completedExerciseLogs.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Completed Exercises")
-                        .font(.headline)
-
+                DashboardSection(title: "Completed Exercises") {
                     FitnessCard {
                         VStack(alignment: .leading, spacing: 10) {
                             ForEach(Array(completedExerciseLogs.enumerated()), id: \.element.id) { index, exerciseLog in
@@ -172,51 +173,53 @@ struct SessionSummaryView: View {
                 }
             }
 
-            HStack(spacing: 10) {
-                NavigationLink {
-                    HistoryView()
-                } label: {
-                    Label("History", systemImage: "calendar")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(SecondaryFitnessButtonStyle())
+            DashboardSection(title: "Actions") {
+                HStack(spacing: 10) {
+                    NavigationLink {
+                        HistoryView()
+                    } label: {
+                        Label("History", systemImage: "calendar")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryFitnessButtonStyle())
 
-                Button {
-                    dismiss()
-                } label: {
-                    Label("Done", systemImage: "house")
-                        .frame(maxWidth: .infinity)
+                    Button {
+                        dismiss()
+                    } label: {
+                        Label("Done", systemImage: "house")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(PrimaryFitnessButtonStyle())
                 }
-                .buttonStyle(PrimaryFitnessButtonStyle())
-            }
-            .font(.headline)
+                .font(.headline)
 
-            HStack(spacing: 10) {
-                Button {
-                    showingTemplateSave = true
-                } label: {
-                    Label("Save Template", systemImage: "rectangle.stack.badge.plus")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(SecondaryFitnessButtonStyle())
+                HStack(spacing: 10) {
+                    Button {
+                        showingTemplateSave = true
+                    } label: {
+                        Label("Save Template", systemImage: "rectangle.stack.badge.plus")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryFitnessButtonStyle())
 
-                Button {
-                    showingReopenConfirmation = true
-                } label: {
-                    Label("Reopen", systemImage: "arrow.uturn.backward.circle")
-                        .frame(maxWidth: .infinity)
+                    Button {
+                        showingReopenConfirmation = true
+                    } label: {
+                        Label("Reopen", systemImage: "arrow.uturn.backward.circle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryFitnessButtonStyle())
                 }
-                .buttonStyle(SecondaryFitnessButtonStyle())
-            }
 
-            if matchingSplit != nil {
-                Button {
-                    showingUpdateSplitConfirmation = true
-                } label: {
-                    Label("Update Split Template", systemImage: "arrow.triangle.2.circlepath")
-                        .frame(maxWidth: .infinity)
+                if matchingSplit != nil {
+                    Button {
+                        showingUpdateSplitConfirmation = true
+                    } label: {
+                        Label("Update Split Template", systemImage: "arrow.triangle.2.circlepath")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryFitnessButtonStyle())
                 }
-                .buttonStyle(SecondaryFitnessButtonStyle())
             }
         }
         .navigationBarBackButtonHidden()

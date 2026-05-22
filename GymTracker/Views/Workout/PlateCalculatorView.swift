@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct PlateCalculatorView: View {
+    @Environment(\.appTheme) private var appTheme
+
     @State private var targetWeight: Double
     @State private var barWeight = 20.0
 
@@ -24,7 +26,7 @@ struct PlateCalculatorView: View {
             Section {
                 if plateCounts.isEmpty {
                     Text("No plates needed.")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(appTheme.colors.textSecondary)
                 } else {
                     ForEach(Array(plateCounts.keys.sorted(by: >)), id: \.self) { plate in
                         LabeledContent("\(format(plate))kg", value: "x\(plateCounts[plate, default: 0])")

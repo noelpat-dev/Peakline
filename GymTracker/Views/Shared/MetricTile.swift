@@ -37,7 +37,7 @@ struct MetricTile: View {
 
             Text(value)
                 .font(.system(.title2, design: .rounded).weight(.bold))
-                .foregroundStyle(.primary)
+                .foregroundStyle(appTheme.colors.textPrimary)
                 .minimumScaleFactor(0.75)
                 .lineLimit(1)
 
@@ -48,9 +48,9 @@ struct MetricTile: View {
                     .lineLimit(2)
             }
         }
-        .padding(12)
+        .padding(appTheme.metrics.compactCardPadding)
         .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
         .background(appTheme.elevatedCardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: appTheme.metrics.compactCardRadius, style: .continuous))
     }
 }

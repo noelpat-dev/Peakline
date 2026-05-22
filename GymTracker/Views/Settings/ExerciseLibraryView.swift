@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ExerciseLibraryView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.appTheme) private var appTheme
 
     @Query(sort: \Exercise.name)
     private var exercises: [Exercise]
@@ -23,7 +24,7 @@ struct ExerciseLibraryView: View {
             Section("Exercises") {
                 if visibleExercises.isEmpty {
                     Text(showingArchived ? "No exercises yet" : "No active exercises")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(appTheme.colors.textSecondary)
                 } else {
                     ForEach(visibleExercises) { exercise in
                         NavigationLink {
@@ -60,6 +61,8 @@ struct ExerciseLibraryView: View {
 }
 
 private struct ExerciseLibraryRow: View {
+    @Environment(\.appTheme) private var appTheme
+
     let exercise: Exercise
 
     var body: some View {
@@ -79,13 +82,13 @@ private struct ExerciseLibraryRow: View {
                     if exercise.isArchived {
                         Text("Archived")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(appTheme.colors.textSecondary)
                     }
                 }
 
                 Text("\(exercise.primaryMuscleGroup.displayName) - \(exercise.equipment.displayName) - \(exercise.movementPattern.displayName)")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(appTheme.colors.textSecondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

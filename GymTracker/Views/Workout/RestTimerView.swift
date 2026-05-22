@@ -17,7 +17,7 @@ struct RestTimerView: View {
                             if let exerciseName = state.exerciseName {
                                 Text(nextSetText(exerciseName: exerciseName))
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(appTheme.colors.textSecondary)
                             }
                         }
 

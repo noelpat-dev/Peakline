@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct SplitCardView: View {
+    @Environment(\.appTheme) private var appTheme
+
     let splitName: String
     let lastTrainedText: String
     let estimatedDurationText: String
@@ -10,7 +12,7 @@ struct SplitCardView: View {
     let action: (() -> Void)?
 
     var body: some View {
-        FitnessCard {
+        FitnessCard(style: .compact) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top) {
                     ExerciseIconView(
@@ -23,9 +25,10 @@ struct SplitCardView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(splitName)
                             .font(.system(.title2, design: .rounded).weight(.bold))
+                            .foregroundStyle(appTheme.colors.textPrimary)
                         Text(lastTrainedText)
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(appTheme.colors.textSecondary)
                     }
 
                     Spacer()

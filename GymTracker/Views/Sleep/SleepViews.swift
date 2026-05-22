@@ -21,6 +21,7 @@ struct SleepDashboardView: View {
     @State private var showingNapTimer = false
     @State private var showingSettings = false
     @State private var confirmationSession: SleepSession?
+    @State private var pendingDiscardSession: SleepSession?
     @State private var importedCount: Int?
     @State private var summaries: [SleepSummary] = []
     @State private var latestSummary = SleepScoringService.emptySummary()
@@ -45,6 +46,16 @@ struct SleepDashboardView: View {
         SleepAnalyticsInputSignature(sessions: sessions, naps: naps, workouts: workouts, settings: settings)
     }
 
+    private var discardAlertBinding: Binding<Bool> {
+        Binding {
+            pendingDiscardSession != nil
+        } set: { showing in
+            if !showing {
+                pendingDiscardSession = nil
+            }
+        }
+    }
+
     var body: some View {
         NavigationStack {
             FitnessScreen(
@@ -56,8 +67,8 @@ struct SleepDashboardView: View {
                     activeSleepCard(activeSession)
                 } else {
                     recoveryCard
-                    appleHealthConnectionCard
                     startCard
+                    appleHealthConnectionCard
                 }
 
                 weeklyChartCard
@@ -97,6 +108,16 @@ struct SleepDashboardView: View {
             .sheet(isPresented: $showingSettings) {
                 SleepSettingsView(settings: $settings)
             }
+            .alert("Discard active sleep?", isPresented: discardAlertBinding) {
+                Button("Cancel", role: .cancel) {
+                    pendingDiscardSession = nil
+                }
+                Button("Discard", role: .destructive) {
+                    discardPendingSleepSession()
+                }
+            } message: {
+                Text("This removes the unfinished Sleep Mode session.")
+            }
             .navigationDestination(for: SleepSession.self) { session in
                 SleepSessionDetailView(session: session)
             }
@@ -120,56 +141,50 @@ struct SleepDashboardView: View {
     }
 
     private var recoveryCard: some View {
-        FitnessCard {
-            VStack(alignment: .leading, spacing: 16) {
+        SleepGlassCard(style: .hero) {
+            VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .top, spacing: 14) {
-                    Image(systemName: "moon.stars.fill")
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.accent)
-                        .frame(width: 54, height: 54)
-                        .background(appTheme.colors.accentSurface, in: Circle())
+                    SleepIconTile(systemImage: "moon.stars.fill", size: 50)
 
                     VStack(alignment: .leading, spacing: 5) {
-                        HStack(spacing: 8) {
-                            Text("Sleep Recovery")
-                                .font(.headline)
-                                .foregroundStyle(appTheme.colors.textPrimary)
-
-                            Text(latestSummary.recoveryState.shortLabel)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(appTheme.colors.accent)
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 5)
-                                .background(appTheme.colors.accentSurface, in: Capsule())
-                        }
-
-                        Text(latestSummary.primarySession == nil ? "No sleep data yet" : SleepScoringService.durationText(minutes: latestSummary.totalSleepMinutes))
-                            .font(.system(size: 44, weight: .bold, design: .rounded))
+                        Text("Sleep Recovery")
+                            .font(.headline)
                             .foregroundStyle(appTheme.colors.textPrimary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
 
                         Text(summaryMetadataText)
                             .font(.subheadline)
                             .foregroundStyle(appTheme.colors.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Spacer(minLength: 8)
 
                     if let score = latestSummary.sleepScore {
-                        Text("\(score)")
-                            .font(.title2.bold())
-                            .foregroundStyle(appTheme.colors.accent)
-                            .frame(width: 58, height: 58)
-                            .background(appTheme.colors.accentSurface, in: Circle())
-                            .accessibilityLabel("Sleep recovery score, \(score) out of 100")
+                        SleepScoreBadge(score: score)
                     }
                 }
 
-                Text(dashboardSummary.recommendation)
-                    .font(.headline)
+                Text(latestSummary.primarySession == nil ? "No sleep data yet" : SleepScoringService.durationText(minutes: latestSummary.totalSleepMinutes))
+                    .font(.system(size: 44, weight: .bold, design: .rounded))
                     .foregroundStyle(appTheme.colors.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    SleepStatusChip(title: recoveryActionTitle, state: latestSummary.recoveryState)
+
+                    Text(dashboardSummary.recommendation)
+                        .font(.subheadline)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(appTheme.metrics.compactCardPadding)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.compactCardRadius, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: appTheme.metrics.compactCardRadius, style: .continuous)
+                        .stroke(appTheme.colors.cardBorder, lineWidth: 1)
+                }
 
                 if latestSummary.napCreditMinutes > 0 {
                     Label("Nap added \(SleepScoringService.durationText(minutes: latestSummary.napCreditMinutes)) recovery credit", systemImage: "moonphase.first.quarter")
@@ -207,30 +222,12 @@ struct SleepDashboardView: View {
     }
 
     private var appleHealthConnectionCard: some View {
-        FitnessCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "heart.text.square.fill")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.accent)
-                        .frame(width: 44, height: 44)
-                        .background(appTheme.colors.accentSurface, in: Circle())
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(appleHealthTitle)
-                            .font(.headline)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-
-                        Text(appleHealthSubtitle)
-                            .font(.caption)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer(minLength: 8)
-                }
-
-            }
+        SleepGlassCard(style: .compact) {
+            SleepGlassRow(
+                title: appleHealthTitle,
+                subtitle: appleHealthSubtitle,
+                systemImage: "heart.text.square.fill"
+            )
         }
     }
 
@@ -247,9 +244,9 @@ struct SleepDashboardView: View {
         }
         if settings.enableAppleHealthImport {
             if let lastSync = settings.lastHealthKitSleepSyncAt {
-                return "Last synced: \(lastSync.formatted(date: .abbreviated, time: .shortened)). Sleep data can improve recovery scoring."
+                return "Last synced: \(lastSync.formatted(date: .abbreviated, time: .shortened)). Sleep data improves recovery scoring."
             }
-            return "Sleep data from Apple Health can be used in your recovery score."
+            return "Sleep data improves recovery scoring."
         }
         return "Import sleep data automatically to improve recovery scoring."
     }
@@ -265,101 +262,127 @@ struct SleepDashboardView: View {
     }
 
     private var startCard: some View {
-        FitnessCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 12) {
-                    Image(systemName: "bed.double.fill")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.accent)
-                        .frame(width: 46, height: 46)
-                        .background(appTheme.colors.accentSurface, in: Circle())
+        SleepGlassCard {
+            VStack(alignment: .leading, spacing: 16) {
+                SleepGlassRow(
+                    title: "Sleep Mode",
+                    subtitle: "Sleep start is estimated from your wind-down timer. You can edit it in the morning.",
+                    systemImage: "bed.double.fill"
+                )
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Sleep Mode")
-                            .font(.headline)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                        Text("Sleep start is estimated from your wind-down timer. You can edit it in the morning.")
-                            .font(.caption)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                SleepActionButton(
+                    title: "Start Sleep Mode",
+                    systemImage: "moon.zzz.fill",
+                    style: .primary
+                ) {
+                    showingSleepMode = true
                 }
 
-                HStack(spacing: 10) {
-                    Button {
-                        showingSleepMode = true
-                    } label: {
-                        Label("Start Sleep Mode", systemImage: "moon.zzz.fill")
-                            .frame(maxWidth: .infinity)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        sleepSecondaryActions
                     }
-                    .buttonStyle(PrimaryFitnessButtonStyle())
 
-                    Button {
-                        showingManualEntry = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .frame(width: 52, height: 52)
+                    VStack(spacing: 10) {
+                        sleepSecondaryActions
                     }
-                    .buttonStyle(SecondaryFitnessButtonStyle())
-                    .accessibilityLabel("Add sleep manually")
-                }
-
-                HStack(spacing: 10) {
-                    Button {
-                        showingNapEntry = true
-                    } label: {
-                        Label("Log Nap", systemImage: "plus.circle.fill")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(SecondaryFitnessButtonStyle())
-
-                    Button {
-                        showingNapTimer = true
-                    } label: {
-                        Label("Nap Timer", systemImage: "timer")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(NeutralFitnessButtonStyle())
                 }
             }
         }
     }
 
     private func activeSleepCard(_ session: SleepSession) -> some View {
-        FitnessCard {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Sleep Mode Active")
-                    .font(.headline)
-                    .foregroundStyle(appTheme.colors.textPrimary)
+        SleepGlassCard(style: .hero) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 12) {
+                    SleepIconTile(systemImage: "moon.zzz.fill", size: 46)
 
-                Text(activeSleepDescription(for: session))
-                    .font(.subheadline)
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Sleep Mode Active")
+                            .font(.headline)
+                            .foregroundStyle(appTheme.colors.textPrimary)
 
-                HStack(spacing: 10) {
-                    Button {
-                        confirmationSession = session
-                    } label: {
-                        Label("Confirm Wake Time", systemImage: "sun.max.fill")
-                            .frame(maxWidth: .infinity)
+                        Text(activeSleepDescription(for: session))
+                            .font(.subheadline)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .buttonStyle(PrimaryFitnessButtonStyle())
+                }
 
-                    Button(role: .destructive) {
-                        try? repository.discard(session, in: modelContext)
-                        Task {
-                            SleepNotificationScheduler().cancelNotifications(for: session.id)
-                            await SleepNotificationScheduler().refreshAllSleepNotifications(settings: settings, sessions: sessions, workouts: workouts)
-                        }
-                    } label: {
-                        Image(systemName: "xmark")
-                            .frame(width: 52, height: 52)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        activeSleepActions(session)
                     }
-                    .buttonStyle(NeutralFitnessButtonStyle())
-                    .accessibilityLabel("Discard sleep session")
+
+                    VStack(spacing: 10) {
+                        activeSleepActions(session)
+                    }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var sleepSecondaryActions: some View {
+        SleepActionButton(
+            title: "Log Nap",
+            systemImage: "plus.circle.fill",
+            style: .secondary
+        ) {
+            showingNapEntry = true
+        }
+
+        SleepActionButton(
+            title: "Nap Timer",
+            systemImage: "timer",
+            style: .secondary
+        ) {
+            showingNapTimer = true
+        }
+
+        SleepActionButton(
+            title: "Manual Entry",
+            systemImage: "square.and.pencil",
+            style: .secondary
+        ) {
+            showingManualEntry = true
+        }
+    }
+
+    @ViewBuilder
+    private func activeSleepActions(_ session: SleepSession) -> some View {
+        SleepActionButton(
+            title: "Confirm Wake Time",
+            systemImage: "sun.max.fill",
+            style: .primary
+        ) {
+            confirmationSession = session
+        }
+
+        SleepActionButton(
+            title: "Discard",
+            systemImage: "xmark.circle",
+            style: .neutral
+        ) {
+            pendingDiscardSession = session
+        }
+        .accessibilityLabel("Discard sleep session")
+    }
+
+    private var recoveryActionTitle: String {
+        switch latestSummary.recoveryState {
+        case .high:
+            return "Push progression"
+        case .good:
+            return "Train normally"
+        case .moderate:
+            return "Train with caution"
+        case .low:
+            return "Reduce volume today"
+        case .veryLow:
+            return "Recovery focus"
+        case .unknown:
+            return "Track sleep tonight"
         }
     }
 
@@ -373,9 +396,21 @@ struct SleepDashboardView: View {
         return "Estimated sleep so far: \(SleepScoringService.durationText(minutes: minutes)). Confirm or edit wake time when you are up."
     }
 
+    private func discardPendingSleepSession() {
+        guard let session = pendingDiscardSession else { return }
+        let discardedSessionID = session.id
+        try? repository.discard(session, in: modelContext)
+        pendingDiscardSession = nil
+
+        Task {
+            SleepNotificationScheduler().cancelNotifications(for: discardedSessionID)
+            await SleepNotificationScheduler().refreshAllSleepNotifications(settings: settings, sessions: sessions, workouts: workouts)
+        }
+    }
+
     private var weeklyChartCard: some View {
-        SleepDashboardSection(title: "Last 7 Days") {
-            FitnessCard {
+        DashboardSection(title: "Last 7 Days") {
+            SleepGlassCard {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
                         Text("Average \(SleepScoringService.durationText(minutes: averageSleepMinutes))")
@@ -421,27 +456,15 @@ struct SleepDashboardView: View {
     }
 
     private var napsSection: some View {
-        SleepDashboardSection(title: "Naps") {
+        DashboardSection(title: "Naps") {
             VStack(spacing: 12) {
                 if dashboardSummary.recentNaps.isEmpty {
-                    FitnessCard {
-                        HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: "moonphase.first.quarter")
-                                .font(.title3.weight(.semibold))
-                                .foregroundStyle(appTheme.colors.accent)
-                                .frame(width: 44, height: 44)
-                                .background(appTheme.colors.accentSurface, in: Circle())
-
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text("No naps logged recently")
-                                    .font(.headline)
-                                    .foregroundStyle(appTheme.colors.textPrimary)
-                                Text("Log a nap after short sleep to see whether it helped today's recovery.")
-                                    .font(.subheadline)
-                                    .foregroundStyle(appTheme.colors.textSecondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
+                    SleepGlassCard(style: .compact) {
+                        SleepGlassRow(
+                            title: "No naps logged recently",
+                            subtitle: "Log a nap after short sleep to see whether it helped today's recovery.",
+                            systemImage: "moonphase.first.quarter"
+                        )
                     }
                 } else {
                     ForEach(dashboardSummary.recentNaps) { nap in
@@ -476,83 +499,61 @@ struct SleepDashboardView: View {
     }
 
     private var consistencyAndDebt: some View {
-        SleepDashboardSection(title: "Recovery Trends") {
-            VStack(spacing: 12) {
-                FitnessCard {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Sleep Debt")
-                            .font(.headline)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-
-                        Text(sleepDebtHeadline)
-                            .font(.system(size: 34, weight: .bold, design: .rounded))
-                            .foregroundStyle(appTheme.colors.textPrimary)
-
-                        Text(sleepDebtCopy)
-                            .font(.subheadline)
-                            .foregroundStyle(appTheme.colors.textSecondary)
+        DashboardSection(title: "Recovery Trends") {
+            SleepGlassCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
+                        SleepGlassMetricTile(title: "Sleep Debt", value: sleepDebtHeadline, systemImage: "moon.zzz")
+                        SleepGlassMetricTile(title: "Consistency", value: dashboardSummary.consistencySummary.displayName, systemImage: "calendar")
                     }
-                }
 
-                FitnessCard {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Consistency")
-                            .font(.headline)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-
-                        Text(dashboardSummary.consistencySummary.displayName)
-                            .font(.system(.title2, design: .rounded).weight(.bold))
-                            .foregroundStyle(appTheme.colors.textPrimary)
-
-                        if let bed = dashboardSummary.consistencySummary.averageSleepStart, let wake = dashboardSummary.consistencySummary.averageWakeTime {
-                            HStack(spacing: 10) {
-                                SleepMiniMetric(title: "Bedtime", value: bed.formatted(date: .omitted, time: .shortened))
-                                SleepMiniMetric(title: "Wake", value: wake.formatted(date: .omitted, time: .shortened))
-                            }
-                        }
-
-                        Text(dashboardSummary.consistencySummary.message)
-                            .font(.subheadline)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-        }
-    }
-
-    private var trainingInsightCard: some View {
-        SleepDashboardSection(title: "Sleep And Training") {
-            FitnessCard {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "figure.strengthtraining.traditional")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.accent)
-                        .frame(width: 44, height: 44)
-                        .background(appTheme.colors.accentSurface, in: Circle())
-
-                    Text(coaching.trainingInsight(summaries: summaries, workouts: workouts))
+                    Text(sleepDebtCopy)
                         .font(.subheadline)
-                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let bed = dashboardSummary.consistencySummary.averageSleepStart, let wake = dashboardSummary.consistencySummary.averageWakeTime {
+                        HStack(spacing: 10) {
+                            SleepGlassMetricTile(title: "Bedtime", value: bed.formatted(date: .omitted, time: .shortened), systemImage: "bed.double")
+                            SleepGlassMetricTile(title: "Wake", value: wake.formatted(date: .omitted, time: .shortened), systemImage: "sun.max")
+                        }
+                    }
+
+                    Text(dashboardSummary.consistencySummary.message)
+                        .font(.subheadline)
+                        .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
     }
 
+    private var trainingInsightCard: some View {
+        DashboardSection(title: "Sleep And Training") {
+            SleepGlassCard(style: .compact) {
+                SleepGlassRow(
+                    title: "Training context",
+                    subtitle: coaching.trainingInsight(summaries: summaries, workouts: workouts),
+                    systemImage: "figure.strengthtraining.traditional"
+                )
+            }
+        }
+    }
+
     private var coachingInsightsSection: some View {
-        SleepDashboardSection(title: "Coaching Insights") {
+        DashboardSection(title: "Coaching Insights") {
             VStack(spacing: 10) {
                 if let recommendation = dashboardSummary.adaptiveRecommendation {
                     SleepAdaptiveRecommendationCard(recommendation: recommendation)
                 }
 
                 if dashboardSummary.coachingInsights.isEmpty {
-                    FitnessCard {
-                        Text("Keep tracking sleep and workouts. Once there is enough history, Peakline can show how your sleep affects performance.")
-                            .font(.subheadline)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                    SleepGlassCard(style: .compact) {
+                        SleepGlassRow(
+                            title: "Insights warming up",
+                            subtitle: "Keep tracking sleep and workouts. Once there is enough history, Peakline can show how your sleep affects performance.",
+                            systemImage: "sparkles"
+                        )
                     }
                 } else {
                     ForEach(dashboardSummary.coachingInsights) { insight in
@@ -564,17 +565,14 @@ struct SleepDashboardView: View {
     }
 
     private var historySection: some View {
-        SleepDashboardSection(title: "History") {
+        DashboardSection(title: "History") {
             if completedSessions.isEmpty {
-                FitnessCard {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("No sleep data yet")
-                            .font(.headline)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                        Text("Start Sleep Mode tonight to help the app understand your recovery.")
-                            .font(.subheadline)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                    }
+                SleepGlassCard(style: .compact) {
+                    SleepGlassRow(
+                        title: "No sleep data yet",
+                        subtitle: "Start Sleep Mode tonight to help the app understand your recovery.",
+                        systemImage: "moon.zzz"
+                    )
                 }
             } else {
                 VStack(spacing: 10) {
@@ -654,41 +652,22 @@ private struct NapSummaryCard: View {
     let creditMinutes: String
 
     var body: some View {
-        FitnessCard {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "moonphase.first.quarter")
-                    .font(.title3.weight(.semibold))
+        SleepGlassCard(style: .compact) {
+            SleepGlassRow(
+                title: "\(nap.startDate.formatted(date: .omitted, time: .shortened))-\(nap.endDate.formatted(date: .omitted, time: .shortened))",
+                subtitle: napSubtitle,
+                systemImage: "moonphase.first.quarter"
+            ) {
+                Text(nap.source.displayName)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(appTheme.colors.accent)
-                    .frame(width: 44, height: 44)
-                    .background(appTheme.colors.accentSurface, in: Circle())
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("\(nap.startDate.formatted(date: .omitted, time: .shortened))-\(nap.endDate.formatted(date: .omitted, time: .shortened))")
-                            .font(.headline)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                        Spacer()
-                        Text(nap.source.displayName)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(appTheme.colors.accent)
-                    }
-
-                    Text("\(SleepScoringService.durationText(minutes: nap.durationMinutes)) - \(nap.timingCategory.displayName)")
-                        .font(.subheadline)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-
-                    if let quality = nap.qualityRating {
-                        Text("\(SleepQualityPicker.label(for: quality)) quality")
-                            .font(.caption)
-                            .foregroundStyle(appTheme.colors.textTertiary)
-                    }
-
-                    Text(creditMinutes)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.accent)
-                }
             }
         }
+    }
+
+    private var napSubtitle: String {
+        let quality = nap.qualityRating.map { " - \(SleepQualityPicker.label(for: $0)) quality" } ?? ""
+        return "\(SleepScoringService.durationText(minutes: nap.durationMinutes)) - \(nap.timingCategory.displayName)\(quality). \(creditMinutes)"
     }
 }
 
@@ -707,25 +686,55 @@ struct NapSessionEditorView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Nap Time") {
+            FitnessScreen(
+                title: "Log Nap",
+                subtitle: "Add short recovery sleep without changing overnight data.",
+                systemImage: "moonphase.first.quarter"
+            ) {
+                SleepGlassCard {
+                    VStack(alignment: .leading, spacing: 14) {
+                        SleepGlassRow(
+                            title: "Nap Time",
+                            subtitle: "Set when the nap started and ended.",
+                            systemImage: "clock"
+                        )
+
                     DatePicker("Start", selection: $start, displayedComponents: [.date, .hourAndMinute])
                     DatePicker("End", selection: $end, displayedComponents: [.date, .hourAndMinute])
+                    }
                 }
 
-                Section("Quality") {
+                SleepGlassCard {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Quality")
+                            .font(.headline)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+
                     SleepQualityPicker(selection: $quality)
+                    }
                 }
 
-                Section("Note") {
+                SleepGlassCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Note")
+                            .font(.headline)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+
                     TextField("Felt refreshed, still tired, post-workout nap", text: $note, axis: .vertical)
+                            .lineLimit(3, reservesSpace: true)
+                            .padding(12)
+                            .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
                 }
 
                 if let errorText {
-                    Section {
-                        Text(errorText)
-                            .foregroundStyle(appTheme.colors.danger)
-                    }
+                    Text(errorText)
+                        .font(.subheadline)
+                        .foregroundStyle(appTheme.colors.danger)
+                }
+
+                SleepGlassActionButton(title: "Save Nap", systemImage: "checkmark", style: .primary) {
+                    saveNap()
                 }
             }
             .navigationTitle("Log Nap")
@@ -733,9 +742,6 @@ struct NapSessionEditorView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { saveNap() }
                 }
             }
         }
@@ -768,25 +774,44 @@ struct NapTimerView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 22) {
-                Text("Nap Mode")
-                    .font(.system(.largeTitle, design: .rounded).weight(.bold))
-                    .foregroundStyle(appTheme.colors.textPrimary)
+            FitnessScreen(
+                title: "Nap Timer",
+                subtitle: "Set a short recovery window.",
+                systemImage: "timer"
+            ) {
+                SleepGlassCard(style: .hero) {
+                    VStack(alignment: .center, spacing: 14) {
+                        SleepGlassIcon(systemImage: startedAt == nil ? "timer" : "moon.zzz.fill", size: 66)
 
-                Text(timerText)
-                    .font(.system(size: 54, weight: .bold, design: .rounded))
-                    .foregroundStyle(appTheme.colors.accent)
-                    .monospacedDigit()
+                        Text(timerText)
+                            .font(.system(size: 58, weight: .bold, design: .rounded))
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                            .monospacedDigit()
 
-                Picker("Timer", selection: $selectedMinutes) {
-                    ForEach(options, id: \.self) { minutes in
-                        Text("\(minutes)m").tag(minutes)
+                        Text(startedAt == nil ? "Ready when you are" : "Nap in progress")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+
+                SleepGlassCard {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Timer")
+                            .font(.headline)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+
+                        Picker("Timer", selection: $selectedMinutes) {
+                            ForEach(options, id: \.self) { minutes in
+                                Text("\(minutes)m").tag(minutes)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .disabled(startedAt != nil)
+
+                        SleepQualityPicker(selection: $quality)
                     }
                 }
-                .pickerStyle(.segmented)
-                .disabled(startedAt != nil)
-
-                SleepQualityPicker(selection: $quality)
 
                 if let errorText {
                     Text(errorText)
@@ -794,22 +819,18 @@ struct NapTimerView: View {
                         .foregroundStyle(appTheme.colors.danger)
                 }
 
-                Button {
+                SleepGlassActionButton(
+                    title: startedAt == nil ? "Start Nap Timer" : "Finish Nap",
+                    systemImage: startedAt == nil ? "timer" : "checkmark.circle.fill",
+                    style: .primary
+                ) {
                     if startedAt == nil {
                         startedAt = .now
                     } else {
                         finishNap()
                     }
-                } label: {
-                    Label(startedAt == nil ? "Start Nap Timer" : "Finish Nap", systemImage: startedAt == nil ? "timer" : "checkmark.circle.fill")
-                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(PrimaryFitnessButtonStyle())
-
-                Spacer()
             }
-            .padding()
-            .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
             .navigationTitle("Nap Timer")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -877,24 +898,31 @@ struct SleepModeView: View {
                 VStack(spacing: 24) {
                     Spacer(minLength: 18)
 
-                    VStack(spacing: 8) {
-                        Text("Sleep Mode")
-                            .font(.system(.largeTitle, design: .rounded).weight(.bold))
-                            .foregroundStyle(appTheme.colors.textPrimary)
+                    SleepGlassCard(style: .hero) {
+                        VStack(spacing: 18) {
+                            SleepGlassIcon(systemImage: "moon.zzz.fill", size: 70)
 
-                        Text("Wind down now. Sleep tracking will begin soon.")
-                            .font(.headline)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .multilineTextAlignment(.center)
+                            VStack(spacing: 8) {
+                                Text("Sleep Mode")
+                                    .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                                    .foregroundStyle(appTheme.colors.textPrimary)
+
+                                Text("Wind down now. Sleep tracking will begin soon.")
+                                    .font(.headline)
+                                    .foregroundStyle(appTheme.colors.textSecondary)
+                                    .multilineTextAlignment(.center)
+                            }
+
+                            countdownRing
+
+                            Text("Estimated sleep start: \(estimatedStart.formatted(date: .omitted, time: .shortened))")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(appTheme.colors.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity)
                     }
 
-                    countdownRing
-
-                    Text("Estimated sleep start: \(estimatedStart.formatted(date: .omitted, time: .shortened))")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.textSecondary)
-
-                    FitnessCard {
+                    SleepGlassCard {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("Change Timer")
                                 .font(.headline)
@@ -916,29 +944,17 @@ struct SleepModeView: View {
                     }
 
                     VStack(spacing: 10) {
-                        Button {
+                        SleepGlassActionButton(title: "Start Sleep Mode", systemImage: "moon.zzz.fill", style: .primary) {
                             start(minutes: selectedMinutes)
-                        } label: {
-                            Label("Start Sleep Mode", systemImage: "moon.zzz.fill")
-                                .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(PrimaryFitnessButtonStyle())
 
-                        Button {
+                        SleepGlassActionButton(title: "Start Now", systemImage: "play.fill", style: .secondary) {
                             start(minutes: 0)
-                        } label: {
-                            Label("Start Now", systemImage: "play.fill")
-                                .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(SecondaryFitnessButtonStyle())
 
-                        Button(role: .cancel) {
+                        SleepGlassActionButton(title: "Cancel", systemImage: "xmark", style: .neutral) {
                             dismiss()
-                        } label: {
-                            Text("Cancel")
-                                .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(NeutralFitnessButtonStyle())
                     }
 
                     if let errorMessage {
@@ -975,7 +991,7 @@ struct SleepModeView: View {
     private var countdownRing: some View {
         ZStack {
             Circle()
-                .stroke(appTheme.colors.cardBorder, lineWidth: 14)
+                .stroke(appTheme.colors.cardBackgroundElevated, lineWidth: 14)
 
             Circle()
                 .trim(from: 0, to: selectedMinutes == 0 ? 1 : CGFloat(remainingSeconds) / CGFloat(max(1, selectedMinutes * 60)))
@@ -1048,7 +1064,7 @@ struct SleepMorningConfirmationView: View {
                 subtitle: "Did you wake up at \(wakeAt.formatted(date: .omitted, time: .shortened))?",
                 systemImage: "sun.max.fill"
             ) {
-                FitnessCard {
+                SleepGlassCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Estimated sleep")
                             .font(.caption.weight(.semibold))
@@ -1064,7 +1080,7 @@ struct SleepMorningConfirmationView: View {
                     }
                 }
 
-                FitnessCard {
+                SleepGlassCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("How rested do you feel?")
                             .font(.headline)
@@ -1087,22 +1103,14 @@ struct SleepMorningConfirmationView: View {
                         .foregroundStyle(appTheme.colors.danger)
                 }
 
-                Button {
+                SleepGlassActionButton(title: "Confirm Wake Time", systemImage: "checkmark.seal.fill", style: .primary) {
                     confirm()
-                } label: {
-                    Label("Confirm Wake Time", systemImage: "checkmark.seal.fill")
-                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(PrimaryFitnessButtonStyle())
 
-                Button(role: .destructive) {
+                SleepGlassActionButton(title: "Discard Session", systemImage: "trash", style: .neutral) {
                     try? repository.discard(session, in: modelContext)
                     dismiss()
-                } label: {
-                    Text("Discard Session")
-                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(NeutralFitnessButtonStyle())
             }
             .navigationTitle("Good morning")
             .navigationBarTitleDisplayMode(.inline)
@@ -1193,7 +1201,7 @@ struct SleepSessionEditorView: View {
                 subtitle: "Keep sleep data honest and editable.",
                 systemImage: "square.and.pencil"
             ) {
-                FitnessCard {
+                SleepGlassCard {
                     VStack(alignment: .leading, spacing: 14) {
                         DatePicker("Sleep start", selection: $sleepStart, displayedComponents: [.date, .hourAndMinute])
                         DatePicker("Wake time", selection: $wakeAt, displayedComponents: [.date, .hourAndMinute])
@@ -1205,7 +1213,7 @@ struct SleepSessionEditorView: View {
                     }
                 }
 
-                FitnessCard {
+                SleepGlassCard {
                     VStack(alignment: .leading, spacing: 14) {
                         SleepQualityPicker(selection: $qualityRating)
                         SleepTagPicker(selection: $tags)
@@ -1223,13 +1231,9 @@ struct SleepSessionEditorView: View {
                         .foregroundStyle(appTheme.colors.danger)
                 }
 
-                Button {
+                SleepGlassActionButton(title: "Save Sleep Session", systemImage: "checkmark", style: .primary) {
                     save()
-                } label: {
-                    Label("Save Sleep Session", systemImage: "checkmark")
-                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(PrimaryFitnessButtonStyle())
             }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
@@ -1301,7 +1305,7 @@ struct SleepSessionDetailView: View {
             subtitle: "\(session.source.displayName) - \(session.confidence.displayName)",
             systemImage: "moon.stars.fill"
         ) {
-            FitnessCard {
+            SleepGlassCard {
                 VStack(alignment: .leading, spacing: 14) {
                     Text(SleepScoringService.durationText(minutes: session.durationMinutes))
                         .font(.system(size: 46, weight: .bold, design: .rounded))
@@ -1317,7 +1321,7 @@ struct SleepSessionDetailView: View {
             }
 
             if !session.tags.isEmpty {
-                FitnessCard {
+                SleepGlassCard {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Context")
                             .font(.headline)
@@ -1335,13 +1339,13 @@ struct SleepSessionDetailView: View {
                 }
             }
 
-            FitnessCard {
+            SleepGlassCard {
                 Text("Recovery impact: \(SleepCoachingService().historyImpact(for: scoring.score(for: session, recentSessions: [session], settings: SleepSettingsStore().load())))")
                     .font(.headline)
                     .foregroundStyle(appTheme.colors.textPrimary)
             }
 
-            FitnessCard {
+            SleepGlassCard {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Session Details")
                         .font(.headline)
@@ -1356,13 +1360,9 @@ struct SleepSessionDetailView: View {
                 }
             }
 
-            Button {
+            SleepGlassActionButton(title: "Edit Sleep Session", systemImage: "pencil", style: .primary) {
                 showingEditor = true
-            } label: {
-                Label("Edit Sleep Session", systemImage: "pencil")
-                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(PrimaryFitnessButtonStyle())
             .disabled(session.source == .appleHealth)
 
             if session.source == .appleHealth {
@@ -1371,13 +1371,28 @@ struct SleepSessionDetailView: View {
                     .foregroundStyle(appTheme.colors.textSecondary)
             }
 
-            Button(role: .destructive) {
-                showingDeleteConfirmation = true
+            Menu {
+                Button(role: .destructive) {
+                    showingDeleteConfirmation = true
+                } label: {
+                    Label("Delete Session", systemImage: "trash")
+                }
             } label: {
-                Label("Delete Session", systemImage: "trash")
+                Label("More", systemImage: "ellipsis.circle")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(NeutralFitnessButtonStyle())
+            .buttonStyle(.plain)
+            .font(.headline.weight(.semibold))
+            .foregroundStyle(appTheme.colors.textSecondary)
+            .padding(.horizontal, 16)
+            .frame(minHeight: appTheme.metrics.buttonHeight)
+            .frame(maxWidth: .infinity)
+            .background(appTheme.colors.cardBackgroundElevated, in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(appTheme.colors.cardBorder, lineWidth: 1)
+            }
+            .accessibilityLabel("Sleep session actions")
         }
         .navigationTitle("Sleep Detail")
         .navigationBarTitleDisplayMode(.inline)
@@ -1413,7 +1428,7 @@ struct SleepSettingsView: View {
                 subtitle: "Keep recovery coaching transparent.",
                 systemImage: "slider.horizontal.3"
             ) {
-                FitnessCard {
+                SleepGlassCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Default wind-down")
                             .font(.headline)
@@ -1441,7 +1456,7 @@ struct SleepSettingsView: View {
                     }
                 }
 
-                FitnessCard {
+                SleepGlassCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Preferred Sleep Source")
                             .font(.headline)
@@ -1461,7 +1476,7 @@ struct SleepSettingsView: View {
                     }
                 }
 
-                FitnessCard(padding: 12) {
+                SleepGlassCard(padding: 12) {
                     VStack(spacing: 0) {
                         SleepToggleRow(title: "Recovery coaching", subtitle: "Use sleep score in training guidance.", systemImage: "sparkles", isOn: $settings.recoveryCoachingEnabled)
                         SleepSettingsDivider()
@@ -1473,7 +1488,7 @@ struct SleepSettingsView: View {
                     }
                 }
 
-                FitnessCard {
+                SleepGlassCard {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(healthTitle)
                             .font(.headline)
@@ -1484,18 +1499,13 @@ struct SleepSettingsView: View {
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
 
-                        Button {
+                        SleepGlassActionButton(
+                            title: settings.enableAppleHealthImport || settings.enableAppleHealthExport ? "Request Sleep Access" : "Connect Apple Health",
+                            systemImage: "lock.open",
+                            style: .primary
+                        ) {
                             Task { await requestHealthAccess() }
-                        } label: {
-                            if isRequestingHealth {
-                                SwiftUI.ProgressView()
-                                    .frame(maxWidth: .infinity)
-                            } else {
-                                Label(settings.enableAppleHealthImport || settings.enableAppleHealthExport ? "Request Sleep Access" : "Connect Apple Health", systemImage: "lock.open")
-                                    .frame(maxWidth: .infinity)
-                            }
                         }
-                        .buttonStyle(PrimaryFitnessButtonStyle())
                         .disabled(isRequestingHealth || !HealthKitSleepService().isAvailable)
 
                         if let healthStatus {
@@ -1523,44 +1533,23 @@ struct SleepSettingsView: View {
     }
 
     private var sleepNotificationSettingsCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Sleep Notifications")
-                .font(.headline)
-                .foregroundStyle(appTheme.colors.textPrimary)
-
-            FitnessCard {
+        DashboardSection(title: "Sleep Notifications") {
+            SleepGlassCard {
                 VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: "bell.badge.fill")
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(appTheme.colors.accent)
-                            .frame(width: 44, height: 44)
-                            .background(appTheme.colors.accentSurface, in: Circle())
-
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(settings.notificationPreferences.isEnabled ? "Sleep Notifications On" : "Enable sleep reminders?")
-                                .font(.headline)
-                                .foregroundStyle(appTheme.colors.textPrimary)
-                            Text("We'll remind you to start Sleep Mode and confirm your wake time so recovery guidance stays accurate.")
-                                .font(.caption)
-                                .foregroundStyle(appTheme.colors.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
+                    SleepGlassRow(
+                        title: settings.notificationPreferences.isEnabled ? "Sleep Notifications On" : "Enable sleep reminders?",
+                        subtitle: "We'll remind you to start Sleep Mode and confirm your wake time so recovery guidance stays accurate.",
+                        systemImage: "bell.badge.fill"
+                    )
 
                     HStack(spacing: 10) {
-                        Button {
+                        SleepGlassActionButton(
+                            title: settings.notificationPreferences.isEnabled ? "Turn Off" : "Enable Reminders",
+                            systemImage: settings.notificationPreferences.isEnabled ? "bell.slash" : "bell",
+                            style: .primary
+                        ) {
                             Task { await toggleSleepNotifications() }
-                        } label: {
-                            if isRequestingNotifications {
-                                SwiftUI.ProgressView()
-                                    .frame(maxWidth: .infinity)
-                            } else {
-                                Label(settings.notificationPreferences.isEnabled ? "Turn Off" : "Enable Reminders", systemImage: settings.notificationPreferences.isEnabled ? "bell.slash" : "bell")
-                                    .frame(maxWidth: .infinity)
-                            }
                         }
-                        .buttonStyle(PrimaryFitnessButtonStyle())
                         .disabled(isRequestingNotifications)
                     }
 
@@ -1638,12 +1627,8 @@ struct SleepSettingsView: View {
     }
 
     private var advancedCoachingSettingsCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Sleep Coaching")
-                .font(.headline)
-                .foregroundStyle(appTheme.colors.textPrimary)
-
-            FitnessCard(padding: 12) {
+        DashboardSection(title: "Sleep Coaching") {
+            SleepGlassCard(padding: 12) {
                 VStack(spacing: 0) {
                     SleepToggleRow(
                         title: "Sleep Coaching Insights",
@@ -1804,23 +1789,263 @@ struct SleepSettingsStandaloneView: View {
     }
 }
 
-private struct SleepDashboardSection<Content: View>: View {
+private struct SleepGlassCard<Content: View>: View {
+    var style: FitnessCardStyle = .standard
+    var padding: CGFloat?
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        FitnessCard(style: style, padding: padding) {
+            content()
+        }
+    }
+}
+
+private struct SleepGlassIcon: View {
+    let systemImage: String
+    var size: CGFloat = 44
+    var tint: Color?
+
+    var body: some View {
+        FitnessIconBadge(systemImage: systemImage, size: size, tint: tint)
+    }
+}
+
+private typealias SleepIconTile = SleepGlassIcon
+
+private struct SleepScoreBadge: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let score: Int
+
+    var body: some View {
+        VStack(spacing: 1) {
+            Text("\(score)")
+                .font(.system(.headline, design: .rounded).weight(.bold))
+                .foregroundStyle(appTheme.colors.accent)
+                .monospacedDigit()
+
+            Text("Score")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(appTheme.colors.textSecondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(appTheme.colors.accent.opacity(0.22), lineWidth: 1)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Sleep recovery score, \(score) out of 100")
+    }
+}
+
+private struct SleepStatusChip: View {
     @Environment(\.appTheme) private var appTheme
 
     let title: String
-    let content: Content
+    let state: RecoveryState
 
-    init(title: String, @ViewBuilder content: () -> Content) {
+    var body: some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(tint)
+            .padding(.horizontal, appTheme.metrics.chipHorizontalPadding)
+            .padding(.vertical, appTheme.metrics.chipVerticalPadding)
+            .background(tint.opacity(0.14), in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(tint.opacity(0.24), lineWidth: 1)
+            }
+    }
+
+    private var tint: Color {
+        switch state {
+        case .high, .good:
+            return appTheme.colors.success
+        case .moderate, .low:
+            return appTheme.colors.warning
+        case .veryLow:
+            return appTheme.colors.danger
+        case .unknown:
+            return appTheme.colors.textSecondary
+        }
+    }
+}
+
+private struct SleepGlassRow<Trailing: View>: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    var tint: Color?
+    var showsChevron = false
+    @ViewBuilder var trailing: () -> Trailing
+
+    init(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        tint: Color? = nil,
+        showsChevron: Bool = false,
+        @ViewBuilder trailing: @escaping () -> Trailing = { EmptyView() }
+    ) {
         self.title = title
-        self.content = content()
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.tint = tint
+        self.showsChevron = showsChevron
+        self.trailing = trailing
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.headline)
+        HStack(alignment: .center, spacing: 12) {
+            SleepGlassIcon(systemImage: systemImage, size: appTheme.metrics.rowIconSize, tint: tint)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.84)
+
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            trailing()
+
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(appTheme.colors.textTertiary)
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 7)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct SleepGlassActionButton: View {
+    enum Style {
+        case primary
+        case secondary
+        case neutral
+    }
+
+    @Environment(\.appTheme) private var appTheme
+
+    let title: String
+    let systemImage: String
+    let style: Style
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(labelFont)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+                .foregroundStyle(foreground)
+                .padding(.horizontal, horizontalPadding)
+                .frame(minHeight: appTheme.metrics.buttonHeight)
+                .frame(maxWidth: .infinity)
+                .background(background, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(border, lineWidth: 1)
+                }
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var labelFont: Font {
+        switch style {
+        case .primary:
+            return .headline.weight(.semibold)
+        case .secondary, .neutral:
+            return .subheadline.weight(.semibold)
+        }
+    }
+
+    private var horizontalPadding: CGFloat {
+        style == .primary ? 16 : 10
+    }
+
+    private var foreground: Color {
+        switch style {
+        case .primary:
+            return appTheme.colors.accentForeground
+        case .secondary:
+            return appTheme.colors.textPrimary
+        case .neutral:
+            return appTheme.colors.textSecondary
+        }
+    }
+
+    private var background: Color {
+        switch style {
+        case .primary:
+            return appTheme.colors.accent
+        case .secondary, .neutral:
+            return appTheme.colors.cardBackgroundElevated
+        }
+    }
+
+    private var border: Color {
+        switch style {
+        case .primary:
+            return appTheme.colors.accent.opacity(0.45)
+        case .secondary, .neutral:
+            return appTheme.colors.cardBorder
+        }
+    }
+}
+
+private typealias SleepActionButton = SleepGlassActionButton
+
+private struct SleepGlassMetricTile: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let title: String
+    let value: String
+    var systemImage: String?
+    var tint: Color?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.caption.weight(.semibold))
+                }
+
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .textCase(.uppercase)
+            }
+            .foregroundStyle(tint ?? appTheme.colors.textSecondary)
+
+            Text(value)
+                .font(.system(.headline, design: .rounded).weight(.bold))
                 .foregroundStyle(appTheme.colors.textPrimary)
-            content
+                .lineLimit(1)
+                .minimumScaleFactor(0.76)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(appTheme.colors.cardBackgroundElevated.opacity(0.82), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(appTheme.colors.cardBorder, lineWidth: 1)
         }
     }
 }
@@ -1845,7 +2070,7 @@ private struct SleepDurationBar: View {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(barColor)
                         .frame(height: summary.totalSleepMinutes > 0 ? (hasAppeared || reduceMotion ? height : 8) : 8)
-                        .animation(reduceMotion ? nil : .easeOut(duration: 0.45), value: hasAppeared)
+                        .animation(AppMotion.progressFill(reduceMotion: reduceMotion), value: hasAppeared)
                 }
             }
 
@@ -1891,31 +2116,13 @@ private struct SleepHistoryRow: View {
     let score: Int
 
     var body: some View {
-        FitnessCard(padding: 16) {
-            HStack(spacing: 12) {
-                Image(systemName: session.source == .appleHealth ? "heart.text.square.fill" : "moon.zzz.fill")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.accent)
-                    .frame(width: 42, height: 42)
-                    .background(appTheme.colors.accentSurface, in: Circle())
-
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(SleepCalendar.displayTitle(for: session.nightDate))
-                        .font(.headline)
-                        .foregroundStyle(appTheme.colors.textPrimary)
-
-                    Text("\(SleepScoringService.durationText(minutes: session.durationMinutes)) - \(session.qualityRating.map { SleepQualityPicker.label(for: $0) } ?? "No quality") - \(session.source.displayName)")
-                        .font(.caption)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                        .lineLimit(2)
-
-                    Text("Recovery impact: \(SleepCoachingService().historyImpact(for: score))")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.textTertiary)
-                }
-
-                Spacer()
-
+        SleepGlassCard(style: .compact, padding: 16) {
+            SleepGlassRow(
+                title: SleepCalendar.displayTitle(for: session.nightDate),
+                subtitle: "\(SleepScoringService.durationText(minutes: session.durationMinutes)) - \(session.qualityRating.map { SleepQualityPicker.label(for: $0) } ?? "No quality") - \(session.source.displayName). Recovery impact: \(SleepCoachingService().historyImpact(for: score))",
+                systemImage: session.source == .appleHealth ? "heart.text.square.fill" : "moon.zzz.fill",
+                showsChevron: true
+            ) {
                 Text("\(score)")
                     .font(.headline.bold())
                     .foregroundStyle(appTheme.colors.accent)
@@ -1925,26 +2132,11 @@ private struct SleepHistoryRow: View {
 }
 
 private struct SleepMiniMetric: View {
-    @Environment(\.appTheme) private var appTheme
-
     let title: String
     let value: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(value)
-                .font(.headline)
-                .foregroundStyle(appTheme.colors.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(appTheme.colors.textSecondary)
-                .textCase(.uppercase)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        SleepGlassMetricTile(title: title, value: value)
     }
 }
 
@@ -1954,28 +2146,14 @@ private struct SleepAdaptiveRecommendationCard: View {
     let recommendation: AdaptiveTrainingRecommendation
 
     var body: some View {
-        FitnessCard {
+        SleepGlassCard(style: .compact) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: systemImage)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(tint)
-                        .frame(width: 44, height: 44)
-                        .background(tint.opacity(0.16), in: Circle())
-
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(recommendation.title)
-                            .font(.headline)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-
-                        Text(recommendation.message)
-                            .font(.subheadline)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer(minLength: 8)
-
+                SleepGlassRow(
+                    title: recommendation.title,
+                    subtitle: recommendation.message,
+                    systemImage: systemImage,
+                    tint: tint
+                ) {
                     Text(recommendation.level.displayName)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(tint)
@@ -2040,44 +2218,29 @@ private struct SleepCoachingInsightCard: View {
     let insight: SleepCoachingInsight
 
     var body: some View {
-        FitnessCard {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: systemImage)
-                    .font(.headline.weight(.semibold))
+        SleepGlassCard(style: .compact) {
+            SleepGlassRow(
+                title: insight.title,
+                subtitle: insightSubtitle,
+                systemImage: systemImage,
+                tint: tint
+            ) {
+                Text(insight.confidence.displayName)
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(tint)
-                    .frame(width: 40, height: 40)
-                    .background(tint.opacity(0.15), in: Circle())
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Text(insight.title)
-                            .font(.headline)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-
-                        Text(insight.confidence.displayName)
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(tint)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(tint.opacity(0.12), in: Capsule())
-                    }
-
-                    Text(insight.message)
-                        .font(.subheadline)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if !insight.basedOn.isEmpty {
-                        Text("Based on: \(insight.basedOn.map(\.displayName).joined(separator: ", ")).")
-                            .font(.caption)
-                            .foregroundStyle(appTheme.colors.textTertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-
-                Spacer(minLength: 0)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(tint.opacity(0.12), in: Capsule())
             }
         }
+    }
+
+    private var insightSubtitle: String {
+        if insight.basedOn.isEmpty {
+            return insight.message
+        }
+
+        return "\(insight.message) Based on: \(insight.basedOn.map(\.displayName).joined(separator: ", "))."
     }
 
     private var tint: Color {
@@ -2145,6 +2308,7 @@ private struct SleepStageBreakdownView: View {
 
 struct SleepQualityPicker: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @Binding var selection: Int
 
@@ -2152,7 +2316,7 @@ struct SleepQualityPicker: View {
         HStack(spacing: 8) {
             ForEach(1...5, id: \.self) { value in
                 Button {
-                    withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
+                    withAnimation(AppMotion.selectionSpring(reduceMotion: reduceMotion)) {
                         selection = value
                     }
                 } label: {
@@ -2164,11 +2328,15 @@ struct SleepQualityPicker: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                     }
-                    .foregroundStyle(selection == value ? .black : appTheme.colors.textPrimary)
+                    .foregroundStyle(selection == value ? appTheme.colors.textPrimary : appTheme.colors.textSecondary)
                     .frame(maxWidth: .infinity, minHeight: 58)
-                    .background(selection == value ? appTheme.colors.accent : appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .background(selection == value ? appTheme.colors.accentSurfaceStrong : appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(selection == value ? appTheme.colors.accent.opacity(0.32) : appTheme.colors.cardBorder, lineWidth: 1)
+                    }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableCardButtonStyle())
                 .accessibilityLabel("Sleep quality \(Self.label(for: value))")
             }
         }
@@ -2234,11 +2402,7 @@ private struct SleepToggleRow: View {
     var body: some View {
         Toggle(isOn: $isOn) {
             HStack(spacing: 12) {
-                Image(systemName: systemImage)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.accent)
-                    .frame(width: 36, height: 36)
-                    .background(appTheme.colors.accentSurface, in: Circle())
+                SleepGlassIcon(systemImage: systemImage, size: appTheme.metrics.rowIconSize)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)

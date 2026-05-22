@@ -60,7 +60,7 @@ struct TodayView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: appTheme.metrics.screenContentSpacing) {
                     DashboardHeaderView(
                         dateText: todayDateText,
                         title: "Today",
@@ -83,29 +83,29 @@ struct TodayView: View {
                         secondaryAction: previewSuggestedSplit
                     )
 
-                    TodayDashboardSection(title: "Recovery") {
+                    DashboardSection(title: "Recovery") {
                         NavigationLink {
                             SleepDashboardView()
                         } label: {
                             TodaySleepRecoveryCard(summary: sleepSummary, recommendation: todayRecoveryRecommendation)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(PressableCardButtonStyle())
                     }
 
-                    TodayDashboardSection(title: "Quick Actions") {
+                    DashboardSection(title: "Quick Actions") {
                         QuickActionsGrid(actions: quickActions)
                     }
 
-                    TodayDashboardSection(title: "Nutrition") {
+                    DashboardSection(title: "Nutrition") {
                         NavigationLink {
                             NutritionInsightsDashboardView()
                         } label: {
                             NutritionHomeSummaryCard()
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(PressableCardButtonStyle())
                     }
 
-                    TodayDashboardSection(title: "Coach Insight") {
+                    DashboardSection(title: "Coach Insight") {
                         CoachInsightCard(
                             title: "Coach Insight",
                             recommendation: coachRecommendationTitle,
@@ -117,7 +117,7 @@ struct TodayView: View {
                         )
                     }
 
-                    TodayDashboardSection(title: "This Week") {
+                    DashboardSection(title: "This Week") {
                         LazyVGrid(columns: weekColumns, spacing: 12) {
                             WeekMetricTile(
                                 label: "Sessions",
@@ -152,12 +152,12 @@ struct TodayView: View {
                         )
                     }
 
-                    TodayDashboardSection(title: "Last Workout") {
+                    DashboardSection(title: "Last Workout") {
                         lastWorkoutInsight
                     }
                 }
-                .padding()
-                .padding(.bottom, 12)
+                .padding(appTheme.metrics.screenPadding)
+                .padding(.bottom, appTheme.metrics.screenBottomPadding)
             }
             .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
             .navigationTitle("Today")
@@ -281,11 +281,7 @@ struct TodayView: View {
                 }
             } else {
                 HStack(spacing: 12) {
-                    Image(systemName: "calendar.badge.plus")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.accent)
-                        .frame(width: 42, height: 42)
-                        .background(appTheme.colors.accentSurface, in: Circle())
+                    FitnessIconBadge(systemImage: "calendar.badge.plus", size: 42)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("No workouts logged yet")
@@ -553,28 +549,6 @@ struct TodayView: View {
     }
 }
 
-private struct TodayDashboardSection<Content: View>: View {
-    @Environment(\.appTheme) private var appTheme
-
-    let title: String
-    let content: Content
-
-    init(title: String, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.content = content()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(appTheme.colors.textPrimary)
-
-            content
-        }
-    }
-}
-
 private enum PPLRotation {
     static let names = ["Push", "Pull", "Legs"]
 }
@@ -668,6 +642,7 @@ private struct TodaySleepRecoveryCard: View {
 struct HydrationView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @Query(sort: \HydrationEntry.loggedAt, order: .reverse)
     private var entries: [HydrationEntry]
@@ -744,30 +719,8 @@ struct HydrationView: View {
                     }
                 } else {
                     ForEach(todayEntries) { entry in
-                        FitnessCard {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(HydrationService.formatAmount(entry.amountML))
-                                        .font(.headline)
-                                        .foregroundStyle(appTheme.colors.textPrimary)
-                                    Text(entry.context.displayName)
-                                        .font(.caption)
-                                        .foregroundStyle(appTheme.colors.textTertiary)
-                                }
-                                Spacer()
-                                Text(entry.loggedAt.formatted(date: .omitted, time: .shortened))
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(appTheme.colors.textSecondary)
-                                Button(role: .destructive) {
-                                    delete(entry)
-                                } label: {
-                                    Image(systemName: "trash")
-                                        .frame(width: 36, height: 36)
-                                }
-                                .buttonStyle(.plain)
-                                .foregroundStyle(appTheme.colors.danger)
-                                .accessibilityLabel("Delete \(HydrationService.formatAmount(entry.amountML)) hydration entry")
-                            }
+                        HydrationLogRow(entry: entry) {
+                            delete(entry)
                         }
                     }
                 }
@@ -807,15 +760,15 @@ struct HydrationView: View {
 
                     Image(systemName: "drop.fill")
                         .font(.title2.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.accent)
+                        .foregroundStyle(appTheme.colors.hydration)
                         .frame(width: 52, height: 52)
-                        .background(appTheme.colors.accentSurface, in: Circle())
+                        .background(appTheme.colors.hydration.opacity(0.14), in: Circle())
                 }
 
                 SwiftUI.ProgressView(value: min(1, summary.progress))
-                    .tint(appTheme.colors.accent)
+                    .tint(appTheme.colors.hydration)
                     .scaleEffect(x: 1, y: 1.35, anchor: .center)
-                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: summary.totalML)
+                    .animation(AppMotion.progressFill(reduceMotion: reduceMotion), value: summary.totalML)
                     .accessibilityLabel("Hydration progress")
                     .accessibilityValue("\(HydrationService.formatAmount(summary.totalML)) out of \(HydrationService.formatAmount(summary.targetML))")
 
@@ -901,7 +854,7 @@ struct HydrationView: View {
         do {
             try modelContext.save()
             errorText = nil
-            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+            withAnimation(AppMotion.transientConfirmation(reduceMotion: reduceMotion)) {
                 confirmation = entry
             }
         } catch {
@@ -914,10 +867,125 @@ struct HydrationView: View {
         do {
             try modelContext.save()
             if confirmation?.id == entry.id {
-                withAnimation { confirmation = nil }
+                withAnimation(AppMotion.gentleFade(reduceMotion: reduceMotion)) {
+                    confirmation = nil
+                }
             }
         } catch {
             errorText = "Could not delete that water entry."
+        }
+    }
+}
+
+private struct HydrationLogRow: View {
+    @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let entry: HydrationEntry
+    let delete: () -> Void
+
+    @State private var horizontalOffset: CGFloat = 0
+    @State private var dragStartOffset: CGFloat = 0
+    @State private var isDraggingHorizontally = false
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            deleteAction
+                .padding(.trailing, appTheme.metrics.swipeRevealActionTrailingPadding)
+                .opacity(deleteRevealProgress)
+
+            rowContent
+                .offset(x: horizontalOffset)
+                .simultaneousGesture(swipeGesture)
+                .onTapGesture {
+                    guard horizontalOffset != 0 else { return }
+                    closeSwipe()
+                }
+        }
+        .accessibilityAction(named: "Delete Entry", delete)
+    }
+
+    private var rowContent: some View {
+        FitnessCard {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(HydrationService.formatAmount(entry.amountML))
+                        .font(.headline)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                    Text(entry.context.displayName)
+                        .font(.caption)
+                        .foregroundStyle(appTheme.colors.textTertiary)
+                }
+
+                Spacer()
+
+                Text(entry.loggedAt.formatted(date: .omitted, time: .shortened))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(appTheme.colors.textSecondary)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    private var deleteAction: some View {
+        Button(role: .destructive, action: delete) {
+            Image(systemName: "trash")
+                .font(.title3.weight(.semibold))
+                .frame(width: appTheme.metrics.swipeRevealActionSize, height: appTheme.metrics.swipeRevealActionSize)
+                .foregroundStyle(.white)
+                .background(appTheme.colors.danger, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Delete \(HydrationService.formatAmount(entry.amountML)) hydration entry")
+    }
+
+    private var deleteRevealWidth: CGFloat {
+        appTheme.metrics.swipeRevealWidth
+    }
+
+    private var deleteRevealProgress: CGFloat {
+        min(1, abs(horizontalOffset) / deleteRevealWidth)
+    }
+
+    private var swipeGesture: some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .local)
+            .onChanged { value in
+                if !isDraggingHorizontally {
+                    guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                    isDraggingHorizontally = true
+                    dragStartOffset = horizontalOffset
+                }
+
+                guard isDraggingHorizontally else { return }
+                horizontalOffset = clampedOffset(dragStartOffset + value.translation.width)
+            }
+            .onEnded { value in
+                defer {
+                    isDraggingHorizontally = false
+                    dragStartOffset = horizontalOffset
+                }
+
+                guard abs(value.translation.width) > abs(value.translation.height) else {
+                    closeSwipe()
+                    return
+                }
+
+                let projectedOffset = dragStartOffset + value.predictedEndTranslation.width
+                let shouldOpen = projectedOffset < -(deleteRevealWidth * 0.45) || value.translation.width < -36
+
+                withAnimation(AppMotion.swipeRevealSnap(reduceMotion: reduceMotion)) {
+                    horizontalOffset = shouldOpen ? -deleteRevealWidth : 0
+                }
+            }
+    }
+
+    private func clampedOffset(_ offset: CGFloat) -> CGFloat {
+        min(0, max(-deleteRevealWidth, offset))
+    }
+
+    private func closeSwipe() {
+        withAnimation(AppMotion.swipeRevealSnap(reduceMotion: reduceMotion)) {
+            horizontalOffset = 0
         }
     }
 }

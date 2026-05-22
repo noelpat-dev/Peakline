@@ -27,11 +27,14 @@ struct FitnessScreenHeader: View {
                 Text(title)
                     .font(.system(.largeTitle, design: .rounded).weight(.bold))
                     .foregroundStyle(appTheme.colors.textPrimary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.78)
 
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.subheadline)
                         .foregroundStyle(appTheme.mutedText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 

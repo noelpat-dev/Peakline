@@ -41,9 +41,10 @@ struct WorkoutTemplateSaveSheet: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(log.exerciseNameSnapshot)
                                     .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(appTheme.colors.textPrimary)
                                 Text("\(max(log.targetSets, 1)) sets - \(log.minReps)-\(log.maxReps) reps")
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(appTheme.colors.textSecondary)
                             }
                         }
                     }
@@ -86,4 +87,3 @@ struct WorkoutTemplateSaveSheet: View {
         }
     }
 }
-

@@ -102,23 +102,39 @@ struct OpenFoodFactsProductDTO: Decodable {
 
 struct OpenFoodFactsNutrimentsDTO: Decodable {
     let energyKcal100g: Double?
+    let energyKcalServing: Double?
     let proteins100g: Double?
+    let proteinsServing: Double?
     let carbohydrates100g: Double?
+    let carbohydratesServing: Double?
     let fat100g: Double?
+    let fatServing: Double?
     let sugars100g: Double?
+    let sugarsServing: Double?
     let fiber100g: Double?
     let fibre100g: Double?
+    let fiberServing: Double?
+    let fibreServing: Double?
     let salt100g: Double?
+    let saltServing: Double?
 
     enum CodingKeys: String, CodingKey {
         case energyKcal100g = "energy-kcal_100g"
+        case energyKcalServing = "energy-kcal_serving"
         case proteins100g = "proteins_100g"
+        case proteinsServing = "proteins_serving"
         case carbohydrates100g = "carbohydrates_100g"
+        case carbohydratesServing = "carbohydrates_serving"
         case fat100g = "fat_100g"
+        case fatServing = "fat_serving"
         case sugars100g = "sugars_100g"
+        case sugarsServing = "sugars_serving"
         case fiber100g = "fiber_100g"
         case fibre100g = "fibre_100g"
+        case fiberServing = "fiber_serving"
+        case fibreServing = "fibre_serving"
         case salt100g = "salt_100g"
+        case saltServing = "salt_serving"
     }
 }
 
@@ -127,7 +143,6 @@ struct OpenFoodFactsMapper {
         let servingInfo = servingSize(from: product.servingSize) ?? servingSize(from: product.quantity)
         let nutriments = product.nutriments
         let baseUnit = foodBaseUnit(for: servingInfo)
-        let servingMultiplier = max(servingInfo?.amount ?? 0, 0) / 100
 
         return FoodImportDraft(
             barcode: BarcodeFoodLookupService.normalizedBarcode(response.code ?? ""),
@@ -135,13 +150,13 @@ struct OpenFoodFactsMapper {
             brand: cleaned(product.brands),
             servingSize: servingInfo?.amount,
             baseUnit: baseUnit,
-            caloriesPer100g: mappedNutritionValue(nutriments?.energyKcal100g, baseUnit: baseUnit, servingMultiplier: servingMultiplier),
-            proteinPer100g: mappedNutritionValue(nutriments?.proteins100g, baseUnit: baseUnit, servingMultiplier: servingMultiplier),
-            carbsPer100g: mappedNutritionValue(nutriments?.carbohydrates100g, baseUnit: baseUnit, servingMultiplier: servingMultiplier),
-            fatPer100g: mappedNutritionValue(nutriments?.fat100g, baseUnit: baseUnit, servingMultiplier: servingMultiplier),
-            sugarPer100g: mappedNutritionValue(nutriments?.sugars100g, baseUnit: baseUnit, servingMultiplier: servingMultiplier),
-            fibrePer100g: mappedNutritionValue(nutriments?.fiber100g ?? nutriments?.fibre100g, baseUnit: baseUnit, servingMultiplier: servingMultiplier),
-            saltPer100g: mappedNutritionValue(nutriments?.salt100g, baseUnit: baseUnit, servingMultiplier: servingMultiplier),
+            caloriesPer100g: mappedPer100Value(nutriments?.energyKcal100g, servingValue: nutriments?.energyKcalServing, servingInfo: servingInfo),
+            proteinPer100g: mappedPer100Value(nutriments?.proteins100g, servingValue: nutriments?.proteinsServing, servingInfo: servingInfo),
+            carbsPer100g: mappedPer100Value(nutriments?.carbohydrates100g, servingValue: nutriments?.carbohydratesServing, servingInfo: servingInfo),
+            fatPer100g: mappedPer100Value(nutriments?.fat100g, servingValue: nutriments?.fatServing, servingInfo: servingInfo),
+            sugarPer100g: mappedPer100Value(nutriments?.sugars100g, servingValue: nutriments?.sugarsServing, servingInfo: servingInfo),
+            fibrePer100g: mappedPer100Value(nutriments?.fiber100g ?? nutriments?.fibre100g, servingValue: nutriments?.fiberServing ?? nutriments?.fibreServing, servingInfo: servingInfo),
+            saltPer100g: mappedPer100Value(nutriments?.salt100g, servingValue: nutriments?.saltServing, servingInfo: servingInfo),
             source: .openFoodFacts
         )
     }
@@ -156,7 +171,7 @@ struct OpenFoodFactsMapper {
 
         switch servingInfo.unit {
         case .grams:
-            return .serving
+            return .grams
         case .millilitres:
             return .millilitres
         case .serving:
@@ -164,10 +179,25 @@ struct OpenFoodFactsMapper {
         }
     }
 
-    private func mappedNutritionValue(_ value: Double?, baseUnit: FoodAmountUnit, servingMultiplier: Double) -> Double? {
-        guard let sanitized = NutritionDataIntegrityService.sanitizedNonNegative(value) else { return nil }
-        guard baseUnit == .serving, servingMultiplier > 0 else { return sanitized }
-        return sanitized * servingMultiplier
+    private func mappedPer100Value(
+        _ per100Value: Double?,
+        servingValue: Double?,
+        servingInfo: (amount: Double, unit: FoodAmountUnit)?
+    ) -> Double? {
+        if let sanitized = NutritionDataIntegrityService.sanitizedNonNegative(per100Value) {
+            return sanitized
+        }
+
+        guard
+            let serving = NutritionDataIntegrityService.sanitizedNonNegative(servingValue),
+            let servingInfo,
+            servingInfo.amount > 0,
+            servingInfo.unit == .grams || servingInfo.unit == .millilitres
+        else {
+            return nil
+        }
+
+        return serving / (servingInfo.amount / 100)
     }
 
     private func servingSize(from text: String?) -> (amount: Double, unit: FoodAmountUnit)? {

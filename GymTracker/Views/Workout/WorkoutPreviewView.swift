@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct WorkoutPreviewView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var activeSession: WorkoutSession?
     @State private var selectedExerciseIds: [UUID] = []
@@ -135,16 +136,12 @@ struct WorkoutPreviewView: View {
             delegate: WorkoutPreviewExerciseDropDelegate(
                 destinationExerciseId: exercise.id,
                 selectedExerciseIds: $selectedExerciseIds,
-                draggingExerciseId: $draggingExerciseId
+                draggingExerciseId: $draggingExerciseId,
+                reduceMotion: reduceMotion
             )
         )
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button(role: .destructive) {
-                remove(exercise)
-            } label: {
-                Label("Remove", systemImage: "trash")
-            }
-            .tint(.red)
+        .destructiveSwipeAction("Remove") {
+            remove(exercise)
         }
     }
 
@@ -160,72 +157,68 @@ struct WorkoutPreviewView: View {
         ) {
             DashboardSection(title: "Mode") {
                 FitnessCard {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("Workout Mode")
-                            .font(.headline)
-                        WorkoutModePicker(selection: $selectedMode)
-                    }
+                    WorkoutModePicker(selection: $selectedMode)
                 }
             }
 
             DashboardSection(title: "Coach Brief") {
                 FitnessCard {
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Coach Summary")
-                                .font(.headline)
+                        HStack(alignment: .top, spacing: 12) {
+                            Text(coachSummaryText)
+                                .font(.subheadline)
+                                .foregroundStyle(appTheme.mutedText)
+                                .fixedSize(horizontal: false, vertical: true)
+
                             Spacer()
+
                             CoachBadgeView(state: coachSummaryBadge)
                         }
-
-                        Text(coachSummaryText)
-                            .font(.subheadline)
-                            .foregroundStyle(appTheme.mutedText)
                     }
                 }
             }
 
-            HStack(spacing: 10) {
-                MetricTile(label: "Exercises", value: "\(plannedList.count)", caption: "\(selectedMode.displayName) mode", systemImage: "list.bullet")
-                MetricTile(label: "Estimate", value: "\(estimatedDuration.lowerBound)-\(estimatedDuration.upperBound)m", caption: "Session time", systemImage: "clock")
+            DashboardSection(title: "Session Snapshot") {
+                HStack(spacing: 10) {
+                    MetricTile(label: "Exercises", value: "\(plannedList.count)", caption: "\(selectedMode.displayName) mode", systemImage: "list.bullet")
+                    MetricTile(label: "Estimate", value: "\(estimatedDuration.lowerBound)-\(estimatedDuration.upperBound)m", caption: "Session time", systemImage: "clock")
+                }
             }
 
             DashboardSection(title: "Exercise Order") {
-                    HStack {
-                        Spacer()
-                        Button("Select All") {
-                            selectedExerciseIds = orderedExercises.map(\.id)
-                        }
-                        .font(.subheadline.weight(.semibold))
-                        .tint(appTheme.actionColor)
+                HStack {
+                    Spacer()
+                    Button("Select All") {
+                        selectedExerciseIds = orderedExercises.map(\.id)
                     }
+                    .font(.subheadline.weight(.semibold))
+                    .tint(appTheme.actionColor)
+                }
 
-                    if plannedList.isEmpty {
-                        DashboardEmptyStateCard(
-                            title: "No exercises selected",
-                            message: "Choose at least one exercise before starting.",
-                            systemImage: "list.bullet"
-                        )
-                    } else {
-                        LazyVStack(spacing: 12) {
-                            ForEach(Array(plannedList.enumerated()), id: \.element.id) { index, exercise in
-                                previewExerciseCard(
-                                    exercise: exercise,
-                                    index: index,
-                                    plannedCount: plannedList.count,
-                                    suggestions: suggestions,
-                                    alternatives: alternatives
-                                )
-                            }
+                if plannedList.isEmpty {
+                    DashboardEmptyStateCard(
+                        title: "No exercises selected",
+                        message: "Choose at least one exercise before starting.",
+                        systemImage: "list.bullet"
+                    )
+                } else {
+                    LazyVStack(spacing: 12) {
+                        ForEach(Array(plannedList.enumerated()), id: \.element.id) { index, exercise in
+                            previewExerciseCard(
+                                exercise: exercise,
+                                index: index,
+                                plannedCount: plannedList.count,
+                                suggestions: suggestions,
+                                alternatives: alternatives
+                            )
                         }
                     }
+                }
             }
 
-            FitnessCard {
+            DashboardSection(title: "Add Exercise") {
+                FitnessCard {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Add Exercise")
-                            .font(.headline)
-
                         Picker("Optional exercise", selection: $optionalExerciseId) {
                             Text("Choose").tag(Optional<UUID>.none)
                             ForEach(addableExercises) { exercise in
@@ -255,8 +248,10 @@ struct WorkoutPreviewView: View {
                         .buttonStyle(.borderless)
                     }
                 }
+            }
 
-            FitnessCard {
+            DashboardSection(title: "Start") {
+                FitnessCard(style: .hero) {
                     VStack(alignment: .leading, spacing: 12) {
                         Button {
                             activeSession = createWorkout(from: split)
@@ -273,6 +268,7 @@ struct WorkoutPreviewView: View {
                             .foregroundStyle(appTheme.mutedText)
                     }
                 }
+            }
         }
         .navigationTitle("Preview")
         .navigationBarTitleDisplayMode(.inline)
@@ -472,6 +468,7 @@ private struct WorkoutPreviewExerciseDropDelegate: DropDelegate {
     let destinationExerciseId: UUID
     @Binding var selectedExerciseIds: [UUID]
     @Binding var draggingExerciseId: UUID?
+    let reduceMotion: Bool
 
     func dropEntered(info: DropInfo) {
         guard
@@ -481,7 +478,7 @@ private struct WorkoutPreviewExerciseDropDelegate: DropDelegate {
             let destinationIndex = selectedExerciseIds.firstIndex(of: destinationExerciseId)
         else { return }
 
-        withAnimation(.snappy) {
+        withAnimation(AppMotion.reorderSpring(reduceMotion: reduceMotion)) {
             selectedExerciseIds.move(
                 fromOffsets: IndexSet(integer: sourceIndex),
                 toOffset: destinationIndex > sourceIndex ? destinationIndex + 1 : destinationIndex

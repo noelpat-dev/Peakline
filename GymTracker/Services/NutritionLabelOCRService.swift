@@ -47,7 +47,7 @@ struct NutritionLabelOCRService: NutritionLabelOCRServicing {
     }
 
     private static func cleanedLines(from observations: [VNRecognizedTextObservation]) -> [NutritionOCRLine] {
-        observations
+        let cells: [NutritionOCRLine] = observations
             .sorted { lhs, rhs in
                 let yDelta = abs(lhs.boundingBox.minY - rhs.boundingBox.minY)
                 if yDelta > 0.015 {
@@ -65,6 +65,8 @@ struct NutritionLabelOCRService: NutritionLabelOCRServicing {
                     boundingBox: observation.boundingBox
                 )
             }
+
+        return groupedRows(from: cells)
     }
 
     static func normalizedLine(_ line: String) -> String {
@@ -72,6 +74,63 @@ struct NutritionLabelOCRService: NutritionLabelOCRServicing {
             .components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
+    }
+
+    private static func groupedRows(from cells: [NutritionOCRLine]) -> [NutritionOCRLine] {
+        var rows: [[NutritionOCRLine]] = []
+
+        for cell in cells {
+            guard let box = cell.boundingBox else {
+                rows.append([cell])
+                continue
+            }
+
+            if let rowIndex = rows.firstIndex(where: { row in
+                guard let rowBox = combinedBox(for: row) else { return false }
+                return verticalOverlapRatio(box, rowBox) >= 0.45
+                    || abs(box.midY - rowBox.midY) <= max(box.height, rowBox.height) * 0.55
+            }) {
+                rows[rowIndex].append(cell)
+            } else {
+                rows.append([cell])
+            }
+        }
+
+        return rows
+            .map { row in row.sorted { ($0.boundingBox?.minX ?? 0) < ($1.boundingBox?.minX ?? 0) } }
+            .sorted { lhs, rhs in
+                let lhsY = combinedBox(for: lhs)?.midY ?? 0
+                let rhsY = combinedBox(for: rhs)?.midY ?? 0
+                return lhsY > rhsY
+            }
+            .compactMap { row in
+                let text = normalizedLine(row.map(\.text).joined(separator: " "))
+                guard !text.isEmpty else { return nil }
+
+                return NutritionOCRLine(
+                    text: text,
+                    confidence: averagedConfidence(for: row),
+                    boundingBox: combinedBox(for: row)
+                )
+            }
+    }
+
+    private static func combinedBox(for row: [NutritionOCRLine]) -> CGRect? {
+        let boxes = row.compactMap(\.boundingBox)
+        guard let first = boxes.first else { return nil }
+        return boxes.dropFirst().reduce(first) { $0.union($1) }
+    }
+
+    private static func verticalOverlapRatio(_ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
+        let overlap = max(0, min(lhs.maxY, rhs.maxY) - max(lhs.minY, rhs.minY))
+        let shortestHeight = max(min(lhs.height, rhs.height), 0.0001)
+        return overlap / shortestHeight
+    }
+
+    private static func averagedConfidence(for row: [NutritionOCRLine]) -> Float? {
+        let values = row.compactMap(\.confidence)
+        guard !values.isEmpty else { return nil }
+        return values.reduce(0, +) / Float(values.count)
     }
 }
 

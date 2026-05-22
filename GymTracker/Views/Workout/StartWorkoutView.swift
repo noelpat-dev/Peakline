@@ -159,7 +159,7 @@ struct StartWorkoutContentView: View {
     }
 
     private func activeWorkoutCard(_ session: WorkoutSession) -> some View {
-        FitnessCard {
+        FitnessCard(style: .hero) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top) {
                     ExerciseIconView(
@@ -197,21 +197,20 @@ struct StartWorkoutContentView: View {
                     }
                     .buttonStyle(PrimaryFitnessButtonStyle())
 
-                    Button(role: .destructive) {
+                    Button {
                         pendingDiscardSession = session
                     } label: {
-                        Label("Discard", systemImage: "trash")
+                        Label("Discard", systemImage: "xmark.circle")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(NeutralFitnessButtonStyle())
-                    .foregroundStyle(appTheme.colors.danger)
                 }
             }
         }
     }
 
     private func recommendedWorkoutCard(_ split: TrainingSplit) -> some View {
-        FitnessCard {
+        FitnessCard(style: .hero) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top) {
                     ExerciseIconTile(
@@ -260,7 +259,7 @@ struct StartWorkoutContentView: View {
     }
 
     private func sleepReadinessCard(title: String, suggestion: String) -> some View {
-        FitnessCard {
+        FitnessCard(style: .compact) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "moon.stars.fill")
                     .font(.title3.weight(.semibold))
@@ -284,7 +283,7 @@ struct StartWorkoutContentView: View {
     }
 
     private func workoutRecoveryBanner(_ recommendation: AdaptiveTrainingRecommendation) -> some View {
-        FitnessCard {
+        FitnessCard(style: .compact) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: recoveryIcon(for: recommendation.level))
                     .font(.title3.weight(.semibold))
@@ -359,7 +358,7 @@ struct StartWorkoutContentView: View {
                 action: nil
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableCardButtonStyle())
     }
 
     private func preview(_ split: TrainingSplit) {
@@ -367,7 +366,7 @@ struct StartWorkoutContentView: View {
     }
 
     private var emptyWorkoutCard: some View {
-        FitnessCard {
+        FitnessCard(style: .compact) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     ExerciseIconView(
@@ -401,7 +400,7 @@ struct StartWorkoutContentView: View {
     }
 
     private var reuseCard: some View {
-        FitnessCard {
+        FitnessCard(style: .compact) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 12) {
                     ExerciseIconView(
@@ -453,7 +452,7 @@ struct StartWorkoutContentView: View {
     private func recentSessionCard(_ session: WorkoutSession) -> some View {
         let summary = summaryBuilder.build(from: session, completedSessions: completedSessions, activeSplits: activeSplits)
 
-        return FitnessCard {
+        return FitnessCard(style: .compact) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     ExerciseIconView(

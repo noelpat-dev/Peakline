@@ -64,7 +64,7 @@ struct NutritionInsightsDashboardView: View {
                             actionTitle: "Set Targets"
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableCardButtonStyle())
                 }
             }
 
@@ -90,28 +90,28 @@ struct NutritionInsightsDashboardView: View {
                     } label: {
                         NutritionInsightActionTile(title: "Log Food", subtitle: "Add or reuse foods", systemImage: "plus.circle.fill")
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableCardButtonStyle())
 
                     NavigationLink {
                         NutritionTargetsView()
                     } label: {
                         NutritionInsightActionTile(title: "Targets", subtitle: goal.hasTargets ? "Edit daily goals" : "Set goals", systemImage: "target")
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableCardButtonStyle())
 
                     NavigationLink {
                         WeeklyNutritionTrendsView()
                     } label: {
                         NutritionInsightActionTile(title: "Weekly", subtitle: "Review 7 days", systemImage: "chart.bar.fill")
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableCardButtonStyle())
 
                     NavigationLink {
                         NutritionDashboardView()
                     } label: {
                         NutritionInsightActionTile(title: "Food Log", subtitle: "Today by meal", systemImage: "fork.knife")
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableCardButtonStyle())
                 }
             }
         }
@@ -406,6 +406,8 @@ struct NutritionTargetsView: View {
 }
 
 struct WeeklyNutritionTrendsView: View {
+    @Environment(\.appTheme) private var appTheme
+
     @Query(sort: \FoodLogEntry.loggedAt, order: .reverse)
     private var foodLogs: [FoodLogEntry]
 
@@ -446,7 +448,7 @@ struct WeeklyNutritionTrendsView: View {
                 FitnessCard {
                     Label("Training days average \(phase7Kcal(trainingAverage)) kcal vs \(phase7Kcal(restAverage)) kcal on rest days.", systemImage: "chart.xyaxis.line")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -796,38 +798,18 @@ private struct NutritionContextMetric: View {
 }
 
 private struct NutritionInsightActionTile: View {
-    @Environment(\.appTheme) private var appTheme
-
     let title: String
     let subtitle: String
     let systemImage: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Image(systemName: systemImage)
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(appTheme.colors.accent)
-                .frame(width: 38, height: 38)
-                .background(appTheme.colors.accentSurface, in: Circle())
-
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(appTheme.colors.textPrimary)
-                .lineLimit(1)
-
-            Text(subtitle)
-                .font(.caption)
-                .foregroundStyle(appTheme.colors.textSecondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, minHeight: 132, alignment: .leading)
-        .background(appTheme.colors.cardBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(appTheme.colors.cardBorder, lineWidth: 1)
-        }
+        DashboardActionTile(
+            title: title,
+            subtitle: subtitle,
+            systemImage: systemImage,
+            showsChevron: false,
+            minHeight: 132
+        )
     }
 }
 

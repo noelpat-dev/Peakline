@@ -723,10 +723,10 @@ private struct LiveWorkoutOrderRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(exerciseName)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(appTheme.colors.textPrimary)
                     Text(isCurrent ? "Current exercise" : "Tap to jump here")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(appTheme.colors.textSecondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -927,7 +927,7 @@ private struct WorkoutRatingOverlay: View {
 
         if visible {
             Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 70_000_000)
+                try? await Task.sleep(nanoseconds: AppMotion.popupContentRevealDelay)
                 guard isVisible else { return }
 
                 withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
@@ -962,9 +962,9 @@ private struct WorkoutRatingButtonStyle: ButtonStyle {
                     .fill(isSelected ? appTheme.colors.accent.opacity(0.10) : .white.opacity(0.012))
             }
             .shadow(color: isSelected ? appTheme.colors.accent.opacity(0.14) : .black.opacity(0.08), radius: isSelected ? 12 : 5, y: isSelected ? 7 : 3)
-            .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.96 : (isSelected ? 1.04 : 1)))
-            .animation(AppMotion.quickSpring(reduceMotion: reduceMotion), value: configuration.isPressed)
-            .animation(AppMotion.quickSpring(reduceMotion: reduceMotion), value: isSelected)
+            .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.97 : (isSelected ? AppMotion.selectedControlScale : 1)))
+            .animation(AppMotion.selectionSpring(reduceMotion: reduceMotion), value: configuration.isPressed)
+            .animation(AppMotion.selectionSpring(reduceMotion: reduceMotion), value: isSelected)
     }
 }
 
@@ -1095,11 +1095,8 @@ private struct ExerciseLoggerSection: View {
                 }
             }
             .padding(.vertical, 6)
-            .swipeActions(edge: .trailing) {
-                Button("Remove", role: .destructive) {
-                    removeExerciseFromSession()
-                }
-                .tint(.red)
+            .destructiveSwipeAction("Remove") {
+                removeExerciseFromSession()
             }
 
             ForEach(Array(orderedSets.enumerated()), id: \.element.id) { index, setLog in
@@ -1111,11 +1108,8 @@ private struct ExerciseLoggerSection: View {
                 ) {
                     startRestTimer(exerciseLog.exerciseNameSnapshot, nextSetNumber(after: setLog))
                 }
-                    .swipeActions(edge: .trailing) {
-                        Button("Delete", role: .destructive) {
-                            delete(setLog)
-                        }
-                        .tint(.red)
+                    .destructiveSwipeAction {
+                        delete(setLog)
                     }
             }
 
@@ -1643,7 +1637,7 @@ private struct EffortPickerSheet: View {
                 }
             }
 
-            Button(role: .destructive) {
+            Button {
                 select(nil)
             } label: {
                 Label("Clear Effort", systemImage: "xmark.circle")
@@ -1744,6 +1738,8 @@ private struct CompactTargetSetStepper: View {
 }
 
 private struct SetValueEditor<Field: View>: View {
+    @Environment(\.appTheme) private var appTheme
+
     let title: String
     let valueText: String
     let decrement: () -> Void
@@ -1768,7 +1764,7 @@ private struct SetValueEditor<Field: View>: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(appTheme.colors.textSecondary)
 
             HStack(spacing: 8) {
                 Button(action: decrement) {

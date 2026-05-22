@@ -12,6 +12,7 @@ struct HistoryView: View {
     @State private var filters = HistoryFilters()
     @State private var useDateRange = false
     @State private var showingFilters = false
+    @State private var pendingDeleteSession: WorkoutSession?
 
     private let filterService = HistoryFilterService()
 
@@ -26,7 +27,7 @@ struct HistoryView: View {
     var body: some View {
         NavigationStack {
             FitnessScreen(title: "History", subtitle: "Review training trends and recent sessions.", systemImage: "clock.arrow.circlepath") {
-                FitnessCard {
+                FitnessCard(style: .compact) {
                     WorkoutCalendarView(displayedMonth: $displayedMonth, sessions: filteredSessions)
                 }
 
@@ -43,7 +44,7 @@ struct HistoryView: View {
                         NavigationLink {
                             WorkoutHistoryDetailView(session: session)
                         } label: {
-                            FitnessCard {
+                            FitnessCard(style: .compact) {
                                 HStack(alignment: .top, spacing: 12) {
                                     VStack(alignment: .leading, spacing: 5) {
                                         Text(session.splitNameSnapshot)
@@ -63,11 +64,8 @@ struct HistoryView: View {
                             }
                         }
                         .buttonStyle(.plain)
-                        .swipeActions(edge: .trailing) {
-                            Button("Delete", role: .destructive) {
-                                delete(session)
-                            }
-                            .tint(.red)
+                        .destructiveSwipeAction {
+                            pendingDeleteSession = session
                         }
                     }
                 }
@@ -77,6 +75,26 @@ struct HistoryView: View {
             .sheet(isPresented: $showingFilters) {
                 filterSheet
                     .presentationDetents([.medium, .large])
+            }
+            .alert("Delete workout?", isPresented: deleteAlertBinding) {
+                Button("Cancel", role: .cancel) {
+                    pendingDeleteSession = nil
+                }
+                Button("Delete", role: .destructive) {
+                    deletePendingSession()
+                }
+            } message: {
+                Text("This removes the workout from history and progress trends.")
+            }
+        }
+    }
+
+    private var deleteAlertBinding: Binding<Bool> {
+        Binding {
+            pendingDeleteSession != nil
+        } set: { showing in
+            if !showing {
+                pendingDeleteSession = nil
             }
         }
     }
@@ -237,6 +255,12 @@ struct HistoryView: View {
         try? modelContext.save()
     }
 
+    private func deletePendingSession() {
+        guard let pendingDeleteSession else { return }
+        delete(pendingDeleteSession)
+        self.pendingDeleteSession = nil
+    }
+
     private var splitFilterBinding: Binding<String?> {
         Binding {
             filters.splitName
@@ -271,6 +295,8 @@ struct HistoryView: View {
 }
 
 private struct WorkoutCalendarView: View {
+    @Environment(\.appTheme) private var appTheme
+
     @Binding var displayedMonth: Date
     let sessions: [WorkoutSession]
 
@@ -330,7 +356,7 @@ private struct WorkoutCalendarView: View {
                 ForEach(Array(weekdays.enumerated()), id: \.offset) { _, weekday in
                     Text(weekday)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(appTheme.colors.textSecondary)
                         .frame(maxWidth: .infinity)
                 }
 
@@ -369,7 +395,7 @@ private struct CalendarDayCell: View {
     var body: some View {
         Text(dayNumber)
             .font(.subheadline.weight(isLogged ? .semibold : .regular))
-            .foregroundStyle(isLogged ? .black : appTheme.colors.textPrimary)
+            .foregroundStyle(isLogged ? appTheme.colors.accentForeground : appTheme.colors.textPrimary)
             .frame(maxWidth: .infinity)
             .frame(height: 34)
             .background {
@@ -391,6 +417,7 @@ private struct WorkoutHistoryDetailView: View {
     @State private var reopenedSession: WorkoutSession?
     @State private var showingTemplateSave = false
     @State private var showingReopenConfirmation = false
+    @State private var showingDeleteConfirmation = false
 
     @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
     private var completedSessions: [WorkoutSession]
@@ -453,7 +480,7 @@ private struct WorkoutHistoryDetailView: View {
                                 isDecorative: true
                             )
                             Text(exerciseLog.exerciseNameSnapshot)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(appTheme.colors.textSecondary)
                         }
                     }
                 }
@@ -480,6 +507,14 @@ private struct WorkoutHistoryDetailView: View {
         } message: {
             Text("This moves it back into the live workout logger so you can add or edit sets before finishing again.")
         }
+        .alert("Delete workout?", isPresented: $showingDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                deleteWorkout()
+            }
+        } message: {
+            Text("This removes the workout from history and progress trends.")
+        }
         .toolbar {
             ToolbarItemGroup(placement: .bottomBar) {
                 Button {
@@ -502,11 +537,16 @@ private struct WorkoutHistoryDetailView: View {
                     Label("Edit", systemImage: "pencil")
                 }
 
-                Button(role: .destructive) {
-                    deleteWorkout()
+                Menu {
+                    Button(role: .destructive) {
+                        showingDeleteConfirmation = true
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
                 } label: {
-                    Label("Delete", systemImage: "trash")
+                    Image(systemName: "ellipsis.circle")
                 }
+                .accessibilityLabel("Workout actions")
             }
             ToolbarItem(placement: .topBarLeading) {
                 Button {
@@ -617,7 +657,7 @@ private struct ExerciseHistorySummary: View {
 
                 if sets.isEmpty {
                     Text("No sets logged")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(appTheme.colors.textSecondary)
                 } else {
                     ForEach(sets) { set in
                         HStack {
@@ -627,7 +667,7 @@ private struct ExerciseHistorySummary: View {
                                 .font(.headline)
                             if let rpe = set.rpe {
                                 Text("RPE \(formatWeight(rpe))")
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(appTheme.colors.textSecondary)
                             }
                         }
                     }
@@ -636,7 +676,7 @@ private struct ExerciseHistorySummary: View {
                 if let notes = exerciseLog.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Label(notes, systemImage: "note.text")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(appTheme.colors.textSecondary)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
                 }

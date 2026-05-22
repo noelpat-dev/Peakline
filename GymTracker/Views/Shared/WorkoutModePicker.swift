@@ -20,22 +20,22 @@ struct WorkoutModePicker: View {
                                 .font(.subheadline.weight(.semibold))
                             Text(mode.subtitle)
                                 .font(.caption)
-                                .foregroundStyle(selection == mode ? .primary.opacity(0.75) : appTheme.mutedText)
+                                .foregroundStyle(selection == mode ? appTheme.colors.textPrimary.opacity(0.75) : appTheme.mutedText)
                         }
 
                         Spacer(minLength: 0)
                     }
                     .padding(12)
                     .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
-                    .foregroundStyle(selection == mode ? .primary : appTheme.mutedText)
+                    .foregroundStyle(selection == mode ? appTheme.colors.textPrimary : appTheme.mutedText)
                     .background(selection == mode ? appTheme.colors.accentSurfaceStrong : appTheme.elevatedCardBackground)
                     .overlay {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        RoundedRectangle(cornerRadius: appTheme.metrics.compactCardRadius, style: .continuous)
                             .stroke(selection == mode ? appTheme.colors.accent.opacity(0.38) : appTheme.cardBorder, lineWidth: 1)
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: appTheme.metrics.compactCardRadius, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableCardButtonStyle())
             }
         }
     }

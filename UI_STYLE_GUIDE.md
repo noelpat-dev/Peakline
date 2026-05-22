@@ -106,6 +106,14 @@ Contents:
 - Short explanation.
 - Optional CTA.
 
+Implementation rules:
+
+- Use `FitnessCard(style: .standard)` for normal dashboard content.
+- Use `FitnessCard(style: .compact)` for rows, utility tiles, dense lists, and repeated cards.
+- Use `FitnessCard(style: .hero)` only for the primary recommendation or identity card on a screen.
+- Pull spacing, card radius, icon size, button height, and chip padding from `appTheme.metrics`.
+- Use the shared `DashboardSection` for screen sections instead of private one-off wrappers.
+
 ### Coach Card
 
 Use for coaching recommendations.
@@ -150,6 +158,24 @@ Persistent top section during workout:
 - Pause/resume.
 - Current exercise index.
 - Finish button.
+
+## Interaction Patterns
+
+### Delete and Destructive Actions
+
+- Do not show permanent red bin/trash controls on normal dashboard cards or rows.
+- Prefer native trailing swipe actions for `List` rows.
+- For card rows inside `ScrollView`, use a custom left-swipe reveal: the row slides left, a red circular trash button appears, and the item is deleted only when the user taps that bin.
+- Keep destructive color scoped to the revealed action, overflow menu item, or confirmation dialog.
+- Use confirmation dialogs for costly deletes such as workouts, sleep sessions, or split templates.
+
+### Hydration Logs
+
+- Water entries in Today's Logs use the card-row swipe reveal pattern.
+- Swiping left reveals a red bin so users can remove accidental water logs without cluttering the default hydration history.
+- The visible row should stay neutral: amount, context, and time only.
+- Use the shared swipe reveal metrics from `appTheme.metrics`: a 96pt reveal lane, 56pt circular delete action, and 14pt trailing action inset.
+- During the drag, move the row directly with no implicit animation or scaling; only animate the final open/closed snap with `AppMotion.swipeRevealSnap`.
 
 ## Progress Visuals
 

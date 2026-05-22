@@ -54,7 +54,7 @@ struct NutritionParser {
     }
 
     func parse(lines rawLines: [String]) -> NutritionParseResult {
-        let sourceLines = rawLines
+        let sourceLines = stitchSplitTableRows(from: rawLines)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         let normalizedLines = normalizer.normalize(lines: sourceLines)
@@ -400,6 +400,22 @@ struct NutritionParser {
     }
 
     private func detectNutrient(in line: String) -> NutritionNutrientKind? {
+        if let nutrient = detectExplicitNutrient(in: line) {
+            return nutrient
+        }
+        if isStandaloneNutritionAmountLine(line) {
+            return nil
+        }
+        if line.contains("energy") || line.contains("calories") || line.contains(" kcal") || line.contains("kcal") {
+            return .calories
+        }
+        if line.contains(" kj") || line.contains("kj") {
+            return .energyKJ
+        }
+        return nil
+    }
+
+    private func detectExplicitNutrient(in line: String) -> NutritionNutrientKind? {
         if line.contains("saturates") || line.contains("saturated fat") || line.contains("saturated") {
             return .saturatedFat
         }
@@ -424,11 +440,8 @@ struct NutritionParser {
         if line.contains("salt") {
             return .salt
         }
-        if line.contains("energy") || line.contains("calories") || line.contains(" kcal") || line.contains("kcal") {
+        if line.contains("energy") || line.contains("calories") || line.contains("calorie") {
             return .calories
-        }
-        if line.contains(" kj") || line.contains("kj") {
-            return .energyKJ
         }
         return nil
     }
@@ -450,7 +463,84 @@ struct NutritionParser {
 
     private func shouldSkipLine(_ line: String) -> Bool {
         let referenceTerms = ["reference intake", "average adult", " ri ", "% ri", "daily value", "adult's reference"]
-        return referenceTerms.contains { line.contains($0) }
+        return referenceTerms.contains { line.contains($0) } || isStandaloneNutritionAmountLine(line)
+    }
+
+    private func stitchSplitTableRows(from rawLines: [String]) -> [String] {
+        let trimmedLines = rawLines
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        var stitchedLines: [String] = []
+        var index = 0
+
+        while index < trimmedLines.count {
+            let line = trimmedLines[index]
+            let normalizedLine = normalizer.normalizeLine(line)
+
+            guard
+                detectExplicitNutrient(in: normalizedLine) != nil,
+                !containsNutritionAmount(in: normalizedLine)
+            else {
+                stitchedLines.append(line)
+                index += 1
+                continue
+            }
+
+            var rowCells = [line]
+            var lookahead = index + 1
+            var valueCellCount = 0
+
+            while lookahead < trimmedLines.count {
+                let nextLine = trimmedLines[lookahead]
+                let normalizedNextLine = normalizer.normalizeLine(nextLine)
+
+                if detectExplicitNutrient(in: normalizedNextLine) != nil {
+                    break
+                }
+
+                guard isTableValueCell(normalizedNextLine) else {
+                    break
+                }
+
+                rowCells.append(nextLine)
+                valueCellCount += 1
+                lookahead += 1
+
+                if valueCellCount >= 4 {
+                    break
+                }
+            }
+
+            if valueCellCount > 0 {
+                stitchedLines.append(rowCells.joined(separator: " "))
+                index = lookahead
+            } else {
+                stitchedLines.append(line)
+                index += 1
+            }
+        }
+
+        return stitchedLines
+    }
+
+    private func containsNutritionAmount(in line: String) -> Bool {
+        !nutritionMatches(in: line, allowedUnits: [.kcal, .kj, .grams, .milligrams, .millilitres, .unknown]).isEmpty
+    }
+
+    private func isTableValueCell(_ line: String) -> Bool {
+        line.range(
+            of: #"^<\s*\d+(?:\.\d+)?\s*(?:kcal|kj|mg|g|ml)?$|^\d+(?:\.\d+)?\s*(?:kcal|kj|mg|g|ml)?$"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    private func isStandaloneNutritionAmountLine(_ line: String) -> Bool {
+        guard containsNutritionAmount(in: line) else { return false }
+        let remainder = line
+            .replacingMatches(of: #"(<\s*)?\d+(?:\.\d+)?\s*(?:kcal|kj|mg|g|ml)?"#, with: "")
+            .replacingMatches(of: #"[\s,/|;:()\-]+"#, with: "")
+        return remainder.isEmpty
     }
 
     private func sanityChecked(values: [ParsedNutrientValue], warnings: Set<NutritionParseWarning>) -> (values: [ParsedNutrientValue], warnings: Set<NutritionParseWarning>) {

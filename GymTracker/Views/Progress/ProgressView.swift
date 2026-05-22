@@ -36,16 +36,16 @@ struct ProgressContentView: View {
             systemImage: "chart.xyaxis.line"
         ) {
             DashboardSection(title: "This Week") {
-                FitnessCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(spacing: 10) {
-                            MetricTile(label: "Workouts", value: "\(weeklySummary.completedWorkouts)", caption: "Completed", systemImage: "figure.strengthtraining.traditional")
-                            MetricTile(label: "Sets", value: "\(weeklySummary.workingSets)", caption: "Working", systemImage: "checkmark.circle")
-                        }
-                        HStack(spacing: 10) {
-                            MetricTile(label: "Best-set vol", value: format(weeklySummary.bestSetVolumeTotal), caption: "kg total", systemImage: "chart.bar")
-                            MetricTile(label: "Tonnage", value: format(weeklySummary.totalTonnage), caption: "kg total", systemImage: "sum")
-                        }
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
+                        MetricTile(label: "Workouts", value: "\(weeklySummary.completedWorkouts)", caption: "Completed", systemImage: "figure.strengthtraining.traditional")
+                        MetricTile(label: "Sets", value: "\(weeklySummary.workingSets)", caption: "Working", systemImage: "checkmark.circle")
+                    }
+                    HStack(spacing: 10) {
+                        MetricTile(label: "Best-set vol", value: format(weeklySummary.bestSetVolumeTotal), caption: "kg total", systemImage: "chart.bar")
+                        MetricTile(label: "Tonnage", value: format(weeklySummary.totalTonnage), caption: "kg total", systemImage: "sum")
+                    }
+                    FitnessCard(style: .compact, padding: 16) {
                         Text("Push \(splitConsistency.pushCount) - Pull \(splitConsistency.pullCount) - Legs \(splitConsistency.legsCount). \(splitConsistency.balanceDescription)")
                             .font(.subheadline)
                             .foregroundStyle(appTheme.colors.textSecondary)
@@ -68,14 +68,14 @@ struct ProgressContentView: View {
                         } label: {
                             ProgressActionCard(title: "Exercise Charts", subtitle: "Open lazy-loaded trends", systemImage: "chart.xyaxis.line")
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(PressableCardButtonStyle())
 
                         NavigationLink {
                             PRTimelineView()
                         } label: {
                             ProgressActionCard(title: "PR Timeline", subtitle: "Review best-set jumps", systemImage: "trophy.fill")
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(PressableCardButtonStyle())
                     }
                 }
             }
@@ -121,7 +121,7 @@ struct ProgressContentView: View {
                                     }
                                 }
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(PressableCardButtonStyle())
                         }
                     }
                 }
@@ -136,43 +136,18 @@ struct ProgressContentView: View {
 }
 
 private struct ProgressActionCard: View {
-    @Environment(\.appTheme) private var appTheme
-
     let title: String
     let subtitle: String
     let systemImage: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(appTheme.colors.accent)
-                .frame(width: 38, height: 38)
-                .background(appTheme.colors.accentSurface, in: Circle())
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.textPrimary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .lineLimit(2)
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
-        .background(appTheme.colors.cardBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(appTheme.colors.cardBorder, lineWidth: 1)
-        }
+        DashboardActionTile(title: title, subtitle: subtitle, systemImage: systemImage, showsChevron: false)
     }
 }
 
 private struct ExerciseProgressDetailView: View {
+    @Environment(\.appTheme) private var appTheme
+
     let exercise: Exercise
     let sessions: [WorkoutSession]
 
@@ -241,11 +216,11 @@ private struct ExerciseProgressDetailView: View {
                                         .font(.headline)
                                     Text(entry.setsText)
                                         .font(.subheadline)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(appTheme.colors.textSecondary)
                                         .lineLimit(2)
                                     Text("Best-set volume \(entry.bestSetVolumeText) - est. 1RM \(entry.estimatedOneRepMaxText)")
                                         .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(appTheme.colors.textSecondary)
                                 }
                             }
                         }
@@ -258,6 +233,8 @@ private struct ExerciseProgressDetailView: View {
 }
 
 private struct ExerciseProgressChartsIndexView: View {
+    @Environment(\.appTheme) private var appTheme
+
     let exercises: [Exercise]
     let sessions: [WorkoutSession]
 
@@ -286,18 +263,18 @@ private struct ExerciseProgressChartsIndexView: View {
                                         .font(.headline)
                                     Text(exercise.primaryMuscleGroup.displayName)
                                         .font(.subheadline)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(appTheme.colors.textSecondary)
                                 }
 
                                 Spacer()
 
                                 Image(systemName: "chevron.right")
                                     .font(.caption.weight(.bold))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(appTheme.colors.textTertiary)
                             }
                         }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableCardButtonStyle())
                 }
             }
         }
@@ -324,6 +301,26 @@ private struct ExerciseTrendChart: View {
             .foregroundStyle(appTheme.colors.accent)
         }
         .chartYAxisLabel("Est. 1RM kg")
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                AxisGridLine()
+                    .foregroundStyle(appTheme.colors.cardBorder)
+                AxisTick()
+                    .foregroundStyle(appTheme.colors.cardBorder)
+                AxisValueLabel()
+                    .foregroundStyle(appTheme.colors.textSecondary)
+            }
+        }
+        .chartYAxis {
+            AxisMarks { _ in
+                AxisGridLine()
+                    .foregroundStyle(appTheme.colors.cardBorder)
+                AxisTick()
+                    .foregroundStyle(appTheme.colors.cardBorder)
+                AxisValueLabel()
+                    .foregroundStyle(appTheme.colors.textSecondary)
+            }
+        }
     }
 }
 

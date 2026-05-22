@@ -4,6 +4,7 @@ import SwiftUI
 struct SplitsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @Query(sort: \TrainingSplit.name)
     private var splits: [TrainingSplit]
@@ -13,6 +14,7 @@ struct SplitsView: View {
 
     @State private var showingAddSplit = false
     @State private var showingOtherSplits = false
+    @State private var pendingDeleteSplit: TrainingSplit?
 
     private let coachEngine = CoachRecommendationEngine()
     private let targetService = TargetSuggestionService()
@@ -71,10 +73,10 @@ struct SplitsView: View {
                 }
 
                 if !otherSplits.isEmpty {
-                    FitnessCard(padding: 0) {
+                    FitnessCard(style: .compact, padding: 0) {
                         VStack(spacing: 0) {
                             Button {
-                                withAnimation(.snappy) {
+                                withAnimation(AppMotion.reorderSpring(reduceMotion: reduceMotion)) {
                                     showingOtherSplits.toggle()
                                 }
                             } label: {
@@ -132,7 +134,7 @@ struct SplitsView: View {
                                         .buttonStyle(.plain)
                                         .contextMenu {
                                             Button(role: .destructive) {
-                                                delete(split)
+                                                pendingDeleteSplit = split
                                             } label: {
                                                 Label("Delete Split", systemImage: "trash")
                                             }
@@ -158,6 +160,26 @@ struct SplitsView: View {
             }
             .sheet(isPresented: $showingAddSplit) {
                 AddSplitView()
+            }
+            .alert("Delete split?", isPresented: deleteAlertBinding) {
+                Button("Cancel", role: .cancel) {
+                    pendingDeleteSplit = nil
+                }
+                Button("Delete", role: .destructive) {
+                    deletePendingSplit()
+                }
+            } message: {
+                Text("This removes the split template and its exercise setup. Workout history stays intact.")
+            }
+        }
+    }
+
+    private var deleteAlertBinding: Binding<Bool> {
+        Binding {
+            pendingDeleteSplit != nil
+        } set: { showing in
+            if !showing {
+                pendingDeleteSplit = nil
             }
         }
     }
@@ -209,6 +231,12 @@ struct SplitsView: View {
     private func delete(_ split: TrainingSplit) {
         modelContext.delete(split)
         try? modelContext.save()
+    }
+
+    private func deletePendingSplit() {
+        guard let pendingDeleteSplit else { return }
+        delete(pendingDeleteSplit)
+        self.pendingDeleteSplit = nil
     }
 
     private func status(for split: TrainingSplit) -> SplitStatus {
@@ -321,7 +349,7 @@ private struct SplitDetailView: View {
                         systemImage: "dumbbell"
                     )
                 } else {
-                    FitnessCard(padding: 14) {
+                    FitnessCard(style: .compact, padding: 14) {
                         VStack(spacing: 0) {
                             ForEach(Array(orderedExercises.enumerated()), id: \.element.id) { index, exercise in
                                 if index > 0 {
@@ -351,7 +379,7 @@ private struct SplitDetailView: View {
     }
 
     private var splitHeroCard: some View {
-        FitnessCard {
+        FitnessCard(style: .hero) {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top, spacing: 14) {
                     ExerciseIconTile(
@@ -484,6 +512,7 @@ private struct AddSplitView: View {
 
 private struct SplitEditorView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.appTheme) private var appTheme
     @Bindable var split: TrainingSplit
 
     @Query(filter: #Predicate<Exercise> { !$0.isArchived }, sort: \Exercise.name)
@@ -529,7 +558,7 @@ private struct SplitEditorView: View {
             Section("Exercises") {
                 if orderedExercises.isEmpty {
                     Text("No exercises yet")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(appTheme.colors.textSecondary)
                 } else {
                     ForEach(orderedExercises) { splitExercise in
                         SplitExerciseEditorRow(splitExercise: splitExercise)

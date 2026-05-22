@@ -38,26 +38,38 @@ enum ExerciseIconMapper {
     ) -> ExerciseIconKey {
         let name = normalized(name)
 
-        if name.contains("bicep preacher curl") || name.contains("preacher curl") || name.contains("bicep curl") { return .bicepCurl }
+        if name.contains("incline") && name.contains("chest press") && name.contains("smith") { return .inclineChestPressSmith }
+        if name.contains("bench press") { return .benchPress }
+        if name.contains("converging chest press") { return .convergingChestPress }
+        if name.contains("incline") && name.contains("chest press") { return .inclineChestPress }
+        if name.contains("close grip") && (name.contains("weighted pull-up") || name.contains("weighted pull up") || name.contains("pull-up") || name.contains("pull up") || name.contains("pullup")) { return .closeGripWeightedPullUp }
+        if name.contains("pull ups") { return .pullUps }
+        if name.contains("pull-up") || name.contains("pull up") || name.contains("pullup") { return .pullUp }
+        if name.contains("diverging seated row") { return .divergingSeatedRow }
+        if name.contains("diverging lower lat row") || name.contains("lower lat row") { return .divergingLowerLatRow }
+        if name.contains("seated row") { return .seatedRow }
+        if name.contains("rear delt cable") { return .rearDeltCable }
+        if name.contains("shoulder press") && name.contains("smith") { return .shoulderPressSmith }
+        if name.contains("overhead triceps") { return .overheadTricepsExtension }
+        if name.contains("triceps pushdown") || name.contains("tricep pushdown") || name.contains("tricep push down") { return .tricepsPushdown }
+        if name.contains("seated leg curl") { return .seatedLegCurl }
+        if name.contains("quad extension") { return .quadExtension }
+        if name.contains("bicep preacher curl") && name.contains("machine") { return .bicepPreacherCurlMachine }
+        if name.contains("bicep preacher curl") || name.contains("preacher curl") { return .bicepPreacherCurl }
+        if name.contains("bicep curl") { return .bicepCurl }
         if name.contains("chest fly") || name.contains("pec fly") { return .chestFly }
         if name.contains("diverging seated row") || name.contains("diverging lower lat row") { return .divergingRow }
         if name.contains("dumbbell shoulder press") { return .dumbbellShoulderPress }
         if name.contains("hack squat") { return .hackSquat }
         if name.contains("hip adduction") { return .hipAdduction }
-        if name.contains("incline") && name.contains("chest press") && name.contains("smith") { return .inclineChestPress }
-        if name.contains("incline") && name.contains("chest press") { return .inclineChestPress }
         if name.contains("lat pulldown") { return .latPulldown }
         if name.contains("seated leg curl") || name.contains("leg curl") { return .legCurl }
         if name.contains("quad extension") || name.contains("leg extension") { return .legExtension }
         if name.contains("leg press") { return .legPress }
-        if name.contains("close grip") && (name.contains("weighted pull-up") || name.contains("weighted pull up") || name.contains("pull-up") || name.contains("pull up") || name.contains("pullup")) { return .pullUps }
-        if name.contains("weighted pull-up") || name.contains("weighted pull up") || name.contains("pull-up") || name.contains("pull up") || name.contains("pullup") || name.contains("pull ups") { return .pullUps }
         if name.contains("standing calf raise") || name.contains("calf raise") { return .standingCalfRaise }
-        if name.contains("triceps pushdown") || name.contains("tricep pushdown") || name.contains("tricep push down") { return .tricepPushDown }
 
-        if name.contains("bench press") || name.contains("converging chest press") || name.contains("chest press") { return .inclineChestPress }
+        if name.contains("chest press") { return .chestPress }
         if name.contains("shoulder press") { return .dumbbellShoulderPress }
-        if name.contains("overhead triceps") { return .tricepPushDown }
         if name.contains("rear delt") || name.contains("seated row") || name.contains("lower lat row") { return .divergingRow }
         if name.contains("abdominal crunch") { return .abdominalCrunch }
         if name.contains("cable lateral raise") || name.contains("lateral raise") { return .cableLateralRaise }

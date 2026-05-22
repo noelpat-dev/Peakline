@@ -2,25 +2,66 @@ import SwiftUI
 
 enum AppMotion {
     static let popupMountDelay: UInt64 = 16_000_000
-    static let popupExitDuration: UInt64 = 280_000_000
+    static let popupExitDuration: UInt64 = 240_000_000
     static let ratingSelectionDelay: UInt64 = 150_000_000
+    static let popupContentRevealDelay: UInt64 = 70_000_000
+    static let popupSecondaryRevealDelay: UInt64 = 80_000_000
+    static let celebrationIconPulseDuration: TimeInterval = 0.58
+    static let cardPressScale: CGFloat = 0.985
+    static let selectedControlScale: CGFloat = 1.02
 
     static func popupEntrance(reduceMotion: Bool) -> Animation {
         reduceMotion
             ? .easeOut(duration: 0.01)
-            : .snappy(duration: 0.42, extraBounce: 0.08)
+            : .spring(response: 0.34, dampingFraction: 0.88, blendDuration: 0.04)
     }
 
     static func popupExit(reduceMotion: Bool) -> Animation {
         reduceMotion
             ? .easeOut(duration: 0.01)
-            : .smooth(duration: 0.28)
+            : .easeInOut(duration: 0.24)
     }
 
     static func quickSpring(reduceMotion: Bool) -> Animation {
         reduceMotion
             ? .easeOut(duration: 0.01)
-            : .spring(response: 0.24, dampingFraction: 0.78)
+            : .spring(response: 0.28, dampingFraction: 0.84)
+    }
+
+    static func swipeRevealSnap(reduceMotion: Bool) -> Animation {
+        reduceMotion
+            ? .easeOut(duration: 0.01)
+            : .interactiveSpring(response: 0.28, dampingFraction: 0.88, blendDuration: 0.08)
+    }
+
+    static func selectionSpring(reduceMotion: Bool) -> Animation {
+        reduceMotion
+            ? .easeOut(duration: 0.01)
+            : .spring(response: 0.24, dampingFraction: 0.9, blendDuration: 0.04)
+    }
+
+    static func reorderSpring(reduceMotion: Bool) -> Animation {
+        reduceMotion
+            ? .easeOut(duration: 0.01)
+            : .interactiveSpring(response: 0.3, dampingFraction: 0.86, blendDuration: 0.06)
+    }
+
+    static func progressFill(reduceMotion: Bool) -> Animation {
+        reduceMotion
+            ? .easeOut(duration: 0.01)
+            : .easeOut(duration: 0.34)
+    }
+
+    static func transientConfirmation(reduceMotion: Bool) -> Animation {
+        reduceMotion
+            ? .easeOut(duration: 0.01)
+            : .spring(response: 0.32, dampingFraction: 0.88, blendDuration: 0.04)
+    }
+
+    static func gentleFade(reduceMotion: Bool) -> Animation {
+        reduceMotion
+            ? .easeOut(duration: 0.01)
+            : .easeInOut(duration: 0.2)
     }
 
     static func popupTransition(reduceMotion: Bool) -> AnyTransition {
@@ -28,11 +69,11 @@ enum AppMotion {
             ? .opacity
             : .asymmetric(
                 insertion: .opacity
-                    .combined(with: .scale(scale: 0.94, anchor: .center))
-                    .combined(with: .offset(y: 28)),
-                removal: .opacity
                     .combined(with: .scale(scale: 0.96, anchor: .center))
-                    .combined(with: .offset(y: 18))
+                    .combined(with: .offset(y: 22)),
+                removal: .opacity
+                    .combined(with: .scale(scale: 0.98, anchor: .center))
+                    .combined(with: .offset(y: 12))
             )
     }
 }
@@ -174,7 +215,7 @@ struct GlassPrimaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(.black)
+            .foregroundStyle(appTheme.colors.accentForeground)
             .padding(.horizontal, 18)
             .frame(minHeight: 54)
             .background(appTheme.colors.accent.opacity(configuration.isPressed ? 0.78 : 1), in: Capsule())
@@ -183,7 +224,7 @@ struct GlassPrimaryButtonStyle: ButtonStyle {
                     .stroke(.white.opacity(0.24), lineWidth: 1)
                     .allowsHitTesting(false)
             }
-            .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.975 : 1))
-            .animation(AppMotion.quickSpring(reduceMotion: reduceMotion), value: configuration.isPressed)
+            .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? AppMotion.cardPressScale : 1))
+            .animation(AppMotion.selectionSpring(reduceMotion: reduceMotion), value: configuration.isPressed)
     }
 }

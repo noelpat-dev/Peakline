@@ -638,6 +638,8 @@ private struct ResultHeader: View {
 }
 
 private struct BarcodeFoodSummary: View {
+    @Environment(\.appTheme) private var appTheme
+
     let food: FoodItem
 
     var body: some View {
@@ -647,7 +649,7 @@ private struct BarcodeFoodSummary: View {
             if let brand = food.brand, !brand.isEmpty {
                 Text(brand)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(appTheme.colors.textSecondary)
             }
             MacroPreviewLine(
                 calories: food.caloriesPer100g,
@@ -660,6 +662,8 @@ private struct BarcodeFoodSummary: View {
 }
 
 private struct ImportedDraftSummary: View {
+    @Environment(\.appTheme) private var appTheme
+
     let draft: FoodImportDraft
 
     var body: some View {
@@ -669,7 +673,7 @@ private struct ImportedDraftSummary: View {
             if let brand = draft.brand, !brand.isEmpty {
                 Text(brand)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(appTheme.colors.textSecondary)
             }
             MacroPreviewLine(
                 calories: draft.caloriesPer100g,

@@ -91,7 +91,7 @@ struct CoachContentView: View {
             subtitle: "Readiness, targets, and recovery.",
             systemImage: "sparkles"
         ) {
-            FitnessCard {
+            FitnessCard(style: .hero) {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .top) {
                         ExerciseIconTile(
@@ -144,10 +144,7 @@ struct CoachContentView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Today's Targets")
-                    .font(.headline)
-
+            DashboardSection(title: "Today's Targets") {
                 if targetSuggestions.isEmpty {
                     FitnessCard {
                         Text("Complete a workout from your split to get load and rep targets.")
@@ -163,10 +160,7 @@ struct CoachContentView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Recovery Warnings")
-                    .font(.headline)
-
+            DashboardSection(title: "Recovery Warnings") {
                 if summary.recoveryWarnings.isEmpty {
                     FitnessCard {
                         HStack(spacing: 10) {
@@ -196,10 +190,7 @@ struct CoachContentView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Sleep Coaching")
-                    .font(.headline)
-
+            DashboardSection(title: "Sleep Coaching") {
                 if let recommendation = sleepDashboardSummary.adaptiveRecommendation {
                     FitnessCard {
                         VStack(alignment: .leading, spacing: 8) {
@@ -249,21 +240,18 @@ struct CoachContentView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("This Week Review")
-                        .font(.headline)
-                    Spacer()
-                    NavigationLink {
-                        WeeklyReviewView()
-                    } label: {
-                        Text("Details")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                }
-
+            DashboardSection(title: "This Week Review") {
                 FitnessCard {
                     VStack(alignment: .leading, spacing: 12) {
+                        NavigationLink {
+                            WeeklyReviewView()
+                        } label: {
+                            Label("Open weekly review", systemImage: "chart.bar.doc.horizontal")
+                                .font(.subheadline.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(SecondaryFitnessButtonStyle())
+
                         HStack(spacing: 10) {
                             MetricTile(
                                 label: "Workouts",
@@ -303,10 +291,7 @@ struct CoachContentView: View {
             insightList(title: "Progress Opportunities", insights: progressOpportunityInsights, empty: "No obvious load jumps yet. Repeat targets and build clean reps.")
             insightList(title: "Watchlist", insights: weeklyReview.watchlist, empty: "No major fatigue or plateau warnings right now.")
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Recent PRs")
-                    .font(.headline)
-
+            DashboardSection(title: "Recent PRs") {
                 if recentPRs.isEmpty {
                     FitnessCard {
                         Text("PRs will appear here when a completed working set beats prior history.")
@@ -430,10 +415,7 @@ struct CoachContentView: View {
     }
 
     private func insightList(title: String, insights: [CoachInsight], empty: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.headline)
-
+        DashboardSection(title: title) {
             if insights.isEmpty {
                 FitnessCard {
                     Text(empty)

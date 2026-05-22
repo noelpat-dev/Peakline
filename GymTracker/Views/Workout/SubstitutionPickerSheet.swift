@@ -29,7 +29,7 @@ struct SubstitutionPickerSheet: View {
                 Section("Alternatives") {
                     if candidates.isEmpty {
                         Text("No close alternatives found.")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(appTheme.colors.textSecondary)
                     } else {
                         ForEach(candidates) { candidate in
                             Button {

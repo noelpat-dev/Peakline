@@ -3,6 +3,7 @@ import UIKit
 
 struct AppThemeColors {
     let accent: Color
+    let accentForeground: Color
     let accentHighlight: Color
     let accentSurface: Color
     let accentSurfaceStrong: Color
@@ -16,14 +17,39 @@ struct AppThemeColors {
     let textTertiary: Color
     let success: Color
     let warning: Color
+    let hydration: Color
     let danger: Color
+}
+
+struct AppThemeMetrics {
+    let screenPadding: CGFloat = 16
+    let screenBottomPadding: CGFloat = 28
+    let screenContentSpacing: CGFloat = 18
+    let sectionSpacing: CGFloat = 10
+    let cardSpacing: CGFloat = 12
+    let standardCardPadding: CGFloat = 20
+    let compactCardPadding: CGFloat = 16
+    let heroCardPadding: CGFloat = 22
+    let standardCardRadius: CGFloat = 24
+    let compactCardRadius: CGFloat = 20
+    let heroCardRadius: CGFloat = 30
+    let iconButtonSize: CGFloat = 44
+    let rowIconSize: CGFloat = 38
+    let buttonHeight: CGFloat = 50
+    let chipVerticalPadding: CGFloat = 8
+    let chipHorizontalPadding: CGFloat = 13
+    let swipeRevealWidth: CGFloat = 96
+    let swipeRevealActionSize: CGFloat = 56
+    let swipeRevealActionTrailingPadding: CGFloat = 14
 }
 
 enum AppTheme: String, CaseIterable, Identifiable {
     case appleGreen
+    case red
     case purple
     case orange
     case blue
+    case black
 
     var id: String { rawValue }
 
@@ -31,12 +57,16 @@ enum AppTheme: String, CaseIterable, Identifiable {
         switch self {
         case .appleGreen:
             return "Fitness Green"
+        case .red:
+            return "Pulse Red"
         case .purple:
             return "Purple"
         case .orange:
             return "Orange"
         case .blue:
             return "Blue"
+        case .black:
+            return "Black"
         }
     }
 
@@ -48,22 +78,31 @@ enum AppTheme: String, CaseIterable, Identifiable {
         colors.accentSurfaceStrong
     }
 
+    var metrics: AppThemeMetrics {
+        AppThemeMetrics()
+    }
+
     var colors: AppThemeColors {
         let accent: Color
         switch self {
         case .appleGreen:
             accent = Color(hex: 0x30D158)
+        case .red:
+            accent = Color(hex: 0xFF2C2C)
         case .purple:
             accent = Color(hex: 0xBF5AF2)
         case .orange:
             accent = Color(hex: 0xFF9F0A)
         case .blue:
             accent = Color(hex: 0x0A84FF)
+        case .black:
+            accent = Color(light: 0x111114, dark: 0xF5F5F7)
         }
 
         return AppThemeColors(
             accent: accent,
-            accentHighlight: self == .appleGreen ? Color(hex: 0x64D80A) : accent.opacity(0.86),
+            accentForeground: accentForeground,
+            accentHighlight: accentHighlight(for: accent),
             accentSurface: accent.opacity(0.16),
             accentSurfaceStrong: accent.opacity(0.26),
             backgroundPrimary: Color(light: 0xF7F7F9, dark: 0x000000),
@@ -76,8 +115,33 @@ enum AppTheme: String, CaseIterable, Identifiable {
             textTertiary: Color(light: 0x8B8B92, dark: 0x6E6E73),
             success: Color(hex: 0x30D158),
             warning: Color(hex: 0xFF9F0A),
+            hydration: self == .black ? accent : Color(hex: 0x0A84FF),
             danger: Color(hex: 0xFF453A)
         )
+    }
+
+    private var accentForeground: Color {
+        switch self {
+        case .appleGreen, .orange, .blue:
+            return .black
+        case .red, .purple:
+            return .white
+        case .black:
+            return Color(light: 0xFFFFFF, dark: 0x000000)
+        }
+    }
+
+    private func accentHighlight(for accent: Color) -> Color {
+        switch self {
+        case .appleGreen:
+            return Color(hex: 0x64D80A)
+        case .red:
+            return Color(hex: 0xFF5A5A)
+        case .black:
+            return Color(light: 0x3A3A3C, dark: 0xFFFFFF)
+        case .purple, .orange, .blue:
+            return accent.opacity(0.86)
+        }
     }
 }
 

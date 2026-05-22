@@ -19,6 +19,7 @@ struct DashboardHeaderView: View {
                     .font(.system(.largeTitle, design: .rounded).weight(.bold))
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.78)
 
                 Text(subtitle)
                     .font(.subheadline)
@@ -37,7 +38,7 @@ struct DashboardHeaderView: View {
                     Circle()
                         .stroke(appTheme.colors.cardBorder, lineWidth: 1)
                 }
-                .accessibilityLabel("Profile")
+                .accessibilityHidden(true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 4)
@@ -72,86 +73,70 @@ struct HeroRecommendationCard: View {
     let secondaryAction: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 9) {
-                    Text(eyebrow)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                        .textCase(.uppercase)
+        FitnessCard(style: .hero) {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 9) {
+                        Text(eyebrow)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .textCase(.uppercase)
 
-                    Text(splitName)
-                        .font(.system(size: 46, weight: .bold, design: .rounded))
-                        .foregroundStyle(appTheme.colors.textPrimary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.68)
-                }
-
-                Spacer(minLength: 12)
-
-                ExerciseIconView(
-                    iconKey: iconKey,
-                    size: 62,
-                    showBackground: true,
-                    isDecorative: true
-                )
-            }
-
-            VStack(alignment: .leading, spacing: 7) {
-                Text(reason)
-                    .font(.headline)
-                    .foregroundStyle(appTheme.colors.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if let context, !context.isEmpty {
-                    Text(context)
-                        .font(.subheadline)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            if !chips.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(chips) { chip in
-                            DashboardMetadataChip(chip: chip)
-                        }
+                        Text(splitName)
+                            .font(.system(size: 46, weight: .bold, design: .rounded))
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.68)
                     }
-                    .padding(.vertical, 1)
-                }
-                .scrollClipDisabled()
-            }
 
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 10) {
-                    heroPrimaryButton
-                    heroSecondaryButton
+                    Spacer(minLength: 12)
+
+                    ExerciseIconView(
+                        iconKey: iconKey,
+                        size: 62,
+                        showBackground: true,
+                        isDecorative: true
+                    )
                 }
 
-                VStack(spacing: 10) {
-                    heroPrimaryButton
-                    heroSecondaryButton
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(reason)
+                        .font(.headline)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let context, !context.isEmpty {
+                        Text(context)
+                            .font(.subheadline)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                if !chips.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(chips) { chip in
+                                DashboardMetadataChip(chip: chip)
+                            }
+                        }
+                        .padding(.vertical, 1)
+                    }
+                    .scrollClipDisabled()
+                }
+
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        heroPrimaryButton
+                        heroSecondaryButton
+                    }
+
+                    VStack(spacing: 10) {
+                        heroPrimaryButton
+                        heroSecondaryButton
+                    }
                 }
             }
-        }
-        .padding(22)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .fill(appTheme.colors.cardBackground)
-                .overlay(alignment: .topTrailing) {
-                    Circle()
-                        .fill(appTheme.colors.accent.opacity(0.18))
-                        .frame(width: 190, height: 190)
-                        .blur(radius: 38)
-                        .offset(x: 58, y: -72)
-                }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .stroke(appTheme.colors.accent.opacity(0.24), lineWidth: 1)
         }
     }
 
@@ -215,50 +200,46 @@ struct QuickActionTile: View {
 
     var body: some View {
         Button(action: action.action) {
-            VStack(alignment: .leading, spacing: 13) {
-                HStack {
-                    Image(systemName: action.systemImage)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(iconColor)
-                        .frame(width: 38, height: 38)
-                        .background(iconBackground, in: Circle())
+            FitnessCard(style: .compact) {
+                VStack(alignment: .leading, spacing: 13) {
+                    HStack {
+                        Image(systemName: action.systemImage)
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(iconColor)
+                            .frame(width: appTheme.metrics.rowIconSize, height: appTheme.metrics.rowIconSize)
+                            .background(iconBackground, in: Circle())
 
-                    Spacer(minLength: 8)
+                        Spacer(minLength: 8)
 
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(appTheme.colors.textTertiary)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(appTheme.colors.textTertiary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(action.title)
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.82)
+
+                        Text(action.subtitle)
+                            .font(.caption)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(action.title)
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.textPrimary)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.82)
-
-                    Text(action.subtitle)
-                        .font(.caption)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
-            .background(appTheme.colors.cardBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(tileBorder, lineWidth: 1)
+                .frame(maxWidth: .infinity, minHeight: 136, alignment: .topLeading)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableCardButtonStyle())
     }
 
     private var iconColor: Color {
         switch action.style {
         case .hydration:
-            return .blue
+            return appTheme.colors.hydration
         case .primary, .progress:
             return appTheme.colors.accent
         case .neutral:
@@ -271,7 +252,7 @@ struct QuickActionTile: View {
     private var iconBackground: Color {
         switch action.style {
         case .hydration:
-            return Color.blue.opacity(0.14)
+            return appTheme.colors.hydration.opacity(0.14)
         case .primary, .progress:
             return appTheme.colors.accentSurface
         case .neutral:
@@ -284,7 +265,7 @@ struct QuickActionTile: View {
     private var tileBorder: Color {
         switch action.style {
         case .hydration:
-            return Color.blue.opacity(0.24)
+            return appTheme.colors.hydration.opacity(0.24)
         case .primary, .progress:
             return appTheme.colors.accent.opacity(0.22)
         case .neutral, .calm:
@@ -308,11 +289,7 @@ struct CoachInsightCard: View {
         FitnessCard {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "sparkles")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.accent)
-                        .frame(width: 42, height: 42)
-                        .background(appTheme.colors.accentSurface, in: Circle())
+                    FitnessIconBadge(systemImage: "sparkles", size: 42)
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text(title)
@@ -362,35 +339,31 @@ struct WeekMetricTile: View {
     let systemImage: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: systemImage)
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(appTheme.colors.accent)
+        FitnessCard(style: .compact) {
+            VStack(alignment: .leading, spacing: 8) {
+                Image(systemName: systemImage)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(appTheme.colors.accent)
 
-            Text(value)
-                .font(.system(.title2, design: .rounded).weight(.bold))
-                .foregroundStyle(appTheme.colors.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                    .font(.caption.weight(.semibold))
+                Text(value)
+                    .font(.system(.title2, design: .rounded).weight(.bold))
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.7)
 
-                Text(caption)
-                    .font(.caption2)
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .lineLimit(2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .lineLimit(1)
+
+                    Text(caption)
+                        .font(.caption2)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .lineLimit(2)
+                }
             }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, minHeight: 116, alignment: .topLeading)
-        .background(appTheme.colors.cardBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(appTheme.colors.cardBorder, lineWidth: 1)
+            .frame(maxWidth: .infinity, minHeight: 84, alignment: .topLeading)
         }
     }
 }
@@ -467,28 +440,39 @@ struct DashboardSection<Content: View>: View {
     @Environment(\.appTheme) private var appTheme
 
     let title: String
+    let subtitle: String?
     let actionTitle: String?
     let action: (() -> Void)?
     let content: Content
 
     init(
         title: String,
+        subtitle: String? = nil,
         actionTitle: String? = nil,
         action: (() -> Void)? = nil,
         @ViewBuilder content: () -> Content
     ) {
         self.title = title
+        self.subtitle = subtitle
         self.actionTitle = actionTitle
         self.action = action
         self.content = content()
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(title)
-                    .font(.headline)
-                    .foregroundStyle(appTheme.colors.textPrimary)
+        VStack(alignment: .leading, spacing: appTheme.metrics.sectionSpacing) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                    }
+                }
 
                 Spacer()
 
@@ -514,11 +498,7 @@ struct DashboardEmptyStateCard: View {
     var body: some View {
         FitnessCard {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: systemImage)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.accent)
-                    .frame(width: 42, height: 42)
-                    .background(appTheme.colors.accentSurface, in: Circle())
+                FitnessIconBadge(systemImage: systemImage, size: 42)
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title)

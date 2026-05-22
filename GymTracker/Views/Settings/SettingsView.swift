@@ -42,7 +42,7 @@ struct SettingsView: View {
                 }
 
                 DashboardSection(title: "Training Setup") {
-                    FitnessCard(padding: 12) {
+                    FitnessCard(style: .compact, padding: 12) {
                         VStack(spacing: 0) {
                             NavigationLink {
                                 ExerciseLibraryView()
@@ -89,16 +89,29 @@ struct SettingsView: View {
                 }
 
                 DashboardSection(title: "Apple Health") {
-                    NavigationLink {
-                        HealthKitSettingsView()
-                    } label: {
-                        SettingsCardRow(
-                            title: "Apple Health Sync",
-                            subtitle: "Optional nutrition sharing and labeled activity context.",
-                            systemImage: "heart.text.square"
-                        )
+                    VStack(spacing: 12) {
+                        NavigationLink {
+                            SleepSettingsStandaloneView()
+                        } label: {
+                            SettingsCardRow(
+                                title: "Sleep Settings",
+                                subtitle: "Sleep reminders, Apple Health, source priority, and recovery coaching.",
+                                systemImage: "moon.zzz"
+                            )
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink {
+                            HealthKitSettingsView()
+                        } label: {
+                            SettingsCardRow(
+                                title: "Apple Health Sync",
+                                subtitle: "Optional nutrition sharing and labeled activity context.",
+                                systemImage: "heart.text.square"
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
 
                 DashboardSection(title: "Safety") {
@@ -119,7 +132,7 @@ struct SettingsView: View {
                 }
 
                 DashboardSection(title: "Local Data") {
-                    FitnessCard(padding: 12) {
+                    FitnessCard(style: .compact, padding: 12) {
                         VStack(spacing: 0) {
                             NavigationLink {
                                 BackupExportView()
@@ -153,7 +166,7 @@ struct SettingsView: View {
                     }
                 }
 
-                FitnessCard(padding: 16) {
+                FitnessCard(style: .compact) {
                     HStack(spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Current Theme")
@@ -208,7 +221,7 @@ private struct SettingsCardRow: View {
     var showsChevron = true
 
     var body: some View {
-        FitnessCard {
+        FitnessCard(style: .compact) {
             HStack(spacing: 12) {
                 SettingsRowIcon(systemImage: systemImage)
 
@@ -272,27 +285,23 @@ private struct SettingsUtilityTile: View {
     let systemImage: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SettingsRowIcon(systemImage: systemImage)
+        FitnessCard(style: .compact) {
+            VStack(alignment: .leading, spacing: 12) {
+                SettingsRowIcon(systemImage: systemImage)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.textPrimary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .lineLimit(2)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .lineLimit(2)
+                }
             }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, minHeight: 136, alignment: .topLeading)
-        .background(appTheme.colors.cardBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(appTheme.colors.cardBorder, lineWidth: 1)
+            .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
         }
     }
 }
@@ -306,7 +315,7 @@ private struct SettingsRowIcon: View {
         Image(systemName: systemImage)
             .font(.headline.weight(.semibold))
             .foregroundStyle(appTheme.colors.accent)
-            .frame(width: 38, height: 38)
+            .frame(width: appTheme.metrics.rowIconSize, height: appTheme.metrics.rowIconSize)
             .background(appTheme.colors.accentSurface, in: Circle())
     }
 }
@@ -439,12 +448,16 @@ private struct ThemeOptionRow: View {
         switch theme {
         case .appleGreen:
             return "Workout green accents"
+        case .red:
+            return "Bold red intensity"
         case .purple:
             return "High contrast violet"
         case .orange:
             return "Warm amber energy"
         case .blue:
             return "Cool training blue"
+        case .black:
+            return "Monochrome black accents"
         }
     }
 }
