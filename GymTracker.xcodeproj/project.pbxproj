@@ -116,6 +116,10 @@
 		00100000000000000000006A /* HealthKitBridgeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000006B /* HealthKitBridgeService.swift */; };
 		00100000000000000000006B /* HealthKitSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000006C /* HealthKitSettingsView.swift */; };
 		00100000000000000000006C /* NutritionDataIntegrityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000006E /* NutritionDataIntegrityService.swift */; };
+		00100000000000000000006D /* SleepModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000006F /* SleepModels.swift */; };
+		00100000000000000000006E /* SleepServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000070 /* SleepServices.swift */; };
+		00100000000000000000006F /* HealthKitSleepService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000071 /* HealthKitSleepService.swift */; };
+		001000000000000000000070 /* SleepViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000072 /* SleepViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -230,6 +234,10 @@
 		00200000000000000000006C /* HealthKitSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitSettingsView.swift; sourceTree = "<group>"; };
 		00200000000000000000006D /* GymTracker.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GymTracker.entitlements; sourceTree = "<group>"; };
 		00200000000000000000006E /* NutritionDataIntegrityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionDataIntegrityService.swift; sourceTree = "<group>"; };
+		00200000000000000000006F /* SleepModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepModels.swift; sourceTree = "<group>"; };
+		002000000000000000000070 /* SleepServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepServices.swift; sourceTree = "<group>"; };
+		002000000000000000000071 /* HealthKitSleepService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKit/HealthKitSleepService.swift; sourceTree = "<group>"; };
+		002000000000000000000072 /* SleepViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -294,6 +302,7 @@
 				002000000000000000000064 /* NutritionComparisonModels.swift */,
 				002000000000000000000067 /* NutritionInsightModels.swift */,
 				00200000000000000000006A /* HealthKitBridgeModels.swift */,
+				00200000000000000000006F /* SleepModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -310,6 +319,7 @@
 				00400000000000000000000A /* Coach */,
 				00400000000000000000000B /* Settings */,
 				004000000000000000000016 /* Nutrition */,
+				004000000000000000000017 /* Sleep */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -426,6 +436,8 @@
 				002000000000000000000068 /* NutritionInsightsService.swift */,
 				00200000000000000000006B /* HealthKitBridgeService.swift */,
 				00200000000000000000006E /* NutritionDataIntegrityService.swift */,
+				002000000000000000000070 /* SleepServices.swift */,
+				002000000000000000000071 /* HealthKitSleepService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -494,6 +506,14 @@
 				002000000000000000000069 /* NutritionInsightsView.swift */,
 			);
 			path = Nutrition;
+			sourceTree = "<group>";
+		};
+		004000000000000000000017 /* Sleep */ = {
+			isa = PBXGroup;
+			children = (
+				002000000000000000000072 /* SleepViews.swift */,
+			);
+			path = Sleep;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -678,6 +698,10 @@
 				00100000000000000000006A /* HealthKitBridgeService.swift in Sources */,
 				00100000000000000000006B /* HealthKitSettingsView.swift in Sources */,
 				00100000000000000000006C /* NutritionDataIntegrityService.swift in Sources */,
+				00100000000000000000006D /* SleepModels.swift in Sources */,
+				00100000000000000000006E /* SleepServices.swift in Sources */,
+				00100000000000000000006F /* HealthKitSleepService.swift in Sources */,
+				001000000000000000000070 /* SleepViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -814,8 +838,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Peakline;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
 				INFOPLIST_KEY_NSCameraUsageDescription = "GymTracker uses the camera to scan food barcodes and read nutrition labels for local food logging.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "GymTracker reads selected Apple Health data, such as body weight, activity, and workouts, to improve training-aware nutrition insights when you enable this integration.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "GymTracker saves confirmed nutrition logs, such as calories and macros, to Apple Health when you enable nutrition sync.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "GymTracker reads selected Apple Health data, such as sleep, body weight, activity, and workouts, to improve training-aware recovery and nutrition insights when you enable this integration.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "GymTracker saves confirmed nutrition logs and estimated Sleep Mode sessions to Apple Health when you enable each sync option.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -850,8 +874,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Peakline;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
 				INFOPLIST_KEY_NSCameraUsageDescription = "GymTracker uses the camera to scan food barcodes and read nutrition labels for local food logging.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "GymTracker reads selected Apple Health data, such as body weight, activity, and workouts, to improve training-aware nutrition insights when you enable this integration.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "GymTracker saves confirmed nutrition logs, such as calories and macros, to Apple Health when you enable nutrition sync.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "GymTracker reads selected Apple Health data, such as sleep, body weight, activity, and workouts, to improve training-aware recovery and nutrition insights when you enable this integration.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "GymTracker saves confirmed nutrition logs and estimated Sleep Mode sessions to Apple Health when you enable each sync option.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

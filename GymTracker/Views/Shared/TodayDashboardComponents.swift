@@ -188,6 +188,7 @@ enum QuickActionStyle {
     case neutral
     case calm
     case progress
+    case hydration
 }
 
 struct QuickActionsGrid: View {
@@ -256,6 +257,8 @@ struct QuickActionTile: View {
 
     private var iconColor: Color {
         switch action.style {
+        case .hydration:
+            return .blue
         case .primary, .progress:
             return appTheme.colors.accent
         case .neutral:
@@ -267,6 +270,8 @@ struct QuickActionTile: View {
 
     private var iconBackground: Color {
         switch action.style {
+        case .hydration:
+            return Color.blue.opacity(0.14)
         case .primary, .progress:
             return appTheme.colors.accentSurface
         case .neutral:
@@ -278,6 +283,8 @@ struct QuickActionTile: View {
 
     private var tileBorder: Color {
         switch action.style {
+        case .hydration:
+            return Color.blue.opacity(0.24)
         case .primary, .progress:
             return appTheme.colors.accent.opacity(0.22)
         case .neutral, .calm:

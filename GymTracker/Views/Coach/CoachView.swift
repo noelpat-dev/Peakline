@@ -18,10 +18,22 @@ struct CoachContentView: View {
     @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
     private var completedSessions: [WorkoutSession]
 
+    @Query(sort: \SleepSession.createdAt, order: .reverse)
+    private var sleepSessions: [SleepSession]
+
+    @Query(sort: \NapSession.startDate, order: .reverse)
+    private var napSessions: [NapSession]
+
+    @State private var sleepSettings = SleepSettingsStore().load()
+    @State private var sleepSnapshot = SleepAnalyticsService.emptySnapshot()
+    @State private var lastSleepAnalyticsSignature: SleepAnalyticsInputSignature?
+
     private let coachEngine = CoachRecommendationEngine()
     private let targetService = TargetSuggestionService()
     private let reviewBuilder = WeeklyReviewBuilder()
     private let analytics = TrainingAnalyticsService()
+    private let sleepSettingsStore = SleepSettingsStore()
+    private let sleepAnalyticsStore = SleepAnalyticsSnapshotStore.shared
 
     private var recentCompletedSessions: [WorkoutSession] {
         Array(completedSessions.prefix(20))
@@ -37,6 +49,14 @@ struct CoachContentView: View {
 
     private var recentPRs: [PRRecord] {
         Array(analytics.prTimeline(from: recentCompletedSessions).prefix(3))
+    }
+
+    private var sleepDashboardSummary: SleepDashboardSummary {
+        sleepSnapshot.dashboardSummary
+    }
+
+    private var currentSleepAnalyticsSignature: SleepAnalyticsInputSignature {
+        SleepAnalyticsInputSignature(sessions: sleepSessions, naps: napSessions, workouts: recentCompletedSessions, settings: sleepSettings, sessionLimit: 90, workoutLimit: 20)
     }
 
     private var recommendedSplit: TrainingSplit? {
@@ -177,6 +197,59 @@ struct CoachContentView: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
+                Text("Sleep Coaching")
+                    .font(.headline)
+
+                if let recommendation = sleepDashboardSummary.adaptiveRecommendation {
+                    FitnessCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text(recommendation.title)
+                                    .font(.headline)
+                                Spacer()
+                                CoachBadgeView(state: badgeState(for: recommendation.level))
+                            }
+
+                            Text(recommendation.message)
+                                .font(.subheadline)
+                                .foregroundStyle(appTheme.mutedText)
+
+                            if !recommendation.basedOn.isEmpty {
+                                Text("Based on: \(recommendation.basedOn.map(\.displayName).joined(separator: ", ")).")
+                                    .font(.caption)
+                                    .foregroundStyle(appTheme.colors.textTertiary)
+                            }
+                        }
+                    }
+                }
+
+                if sleepDashboardSummary.coachingInsights.isEmpty {
+                    FitnessCard {
+                        Text("Keep tracking sleep and workouts to unlock personalised sleep-performance coaching.")
+                            .font(.subheadline)
+                            .foregroundStyle(appTheme.mutedText)
+                    }
+                } else {
+                    ForEach(sleepDashboardSummary.coachingInsights.prefix(3)) { insight in
+                        FitnessCard {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(alignment: .firstTextBaseline) {
+                                    Text(insight.title)
+                                        .font(.headline)
+                                    Spacer()
+                                    CoachBadgeView(state: badgeState(for: insight.severity))
+                                }
+
+                                Text(insight.message)
+                                    .font(.subheadline)
+                                    .foregroundStyle(appTheme.mutedText)
+                            }
+                        }
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("This Week Review")
                         .font(.headline)
@@ -260,6 +333,28 @@ struct CoachContentView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            sleepSettings = sleepSettingsStore.load()
+            refreshSleepAnalytics(force: true)
+        }
+        .onChange(of: currentSleepAnalyticsSignature) { _, _ in
+            refreshSleepAnalytics()
+        }
+    }
+
+    private func refreshSleepAnalytics(force: Bool = false) {
+        let signature = currentSleepAnalyticsSignature
+        guard force || signature != lastSleepAnalyticsSignature else { return }
+
+        sleepSnapshot = sleepAnalyticsStore.snapshot(
+            sessions: sleepSessions,
+            naps: napSessions,
+            workouts: recentCompletedSessions,
+            settings: sleepSettings,
+            workoutLimit: 20,
+            force: force
+        )
+        lastSleepAnalyticsSignature = signature
     }
 
     private var progressOpportunityInsights: [CoachInsight] {
@@ -305,6 +400,32 @@ struct CoachContentView: View {
             return .missedSplit
         case .buildBaseline:
             return .baseline
+        }
+    }
+
+    private func badgeState(for level: TrainingReadinessRecommendation) -> CoachBadgeState {
+        switch level {
+        case .push, .normal:
+            return .ready
+        case .moderate:
+            return .repeatTarget
+        case .light, .recovery:
+            return .fatigueRisk
+        case .rest:
+            return .recovery
+        }
+    }
+
+    private func badgeState(for severity: InsightSeverity) -> CoachBadgeState {
+        switch severity {
+        case .positive:
+            return .ready
+        case .neutral:
+            return .repeatTarget
+        case .caution:
+            return .fatigueRisk
+        case .important:
+            return .possiblePlateau
         }
     }
 

@@ -13,12 +13,29 @@ struct TodayView: View {
     @Query(filter: #Predicate<WorkoutSession> { !$0.completed }, sort: \WorkoutSession.date, order: .reverse)
     private var unfinishedSessions: [WorkoutSession]
 
+    @Query(sort: \SleepSession.createdAt, order: .reverse)
+    private var sleepSessions: [SleepSession]
+
+    @Query(sort: \NapSession.startDate, order: .reverse)
+    private var napSessions: [NapSession]
+
+    @Query(sort: \HydrationEntry.loggedAt, order: .reverse)
+    private var hydrationEntries: [HydrationEntry]
+
     @State private var route: TodayRoute?
     @State private var showingRestDayConfirmation = false
     @State private var previewSplit: WorkoutPreviewSplit?
+    @State private var sleepSettings = SleepSettingsStore().load()
+    @State private var sleepReadinessSnapshot = SleepAnalyticsService.emptyReadinessSnapshot()
+    @State private var lastSleepReadinessSignature: SleepAnalyticsInputSignature?
 
     private let decisionService = TrainingDecisionService()
     private let modePlanner = WorkoutModePlanner()
+    private let sleepCoaching = SleepCoachingService()
+    private let sleepSettingsStore = SleepSettingsStore()
+    private let sleepReadinessStore = SleepWorkoutReadinessSnapshotStore.shared
+    private let hydrationService = HydrationService()
+    private let hydrationSettingsStore = HydrationSettingsStore()
 
     private let weekColumns = [
         GridItem(.flexible(), spacing: 12),
@@ -27,6 +44,17 @@ struct TodayView: View {
 
     private var trainingDecision: TrainingDecision {
         decisionService.decision(activeSplits: activeSplits, completedSessions: completedSessions)
+    }
+
+    private var currentSleepReadinessSignature: SleepAnalyticsInputSignature {
+        SleepAnalyticsInputSignature(sessions: sleepSessions, naps: napSessions, workouts: completedSessions, settings: sleepSettings, sessionLimit: 45, workoutLimit: 12)
+    }
+
+    private var hydrationSummary: DailyHydrationSummary {
+        hydrationService.summary(
+            entries: hydrationEntries,
+            targetML: hydrationSettingsStore.dailyTargetML()
+        )
     }
 
     var body: some View {
@@ -54,6 +82,15 @@ struct TodayView: View {
                         primaryAction: { route = .workout },
                         secondaryAction: previewSuggestedSplit
                     )
+
+                    TodayDashboardSection(title: "Recovery") {
+                        NavigationLink {
+                            SleepDashboardView()
+                        } label: {
+                            TodaySleepRecoveryCard(summary: sleepSummary, recommendation: todayRecoveryRecommendation)
+                        }
+                        .buttonStyle(.plain)
+                    }
 
                     TodayDashboardSection(title: "Quick Actions") {
                         QuickActionsGrid(actions: quickActions)
@@ -136,6 +173,10 @@ struct TodayView: View {
                     ProgressContentView()
                 case .nutrition:
                     NutritionDashboardView()
+                case .sleep:
+                    SleepDashboardView()
+                case .hydration:
+                    HydrationView()
                 }
             }
             .navigationDestination(item: $previewSplit) { split in
@@ -145,6 +186,13 @@ struct TodayView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text("Persistent rest-day logging is still on the roadmap. For now, your workout history remains unchanged.")
+            }
+            .onAppear {
+                sleepSettings = sleepSettingsStore.load()
+                refreshSleepReadiness(force: true)
+            }
+            .onChange(of: currentSleepReadinessSignature) { _, _ in
+                refreshSleepReadiness()
             }
         }
     }
@@ -159,11 +207,18 @@ struct TodayView: View {
                 action: { route = .workout }
             ),
             QuickAction(
-                title: "Rest Day",
-                subtitle: "Take recovery without noise",
-                systemImage: "moon.fill",
+                title: "Hydration",
+                subtitle: hydrationSubtitle,
+                systemImage: "drop.fill",
+                style: .hydration,
+                action: { route = .hydration }
+            ),
+            QuickAction(
+                title: "Sleep",
+                subtitle: "Start Sleep Mode or review recovery",
+                systemImage: "moon.zzz.fill",
                 style: .calm,
-                action: { showingRestDayConfirmation = true }
+                action: { route = .sleep }
             ),
             QuickAction(
                 title: "Coach Check-In",
@@ -309,6 +364,39 @@ struct TodayView: View {
     private var coachButtonTitle: String {
         guard let splitName = trainingDecision.recommendedSplitName else { return "See Recommendation" }
         return "Preview \(splitName)"
+    }
+
+    private var sleepSummary: SleepSummary {
+        sleepReadinessSnapshot.latestSummary
+    }
+
+    private var todayRecoveryRecommendation: String {
+        sleepReadinessSnapshot.adaptiveRecommendation?.message ?? sleepCoaching.recommendation(for: sleepSummary, settings: sleepSettings)
+    }
+
+    private func refreshSleepReadiness(force: Bool = false) {
+        let signature = currentSleepReadinessSignature
+        guard force || signature != lastSleepReadinessSignature else { return }
+
+        sleepReadinessSnapshot = sleepReadinessStore.snapshot(
+            sessions: sleepSessions,
+            naps: napSessions,
+            workouts: completedSessions,
+            settings: sleepSettings,
+            force: force
+        )
+        lastSleepReadinessSignature = signature
+    }
+
+    private var hydrationSubtitle: String {
+        let summary = hydrationSummary
+        if summary.totalML >= summary.targetML {
+            return "Target reached today"
+        }
+        if summary.totalML > 0 {
+            return "\(HydrationService.formatAmount(summary.totalML)) / \(HydrationService.formatAmount(summary.targetML)) today"
+        }
+        return "Log water intake"
     }
 
     private var suggestedSplit: TrainingSplit? {
@@ -496,6 +584,340 @@ private enum TodayRoute: Hashable, Identifiable {
     case coach
     case progress
     case nutrition
+    case sleep
+    case hydration
 
     var id: Self { self }
+}
+
+private struct TodaySleepRecoveryCard: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let summary: SleepSummary
+    let recommendation: String
+
+    var body: some View {
+        FitnessCard {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "moon.stars.fill")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(appTheme.colors.accent)
+                    .frame(width: 46, height: 46)
+                    .background(appTheme.colors.accentSurface, in: Circle())
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text(recoveryTitle)
+                            .font(.headline)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+
+                        if let source = summary.source {
+                            Text(source.displayName)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(appTheme.colors.accent)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 5)
+                                .background(appTheme.colors.accentSurface, in: Capsule())
+                        }
+                    }
+
+                    Text(detailText)
+                        .font(.subheadline)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+
+                    Text(recommendation)
+                        .font(.caption)
+                        .foregroundStyle(appTheme.colors.textTertiary)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 8)
+
+                if let score = summary.sleepScore {
+                    Text("\(score)%")
+                        .font(.headline.bold())
+                        .foregroundStyle(appTheme.colors.accent)
+                }
+            }
+        }
+    }
+
+    private var recoveryTitle: String {
+        switch summary.recoveryState {
+        case .high, .good:
+            return "Recovery looks good"
+        case .moderate:
+            return "Recovery is slightly reduced"
+        case .low, .veryLow:
+            return "Sleep may affect today"
+        case .unknown:
+            return "No sleep data yet"
+        }
+    }
+
+    private var detailText: String {
+        guard summary.primarySession != nil else {
+            return "Start Sleep Mode tonight to improve recovery coaching."
+        }
+
+        let quality = summary.qualityRating.map { SleepQualityPicker.label(for: $0) } ?? "No quality"
+        return "\(SleepScoringService.durationText(minutes: summary.totalSleepMinutes)) sleep - \(quality) quality"
+    }
+}
+
+struct HydrationView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.appTheme) private var appTheme
+
+    @Query(sort: \HydrationEntry.loggedAt, order: .reverse)
+    private var entries: [HydrationEntry]
+
+    @State private var customAmount = ""
+    @State private var showingCustomAmount = false
+    @State private var errorText: String?
+    @State private var confirmation: HydrationEntry?
+
+    private let service = HydrationService()
+    private let settingsStore = HydrationSettingsStore()
+    private let quickAmounts = [250, 500, 750]
+
+    private var todayEntries: [HydrationEntry] {
+        service.entries(for: .now, entries: entries)
+    }
+
+    private var summary: DailyHydrationSummary {
+        service.summary(entries: entries, targetML: settingsStore.dailyTargetML())
+    }
+
+    var body: some View {
+        FitnessScreen(
+            title: "Hydration",
+            subtitle: "Track your water intake for training and recovery.",
+            systemImage: "drop.fill"
+        ) {
+            hydrationProgressCard
+
+            DashboardSection(title: "Quick Add") {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    ForEach(quickAmounts, id: \.self) { amount in
+                        hydrationAddButton(title: "+\(HydrationService.formatAmount(amount))", amount: amount, source: .quickAdd)
+                    }
+                    hydrationAddButton(title: "Bottle", amount: 750, source: .preset)
+                    Button {
+                        showingCustomAmount = true
+                    } label: {
+                        Label("Custom", systemImage: "slider.horizontal.3")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryFitnessButtonStyle())
+                    .accessibilityLabel("Add custom water amount")
+                }
+            }
+
+            if let confirmation {
+                FitnessCard {
+                    HStack {
+                        Label("Added \(HydrationService.formatAmount(confirmation.amountML))", systemImage: "checkmark.circle.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(appTheme.colors.success)
+                        Spacer()
+                        Button("Undo") {
+                            delete(confirmation)
+                        }
+                        .font(.subheadline.weight(.semibold))
+                    }
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            }
+
+            DashboardSection(title: "Today's Logs") {
+                if todayEntries.isEmpty {
+                    FitnessCard {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("No water logged yet")
+                                .font(.headline)
+                                .foregroundStyle(appTheme.colors.textPrimary)
+                            Text("Use quick add to start tracking hydration.")
+                                .font(.subheadline)
+                                .foregroundStyle(appTheme.colors.textSecondary)
+                        }
+                    }
+                } else {
+                    ForEach(todayEntries) { entry in
+                        FitnessCard {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(HydrationService.formatAmount(entry.amountML))
+                                        .font(.headline)
+                                        .foregroundStyle(appTheme.colors.textPrimary)
+                                    Text(entry.context.displayName)
+                                        .font(.caption)
+                                        .foregroundStyle(appTheme.colors.textTertiary)
+                                }
+                                Spacer()
+                                Text(entry.loggedAt.formatted(date: .omitted, time: .shortened))
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(appTheme.colors.textSecondary)
+                                Button(role: .destructive) {
+                                    delete(entry)
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .frame(width: 36, height: 36)
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(appTheme.colors.danger)
+                                .accessibilityLabel("Delete \(HydrationService.formatAmount(entry.amountML)) hydration entry")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Hydration")
+        .navigationBarTitleDisplayMode(.inline)
+        .alert("Custom amount", isPresented: $showingCustomAmount) {
+            TextField("350", text: $customAmount)
+                .keyboardType(.numberPad)
+            Button("Cancel", role: .cancel) {
+                customAmount = ""
+            }
+            Button("Add") {
+                addCustomAmount()
+            }
+        } message: {
+            Text("Enter an amount in millilitres.")
+        }
+    }
+
+    private var hydrationProgressCard: some View {
+        FitnessCard {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Today")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .textCase(.uppercase)
+                        Text("\(HydrationService.formatAmount(summary.totalML)) / \(HydrationService.formatAmount(summary.targetML))")
+                            .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "drop.fill")
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(appTheme.colors.accent)
+                        .frame(width: 52, height: 52)
+                        .background(appTheme.colors.accentSurface, in: Circle())
+                }
+
+                SwiftUI.ProgressView(value: min(1, summary.progress))
+                    .tint(appTheme.colors.accent)
+                    .scaleEffect(x: 1, y: 1.35, anchor: .center)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: summary.totalML)
+                    .accessibilityLabel("Hydration progress")
+                    .accessibilityValue("\(HydrationService.formatAmount(summary.totalML)) out of \(HydrationService.formatAmount(summary.targetML))")
+
+                HStack {
+                    Text(progressText)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                    Spacer()
+                    Text(statusText)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(statusColor)
+                }
+
+                if let errorText {
+                    Text(errorText)
+                        .font(.footnote)
+                        .foregroundStyle(appTheme.colors.danger)
+                }
+            }
+        }
+    }
+
+    private var progressText: String {
+        "\(Int(min(1.5, summary.progress) * 100))% complete"
+    }
+
+    private var statusText: String {
+        switch summary.status {
+        case .low:
+            return "Getting started"
+        case .behind:
+            return "\(HydrationService.formatAmount(summary.remainingML)) remaining"
+        case .onTrack:
+            return "On track"
+        case .complete:
+            return "Target reached"
+        case .aboveTarget:
+            return "Above target"
+        }
+    }
+
+    private var statusColor: Color {
+        switch summary.status {
+        case .low, .behind:
+            return appTheme.colors.warning
+        case .onTrack, .complete, .aboveTarget:
+            return appTheme.colors.success
+        }
+    }
+
+    private func hydrationAddButton(title: String, amount: Int, source: HydrationEntrySource) -> some View {
+        Button {
+            add(amount: amount, source: source)
+        } label: {
+            Label(title, systemImage: "drop.fill")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(SecondaryFitnessButtonStyle())
+        .accessibilityLabel("Add \(amount) millilitres of water")
+    }
+
+    private func addCustomAmount() {
+        guard let amount = Int(customAmount.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            errorText = "Enter a valid amount in millilitres."
+            return
+        }
+        add(amount: amount, source: .manual)
+        customAmount = ""
+    }
+
+    private func add(amount: Int, source: HydrationEntrySource) {
+        guard amount > 0 else {
+            errorText = "Amount must be greater than 0ml."
+            return
+        }
+        guard amount <= 2_000 else {
+            errorText = "That is a large single entry. Keep one entry at 2000ml or less."
+            return
+        }
+
+        let entry = HydrationEntry(amountML: amount, source: source, context: .general)
+        modelContext.insert(entry)
+        do {
+            try modelContext.save()
+            errorText = nil
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                confirmation = entry
+            }
+        } catch {
+            errorText = "Could not save that water entry."
+        }
+    }
+
+    private func delete(_ entry: HydrationEntry) {
+        modelContext.delete(entry)
+        do {
+            try modelContext.save()
+            if confirmation?.id == entry.id {
+                withAnimation { confirmation = nil }
+            }
+        } catch {
+            errorText = "Could not delete that water entry."
+        }
+    }
 }

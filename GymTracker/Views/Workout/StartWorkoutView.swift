@@ -22,17 +22,29 @@ struct StartWorkoutContentView: View {
     @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
     private var completedSessions: [WorkoutSession]
 
+    @Query(sort: \SleepSession.createdAt, order: .reverse)
+    private var sleepSessions: [SleepSession]
+
+    @Query(sort: \NapSession.startDate, order: .reverse)
+    private var napSessions: [NapSession]
+
     @State private var activeSession: WorkoutSession?
     @State private var pendingDiscardSession: WorkoutSession?
     @State private var previewSplit: WorkoutPreviewSplit?
     @State private var route: StartWorkoutRoute?
     @State private var templateCount = 0
+    @State private var sleepSettings = SleepSettingsStore().load()
+    @State private var sleepReadinessSnapshot = SleepAnalyticsService.emptyReadinessSnapshot()
+    @State private var lastSleepReadinessSignature: SleepAnalyticsInputSignature?
 
     private let coachEngine = CoachRecommendationEngine()
     private let modePlanner = WorkoutModePlanner()
     private let summaryBuilder = SessionSummaryBuilder()
     private let reuseBuilder = WorkoutReuseBuilder()
     private let templateStore = WorkoutTemplateStore()
+    private let sleepCoaching = SleepCoachingService()
+    private let sleepSettingsStore = SleepSettingsStore()
+    private let sleepReadinessStore = SleepWorkoutReadinessSnapshotStore.shared
 
     private var coachSummary: CoachRecommendationSummary {
         coachEngine.makeSummary(activeSplits: activeSplits, completedSessions: completedSessions)
@@ -49,6 +61,19 @@ struct StartWorkoutContentView: View {
         return pplSplits.isEmpty ? activeSplits : pplSplits
     }
 
+    private var currentSleepReadinessSignature: SleepAnalyticsInputSignature {
+        SleepAnalyticsInputSignature(sessions: sleepSessions, naps: napSessions, workouts: completedSessions, settings: sleepSettings, sessionLimit: 45, workoutLimit: 12)
+    }
+
+    private var sleepSummary: SleepSummary? {
+        sleepReadinessSnapshot.latestSummary.primarySession == nil ? nil : sleepReadinessSnapshot.latestSummary
+    }
+
+    private var adaptiveSleepRecommendation: AdaptiveTrainingRecommendation? {
+        guard sleepSettings.coachingPreferences.adaptiveWorkoutRecommendationsEnabled else { return nil }
+        return sleepReadinessSnapshot.adaptiveRecommendation
+    }
+
     var body: some View {
         FitnessScreen(
             title: "Workout",
@@ -57,6 +82,12 @@ struct StartWorkoutContentView: View {
         ) {
             if let unfinishedSession = unfinishedSessions.first {
                 activeWorkoutCard(unfinishedSession)
+            }
+
+            if let recommendation = adaptiveSleepRecommendation {
+                workoutRecoveryBanner(recommendation)
+            } else if let hint = sleepCoaching.preWorkoutHint(for: sleepSummary) {
+                sleepReadinessCard(title: hint.title, suggestion: hint.suggestion)
             }
 
             if let recommendedSplit {
@@ -105,7 +136,26 @@ struct StartWorkoutContentView: View {
         }
         .onAppear {
             templateCount = templateStore.loadTemplates().count
+            sleepSettings = sleepSettingsStore.load()
+            refreshSleepReadiness(force: true)
         }
+        .onChange(of: currentSleepReadinessSignature) { _, _ in
+            refreshSleepReadiness()
+        }
+    }
+
+    private func refreshSleepReadiness(force: Bool = false) {
+        let signature = currentSleepReadinessSignature
+        guard force || signature != lastSleepReadinessSignature else { return }
+
+        sleepReadinessSnapshot = sleepReadinessStore.snapshot(
+            sessions: sleepSessions,
+            naps: napSessions,
+            workouts: completedSessions,
+            settings: sleepSettings,
+            force: force
+        )
+        lastSleepReadinessSignature = signature
     }
 
     private func activeWorkoutCard(_ session: WorkoutSession) -> some View {
@@ -206,6 +256,92 @@ struct StartWorkoutContentView: View {
                     .buttonStyle(SecondaryFitnessButtonStyle())
                 }
             }
+        }
+    }
+
+    private func sleepReadinessCard(title: String, suggestion: String) -> some View {
+        FitnessCard {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "moon.stars.fill")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(appTheme.colors.accent)
+                    .frame(width: 44, height: 44)
+                    .background(appTheme.colors.accentSurface, in: Circle())
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+
+                    Text("Suggestion: \(suggestion)")
+                        .font(.subheadline)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func workoutRecoveryBanner(_ recommendation: AdaptiveTrainingRecommendation) -> some View {
+        FitnessCard {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: recoveryIcon(for: recommendation.level))
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(recoveryTint(for: recommendation.level))
+                    .frame(width: 44, height: 44)
+                    .background(recoveryTint(for: recommendation.level).opacity(0.16), in: Circle())
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(recommendation.title)
+                        .font(.headline)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+
+                    Text(recommendation.message)
+                        .font(.subheadline)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let action = recommendation.suggestedActions.first {
+                        Text(action.displayName)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(recoveryTint(for: recommendation.level))
+                    }
+                }
+
+                Spacer(minLength: 8)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func recoveryTint(for level: TrainingReadinessRecommendation) -> Color {
+        switch level {
+        case .push, .normal:
+            return appTheme.colors.success
+        case .moderate:
+            return appTheme.colors.accent
+        case .light, .recovery:
+            return appTheme.colors.warning
+        case .rest:
+            return appTheme.colors.danger
+        }
+    }
+
+    private func recoveryIcon(for level: TrainingReadinessRecommendation) -> String {
+        switch level {
+        case .push:
+            return "bolt.fill"
+        case .normal:
+            return "checkmark.seal.fill"
+        case .moderate:
+            return "dial.medium.fill"
+        case .light:
+            return "arrow.down.forward.circle.fill"
+        case .recovery:
+            return "figure.cooldown"
+        case .rest:
+            return "moon.fill"
         }
     }
 

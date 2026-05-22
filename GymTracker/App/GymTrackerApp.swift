@@ -1,8 +1,32 @@
 import SwiftData
 import SwiftUI
+import UserNotifications
+import UIKit
+
+final class AppNotificationDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        guard let destination = SleepNotificationDestination(userInfo: response.notification.request.content.userInfo) else { return }
+        await MainActor.run {
+            NotificationCenter.default.post(name: .sleepNotificationTapped, object: destination)
+        }
+    }
+}
 
 @main
 struct GymTrackerApp: App {
+    @UIApplicationDelegateAdaptor(AppNotificationDelegate.self) private var appDelegate
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             UserProfile.self,
@@ -15,7 +39,10 @@ struct GymTrackerApp: App {
             Recommendation.self,
             BodyweightLog.self,
             FoodItem.self,
-            FoodLogEntry.self
+            FoodLogEntry.self,
+            HydrationEntry.self,
+            SleepSession.self,
+            NapSession.self
         ])
 
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
