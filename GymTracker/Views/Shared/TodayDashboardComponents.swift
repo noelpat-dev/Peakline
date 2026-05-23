@@ -160,12 +160,32 @@ struct HeroRecommendationCard: View {
 }
 
 struct QuickAction: Identifiable {
-    let id = UUID()
+    let identifier: String?
     let title: String
     let subtitle: String
     let systemImage: String
     let style: QuickActionStyle
     let action: () -> Void
+
+    var id: String {
+        identifier ?? title
+    }
+
+    init(
+        identifier: String? = nil,
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        style: QuickActionStyle,
+        action: @escaping () -> Void
+    ) {
+        self.identifier = identifier
+        self.title = title
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.style = style
+        self.action = action
+    }
 }
 
 enum QuickActionStyle {
@@ -199,6 +219,8 @@ struct QuickActionTile: View {
     let action: QuickAction
 
     var body: some View {
+        let identifier = action.identifier ?? "quick-action-\(action.title.lowercased().replacingOccurrences(of: " ", with: "-"))"
+
         Button(action: action.action) {
             FitnessCard(style: .compact) {
                 VStack(alignment: .leading, spacing: 13) {
@@ -234,6 +256,7 @@ struct QuickActionTile: View {
             }
         }
         .buttonStyle(PressableCardButtonStyle())
+        .accessibilityIdentifier(identifier)
     }
 
     private var iconColor: Color {

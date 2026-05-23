@@ -50,6 +50,7 @@ struct SettingsView: View {
                                 SettingsInlineRow(title: "Exercise Library", subtitle: "Manage exercises and icons", systemImage: "dumbbell")
                             }
                             .buttonStyle(.plain)
+                            .accessibilityIdentifier("settings-exercise-library")
 
                             SettingsDivider()
 
@@ -59,6 +60,7 @@ struct SettingsView: View {
                                 SettingsInlineRow(title: "Progress", subtitle: "Charts, PRs, and lift trends", systemImage: "chart.line.uptrend.xyaxis")
                             }
                             .buttonStyle(.plain)
+                            .accessibilityIdentifier("settings-progress")
 
                             SettingsDivider()
 
@@ -66,6 +68,7 @@ struct SettingsView: View {
                                 SettingsInlineRow(title: "Coach", subtitle: "Targets, warnings, and weekly review", systemImage: "sparkles")
                             }
                             .buttonStyle(.plain)
+                            .accessibilityIdentifier("settings-coach")
                         }
                     }
                 }

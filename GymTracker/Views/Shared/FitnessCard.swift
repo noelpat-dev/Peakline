@@ -58,6 +58,7 @@ struct FitnessCard<Content: View>: View {
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .stroke(appTheme.cardBorder, lineWidth: 1)
             }
+            .contentShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
     }
 }
 
@@ -208,7 +209,9 @@ struct DashboardActionTile: View {
         }
         .frame(width: width)
         .opacity(isEnabled ? 1 : 0.62)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityHint(subtitle)
     }
 
     @ViewBuilder
@@ -309,6 +312,14 @@ struct DashboardActionTile: View {
 
     private var statusBackground: Color {
         isEnabled ? appTheme.colors.accentSurface : appTheme.colors.cardBackgroundElevated
+    }
+
+    private var accessibilityLabel: String {
+        if let status, !status.isEmpty {
+            return "\(title), \(status)"
+        }
+
+        return title
     }
 }
 

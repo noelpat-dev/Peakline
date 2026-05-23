@@ -1,6 +1,6 @@
 import Foundation
 
-enum WorkoutMode: String, Codable, CaseIterable, Identifiable {
+enum WorkoutMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case full
     case quick
     case recovery

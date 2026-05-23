@@ -14,6 +14,15 @@ struct SleepDashboardView: View {
     @Query(sort: \NapSession.startDate, order: .reverse)
     private var naps: [NapSession]
 
+    @Query(sort: \HydrationEntry.loggedAt, order: .reverse)
+    private var hydrationEntries: [HydrationEntry]
+
+    @Query(sort: \FoodLogEntry.loggedAt, order: .reverse)
+    private var foodLogEntries: [FoodLogEntry]
+
+    @Query(sort: \DailyCoachCheckIn.date, order: .reverse)
+    private var coachCheckIns: [DailyCoachCheckIn]
+
     @State private var settings = SleepSettingsStore().load()
     @State private var showingSleepMode = false
     @State private var showingManualEntry = false
@@ -31,8 +40,11 @@ struct SleepDashboardView: View {
     private let repository = SleepSessionRepository()
     private let scoring = SleepScoringService()
     private let coaching = SleepCoachingService()
+    private let coachIntelligence = CoachIntelligenceService()
     private let settingsStore = SleepSettingsStore()
     private let analyticsStore = SleepAnalyticsSnapshotStore.shared
+    private let hydrationSettingsStore = HydrationSettingsStore()
+    private let nutritionGoalStore = NutritionGoalService()
 
     private var completedSessions: [SleepSession] {
         sessions.filter { $0.status == .completed }
@@ -46,6 +58,20 @@ struct SleepDashboardView: View {
         SleepAnalyticsInputSignature(sessions: sessions, naps: naps, workouts: workouts, settings: settings)
     }
 
+    private var readinessScore: ReadinessScore {
+        coachIntelligence.readiness(
+            sleepSessions: sessions,
+            napSessions: naps,
+            hydrationEntries: hydrationEntries,
+            completedWorkouts: workouts,
+            foodLogs: foodLogEntries,
+            checkIns: coachCheckIns,
+            sleepSettings: settings,
+            hydrationTargetML: hydrationSettingsStore.dailyTargetML(),
+            nutritionGoal: nutritionGoalStore.loadGoal()
+        )
+    }
+
     private var discardAlertBinding: Binding<Bool> {
         Binding {
             pendingDiscardSession != nil
@@ -57,85 +83,87 @@ struct SleepDashboardView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            FitnessScreen(
-                title: "Sleep",
-                subtitle: "Recovery & readiness.",
-                systemImage: "moon.zzz.fill"
-            ) {
-                if let activeSession {
-                    activeSleepCard(activeSession)
-                } else {
-                    recoveryCard
-                    startCard
-                    appleHealthConnectionCard
+        FitnessScreen(
+            title: "Sleep",
+            subtitle: "Recovery & readiness.",
+            systemImage: "moon.zzz.fill"
+        ) {
+            if let activeSession {
+                activeSleepCard(activeSession)
+            } else {
+                recoveryCard
+                DashboardSection(title: "Coach Context") {
+                    ReadinessContextCard(
+                        readiness: readinessScore,
+                        focus: .sleep,
+                        title: "Sleep in today's readiness"
+                    )
                 }
+                startCard
+                appleHealthConnectionCard
+            }
 
-                weeklyChartCard
-                napsSection
-                consistencyAndDebt
-                trainingInsightCard
-                coachingInsightsSection
-                historySection
-            }
-            .navigationTitle("Sleep")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showingSettings = true
-                    } label: {
-                        Image(systemName: "slider.horizontal.3")
-                    }
-                    .accessibilityLabel("Sleep settings")
+            weeklyChartCard
+            napsSection
+            consistencyAndDebt
+            trainingInsightCard
+            coachingInsightsSection
+            historySection
+        }
+        .navigationTitle("Sleep")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingSettings = true
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
                 }
+                .accessibilityLabel("Sleep settings")
             }
-            .sheet(isPresented: $showingSleepMode) {
-                SleepModeView(settings: $settings)
+        }
+        .sheet(isPresented: $showingSleepMode) {
+            SleepModeView(settings: $settings)
+        }
+        .sheet(isPresented: $showingManualEntry) {
+            SleepSessionEditorView(mode: .manual)
+        }
+        .sheet(isPresented: $showingNapEntry) {
+            NapSessionEditorView()
+        }
+        .sheet(isPresented: $showingNapTimer) {
+            NapTimerView()
+        }
+        .sheet(item: $confirmationSession) { session in
+            SleepMorningConfirmationView(session: session)
+        }
+        .sheet(isPresented: $showingSettings) {
+            SleepSettingsView(settings: $settings)
+        }
+        .alert("Discard active sleep?", isPresented: discardAlertBinding) {
+            Button("Cancel", role: .cancel) {
+                pendingDiscardSession = nil
             }
-            .sheet(isPresented: $showingManualEntry) {
-                SleepSessionEditorView(mode: .manual)
+            Button("Discard", role: .destructive) {
+                discardPendingSleepSession()
             }
-            .sheet(isPresented: $showingNapEntry) {
-                NapSessionEditorView()
-            }
-            .sheet(isPresented: $showingNapTimer) {
-                NapTimerView()
-            }
-            .sheet(item: $confirmationSession) { session in
-                SleepMorningConfirmationView(session: session)
-            }
-            .sheet(isPresented: $showingSettings) {
-                SleepSettingsView(settings: $settings)
-            }
-            .alert("Discard active sleep?", isPresented: discardAlertBinding) {
-                Button("Cancel", role: .cancel) {
-                    pendingDiscardSession = nil
-                }
-                Button("Discard", role: .destructive) {
-                    discardPendingSleepSession()
-                }
-            } message: {
-                Text("This removes the unfinished Sleep Mode session.")
-            }
-            .navigationDestination(for: SleepSession.self) { session in
-                SleepSessionDetailView(session: session)
-            }
-            .onAppear {
-                settings = settingsStore.load()
-                refreshSleepAnalytics(force: true)
-                maybePromptForWakeTime()
-                Task { await importSleepIfEnabled() }
-            }
-            .onChange(of: currentAnalyticsSignature) { _, _ in
-                refreshSleepAnalytics()
-            }
-            .onChange(of: settings) { _, newValue in
-                settingsStore.save(newValue)
-                refreshSleepAnalytics(force: true)
-                Task {
-                    await SleepNotificationScheduler().refreshAllSleepNotifications(settings: newValue, sessions: sessions, workouts: workouts)
-                }
+        } message: {
+            Text("This removes the unfinished Sleep Mode session.")
+        }
+        .onAppear {
+            settings = settingsStore.load()
+            refreshSleepAnalytics(force: true)
+            maybePromptForWakeTime()
+            Task { await importSleepIfEnabled() }
+        }
+        .onChange(of: currentAnalyticsSignature) { _, _ in
+            refreshSleepAnalytics()
+        }
+        .onChange(of: settings) { _, newValue in
+            settingsStore.save(newValue)
+            refreshSleepAnalytics(force: true)
+            Task {
+                await SleepNotificationScheduler().refreshAllSleepNotifications(settings: newValue, sessions: sessions, workouts: workouts)
             }
         }
     }
@@ -577,7 +605,9 @@ struct SleepDashboardView: View {
             } else {
                 VStack(spacing: 10) {
                     ForEach(completedSessions.prefix(14)) { session in
-                        NavigationLink(value: session) {
+                        NavigationLink {
+                            SleepSessionDetailView(session: session)
+                        } label: {
                             SleepHistoryRow(session: session, score: scoring.score(for: session, recentSessions: completedSessions, settings: settings))
                         }
                         .buttonStyle(.plain)

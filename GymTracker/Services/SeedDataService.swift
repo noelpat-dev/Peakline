@@ -30,6 +30,14 @@ enum SeedDataService {
                 starterSplits(using: existingExercises).forEach(context.insert)
             }
 
+            if ProcessInfo.processInfo.arguments.contains("-UITestCoachFatigueFixture") {
+                try seedCoachFatigueFixture(in: context, exercises: existingExercises)
+            }
+
+            if ProcessInfo.processInfo.arguments.contains("-UITestLargeHistoryFixture") {
+                try seedLargeHistoryFixture(in: context, exercises: existingExercises)
+            }
+
             try context.save()
         } catch {
             assertionFailure("Seed data failed: \(error)")
@@ -135,5 +143,134 @@ enum SeedDataService {
             return splitExercise
         }
         return split
+    }
+
+    private static func seedCoachFatigueFixture(in context: ModelContext, exercises: [Exercise]) throws {
+        let existingCount = try context.fetchCount(FetchDescriptor<WorkoutSession>())
+        guard existingCount == 0, let exercise = exercises.first(where: { $0.name == "Hack Squat" }) else { return }
+
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: .now)
+
+        for offset in 1...4 {
+            let sessionDate = calendar.date(byAdding: .day, value: -offset, to: today) ?? today
+            let session = WorkoutSession(
+                date: sessionDate,
+                splitId: nil,
+                splitNameSnapshot: "UI Coach Fixture",
+                durationMinutes: 95,
+                perceivedDifficulty: 5,
+                completed: true
+            )
+            let log = ExerciseLog(
+                workoutSessionId: session.id,
+                exerciseId: exercise.id,
+                exerciseNameSnapshot: exercise.name,
+                orderIndex: 0,
+                targetSets: 18,
+                minReps: 6,
+                maxReps: 10
+            )
+            log.setLogs = (1...18).map { setNumber in
+                let set = SetLog(
+                    exerciseLogId: log.id,
+                    setNumber: setNumber,
+                    weight: 100,
+                    reps: 8,
+                    rpe: 9,
+                    isWarmup: false,
+                    completed: true
+                )
+                set.exerciseLog = log
+                return set
+            }
+            log.workoutSession = session
+            session.exerciseLogs = [log]
+            context.insert(session)
+        }
+
+        let checkIn = DailyCoachCheckIn(
+            date: today,
+            energy: 1,
+            soreness: 5,
+            stress: 4,
+            motivation: 1,
+            calendar: calendar
+        )
+        context.insert(checkIn)
+
+        if try context.fetchCount(FetchDescriptor<CoachActionHistoryEntry>()) == 0 {
+            context.insert(
+                CoachActionHistoryEntry(
+                    action: .reduceAccessories,
+                    outcome: .applied,
+                    createdAt: today,
+                    readinessCategory: .low,
+                    fatigueRiskLevel: .high,
+                    confidence: .medium,
+                    shortReason: "Fixture coach action for UI history review.",
+                    workoutName: "Push",
+                    splitName: "Push",
+                    beforeTotalSets: 18,
+                    afterTotalSets: 15,
+                    contributingSignals: ["Training fatigue: high local load", "Check-in: low energy"],
+                    diagnosticSummary: "Fatigue and check-in signals suggested trimming accessories."
+                )
+            )
+        }
+    }
+
+    private static func seedLargeHistoryFixture(in context: ModelContext, exercises: [Exercise]) throws {
+        let existingCount = try context.fetchCount(FetchDescriptor<WorkoutSession>())
+        guard existingCount < 90, !exercises.isEmpty else { return }
+
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: .now)
+        let exercisePool = Array(exercises.prefix(12))
+        let splitNames = ["Push", "Pull", "Legs"]
+
+        for offset in 0..<150 {
+            let sessionDate = calendar.date(byAdding: .day, value: -(offset + 1), to: today) ?? today
+            let splitName = splitNames[offset % splitNames.count]
+            let session = WorkoutSession(
+                date: sessionDate,
+                splitId: nil,
+                splitNameSnapshot: splitName,
+                durationMinutes: 72 + (offset % 5) * 4,
+                perceivedDifficulty: 3 + (offset % 3),
+                completed: true
+            )
+
+            let logs = (0..<5).map { logIndex in
+                let exercise = exercisePool[(offset + logIndex) % exercisePool.count]
+                let log = ExerciseLog(
+                    workoutSessionId: session.id,
+                    exerciseId: exercise.id,
+                    exerciseNameSnapshot: exercise.name,
+                    orderIndex: logIndex,
+                    targetSets: 3,
+                    minReps: 6,
+                    maxReps: 12
+                )
+                log.setLogs = (1...3).map { setNumber in
+                    let set = SetLog(
+                        exerciseLogId: log.id,
+                        setNumber: setNumber,
+                        weight: Double(40 + ((offset + logIndex + setNumber) % 90)),
+                        reps: 6 + ((offset + setNumber) % 7),
+                        rpe: Double(7 + ((offset + setNumber) % 3)),
+                        isWarmup: false,
+                        completed: true
+                    )
+                    set.exerciseLog = log
+                    return set
+                }
+                log.workoutSession = session
+                return log
+            }
+
+            session.exerciseLogs = logs
+            context.insert(session)
+        }
     }
 }

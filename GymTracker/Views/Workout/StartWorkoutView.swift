@@ -245,6 +245,7 @@ struct StartWorkoutContentView: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(PrimaryFitnessButtonStyle())
+                    .accessibilityIdentifier("workout-recommended-preview")
 
                     Button {
                         route = .coach
@@ -359,6 +360,7 @@ struct StartWorkoutContentView: View {
             )
         }
         .buttonStyle(PressableCardButtonStyle())
+        .accessibilityIdentifier("start-split-\(split.name)")
     }
 
     private func preview(_ split: TrainingSplit) {

@@ -31,6 +31,7 @@ struct RootTabView: View {
                     Label("Workout", systemImage: "figure.strengthtraining.traditional")
                 }
                 .tag(RootTab.workout)
+                .accessibilityIdentifier("tab-workout")
 
             SplitsView()
                 .tabItem {
@@ -49,6 +50,7 @@ struct RootTabView: View {
                     Label("Settings", systemImage: "gearshape")
                 }
                 .tag(RootTab.settings)
+                .accessibilityIdentifier("tab-settings")
         }
         .tint(appTheme.colors.accent)
         .toolbarBackground(appTheme.colors.backgroundSecondary, for: .tabBar)
@@ -86,12 +88,16 @@ struct RootTabView: View {
             if let session = sleepSessions.first(where: { $0.id == sessionID }) {
                 SleepMorningConfirmationView(session: session)
             } else {
-                SleepDashboardView()
+                NavigationStack {
+                    SleepDashboardView()
+                }
             }
         case .manualBackfill:
             SleepSessionEditorView(mode: .manual)
         case .sleepDashboard, .recoverySummary:
-            SleepDashboardView()
+            NavigationStack {
+                SleepDashboardView()
+            }
         }
     }
 

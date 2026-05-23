@@ -274,6 +274,87 @@ struct AppThemeProvider<Content: View>: View {
         content
             .environment(\.appTheme, theme)
             .tint(theme.actionColor)
+            .toggleStyle(AppSwitchToggleStyle(theme: theme))
             .preferredColorScheme(appearance.colorScheme)
+    }
+}
+
+private struct AppSwitchToggleStyle: ToggleStyle {
+    let theme: AppTheme
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.isEnabled) private var isEnabled
+
+    private var activeTrack: Color {
+        if theme == .black && colorScheme == .dark {
+            return Color(hex: 0xF5F5F7)
+        }
+        return theme.colors.accent
+    }
+
+    private var activeThumb: Color {
+        if theme == .black && colorScheme == .dark {
+            return Color(hex: 0x111114)
+        }
+        return theme.colors.accentForeground
+    }
+
+    private var inactiveTrack: Color {
+        colorScheme == .dark
+            ? Color(hex: 0x3A3A3C)
+            : Color(hex: 0xD7D7DD)
+    }
+
+    private var inactiveThumb: Color {
+        colorScheme == .dark
+            ? Color(hex: 0xF5F5F7)
+            : Color(hex: 0xFFFFFF)
+    }
+
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
+                configuration.isOn.toggle()
+            }
+        } label: {
+            HStack(spacing: 12) {
+                configuration.label
+
+                Spacer(minLength: 12)
+
+                switchBody(isOn: configuration.isOn)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(configuration.isOn ? Text("On") : Text("Off"))
+        .opacity(isEnabled ? 1 : 0.52)
+    }
+
+    private func switchBody(isOn: Bool) -> some View {
+        ZStack(alignment: isOn ? .trailing : .leading) {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(isOn ? activeTrack : inactiveTrack)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(
+                            isOn ? activeTrack.opacity(0.28) : Color.black.opacity(colorScheme == .dark ? 0 : 0.08),
+                            lineWidth: 1
+                        )
+                }
+
+            Circle()
+                .fill(isOn ? activeThumb : inactiveThumb)
+                .frame(width: 28, height: 28)
+                .overlay {
+                    if isOn {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(activeTrack)
+                    }
+                }
+                .shadow(color: .black.opacity(colorScheme == .dark ? 0.24 : 0.16), radius: 3, x: 0, y: 1)
+                .padding(3)
+        }
+        .frame(width: 58, height: 34)
+        .animation(.spring(response: 0.25, dampingFraction: 0.82), value: isOn)
     }
 }

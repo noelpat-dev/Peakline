@@ -12,21 +12,47 @@ struct ProgressView: View {
 
 struct ProgressContentView: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.modelContext) private var modelContext
 
-    @Query(filter: #Predicate<Exercise> { !$0.isArchived }, sort: \Exercise.name)
-    private var exercises: [Exercise]
-
-    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
-    private var completedSessions: [WorkoutSession]
+    @State private var exercises: [Exercise] = []
+    @State private var exercisesLoaded = false
+    @State private var selectedExercise: Exercise?
+    @State private var isExerciseChartsPresented = false
+    @State private var isPRTimelinePresented = false
+    @State private var exercisesTask: Task<Void, Never>?
+    @State private var didRequestInitialRefresh = false
+    @State private var weeklySummary: WeeklyTrainingSummary?
+    @State private var splitConsistency: SplitConsistencySummary?
+    @State private var lastSummarySignature: String?
+    @State private var summaryTask: Task<Void, Never>?
 
     private let analytics = TrainingAnalyticsService()
 
-    private var weeklySummary: WeeklyTrainingSummary {
-        analytics.weeklySummary(from: completedSessions)
+    private static var exercisesDescriptor: FetchDescriptor<Exercise> {
+        var descriptor = FetchDescriptor<Exercise>(
+            predicate: #Predicate<Exercise> { !$0.isArchived },
+            sortBy: [SortDescriptor(\.name)]
+        )
+        descriptor.fetchLimit = 120
+        return descriptor
     }
 
-    private var splitConsistency: SplitConsistencySummary {
-        analytics.splitConsistency(from: completedSessions)
+    private static var completedSessionsDescriptor: FetchDescriptor<WorkoutSession> {
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 40
+        descriptor.includePendingChanges = true
+        return descriptor
+    }
+
+    private var displayedWeeklySummary: WeeklyTrainingSummary {
+        weeklySummary ?? analytics.weeklySummary(from: [WorkoutAnalyticsSession]())
+    }
+
+    private var displayedSplitConsistency: SplitConsistencySummary {
+        splitConsistency ?? analytics.splitConsistency(from: [WorkoutAnalyticsSession]())
     }
 
     var body: some View {
@@ -38,15 +64,15 @@ struct ProgressContentView: View {
             DashboardSection(title: "This Week") {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 10) {
-                        MetricTile(label: "Workouts", value: "\(weeklySummary.completedWorkouts)", caption: "Completed", systemImage: "figure.strengthtraining.traditional")
-                        MetricTile(label: "Sets", value: "\(weeklySummary.workingSets)", caption: "Working", systemImage: "checkmark.circle")
+                        MetricTile(label: "Workouts", value: "\(displayedWeeklySummary.completedWorkouts)", caption: "Completed", systemImage: "figure.strengthtraining.traditional")
+                        MetricTile(label: "Sets", value: "\(displayedWeeklySummary.workingSets)", caption: "Working", systemImage: "checkmark.circle")
                     }
                     HStack(spacing: 10) {
-                        MetricTile(label: "Best-set vol", value: format(weeklySummary.bestSetVolumeTotal), caption: "kg total", systemImage: "chart.bar")
-                        MetricTile(label: "Tonnage", value: format(weeklySummary.totalTonnage), caption: "kg total", systemImage: "sum")
+                        MetricTile(label: "Best-set vol", value: format(displayedWeeklySummary.bestSetVolumeTotal), caption: "kg total", systemImage: "chart.bar")
+                        MetricTile(label: "Tonnage", value: format(displayedWeeklySummary.totalTonnage), caption: "kg total", systemImage: "sum")
                     }
                     FitnessCard(style: .compact, padding: 16) {
-                        Text("Push \(splitConsistency.pushCount) - Pull \(splitConsistency.pullCount) - Legs \(splitConsistency.legsCount). \(splitConsistency.balanceDescription)")
+                        Text("Push \(displayedSplitConsistency.pushCount) - Pull \(displayedSplitConsistency.pullCount) - Legs \(displayedSplitConsistency.legsCount). \(displayedSplitConsistency.balanceDescription)")
                             .font(.subheadline)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -55,7 +81,9 @@ struct ProgressContentView: View {
             }
 
             DashboardSection(title: "Progress Charts") {
-                if exercises.isEmpty {
+                if !exercisesLoaded {
+                    progressLoadingCard
+                } else if exercises.isEmpty {
                     DashboardEmptyStateCard(
                         title: "More data needed",
                         message: "Add exercises and finish workouts to unlock progress charts.",
@@ -63,25 +91,28 @@ struct ProgressContentView: View {
                     )
                 } else {
                     HStack(spacing: 12) {
-                        NavigationLink {
-                            ExerciseProgressChartsIndexView(exercises: exercises, sessions: completedSessions)
+                        Button {
+                            isExerciseChartsPresented = true
                         } label: {
                             ProgressActionCard(title: "Exercise Charts", subtitle: "Open lazy-loaded trends", systemImage: "chart.xyaxis.line")
                         }
                         .buttonStyle(PressableCardButtonStyle())
 
-                        NavigationLink {
-                            PRTimelineView()
+                        Button {
+                            isPRTimelinePresented = true
                         } label: {
                             ProgressActionCard(title: "PR Timeline", subtitle: "Review best-set jumps", systemImage: "trophy.fill")
                         }
                         .buttonStyle(PressableCardButtonStyle())
+                        .accessibilityIdentifier("progress-pr-timeline-open")
                     }
                 }
             }
 
             DashboardSection(title: "Exercises") {
-                if exercises.isEmpty {
+                if !exercisesLoaded {
+                    progressLoadingCard
+                } else if exercises.isEmpty {
                     DashboardEmptyStateCard(
                         title: "No exercises yet",
                         message: "Create split exercises to build a progress dashboard.",
@@ -90,8 +121,8 @@ struct ProgressContentView: View {
                 } else {
                     LazyVStack(spacing: 12) {
                         ForEach(exercises) { exercise in
-                            NavigationLink {
-                                ExerciseProgressDetailView(exercise: exercise, sessions: completedSessions)
+                            Button {
+                                selectedExercise = exercise
                             } label: {
                                 FitnessCard(padding: 16) {
                                     HStack(spacing: 12) {
@@ -128,6 +159,105 @@ struct ProgressContentView: View {
             }
         }
         .navigationTitle("Progress")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
+        .navigationDestination(isPresented: $isExerciseChartsPresented) {
+            ExerciseProgressChartsIndexView(exercises: exercises, selectedExercise: $selectedExercise)
+        }
+        .navigationDestination(isPresented: $isPRTimelinePresented) {
+            PRTimelineView()
+        }
+        .navigationDestination(item: $selectedExercise) { exercise in
+            ExerciseProgressDetailView(exercise: exercise)
+        }
+        .onAppear {
+            guard !didRequestInitialRefresh else { return }
+            didRequestInitialRefresh = true
+            refreshExercises(force: true)
+            refreshSummary(force: true)
+        }
+        .onDisappear {
+            exercisesTask?.cancel()
+            summaryTask?.cancel()
+        }
+    }
+
+    private var progressLoadingCard: some View {
+        FitnessCard(style: .compact) {
+            HStack(spacing: 10) {
+                Image(systemName: "hourglass")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(appTheme.colors.accent)
+                Text("Loading progress data")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(appTheme.colors.textSecondary)
+            }
+        }
+    }
+
+    private func refreshExercises(force: Bool = false) {
+        guard force || !exercisesLoaded else { return }
+
+        exercisesTask?.cancel()
+        exercisesTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+
+            do {
+                exercises = try modelContext.fetch(Self.exercisesDescriptor)
+            } catch {
+                exercises = []
+            }
+            exercisesLoaded = true
+        }
+    }
+
+    private func refreshSummary(force: Bool = false) {
+        summaryTask?.cancel()
+        summaryTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+
+            let recentSessions: [WorkoutSession]
+            do {
+                recentSessions = try modelContext.fetch(Self.completedSessionsDescriptor)
+            } catch {
+                weeklySummary = nil
+                splitConsistency = nil
+                return
+            }
+
+            let signature = Self.summarySignature(for: recentSessions)
+            guard force || signature != lastSummarySignature else { return }
+
+            let snapshots: [WorkoutAnalyticsSession]
+            do {
+                snapshots = try WorkoutAnalyticsSnapshotBuilder.snapshots(from: recentSessions, in: modelContext)
+            } catch {
+                weeklySummary = nil
+                splitConsistency = nil
+                return
+            }
+
+            let result = await Task.detached(priority: .userInitiated) {
+                let analytics = TrainingAnalyticsService()
+                let records = analytics.prTimeline(from: snapshots)
+                let weekly = analytics.weeklySummary(from: snapshots, prRecords: records)
+                let consistency = analytics.splitConsistency(from: snapshots)
+                return (weekly, consistency)
+            }.value
+
+            guard !Task.isCancelled else { return }
+            weeklySummary = result.0
+            splitConsistency = result.1
+            lastSummarySignature = signature
+        }
+    }
+
+    private static func summarySignature(for sessions: [WorkoutSession]) -> String {
+        sessions
+            .map { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.endedAt?.timeIntervalSince1970 ?? 0)" }
+            .joined(separator: "|")
     }
 
     private func format(_ value: Double) -> String {
@@ -149,7 +279,23 @@ private struct ExerciseProgressDetailView: View {
     @Environment(\.appTheme) private var appTheme
 
     let exercise: Exercise
-    let sessions: [WorkoutSession]
+
+    @Query
+    private var sessions: [WorkoutSession]
+
+    init(exercise: Exercise) {
+        self.exercise = exercise
+        _sessions = Query(Self.completedSessionsDescriptor)
+    }
+
+    private static var completedSessionsDescriptor: FetchDescriptor<WorkoutSession> {
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 160
+        return descriptor
+    }
 
     private var entries: [ExerciseProgressEntry] {
         sessions.compactMap { session in
@@ -236,7 +382,7 @@ private struct ExerciseProgressChartsIndexView: View {
     @Environment(\.appTheme) private var appTheme
 
     let exercises: [Exercise]
-    let sessions: [WorkoutSession]
+    @Binding var selectedExercise: Exercise?
 
     var body: some View {
         FitnessScreen(
@@ -246,8 +392,8 @@ private struct ExerciseProgressChartsIndexView: View {
         ) {
             LazyVStack(spacing: 12) {
                 ForEach(exercises) { exercise in
-                    NavigationLink {
-                        ExerciseProgressDetailView(exercise: exercise, sessions: sessions)
+                    Button {
+                        selectedExercise = exercise
                     } label: {
                         FitnessCard(padding: 16) {
                             HStack(spacing: 12) {
@@ -279,6 +425,8 @@ private struct ExerciseProgressChartsIndexView: View {
             }
         }
         .navigationTitle("Progress Charts")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
     }
 }
 

@@ -120,7 +120,32 @@
 		00100000000000000000006E /* SleepServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000070 /* SleepServices.swift */; };
 		00100000000000000000006F /* HealthKitSleepService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000071 /* HealthKitSleepService.swift */; };
 		001000000000000000000070 /* SleepViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000072 /* SleepViews.swift */; };
+		001000000000000000000091 /* ReadinessModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000091 /* ReadinessModels.swift */; };
+		001000000000000000000092 /* CoachIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000092 /* CoachIntelligenceService.swift */; };
+		001000000000000000000093 /* CoachIntelligenceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000093 /* CoachIntelligenceViews.swift */; };
+		001000000000000000000094 /* CoachWorkoutAdjustmentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000094 /* CoachWorkoutAdjustmentModels.swift */; };
+		001000000000000000000095 /* CoachWorkoutAdjustmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000095 /* CoachWorkoutAdjustmentService.swift */; };
+		001000000000000000000096 /* CoachWorkoutAdjustmentViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000096 /* CoachWorkoutAdjustmentViews.swift */; };
+		0010000000000000000000A1 /* CoachIntelligenceServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000A1 /* CoachIntelligenceServiceTests.swift */; };
+		0010000000000000000000B1 /* CoachWorkoutPreviewUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B1 /* CoachWorkoutPreviewUITests.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		00A000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 007000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 005000000000000000000001;
+			remoteInfo = GymTracker;
+		};
+		00A000000000000000000002 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 007000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 005000000000000000000001;
+			remoteInfo = GymTracker;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		002000000000000000000001 /* GymTrackerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GymTrackerApp.swift; sourceTree = "<group>"; };
@@ -238,10 +263,34 @@
 		002000000000000000000070 /* SleepServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepServices.swift; sourceTree = "<group>"; };
 		002000000000000000000071 /* HealthKitSleepService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKit/HealthKitSleepService.swift; sourceTree = "<group>"; };
 		002000000000000000000072 /* SleepViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepViews.swift; sourceTree = "<group>"; };
+		002000000000000000000091 /* ReadinessModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadinessModels.swift; sourceTree = "<group>"; };
+		002000000000000000000092 /* CoachIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachIntelligenceService.swift; sourceTree = "<group>"; };
+		002000000000000000000093 /* CoachIntelligenceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachIntelligenceViews.swift; sourceTree = "<group>"; };
+		002000000000000000000094 /* CoachWorkoutAdjustmentModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkoutAdjustmentModels.swift; sourceTree = "<group>"; };
+		002000000000000000000095 /* CoachWorkoutAdjustmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkoutAdjustmentService.swift; sourceTree = "<group>"; };
+		002000000000000000000096 /* CoachWorkoutAdjustmentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkoutAdjustmentViews.swift; sourceTree = "<group>"; };
+		0020000000000000000000A0 /* GymTrackerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GymTrackerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0020000000000000000000A1 /* CoachIntelligenceServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachIntelligenceServiceTests.swift; sourceTree = "<group>"; };
+		0020000000000000000000B0 /* GymTrackerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GymTrackerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0020000000000000000000B1 /* CoachWorkoutPreviewUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkoutPreviewUITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		003000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		003000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		003000000000000000000003 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -255,6 +304,8 @@
 			isa = PBXGroup;
 			children = (
 				004000000000000000000002 /* GymTracker */,
+				004000000000000000000018 /* GymTrackerTests */,
+				004000000000000000000019 /* GymTrackerUITests */,
 				004000000000000000000012 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -303,6 +354,8 @@
 				002000000000000000000067 /* NutritionInsightModels.swift */,
 				00200000000000000000006A /* HealthKitBridgeModels.swift */,
 				00200000000000000000006F /* SleepModels.swift */,
+				002000000000000000000091 /* ReadinessModels.swift */,
+				002000000000000000000094 /* CoachWorkoutAdjustmentModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -337,6 +390,7 @@
 			children = (
 				00200000000000000000000F /* StartWorkoutView.swift */,
 				002000000000000000000026 /* WorkoutPreviewView.swift */,
+				002000000000000000000096 /* CoachWorkoutAdjustmentViews.swift */,
 				002000000000000000000039 /* WorkoutPreviewExerciseCard.swift */,
 				002000000000000000000015 /* WorkoutLoggerView.swift */,
 				00200000000000000000003C /* WorkoutCelebrationOverlay.swift */,
@@ -438,6 +492,8 @@
 				00200000000000000000006E /* NutritionDataIntegrityService.swift */,
 				002000000000000000000070 /* SleepServices.swift */,
 				002000000000000000000071 /* HealthKitSleepService.swift */,
+				002000000000000000000092 /* CoachIntelligenceService.swift */,
+				002000000000000000000095 /* CoachWorkoutAdjustmentService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -446,6 +502,8 @@
 			isa = PBXGroup;
 			children = (
 				002000000000000000000014 /* GymTracker.app */,
+				0020000000000000000000A0 /* GymTrackerTests.xctest */,
+				0020000000000000000000B0 /* GymTrackerUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -482,6 +540,7 @@
 				002000000000000000000042 /* ExerciseNotesEditor.swift */,
 				002000000000000000000051 /* WorkoutTemplateRow.swift */,
 				002000000000000000000054 /* TodayDashboardComponents.swift */,
+				002000000000000000000093 /* CoachIntelligenceViews.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -516,6 +575,22 @@
 			path = Sleep;
 			sourceTree = "<group>";
 		};
+		004000000000000000000018 /* GymTrackerTests */ = {
+			isa = PBXGroup;
+			children = (
+				0020000000000000000000A1 /* CoachIntelligenceServiceTests.swift */,
+			);
+			path = GymTrackerTests;
+			sourceTree = "<group>";
+		};
+		004000000000000000000019 /* GymTrackerUITests */ = {
+			isa = PBXGroup;
+			children = (
+				0020000000000000000000B1 /* CoachWorkoutPreviewUITests.swift */,
+			);
+			path = GymTrackerUITests;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -536,6 +611,42 @@
 			productReference = 002000000000000000000014 /* GymTracker.app */;
 			productType = "com.apple.product-type.application";
 		};
+		005000000000000000000002 /* GymTrackerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 009000000000000000000003 /* Build configuration list for PBXNativeTarget "GymTrackerTests" */;
+			buildPhases = (
+				006000000000000000000003 /* Sources */,
+				003000000000000000000002 /* Frameworks */,
+				006000000000000000000004 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				00B000000000000000000001 /* PBXTargetDependency */,
+			);
+			name = GymTrackerTests;
+			productName = GymTrackerTests;
+			productReference = 0020000000000000000000A0 /* GymTrackerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		005000000000000000000003 /* GymTrackerUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 009000000000000000000004 /* Build configuration list for PBXNativeTarget "GymTrackerUITests" */;
+			buildPhases = (
+				006000000000000000000005 /* Sources */,
+				003000000000000000000003 /* Frameworks */,
+				006000000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				00B000000000000000000002 /* PBXTargetDependency */,
+			);
+			name = GymTrackerUITests;
+			productName = GymTrackerUITests;
+			productReference = 0020000000000000000000B0 /* GymTrackerUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -554,6 +665,14 @@
 							};
 						};
 					};
+					005000000000000000000002 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = 005000000000000000000001;
+					};
+					005000000000000000000003 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = 005000000000000000000001;
+					};
 				};
 			};
 			buildConfigurationList = 009000000000000000000001 /* Build configuration list for PBXProject "GymTracker" */;
@@ -570,6 +689,8 @@
 			projectRoot = "";
 			targets = (
 				005000000000000000000001 /* GymTracker */,
+				005000000000000000000002 /* GymTrackerTests */,
+				005000000000000000000003 /* GymTrackerUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -580,6 +701,20 @@
 			buildActionMask = 2147483647;
 			files = (
 				001000000000000000000018 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		006000000000000000000004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		006000000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -702,10 +837,45 @@
 				00100000000000000000006E /* SleepServices.swift in Sources */,
 				00100000000000000000006F /* HealthKitSleepService.swift in Sources */,
 				001000000000000000000070 /* SleepViews.swift in Sources */,
+				001000000000000000000091 /* ReadinessModels.swift in Sources */,
+				001000000000000000000092 /* CoachIntelligenceService.swift in Sources */,
+				001000000000000000000093 /* CoachIntelligenceViews.swift in Sources */,
+				001000000000000000000094 /* CoachWorkoutAdjustmentModels.swift in Sources */,
+				001000000000000000000095 /* CoachWorkoutAdjustmentService.swift in Sources */,
+				001000000000000000000096 /* CoachWorkoutAdjustmentViews.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		006000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0010000000000000000000A1 /* CoachIntelligenceServiceTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		006000000000000000000005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0010000000000000000000B1 /* CoachWorkoutPreviewUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		00B000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 005000000000000000000001 /* GymTracker */;
+			targetProxy = 00A000000000000000000001 /* PBXContainerItemProxy */;
+		};
+		00B000000000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 005000000000000000000001 /* GymTracker */;
+			targetProxy = 00A000000000000000000002 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		008000000000000000000001 /* Debug */ = {
@@ -843,6 +1013,7 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -879,6 +1050,7 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -892,6 +1064,100 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		008000000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 272AN3AJLF;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.noel.GymTrackerTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/GymTracker.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/GymTracker";
+			};
+			name = Debug;
+		};
+		008000000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 272AN3AJLF;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.noel.GymTrackerTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/GymTracker.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/GymTracker";
+			};
+			name = Release;
+		};
+		008000000000000000000007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 272AN3AJLF;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.noel.GymTrackerUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = GymTracker;
+			};
+			name = Debug;
+		};
+		008000000000000000000008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 272AN3AJLF;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.noel.GymTrackerUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = GymTracker;
 			};
 			name = Release;
 		};
@@ -912,6 +1178,24 @@
 			buildConfigurations = (
 				008000000000000000000003 /* Debug */,
 				008000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		009000000000000000000003 /* Build configuration list for PBXNativeTarget "GymTrackerTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				008000000000000000000005 /* Debug */,
+				008000000000000000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		009000000000000000000004 /* Build configuration list for PBXNativeTarget "GymTrackerUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				008000000000000000000007 /* Debug */,
+				008000000000000000000008 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

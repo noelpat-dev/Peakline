@@ -3,29 +3,49 @@ import SwiftUI
 
 struct PRTimelineView: View {
     @Environment(\.appTheme) private var appTheme
-
-    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
-    private var sessions: [WorkoutSession]
+    @Environment(\.modelContext) private var modelContext
 
     @State private var selectedSplit: String?
+    @State private var allRecords: [PRRecord] = []
+    @State private var weeklySummary: WeeklyTrainingSummary?
+    @State private var lastSignature: String?
+    @State private var isLoading = false
+    @State private var didRequestInitialRefresh = false
+    @State private var refreshTask: Task<Void, Never>?
 
-    private let analytics = TrainingAnalyticsService()
-
-    private var records: [PRRecord] {
-        let all = analytics.prTimeline(from: sessions)
-        guard let selectedSplit else { return all }
-        return all.filter { $0.workoutSplitName == selectedSplit }
+    private static var completedSessionsDescriptor: FetchDescriptor<WorkoutSession> {
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 80
+        descriptor.includePendingChanges = true
+        return descriptor
     }
 
-    private var weeklySummary: WeeklyTrainingSummary {
-        analytics.weeklySummary(from: sessions)
+    private var records: [PRRecord] {
+        guard let selectedSplit else { return allRecords }
+        return allRecords.filter { $0.workoutSplitName == selectedSplit }
     }
 
     var body: some View {
         FitnessScreen(title: "PR Timeline", subtitle: "See what improved and when.", systemImage: "trophy.fill") {
             HStack(spacing: 10) {
-                MetricTile(label: "Total PRs", value: "\(analytics.prTimeline(from: sessions).count)", caption: "All time", systemImage: "trophy")
-                MetricTile(label: "This week", value: "\(weeklySummary.prCount)", caption: "Recent", systemImage: "calendar")
+                MetricTile(label: "Total PRs", value: "\(allRecords.count)", caption: "All time", systemImage: "trophy")
+                MetricTile(label: "This week", value: "\(weeklySummary?.prCount ?? 0)", caption: "Recent", systemImage: "calendar")
+            }
+
+            if isLoading {
+                FitnessCard(style: .compact) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "hourglass")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(appTheme.colors.accent)
+                        Text("Loading PR timeline")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                    }
+                }
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -84,5 +104,73 @@ struct PRTimelineView: View {
         }
         .navigationTitle("PR Timeline")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
+        .accessibilityIdentifier("pr-timeline-screen")
+        .onAppear {
+            guard !didRequestInitialRefresh else { return }
+            didRequestInitialRefresh = true
+            refreshRecords(force: true)
+        }
+        .onDisappear {
+            refreshTask?.cancel()
+            isLoading = false
+        }
+    }
+
+    private func refreshRecords(force: Bool = false) {
+        guard !isLoading else { return }
+
+        refreshTask?.cancel()
+        isLoading = true
+
+        refreshTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+
+            let recentSessions: [WorkoutSession]
+            do {
+                recentSessions = try modelContext.fetch(Self.completedSessionsDescriptor)
+            } catch {
+                allRecords = []
+                weeklySummary = nil
+                isLoading = false
+                return
+            }
+
+            let signature = Self.signature(for: recentSessions)
+            guard force || signature != lastSignature else {
+                isLoading = false
+                return
+            }
+
+            let snapshots: [WorkoutAnalyticsSession]
+            do {
+                snapshots = try WorkoutAnalyticsSnapshotBuilder.snapshots(from: recentSessions, in: modelContext)
+            } catch {
+                allRecords = []
+                weeklySummary = nil
+                isLoading = false
+                return
+            }
+
+            let result = await Task.detached(priority: .userInitiated) {
+                let analytics = TrainingAnalyticsService()
+                let records = analytics.prTimeline(from: snapshots)
+                let weekly = analytics.weeklySummary(from: snapshots, prRecords: records)
+                return (records, weekly)
+            }.value
+
+            guard !Task.isCancelled else { return }
+            allRecords = result.0
+            weeklySummary = result.1
+            lastSignature = signature
+            isLoading = false
+        }
+    }
+
+    private static func signature(for sessions: [WorkoutSession]) -> String {
+        sessions
+            .map { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.endedAt?.timeIntervalSince1970 ?? 0)" }
+            .joined(separator: "|")
     }
 }

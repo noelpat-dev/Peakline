@@ -42,10 +42,18 @@ struct GymTrackerApp: App {
             FoodLogEntry.self,
             HydrationEntry.self,
             SleepSession.self,
-            NapSession.self
+            NapSession.self,
+            DailyCoachCheckIn.self,
+            CoachActionHistoryEntry.self,
+            SavedCoachDeloadBlock.self,
+            CoachExerciseMetadata.self,
+            CoachRecommendationFeedback.self,
+            CoachPreferences.self,
+            CoachSplitMetadata.self
         ])
 
-        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        let useInMemoryStore = ProcessInfo.processInfo.arguments.contains("-UITestInMemoryStore")
+        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: useInMemoryStore)
 
         do {
             return try ModelContainer(for: schema, configurations: [configuration])

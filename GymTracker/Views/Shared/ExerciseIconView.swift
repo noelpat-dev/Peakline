@@ -33,7 +33,7 @@ struct ExerciseIconView: View {
 
     @ViewBuilder
     private var icon: some View {
-        if UIImage(named: iconKey.assetName) != nil {
+        if ExerciseIconAssetCache.hasAsset(named: iconKey.assetName) {
             Image(iconKey.assetName)
                 .renderingMode(.template)
                 .resizable()
@@ -66,5 +66,20 @@ struct ExerciseIconView: View {
 
     private var iconSize: CGFloat {
         showBackground ? size * 0.54 : size
+    }
+}
+
+private enum ExerciseIconAssetCache {
+    private static let cache = NSCache<NSString, NSNumber>()
+
+    static func hasAsset(named name: String) -> Bool {
+        let key = name as NSString
+        if let cached = cache.object(forKey: key) {
+            return cached.boolValue
+        }
+
+        let exists = UIImage(named: name) != nil
+        cache.setObject(NSNumber(value: exists), forKey: key)
+        return exists
     }
 }

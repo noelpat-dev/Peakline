@@ -1,6 +1,6 @@
 import Foundation
 
-struct TargetSuggestion: Hashable {
+struct TargetSuggestion: Hashable, Sendable {
     let exerciseName: String
     let lastBestSetDescription: String?
     let suggestedWeight: Double?
@@ -10,7 +10,7 @@ struct TargetSuggestion: Hashable {
     let confidence: Double
 }
 
-enum TargetRecommendationType: String, Codable, CaseIterable, Hashable {
+enum TargetRecommendationType: String, Codable, CaseIterable, Hashable, Sendable {
     case baseline
     case addReps
     case repeatTarget
@@ -41,6 +41,22 @@ struct TargetSuggestionService {
         minReps: Int,
         maxReps: Int,
         completedSessions: [WorkoutSession]
+    ) -> TargetSuggestion {
+        suggestion(
+            exerciseId: exerciseId,
+            exerciseName: exerciseName,
+            minReps: minReps,
+            maxReps: maxReps,
+            completedSessions: completedSessions.map(WorkoutAnalyticsSession.init)
+        )
+    }
+
+    func suggestion(
+        exerciseId: UUID,
+        exerciseName: String,
+        minReps: Int,
+        maxReps: Int,
+        completedSessions: [WorkoutAnalyticsSession]
     ) -> TargetSuggestion {
         let history = exerciseHistory(exerciseId: exerciseId, completedSessions: completedSessions)
 
@@ -73,7 +89,7 @@ struct TargetSuggestionService {
         let bestDescription = "\(format(bestSet.weight))kg x \(bestSet.reps)"
         let recentBestSets = history
             .prefix(3)
-            .compactMap { entry -> SetLog? in
+            .compactMap { entry -> SetAnalyticsLog? in
                 let sets = completedWorkingSets(from: entry.log)
                 return sets.isEmpty ? nil : bestCompletedSet(from: sets)
             }
@@ -165,7 +181,32 @@ struct TargetSuggestionService {
         return history.sorted { $0.date > $1.date }
     }
 
+    private func exerciseHistory(
+        exerciseId: UUID,
+        completedSessions: [WorkoutAnalyticsSession]
+    ) -> [(date: Date, log: ExerciseAnalyticsLog)] {
+        var history: [(date: Date, log: ExerciseAnalyticsLog)] = []
+
+        for session in completedSessions {
+            for log in session.exerciseLogs where log.exerciseId == exerciseId {
+                history.append((date: session.date, log: log))
+
+                if history.count == 3 {
+                    return history.sorted { $0.date > $1.date }
+                }
+            }
+        }
+
+        return history.sorted { $0.date > $1.date }
+    }
+
     private func completedWorkingSets(from exerciseLog: ExerciseLog) -> [SetLog] {
+        exerciseLog.setLogs
+            .filter { $0.completed && !$0.isWarmup }
+            .sorted { $0.setNumber < $1.setNumber }
+    }
+
+    private func completedWorkingSets(from exerciseLog: ExerciseAnalyticsLog) -> [SetAnalyticsLog] {
         exerciseLog.setLogs
             .filter { $0.completed && !$0.isWarmup }
             .sorted { $0.setNumber < $1.setNumber }
@@ -175,7 +216,17 @@ struct TargetSuggestionService {
         sets.max { estimatedOneRepMax($0) < estimatedOneRepMax($1) } ?? sets[0]
     }
 
+    private func bestCompletedSet(from sets: [SetAnalyticsLog]) -> SetAnalyticsLog {
+        sets.max { estimatedOneRepMax($0) < estimatedOneRepMax($1) } ?? sets[0]
+    }
+
     private func performanceDropped(in sets: [SetLog]) -> Bool {
+        guard sets.count == 3 else { return false }
+        let scores = sets.map(estimatedOneRepMax)
+        return scores[0] < scores[1] && scores[1] < scores[2]
+    }
+
+    private func performanceDropped(in sets: [SetAnalyticsLog]) -> Bool {
         guard sets.count == 3 else { return false }
         let scores = sets.map(estimatedOneRepMax)
         return scores[0] < scores[1] && scores[1] < scores[2]
@@ -190,7 +241,20 @@ struct TargetSuggestionService {
         return newest <= bestOlder && loadHasNotMoved
     }
 
+    private func possiblePlateau(in sets: [SetAnalyticsLog]) -> Bool {
+        guard sets.count == 3 else { return false }
+        let scores = sets.map(estimatedOneRepMax)
+        let newest = scores[0]
+        let bestOlder = scores.dropFirst().max() ?? newest
+        let loadHasNotMoved = sets.allSatisfy { $0.weight <= sets[0].weight }
+        return newest <= bestOlder && loadHasNotMoved
+    }
+
     private func estimatedOneRepMax(_ set: SetLog) -> Double {
+        set.weight * (1 + Double(set.reps) / 30)
+    }
+
+    private func estimatedOneRepMax(_ set: SetAnalyticsLog) -> Double {
         set.weight * (1 + Double(set.reps) / 30)
     }
 

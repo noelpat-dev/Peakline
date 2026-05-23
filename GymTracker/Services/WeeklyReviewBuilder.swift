@@ -1,6 +1,94 @@
 import Foundation
+import SwiftData
 
-struct WeeklyReview: Equatable {
+struct TrainingSplitSnapshot: Sendable, Hashable {
+    let id: UUID
+    let name: String
+    let updatedAt: Date
+    let exercises: [SplitExerciseSnapshot]
+
+    init(id: UUID, name: String, updatedAt: Date, exercises: [SplitExerciseSnapshot]) {
+        self.id = id
+        self.name = name
+        self.updatedAt = updatedAt
+        self.exercises = exercises
+    }
+
+    init(split: TrainingSplit) {
+        self.id = split.id
+        self.name = split.name
+        self.updatedAt = split.updatedAt
+        self.exercises = split.exercises.map(SplitExerciseSnapshot.init)
+    }
+}
+
+struct SplitExerciseSnapshot: Sendable, Hashable {
+    let id: UUID
+    let exerciseId: UUID
+    let exerciseNameSnapshot: String
+    let orderIndex: Int
+    let minReps: Int
+    let maxReps: Int
+
+    init(id: UUID, exerciseId: UUID, exerciseNameSnapshot: String, orderIndex: Int, minReps: Int, maxReps: Int) {
+        self.id = id
+        self.exerciseId = exerciseId
+        self.exerciseNameSnapshot = exerciseNameSnapshot
+        self.orderIndex = orderIndex
+        self.minReps = minReps
+        self.maxReps = maxReps
+    }
+
+    init(splitExercise: SplitExercise) {
+        self.id = splitExercise.id
+        self.exerciseId = splitExercise.exerciseId
+        self.exerciseNameSnapshot = splitExercise.exerciseNameSnapshot
+        self.orderIndex = splitExercise.orderIndex
+        self.minReps = splitExercise.minReps
+        self.maxReps = splitExercise.maxReps
+    }
+}
+
+enum TrainingSplitSnapshotBuilder {
+    @MainActor
+    static func snapshots(from splits: [TrainingSplit], in modelContext: ModelContext) throws -> [TrainingSplitSnapshot] {
+        guard !splits.isEmpty else { return [] }
+
+        let splitIds = splits.map(\.id)
+        var exerciseDescriptor = FetchDescriptor<SplitExercise>(
+            predicate: #Predicate<SplitExercise> { splitIds.contains($0.splitId) },
+            sortBy: [SortDescriptor(\.orderIndex)]
+        )
+        exerciseDescriptor.includePendingChanges = true
+
+        let exercises = try modelContext.fetch(exerciseDescriptor)
+        let exercisesBySplitId = Dictionary(grouping: exercises, by: \.splitId)
+
+        return splits.map { split in
+            let exerciseSnapshots = (exercisesBySplitId[split.id] ?? [])
+                .sorted { $0.orderIndex < $1.orderIndex }
+                .map { exercise in
+                    SplitExerciseSnapshot(
+                        id: exercise.id,
+                        exerciseId: exercise.exerciseId,
+                        exerciseNameSnapshot: exercise.exerciseNameSnapshot,
+                        orderIndex: exercise.orderIndex,
+                        minReps: exercise.minReps,
+                        maxReps: exercise.maxReps
+                    )
+                }
+
+            return TrainingSplitSnapshot(
+                id: split.id,
+                name: split.name,
+                updatedAt: split.updatedAt,
+                exercises: exerciseSnapshots
+            )
+        }
+    }
+}
+
+struct WeeklyReview: Equatable, Sendable {
     let title: String
     let dateRangeDescription: String
     let completedWorkouts: Int
@@ -12,23 +100,45 @@ struct WeeklyReview: Equatable {
     let nextDecision: TrainingDecision
 }
 
-struct CoachInsight: Identifiable, Equatable {
-    let id = UUID()
+struct CoachInsight: Identifiable, Equatable, Sendable {
+    let id: String
     let title: String
     let message: String
     let severity: CoachInsightSeverity
     let relatedExerciseName: String?
     let relatedSplitName: String?
+
+    init(
+        id: String? = nil,
+        title: String,
+        message: String,
+        severity: CoachInsightSeverity,
+        relatedExerciseName: String?,
+        relatedSplitName: String?
+    ) {
+        self.title = title
+        self.message = message
+        self.severity = severity
+        self.relatedExerciseName = relatedExerciseName
+        self.relatedSplitName = relatedSplitName
+        self.id = id ?? [
+            title,
+            message,
+            severity.rawValue,
+            relatedExerciseName ?? "",
+            relatedSplitName ?? ""
+        ].joined(separator: "|")
+    }
 }
 
-enum CoachInsightSeverity: String, Codable {
+enum CoachInsightSeverity: String, Codable, Sendable {
     case info
     case positive
     case warning
     case recovery
 }
 
-struct TrainingDecision: Equatable {
+struct TrainingDecision: Equatable, Sendable {
     let recommendedSplitName: String?
     let recommendedMode: WorkoutMode
     let action: TrainingDecisionAction
@@ -36,7 +146,7 @@ struct TrainingDecision: Equatable {
     let reason: String
 }
 
-enum TrainingDecisionAction: String, Codable {
+enum TrainingDecisionAction: String, Codable, Sendable {
     case push
     case repeatTarget
     case recover
@@ -64,10 +174,18 @@ struct WeeklyReviewBuilder {
     private let targetService = TargetSuggestionService()
 
     func build(activeSplits: [TrainingSplit], completedSessions: [WorkoutSession]) -> WeeklyReview {
-        let weekly = analytics.weeklySummary(from: completedSessions)
+        build(
+            activeSplits: activeSplits.map(TrainingSplitSnapshot.init),
+            completedSessions: completedSessions.map(WorkoutAnalyticsSession.init)
+        )
+    }
+
+    func build(activeSplits: [TrainingSplitSnapshot], completedSessions: [WorkoutAnalyticsSession]) -> WeeklyReview {
+        let prRecords = analytics.prTimeline(from: completedSessions)
+        let weekly = analytics.weeklySummary(from: completedSessions, prRecords: prRecords)
         let consistency = analytics.splitConsistency(from: completedSessions)
         let decision = TrainingDecisionService().decision(activeSplits: activeSplits, completedSessions: completedSessions)
-        let recentPRs = analytics.prTimeline(from: completedSessions).prefix(3)
+        let recentPRs = prRecords.prefix(3)
 
         let highlights = recentPRs.map { pr in
             CoachInsight(
@@ -94,7 +212,7 @@ struct WeeklyReviewBuilder {
         )
     }
 
-    private func makeWatchlist(activeSplits: [TrainingSplit], completedSessions: [WorkoutSession], consistency: SplitConsistencySummary) -> [CoachInsight] {
+    private func makeWatchlist(activeSplits: [TrainingSplitSnapshot], completedSessions: [WorkoutAnalyticsSession], consistency: SplitConsistencySummary) -> [CoachInsight] {
         var insights: [CoachInsight] = []
 
         if let missed = consistency.missedSplitName {
@@ -111,7 +229,13 @@ struct WeeklyReviewBuilder {
 
         for split in activeSplits {
             for exercise in split.exercises.sorted(by: { $0.orderIndex < $1.orderIndex }).prefix(4) {
-                let suggestion = targetService.suggestion(for: exercise, completedSessions: completedSessions)
+                let suggestion = targetService.suggestion(
+                    exerciseId: exercise.exerciseId,
+                    exerciseName: exercise.exerciseNameSnapshot,
+                    minReps: exercise.minReps,
+                    maxReps: exercise.maxReps,
+                    completedSessions: completedSessions
+                )
                 if suggestion.recommendationType == .fatigueRisk || suggestion.recommendationType == .possiblePlateau {
                     insights.append(
                         CoachInsight(
@@ -131,11 +255,17 @@ struct WeeklyReviewBuilder {
 }
 
 struct TrainingDecisionService {
-    private let coachEngine = CoachRecommendationEngine()
     private let targetService = TargetSuggestionService()
     private let analytics = TrainingAnalyticsService()
 
     func decision(activeSplits: [TrainingSplit], completedSessions: [WorkoutSession]) -> TrainingDecision {
+        decision(
+            activeSplits: activeSplits.map(TrainingSplitSnapshot.init),
+            completedSessions: completedSessions.map(WorkoutAnalyticsSession.init)
+        )
+    }
+
+    func decision(activeSplits: [TrainingSplitSnapshot], completedSessions: [WorkoutAnalyticsSession]) -> TrainingDecision {
         guard completedSessions.count >= 2 else {
             return TrainingDecision(
                 recommendedSplitName: activeSplits.first?.name,
@@ -157,9 +287,16 @@ struct TrainingDecisionService {
             )
         }
 
-        let summary = coachEngine.makeSummary(activeSplits: activeSplits, completedSessions: completedSessions)
-        let split = summary.recommendedSplitName.flatMap { name in activeSplits.first { $0.name == name } } ?? activeSplits.first
-        let suggestions = split?.exercises.map { targetService.suggestion(for: $0, completedSessions: completedSessions) } ?? []
+        let split = recommendedSplit(from: activeSplits, completedSessions: completedSessions)
+        let suggestions = split?.exercises.map {
+            targetService.suggestion(
+                exerciseId: $0.exerciseId,
+                exerciseName: $0.exerciseNameSnapshot,
+                minReps: $0.minReps,
+                maxReps: $0.maxReps,
+                completedSessions: completedSessions
+            )
+        } ?? []
 
         if suggestions.contains(where: { $0.recommendationType == .fatigueRisk }) || recentSkippedFatigue(in: completedSessions) {
             return TrainingDecision(
@@ -190,7 +327,55 @@ struct TrainingDecisionService {
         )
     }
 
-    private func recentSkippedFatigue(in sessions: [WorkoutSession]) -> Bool {
+    private func recommendedSplit(from activeSplits: [TrainingSplitSnapshot], completedSessions: [WorkoutAnalyticsSession]) -> TrainingSplitSnapshot? {
+        let orderedSplits = PPLReviewRotation.names.compactMap { name in
+            activeSplits.first { $0.name == name }
+        }
+        guard !orderedSplits.isEmpty else { return activeSplits.first }
+
+        let completedNames = Set(recentPPLCycleNames(from: completedSessions))
+        if let missingSplit = orderedSplits.first(where: { !completedNames.contains($0.name) }) {
+            return missingSplit
+        }
+
+        guard
+            let mostRecentName = completedSessions.compactMap({ pplName(for: $0.splitNameSnapshot) }).first,
+            let mostRecentIndex = PPLReviewRotation.names.firstIndex(of: mostRecentName)
+        else {
+            return orderedSplits.first
+        }
+
+        let nextName = PPLReviewRotation.names[(mostRecentIndex + 1) % PPLReviewRotation.names.count]
+        return orderedSplits.first { $0.name == nextName } ?? orderedSplits.first
+    }
+
+    private func recentPPLCycleNames(from completedSessions: [WorkoutAnalyticsSession]) -> [String] {
+        var names: [String] = []
+
+        for session in completedSessions {
+            guard let name = pplName(for: session.splitNameSnapshot) else { continue }
+
+            if names.contains(name) {
+                break
+            }
+
+            names.append(name)
+
+            if names.count == PPLReviewRotation.names.count {
+                break
+            }
+        }
+
+        return names
+    }
+
+    private func pplName(for splitNameSnapshot: String) -> String? {
+        PPLReviewRotation.names.first { name in
+            splitNameSnapshot == name || splitNameSnapshot.hasPrefix("\(name) - ")
+        }
+    }
+
+    private func recentSkippedFatigue(in sessions: [WorkoutAnalyticsSession]) -> Bool {
         sessions.prefix(3).contains { session in
             session.exerciseLogs.contains { log in
                 let notes = log.notes ?? ""
@@ -198,4 +383,8 @@ struct TrainingDecisionService {
             }
         }
     }
+}
+
+private enum PPLReviewRotation {
+    static let names = ["Push", "Pull", "Legs"]
 }

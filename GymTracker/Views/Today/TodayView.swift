@@ -4,31 +4,46 @@ import SwiftUI
 struct TodayView: View {
     @Environment(\.appTheme) private var appTheme
 
-    @Query(filter: #Predicate<TrainingSplit> { $0.isActive }, sort: \TrainingSplit.name)
+    @Query
     private var activeSplits: [TrainingSplit]
 
-    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    @Query
+    private var exercises: [Exercise]
+
+    @Query
     private var completedSessions: [WorkoutSession]
 
-    @Query(filter: #Predicate<WorkoutSession> { !$0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    @Query
     private var unfinishedSessions: [WorkoutSession]
 
-    @Query(sort: \SleepSession.createdAt, order: .reverse)
+    @Query
     private var sleepSessions: [SleepSession]
 
-    @Query(sort: \NapSession.startDate, order: .reverse)
+    @Query
     private var napSessions: [NapSession]
 
-    @Query(sort: \HydrationEntry.loggedAt, order: .reverse)
+    @Query
     private var hydrationEntries: [HydrationEntry]
 
-    @State private var route: TodayRoute?
+    @Query
+    private var foodLogEntries: [FoodLogEntry]
+
+    @Query
+    private var coachCheckIns: [DailyCoachCheckIn]
+
+    @State private var navigationPath = NavigationPath()
     @State private var showingRestDayConfirmation = false
+    @State private var showingCoachCheckIn = false
     @State private var previewSplit: WorkoutPreviewSplit?
     @State private var sleepSettings = SleepSettingsStore().load()
     @State private var sleepReadinessSnapshot = SleepAnalyticsService.emptyReadinessSnapshot()
     @State private var lastSleepReadinessSignature: SleepAnalyticsInputSignature?
+    @State private var sleepReadinessTask: Task<Void, Never>?
+    @State private var coachSnapshot = CoachIntelligenceService.emptySnapshot()
+    @State private var lastCoachSnapshotSignature: String?
+    @State private var coachSnapshotTask: Task<Void, Never>?
 
+    private let coachIntelligence = CoachIntelligenceService()
     private let decisionService = TrainingDecisionService()
     private let modePlanner = WorkoutModePlanner()
     private let sleepCoaching = SleepCoachingService()
@@ -36,18 +51,107 @@ struct TodayView: View {
     private let sleepReadinessStore = SleepWorkoutReadinessSnapshotStore.shared
     private let hydrationService = HydrationService()
     private let hydrationSettingsStore = HydrationSettingsStore()
+    private let nutritionGoalStore = NutritionGoalService()
 
     private let weekColumns = [
         GridItem(.flexible(), spacing: 12),
         GridItem(.flexible(), spacing: 12)
     ]
 
+    init() {
+        _activeSplits = Query(Self.activeSplitsDescriptor)
+        _exercises = Query(Self.exercisesDescriptor)
+        _completedSessions = Query(Self.completedSessionsDescriptor)
+        _unfinishedSessions = Query(Self.unfinishedSessionsDescriptor)
+        _sleepSessions = Query(Self.sleepSessionsDescriptor)
+        _napSessions = Query(Self.napSessionsDescriptor)
+        _hydrationEntries = Query(Self.hydrationEntriesDescriptor)
+        _foodLogEntries = Query(Self.foodLogEntriesDescriptor)
+        _coachCheckIns = Query(Self.coachCheckInsDescriptor)
+    }
+
+    private static var activeSplitsDescriptor: FetchDescriptor<TrainingSplit> {
+        var descriptor = FetchDescriptor<TrainingSplit>(
+            predicate: #Predicate<TrainingSplit> { $0.isActive },
+            sortBy: [SortDescriptor(\.name)]
+        )
+        descriptor.fetchLimit = 12
+        return descriptor
+    }
+
+    private static var exercisesDescriptor: FetchDescriptor<Exercise> {
+        var descriptor = FetchDescriptor<Exercise>(
+            predicate: #Predicate<Exercise> { !$0.isArchived },
+            sortBy: [SortDescriptor(\.name)]
+        )
+        descriptor.fetchLimit = 180
+        return descriptor
+    }
+
+    private static var completedSessionsDescriptor: FetchDescriptor<WorkoutSession> {
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 40
+        return descriptor
+    }
+
+    private static var unfinishedSessionsDescriptor: FetchDescriptor<WorkoutSession> {
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { !$0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 5
+        return descriptor
+    }
+
+    private static var sleepSessionsDescriptor: FetchDescriptor<SleepSession> {
+        var descriptor = FetchDescriptor<SleepSession>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 60
+        return descriptor
+    }
+
+    private static var napSessionsDescriptor: FetchDescriptor<NapSession> {
+        var descriptor = FetchDescriptor<NapSession>(
+            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        descriptor.fetchLimit = 30
+        return descriptor
+    }
+
+    private static var hydrationEntriesDescriptor: FetchDescriptor<HydrationEntry> {
+        var descriptor = FetchDescriptor<HydrationEntry>(
+            sortBy: [SortDescriptor(\.loggedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 120
+        return descriptor
+    }
+
+    private static var foodLogEntriesDescriptor: FetchDescriptor<FoodLogEntry> {
+        var descriptor = FetchDescriptor<FoodLogEntry>(
+            sortBy: [SortDescriptor(\.loggedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 160
+        return descriptor
+    }
+
+    private static var coachCheckInsDescriptor: FetchDescriptor<DailyCoachCheckIn> {
+        var descriptor = FetchDescriptor<DailyCoachCheckIn>(
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 30
+        return descriptor
+    }
+
     private var trainingDecision: TrainingDecision {
-        decisionService.decision(activeSplits: activeSplits, completedSessions: completedSessions)
+        decisionService.decision(activeSplits: activeSplits, completedSessions: Array(completedSessions.prefix(40)))
     }
 
     private var currentSleepReadinessSignature: SleepAnalyticsInputSignature {
-        SleepAnalyticsInputSignature(sessions: sleepSessions, naps: napSessions, workouts: completedSessions, settings: sleepSettings, sessionLimit: 45, workoutLimit: 12)
+        SleepAnalyticsInputSignature(sessions: sleepSessions, naps: napSessions, workouts: Array(completedSessions.prefix(12)), settings: sleepSettings, sessionLimit: 45, workoutLimit: 12)
     }
 
     private var hydrationSummary: DailyHydrationSummary {
@@ -57,8 +161,58 @@ struct TodayView: View {
         )
     }
 
+    private var readinessScore: ReadinessScore {
+        coachSnapshot.readiness
+    }
+
+    private var currentCoachSnapshotSignature: String {
+        [
+            signature(activeSplits, limit: 12) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(exercises, limit: 120) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(completedSessions, limit: 40) { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.endedAt?.timeIntervalSince1970 ?? 0)" },
+            signature(sleepSessions, limit: 45) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(napSessions, limit: 30) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(hydrationEntries, limit: 60) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(foodLogEntries, limit: 80) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(coachCheckIns, limit: 14) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            sleepSettingsSignature,
+            "\(hydrationSettingsStore.dailyTargetML())",
+            "\(nutritionGoalStore.loadGoal().updatedAt.timeIntervalSince1970)"
+        ].joined(separator: "|")
+    }
+
+    private var sleepSettingsSignature: String {
+        [
+            "\(sleepSettings.targetSleepMinutes)",
+            "\(sleepSettings.recoveryCoachingEnabled)",
+            sleepSettings.preferredSource.rawValue,
+            "\(sleepSettings.coachingPreferences.sleepCoachingInsightsEnabled)",
+            "\(sleepSettings.coachingPreferences.adaptiveWorkoutRecommendationsEnabled)",
+            "\(sleepSettings.coachingPreferences.deloadSuggestionsEnabled)",
+            "\(sleepSettings.coachingPreferences.sleepPerformanceInsightsEnabled)"
+        ].joined(separator: ":")
+    }
+
+    private func makeCoachSnapshot() -> CoachIntelligenceSnapshot {
+        coachIntelligence.snapshot(
+            activeSplits: activeSplits,
+            exercises: exercises,
+            sleepSessions: sleepSessions,
+            napSessions: napSessions,
+            hydrationEntries: hydrationEntries,
+            completedWorkouts: Array(completedSessions.prefix(40)),
+            foodLogs: foodLogEntries,
+            checkIns: coachCheckIns,
+            sleepSettings: sleepSettings,
+            hydrationTargetML: hydrationSettingsStore.dailyTargetML(),
+            nutritionGoal: nutritionGoalStore.loadGoal()
+        )
+    }
+
     var body: some View {
-        NavigationStack {
+        let intelligence = coachSnapshot
+
+        NavigationStack(path: $navigationPath) {
             ScrollView {
                 VStack(alignment: .leading, spacing: appTheme.metrics.screenContentSpacing) {
                     DashboardHeaderView(
@@ -79,9 +233,23 @@ struct TodayView: View {
                         secondaryTitle: "Preview Split",
                         isPrimaryEnabled: true,
                         isSecondaryEnabled: suggestedSplit != nil,
-                        primaryAction: { route = .workout },
+                        primaryAction: { openRoute(.workout) },
                         secondaryAction: previewSuggestedSplit
                     )
+
+                    DashboardSection(title: "Daily Coach Brief") {
+                        CoachBriefCard(
+                            readiness: intelligence.readiness,
+                            viewBrief: { openRoute(.coach) },
+                            checkIn: { showingCoachCheckIn = true }
+                        )
+                    }
+
+                    DashboardSection(title: "Weekly Insight") {
+                        WeeklyInsightPreviewCard(snapshot: intelligence) {
+                            openRoute(.coach)
+                        }
+                    }
 
                     DashboardSection(title: "Recovery") {
                         NavigationLink {
@@ -163,7 +331,7 @@ struct TodayView: View {
             .navigationTitle("Today")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(item: $route) { route in
+            .navigationDestination(for: TodayRoute.self) { route in
                 switch route {
                 case .workout:
                     StartWorkoutContentView()
@@ -187,12 +355,17 @@ struct TodayView: View {
             } message: {
                 Text("Persistent rest-day logging is still on the roadmap. For now, your workout history remains unchanged.")
             }
+            .sheet(isPresented: $showingCoachCheckIn) {
+                DailyCheckInSheet(existingCheckIn: readinessScore.checkIn)
+            }
             .onAppear {
                 sleepSettings = sleepSettingsStore.load()
                 refreshSleepReadiness(force: true)
+                refreshCoachSnapshot(force: true)
             }
-            .onChange(of: currentSleepReadinessSignature) { _, _ in
-                refreshSleepReadiness()
+            .onDisappear {
+                sleepReadinessTask?.cancel()
+                coachSnapshotTask?.cancel()
             }
         }
     }
@@ -200,48 +373,58 @@ struct TodayView: View {
     private var quickActions: [QuickAction] {
         [
             QuickAction(
+                identifier: "quick-action-workout",
                 title: unfinishedSessions.isEmpty ? "Start Workout" : "Resume Workout",
                 subtitle: unfinishedSessions.isEmpty ? "Open your training flow" : "Continue the active log",
                 systemImage: "figure.strengthtraining.traditional",
                 style: .primary,
-                action: { route = .workout }
+                action: { openRoute(.workout) }
             ),
             QuickAction(
+                identifier: "quick-action-hydration",
                 title: "Hydration",
                 subtitle: hydrationSubtitle,
                 systemImage: "drop.fill",
                 style: .hydration,
-                action: { route = .hydration }
+                action: { openRoute(.hydration) }
             ),
             QuickAction(
+                identifier: "quick-action-sleep",
                 title: "Sleep",
                 subtitle: "Start Sleep Mode or review recovery",
                 systemImage: "moon.zzz.fill",
                 style: .calm,
-                action: { route = .sleep }
+                action: { openRoute(.sleep) }
             ),
             QuickAction(
-                title: "Coach Check-In",
-                subtitle: "Read targets and warnings",
+                identifier: "quick-action-readiness",
+                title: "Readiness",
+                subtitle: "\(readinessScore.value) - \(readinessScore.category.displayName)",
                 systemImage: "sparkles",
                 style: .neutral,
-                action: { route = .coach }
+                action: { openRoute(.coach) }
             ),
             QuickAction(
+                identifier: "quick-action-nutrition",
                 title: "Nutrition",
                 subtitle: "Log food and check macros",
                 systemImage: "fork.knife",
                 style: .progress,
-                action: { route = .nutrition }
+                action: { openRoute(.nutrition) }
             ),
             QuickAction(
+                identifier: "quick-action-progress",
                 title: "Progress & Charts",
                 subtitle: "Review lifts and PRs",
                 systemImage: "chart.xyaxis.line",
                 style: .progress,
-                action: { route = .progress }
+                action: { openRoute(.progress) }
             )
         ]
+    }
+
+    private func openRoute(_ route: TodayRoute) {
+        navigationPath.append(route)
     }
 
     private var lastWorkoutInsight: some View {
@@ -371,17 +554,41 @@ struct TodayView: View {
     }
 
     private func refreshSleepReadiness(force: Bool = false) {
-        let signature = currentSleepReadinessSignature
-        guard force || signature != lastSleepReadinessSignature else { return }
+        sleepReadinessTask?.cancel()
+        sleepReadinessTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
 
-        sleepReadinessSnapshot = sleepReadinessStore.snapshot(
-            sessions: sleepSessions,
-            naps: napSessions,
-            workouts: completedSessions,
-            settings: sleepSettings,
-            force: force
-        )
-        lastSleepReadinessSignature = signature
+            let signature = currentSleepReadinessSignature
+            guard force || signature != lastSleepReadinessSignature else { return }
+
+            sleepReadinessSnapshot = sleepReadinessStore.snapshot(
+                sessions: sleepSessions,
+                naps: napSessions,
+                workouts: Array(completedSessions.prefix(12)),
+                settings: sleepSettings,
+                force: force
+            )
+            lastSleepReadinessSignature = signature
+        }
+    }
+
+    private func refreshCoachSnapshot(force: Bool = false) {
+        coachSnapshotTask?.cancel()
+        coachSnapshotTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+
+            let signature = currentCoachSnapshotSignature
+            guard force || signature != lastCoachSnapshotSignature else { return }
+
+            coachSnapshot = makeCoachSnapshot()
+            lastCoachSnapshotSignature = signature
+        }
+    }
+
+    private func signature<Value>(_ values: [Value], limit: Int, transform: (Value) -> String) -> String {
+        values.prefix(limit).map(transform).joined(separator: ",")
     }
 
     private var hydrationSubtitle: String {
@@ -647,13 +854,32 @@ struct HydrationView: View {
     @Query(sort: \HydrationEntry.loggedAt, order: .reverse)
     private var entries: [HydrationEntry]
 
+    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    private var completedSessions: [WorkoutSession]
+
+    @Query(sort: \SleepSession.createdAt, order: .reverse)
+    private var sleepSessions: [SleepSession]
+
+    @Query(sort: \NapSession.startDate, order: .reverse)
+    private var napSessions: [NapSession]
+
+    @Query(sort: \FoodLogEntry.loggedAt, order: .reverse)
+    private var foodLogEntries: [FoodLogEntry]
+
+    @Query(sort: \DailyCoachCheckIn.date, order: .reverse)
+    private var coachCheckIns: [DailyCoachCheckIn]
+
     @State private var customAmount = ""
     @State private var showingCustomAmount = false
     @State private var errorText: String?
     @State private var confirmation: HydrationEntry?
+    @State private var sleepSettings = SleepSettingsStore().load()
 
+    private let coachIntelligence = CoachIntelligenceService()
     private let service = HydrationService()
     private let settingsStore = HydrationSettingsStore()
+    private let sleepSettingsStore = SleepSettingsStore()
+    private let nutritionGoalStore = NutritionGoalService()
     private let quickAmounts = [250, 500, 750]
 
     private var todayEntries: [HydrationEntry] {
@@ -664,6 +890,20 @@ struct HydrationView: View {
         service.summary(entries: entries, targetML: settingsStore.dailyTargetML())
     }
 
+    private var readinessScore: ReadinessScore {
+        coachIntelligence.readiness(
+            sleepSessions: sleepSessions,
+            napSessions: napSessions,
+            hydrationEntries: entries,
+            completedWorkouts: completedSessions,
+            foodLogs: foodLogEntries,
+            checkIns: coachCheckIns,
+            sleepSettings: sleepSettings,
+            hydrationTargetML: settingsStore.dailyTargetML(),
+            nutritionGoal: nutritionGoalStore.loadGoal()
+        )
+    }
+
     var body: some View {
         FitnessScreen(
             title: "Hydration",
@@ -671,6 +911,14 @@ struct HydrationView: View {
             systemImage: "drop.fill"
         ) {
             hydrationProgressCard
+
+            DashboardSection(title: "Coach Context") {
+                ReadinessContextCard(
+                    readiness: readinessScore,
+                    focus: .hydration,
+                    title: "Hydration in today's readiness"
+                )
+            }
 
             DashboardSection(title: "Quick Add") {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
@@ -739,6 +987,9 @@ struct HydrationView: View {
             }
         } message: {
             Text("Enter an amount in millilitres.")
+        }
+        .onAppear {
+            sleepSettings = sleepSettingsStore.load()
         }
     }
 

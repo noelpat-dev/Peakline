@@ -1,6 +1,6 @@
 import Foundation
 
-struct CoachRecommendationSummary {
+struct CoachRecommendationSummary: Sendable {
     let recommendedSplitName: String?
     let reason: String
     let exerciseRecommendations: [ExerciseRecommendation]
@@ -8,7 +8,7 @@ struct CoachRecommendationSummary {
     let weeklyInsights: [String]
 }
 
-struct ExerciseRecommendation: Identifiable, Hashable {
+struct ExerciseRecommendation: Identifiable, Hashable, Sendable {
     let exerciseName: String
     let message: String
     let priority: CoachPriority
@@ -18,7 +18,7 @@ struct ExerciseRecommendation: Identifiable, Hashable {
     }
 }
 
-struct CoachWarning: Identifiable, Hashable {
+struct CoachWarning: Identifiable, Hashable, Sendable {
     let title: String
     let message: String
     let severity: CoachPriority
@@ -28,7 +28,7 @@ struct CoachWarning: Identifiable, Hashable {
     }
 }
 
-enum CoachPriority: String, Hashable {
+enum CoachPriority: String, Hashable, Sendable {
     case low
     case medium
     case high
@@ -44,6 +44,31 @@ struct CoachRecommendationEngine {
     func makeSummary(
         activeSplits: [TrainingSplit],
         completedSessions: [WorkoutSession],
+        now: Date = .now
+    ) -> CoachRecommendationSummary {
+        let recommendedSplit = recommendedSplit(from: activeSplits, completedSessions: completedSessions)
+        let warnings = recoveryWarnings(from: completedSessions, now: now)
+        let missedWarnings = missedSplitWarnings(activeSplits: activeSplits, completedSessions: completedSessions, now: now)
+
+        return CoachRecommendationSummary(
+            recommendedSplitName: recommendedSplit?.name,
+            reason: recommendationReason(
+                for: recommendedSplit,
+                activeSplits: activeSplits,
+                completedSessions: completedSessions
+            ),
+            exerciseRecommendations: exerciseRecommendations(
+                for: recommendedSplit,
+                completedSessions: completedSessions
+            ),
+            recoveryWarnings: warnings + missedWarnings,
+            weeklyInsights: weeklyInsights(from: completedSessions, now: now)
+        )
+    }
+
+    func makeSummary(
+        activeSplits: [TrainingSplitSnapshot],
+        completedSessions: [WorkoutAnalyticsSession],
         now: Date = .now
     ) -> CoachRecommendationSummary {
         let recommendedSplit = recommendedSplit(from: activeSplits, completedSessions: completedSessions)
@@ -89,10 +114,57 @@ struct CoachRecommendationEngine {
         return orderedSplits.first { $0.name == nextName } ?? orderedSplits.first
     }
 
+    private func recommendedSplit(
+        from activeSplits: [TrainingSplitSnapshot],
+        completedSessions: [WorkoutAnalyticsSession]
+    ) -> TrainingSplitSnapshot? {
+        let orderedSplits = pplOrderedSplits(from: activeSplits)
+        guard !orderedSplits.isEmpty else { return activeSplits.first }
+
+        let completedNames = Set(recentPPLCycleNames(from: completedSessions))
+        if let missingSplit = orderedSplits.first(where: { !completedNames.contains($0.name) }) {
+            return missingSplit
+        }
+
+        guard
+            let mostRecentName = completedSessions.compactMap({ pplName(for: $0.splitNameSnapshot) }).first,
+            let mostRecentIndex = PPLRotation.names.firstIndex(of: mostRecentName)
+        else {
+            return orderedSplits.first
+        }
+
+        let nextName = PPLRotation.names[(mostRecentIndex + 1) % PPLRotation.names.count]
+        return orderedSplits.first { $0.name == nextName } ?? orderedSplits.first
+    }
+
     private func recommendationReason(
         for split: TrainingSplit?,
         activeSplits: [TrainingSplit],
         completedSessions: [WorkoutSession]
+    ) -> String {
+        guard let split else {
+            if activeSplits.isEmpty {
+                return "Create or activate Push, Pull, and Legs splits before the coach can plan the next session."
+            }
+
+            return "Finish a workout so the coach can compare your recent split rotation."
+        }
+
+        if completedSessions.isEmpty {
+            return "\(split.name) is the first available day in your active Push/Pull/Legs setup."
+        }
+
+        if !recentPPLCycleNames(from: completedSessions).contains(split.name) {
+            return "\(split.name) is the next missing day in your current Push/Pull/Legs rotation."
+        }
+
+        return "You have completed the current Push/Pull/Legs round. \(split.name) starts the next rotation."
+    }
+
+    private func recommendationReason(
+        for split: TrainingSplitSnapshot?,
+        activeSplits: [TrainingSplitSnapshot],
+        completedSessions: [WorkoutAnalyticsSession]
     ) -> String {
         guard let split else {
             if activeSplits.isEmpty {
@@ -124,6 +196,32 @@ struct CoachRecommendationEngine {
             .prefix(6)
             .map { splitExercise in
                 recommendation(for: splitExercise, completedSessions: completedSessions)
+            }
+    }
+
+    private func exerciseRecommendations(
+        for split: TrainingSplitSnapshot?,
+        completedSessions: [WorkoutAnalyticsSession]
+    ) -> [ExerciseRecommendation] {
+        guard let split else { return [] }
+
+        return split.exercises
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .prefix(6)
+            .map { splitExercise in
+                let suggestion = TargetSuggestionService().suggestion(
+                    exerciseId: splitExercise.exerciseId,
+                    exerciseName: splitExercise.exerciseNameSnapshot,
+                    minReps: splitExercise.minReps,
+                    maxReps: splitExercise.maxReps,
+                    completedSessions: completedSessions
+                )
+
+                return ExerciseRecommendation(
+                    exerciseName: suggestion.exerciseName,
+                    message: suggestion.reason,
+                    priority: priority(for: suggestion.recommendationType)
+                )
             }
     }
 
@@ -234,9 +332,81 @@ struct CoachRecommendationEngine {
         return warnings
     }
 
+    private func recoveryWarnings(
+        from completedSessions: [WorkoutAnalyticsSession],
+        now: Date
+    ) -> [CoachWarning] {
+        let recentSessions = completedSessions.filter {
+            guard let days = calendar.dateComponents([.day], from: $0.date, to: now).day else { return false }
+            return days < 7
+        }
+
+        var warnings: [CoachWarning] = []
+        let recentWorkingSets = recentSessions.reduce(0) { total, session in
+            total + session.exerciseLogs.flatMap { completedWorkingSets(from: $0) }.count
+        }
+
+        if recentSessions.count >= 4 {
+            warnings.append(
+                CoachWarning(
+                    title: "High training frequency",
+                    message: "You have logged \(recentSessions.count) workouts in the last 7 days. Keep today's session controlled if joints or performance feel off.",
+                    severity: .medium
+                )
+            )
+        }
+
+        if recentWorkingSets >= 40 {
+            warnings.append(
+                CoachWarning(
+                    title: "High weekly set count",
+                    message: "\(recentWorkingSets) working sets are logged this week. Consider a shorter session if performance drops.",
+                    severity: .medium
+                )
+            )
+        }
+
+        if let lastSession = completedSessions.first, calendar.isDateInYesterday(lastSession.date), recentSessions.count >= 3 {
+            warnings.append(
+                CoachWarning(
+                    title: "Watch fatigue",
+                    message: "You trained yesterday and have multiple recent sessions. Warm up carefully before pushing load.",
+                    severity: .low
+                )
+            )
+        }
+
+        return warnings
+    }
+
     private func missedSplitWarnings(
         activeSplits: [TrainingSplit],
         completedSessions: [WorkoutSession],
+        now: Date
+    ) -> [CoachWarning] {
+        pplOrderedSplits(from: activeSplits).compactMap { split in
+            guard let lastSession = completedSessions.first(where: { pplName(for: $0.splitNameSnapshot) == split.name }) else {
+                return CoachWarning(
+                    title: "\(split.name) has no history yet",
+                    message: "Log one \(split.name) workout so the coach can track your rotation.",
+                    severity: .low
+                )
+            }
+
+            let daysAway = calendar.dateComponents([.day], from: lastSession.date, to: now).day ?? 0
+            guard daysAway >= 10 else { return nil }
+
+            return CoachWarning(
+                title: "\(split.name) is overdue",
+                message: "It has been \(daysAway) days since your last \(split.name) session.",
+                severity: .medium
+            )
+        }
+    }
+
+    private func missedSplitWarnings(
+        activeSplits: [TrainingSplitSnapshot],
+        completedSessions: [WorkoutAnalyticsSession],
         now: Date
     ) -> [CoachWarning] {
         pplOrderedSplits(from: activeSplits).compactMap { split in
@@ -289,6 +459,36 @@ struct CoachRecommendationEngine {
         ]
     }
 
+    private func weeklyInsights(from completedSessions: [WorkoutAnalyticsSession], now: Date) -> [String] {
+        let thisWeeksSessions = completedSessions.filter {
+            calendar.isDate($0.date, equalTo: now, toGranularity: .weekOfYear)
+        }
+
+        let workingSets = thisWeeksSessions.reduce(0) { total, session in
+            total + session.exerciseLogs.flatMap { completedWorkingSets(from: $0) }.count
+        }
+
+        let bestSetVolume = thisWeeksSessions.reduce(0.0) { total, session in
+            let sessionBestSetVolume = session.exerciseLogs.reduce(0.0) { exerciseTotal, exerciseLog in
+                let bestSet = completedWorkingSets(from: exerciseLog)
+                    .max { ($0.weight * Double($0.reps)) < ($1.weight * Double($1.reps)) }
+
+                let bestWeight = bestSet?.weight ?? 0
+                let bestReps = bestSet?.reps ?? 0
+                let exerciseBestSetVolume = bestWeight * Double(bestReps)
+                return exerciseTotal + exerciseBestSetVolume
+            }
+
+            return total + sessionBestSetVolume
+        }
+
+        return [
+            "\(thisWeeksSessions.count) completed workouts this week.",
+            "\(workingSets) completed working sets this week.",
+            "\(format(bestSetVolume))kg best-set volume this week."
+        ]
+    }
+
     private func isPlateauing(previousLogs: [ExerciseLog], minReps: Int) -> Bool {
         let bestSets = previousLogs
             .prefix(3)
@@ -310,13 +510,45 @@ struct CoachRecommendationEngine {
             .sorted { $0.setNumber < $1.setNumber }
     }
 
+    private func completedWorkingSets(from exerciseLog: ExerciseAnalyticsLog) -> [SetAnalyticsLog] {
+        exerciseLog.setLogs
+            .filter { $0.completed && !$0.isWarmup }
+            .sorted { $0.setNumber < $1.setNumber }
+    }
+
     private func pplOrderedSplits(from activeSplits: [TrainingSplit]) -> [TrainingSplit] {
         PPLRotation.names.compactMap { name in
             activeSplits.first { $0.name == name }
         }
     }
 
+    private func pplOrderedSplits(from activeSplits: [TrainingSplitSnapshot]) -> [TrainingSplitSnapshot] {
+        PPLRotation.names.compactMap { name in
+            activeSplits.first { $0.name == name }
+        }
+    }
+
     private func recentPPLCycleNames(from completedSessions: [WorkoutSession]) -> [String] {
+        var names: [String] = []
+
+        for session in completedSessions {
+            guard let name = pplName(for: session.splitNameSnapshot) else { continue }
+
+            if names.contains(name) {
+                break
+            }
+
+            names.append(name)
+
+            if names.count == PPLRotation.names.count {
+                break
+            }
+        }
+
+        return names
+    }
+
+    private func recentPPLCycleNames(from completedSessions: [WorkoutAnalyticsSession]) -> [String] {
         var names: [String] = []
 
         for session in completedSessions {
@@ -344,6 +576,17 @@ struct CoachRecommendationEngine {
 
     private func estimatedOneRepMax(_ set: SetLog) -> Double {
         set.weight * (1 + Double(set.reps) / 30)
+    }
+
+    private func priority(for type: TargetRecommendationType) -> CoachPriority {
+        switch type {
+        case .fatigueRisk, .possiblePlateau, .reduceLoad:
+            return .high
+        case .increaseLoad, .addReps, .repeatTarget:
+            return .medium
+        case .baseline, .ready:
+            return .low
+        }
     }
 
     private func format(_ value: Double) -> String {

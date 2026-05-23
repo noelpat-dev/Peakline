@@ -45,7 +45,7 @@ struct HistoryView: View {
                             WorkoutHistoryDetailView(session: session)
                         } label: {
                             FitnessCard(style: .compact) {
-                                HStack(alignment: .top, spacing: 12) {
+                                HStack(alignment: .center, spacing: 12) {
                                     VStack(alignment: .leading, spacing: 5) {
                                         Text(session.splitNameSnapshot)
                                             .font(.headline)
@@ -60,6 +60,7 @@ struct HistoryView: View {
                                     Image(systemName: "chevron.right")
                                         .font(.caption.weight(.bold))
                                         .foregroundStyle(appTheme.colors.textTertiary)
+                                        .frame(width: 18, height: 44, alignment: .center)
                                 }
                             }
                         }

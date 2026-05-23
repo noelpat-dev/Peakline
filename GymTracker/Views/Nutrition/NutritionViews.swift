@@ -10,7 +10,28 @@ struct NutritionDashboardView: View {
     @Query(sort: \FoodLogEntry.loggedAt, order: .reverse)
     private var logEntries: [FoodLogEntry]
 
+    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    private var completedSessions: [WorkoutSession]
+
+    @Query(sort: \SleepSession.createdAt, order: .reverse)
+    private var sleepSessions: [SleepSession]
+
+    @Query(sort: \NapSession.startDate, order: .reverse)
+    private var napSessions: [NapSession]
+
+    @Query(sort: \HydrationEntry.loggedAt, order: .reverse)
+    private var hydrationEntries: [HydrationEntry]
+
+    @Query(sort: \DailyCoachCheckIn.date, order: .reverse)
+    private var coachCheckIns: [DailyCoachCheckIn]
+
+    @State private var sleepSettings = SleepSettingsStore().load()
+
+    private let coachIntelligence = CoachIntelligenceService()
     private let calculator = NutritionCalculatorService()
+    private let sleepSettingsStore = SleepSettingsStore()
+    private let hydrationSettingsStore = HydrationSettingsStore()
+    private let nutritionGoalStore = NutritionGoalService()
     @State private var pendingDeleteLogEntry: FoodLogEntry?
 
     private var todaysEntries: [FoodLogEntry] {
@@ -19,6 +40,20 @@ struct NutritionDashboardView: View {
 
     private var totals: NutritionMacroSnapshot {
         calculator.totals(from: todaysEntries)
+    }
+
+    private var readinessScore: ReadinessScore {
+        coachIntelligence.readiness(
+            sleepSessions: sleepSessions,
+            napSessions: napSessions,
+            hydrationEntries: hydrationEntries,
+            completedWorkouts: completedSessions,
+            foodLogs: logEntries,
+            checkIns: coachCheckIns,
+            sleepSettings: sleepSettings,
+            hydrationTargetML: hydrationSettingsStore.dailyTargetML(),
+            nutritionGoal: nutritionGoalStore.loadGoal()
+        )
     }
 
     private var recentlyLoggedFoods: [FoodItem] {
@@ -50,6 +85,14 @@ struct NutritionDashboardView: View {
             )
 
             NutritionHeroCard(totals: totals, entryCount: todaysEntries.count)
+
+            DashboardSection(title: "Coach Context") {
+                ReadinessContextCard(
+                    readiness: readinessScore,
+                    focus: .nutrition,
+                    title: "Nutrition in today's readiness"
+                )
+            }
 
             DashboardSection(title: "Macros") {
                 MacroSummaryGrid(totals: totals)
@@ -167,6 +210,9 @@ struct NutritionDashboardView: View {
             }
         } message: {
             Text("This removes the logged entry from your daily totals. The saved food stays in your food database.")
+        }
+        .onAppear {
+            sleepSettings = sleepSettingsStore.load()
         }
     }
 

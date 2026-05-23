@@ -10,87 +10,416 @@ struct CoachView: View {
 }
 
 struct CoachContentView: View {
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
 
-    @Query(filter: #Predicate<TrainingSplit> { $0.isActive }, sort: \TrainingSplit.name)
+    @Query
     private var activeSplits: [TrainingSplit]
 
-    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    @Query
     private var completedSessions: [WorkoutSession]
 
-    @Query(sort: \SleepSession.createdAt, order: .reverse)
+    @Query
+    private var exercises: [Exercise]
+
+    @Query
     private var sleepSessions: [SleepSession]
 
-    @Query(sort: \NapSession.startDate, order: .reverse)
+    @Query
     private var napSessions: [NapSession]
+
+    @Query
+    private var hydrationEntries: [HydrationEntry]
+
+    @Query
+    private var foodLogEntries: [FoodLogEntry]
+
+    @Query
+    private var coachCheckIns: [DailyCoachCheckIn]
+
+    @Query
+    private var coachActionHistory: [CoachActionHistoryEntry]
+
+    @Query
+    private var savedDeloadBlocks: [SavedCoachDeloadBlock]
+
+    @Query
+    private var recommendationFeedback: [CoachRecommendationFeedback]
+
+    @Query
+    private var exerciseMetadata: [CoachExerciseMetadata]
+
+    @Query
+    private var coachPreferences: [CoachPreferences]
+
+    @Query
+    private var splitMetadataRecords: [CoachSplitMetadata]
 
     @State private var sleepSettings = SleepSettingsStore().load()
     @State private var sleepSnapshot = SleepAnalyticsService.emptySnapshot()
     @State private var lastSleepAnalyticsSignature: SleepAnalyticsInputSignature?
+    @State private var sleepAnalyticsTask: Task<Void, Never>?
+    @State private var coachSnapshot = CoachIntelligenceService.emptySnapshot()
+    @State private var lastCoachSnapshotSignature: String?
+    @State private var coachSnapshotTask: Task<Void, Never>?
+    @State private var showingCoachCheckIn = false
+    @State private var route: CoachRoute?
+    @State private var weeklyReview: WeeklyReview?
+    @State private var lastWeeklyReviewSignature: String?
+    @State private var weeklyReviewTask: Task<Void, Never>?
+    @State private var summary = CoachRecommendationSummary.placeholder
+    @State private var recentPRs: [PRRecord] = []
+    @State private var targetSuggestions: [TargetSuggestion] = []
+    @State private var weeklyWorkoutCount = 0
+    @State private var weeklyWorkingSetCount = 0
+    @State private var progressOpportunityInsights: [CoachInsight] = []
+    @State private var lastCoachDerivedSignature: String?
+    @State private var coachDerivedTask: Task<Void, Never>?
 
-    private let coachEngine = CoachRecommendationEngine()
-    private let targetService = TargetSuggestionService()
-    private let reviewBuilder = WeeklyReviewBuilder()
-    private let analytics = TrainingAnalyticsService()
+    private let coachIntelligence = CoachIntelligenceService()
     private let sleepSettingsStore = SleepSettingsStore()
     private let sleepAnalyticsStore = SleepAnalyticsSnapshotStore.shared
+    private let hydrationSettingsStore = HydrationSettingsStore()
+    private let nutritionGoalStore = NutritionGoalService()
+    private let deloadBlockService = SavedCoachDeloadBlockService()
+    private let coachPreferencesService = CoachPreferencesService()
+
+    init() {
+        _activeSplits = Query(Self.activeSplitsDescriptor)
+        _completedSessions = Query(Self.completedSessionsDescriptor)
+        _exercises = Query(Self.exercisesDescriptor)
+        _sleepSessions = Query(Self.sleepSessionsDescriptor)
+        _napSessions = Query(Self.napSessionsDescriptor)
+        _hydrationEntries = Query(Self.hydrationEntriesDescriptor)
+        _foodLogEntries = Query(Self.foodLogEntriesDescriptor)
+        _coachCheckIns = Query(Self.coachCheckInsDescriptor)
+        _coachActionHistory = Query(Self.coachActionHistoryDescriptor)
+        _savedDeloadBlocks = Query(Self.savedDeloadBlocksDescriptor)
+        _recommendationFeedback = Query(Self.recommendationFeedbackDescriptor)
+        _exerciseMetadata = Query(Self.exerciseMetadataDescriptor)
+        _coachPreferences = Query(Self.coachPreferencesDescriptor)
+        _splitMetadataRecords = Query(Self.splitMetadataDescriptor)
+    }
+
+    private static var activeSplitsDescriptor: FetchDescriptor<TrainingSplit> {
+        var descriptor = FetchDescriptor<TrainingSplit>(
+            predicate: #Predicate<TrainingSplit> { $0.isActive },
+            sortBy: [SortDescriptor(\.name)]
+        )
+        descriptor.fetchLimit = 12
+        return descriptor
+    }
+
+    private static var completedSessionsDescriptor: FetchDescriptor<WorkoutSession> {
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 60
+        return descriptor
+    }
+
+    private static var exercisesDescriptor: FetchDescriptor<Exercise> {
+        var descriptor = FetchDescriptor<Exercise>(
+            predicate: #Predicate<Exercise> { !$0.isArchived },
+            sortBy: [SortDescriptor(\.name)]
+        )
+        descriptor.fetchLimit = 180
+        return descriptor
+    }
+
+    private static var sleepSessionsDescriptor: FetchDescriptor<SleepSession> {
+        var descriptor = FetchDescriptor<SleepSession>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 90
+        return descriptor
+    }
+
+    private static var napSessionsDescriptor: FetchDescriptor<NapSession> {
+        var descriptor = FetchDescriptor<NapSession>(
+            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        descriptor.fetchLimit = 45
+        return descriptor
+    }
+
+    private static var hydrationEntriesDescriptor: FetchDescriptor<HydrationEntry> {
+        var descriptor = FetchDescriptor<HydrationEntry>(
+            sortBy: [SortDescriptor(\.loggedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 120
+        return descriptor
+    }
+
+    private static var foodLogEntriesDescriptor: FetchDescriptor<FoodLogEntry> {
+        var descriptor = FetchDescriptor<FoodLogEntry>(
+            sortBy: [SortDescriptor(\.loggedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 160
+        return descriptor
+    }
+
+    private static var coachCheckInsDescriptor: FetchDescriptor<DailyCoachCheckIn> {
+        var descriptor = FetchDescriptor<DailyCoachCheckIn>(
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 45
+        return descriptor
+    }
+
+    private static var coachActionHistoryDescriptor: FetchDescriptor<CoachActionHistoryEntry> {
+        var descriptor = FetchDescriptor<CoachActionHistoryEntry>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 120
+        return descriptor
+    }
+
+    private static var savedDeloadBlocksDescriptor: FetchDescriptor<SavedCoachDeloadBlock> {
+        var descriptor = FetchDescriptor<SavedCoachDeloadBlock>(
+            sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 30
+        return descriptor
+    }
+
+    private static var recommendationFeedbackDescriptor: FetchDescriptor<CoachRecommendationFeedback> {
+        var descriptor = FetchDescriptor<CoachRecommendationFeedback>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 120
+        return descriptor
+    }
+
+    private static var exerciseMetadataDescriptor: FetchDescriptor<CoachExerciseMetadata> {
+        var descriptor = FetchDescriptor<CoachExerciseMetadata>(
+            sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 180
+        return descriptor
+    }
+
+    private static var coachPreferencesDescriptor: FetchDescriptor<CoachPreferences> {
+        var descriptor = FetchDescriptor<CoachPreferences>(
+            sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 5
+        return descriptor
+    }
+
+    private static var splitMetadataDescriptor: FetchDescriptor<CoachSplitMetadata> {
+        var descriptor = FetchDescriptor<CoachSplitMetadata>(
+            sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 40
+        return descriptor
+    }
 
     private var recentCompletedSessions: [WorkoutSession] {
         Array(completedSessions.prefix(20))
     }
 
-    private var summary: CoachRecommendationSummary {
-        coachEngine.makeSummary(activeSplits: activeSplits, completedSessions: recentCompletedSessions)
-    }
-
-    private var weeklyReview: WeeklyReview {
-        reviewBuilder.build(activeSplits: activeSplits, completedSessions: recentCompletedSessions)
-    }
-
-    private var recentPRs: [PRRecord] {
-        Array(analytics.prTimeline(from: recentCompletedSessions).prefix(3))
+    private var coachHistorySessions: [WorkoutSession] {
+        Array(completedSessions.prefix(40))
     }
 
     private var sleepDashboardSummary: SleepDashboardSummary {
         sleepSnapshot.dashboardSummary
     }
 
+    private var readinessScore: ReadinessScore {
+        coachSnapshot.readiness
+    }
+
+    private var currentCoachSnapshotSignature: String {
+        [
+            signature(activeSplits, limit: 12) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(exercises, limit: 160) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(coachHistorySessions, limit: 40) { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.endedAt?.timeIntervalSince1970 ?? 0)" },
+            signature(sleepSessions, limit: 90) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(napSessions, limit: 45) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(hydrationEntries, limit: 90) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(foodLogEntries, limit: 120) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(coachCheckIns, limit: 30) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(coachActionHistory, limit: 80) { "\($0.id.uuidString):\($0.createdAt.timeIntervalSince1970)" },
+            signature(savedDeloadBlocks, limit: 20) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(recommendationFeedback, limit: 80) { "\($0.id.uuidString):\($0.createdAt.timeIntervalSince1970)" },
+            signature(exerciseMetadata, limit: 160) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(coachPreferences, limit: 3) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(splitMetadataRecords, limit: 30) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            sleepSettingsSignature,
+            "\(hydrationSettingsStore.dailyTargetML())",
+            "\(nutritionGoalStore.loadGoal().updatedAt.timeIntervalSince1970)"
+        ].joined(separator: "|")
+    }
+
+    private var currentWeeklyReviewSignature: String {
+        [
+            signature(activeSplits, limit: 12) { split in
+                "\((split.id.uuidString)):\(split.updatedAt.timeIntervalSince1970)"
+            },
+            signature(recentCompletedSessions, limit: 20) { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.endedAt?.timeIntervalSince1970 ?? 0)" }
+        ].joined(separator: "|")
+    }
+
+    private var currentCoachDerivedSignature: String {
+        currentWeeklyReviewSignature
+    }
+
+    private var sleepSettingsSignature: String {
+        [
+            "\(sleepSettings.targetSleepMinutes)",
+            "\(sleepSettings.recoveryCoachingEnabled)",
+            sleepSettings.preferredSource.rawValue,
+            "\(sleepSettings.coachingPreferences.sleepCoachingInsightsEnabled)",
+            "\(sleepSettings.coachingPreferences.adaptiveWorkoutRecommendationsEnabled)",
+            "\(sleepSettings.coachingPreferences.deloadSuggestionsEnabled)",
+            "\(sleepSettings.coachingPreferences.sleepPerformanceInsightsEnabled)"
+        ].joined(separator: ":")
+    }
+
+    private func makeCoachSnapshot() -> CoachIntelligenceSnapshot {
+        coachIntelligence.snapshot(
+            activeSplits: activeSplits,
+            exercises: exercises,
+            sleepSessions: sleepSessions,
+            napSessions: napSessions,
+            hydrationEntries: hydrationEntries,
+            completedWorkouts: coachHistorySessions,
+            foodLogs: foodLogEntries,
+            checkIns: coachCheckIns,
+            sleepSettings: sleepSettings,
+            hydrationTargetML: hydrationSettingsStore.dailyTargetML(),
+            nutritionGoal: nutritionGoalStore.loadGoal(),
+            exerciseMetadata: exerciseMetadata,
+            coachActionHistory: coachActionHistory,
+            recommendationFeedback: recommendationFeedback,
+            savedDeloadBlocks: savedDeloadBlocks,
+            coachPreferences: coachPreferencesSnapshot,
+            splitMetadata: splitMetadataRecords
+        )
+    }
+
+    private var coachPreferencesSnapshot: CoachPreferencesSnapshot {
+        coachPreferencesService.snapshot(from: coachPreferences)
+    }
+
     private var currentSleepAnalyticsSignature: SleepAnalyticsInputSignature {
         SleepAnalyticsInputSignature(sessions: sleepSessions, naps: napSessions, workouts: recentCompletedSessions, settings: sleepSettings, sessionLimit: 90, workoutLimit: 20)
     }
 
-    private var recommendedSplit: TrainingSplit? {
-        guard let splitName = summary.recommendedSplitName else { return nil }
-        return activeSplits.first { $0.name == splitName }
-    }
-
-    private var targetSuggestions: [TargetSuggestion] {
-        guard let recommendedSplit else { return [] }
-
-        return recommendedSplit.exercises
-            .sorted { $0.orderIndex < $1.orderIndex }
-            .prefix(4)
-            .map { targetService.suggestion(for: $0, completedSessions: recentCompletedSessions) }
-    }
-
-    private var weeklyWorkoutCount: Int {
-        recentCompletedSessions.filter { Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .weekOfYear) }.count
-    }
-
-    private var weeklyWorkingSetCount: Int {
-        recentCompletedSessions
-            .filter { Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .weekOfYear) }
-            .reduce(0) { total, session in
-                total + session.exerciseLogs.flatMap(\.setLogs).filter { $0.completed && !$0.isWarmup }.count
-            }
-    }
-
     var body: some View {
+        let intelligence = coachSnapshot
+
         FitnessScreen(
             title: "Coach",
             subtitle: "Readiness, targets, and recovery.",
             systemImage: "sparkles"
         ) {
+            ReadinessDetailHeaderCard(readiness: intelligence.readiness)
+
+            DashboardSection(title: "Recommendation") {
+                ReadinessRecommendationCard(readiness: intelligence.readiness)
+            }
+
+            DashboardSection(title: "Today's Check-In") {
+                CheckInStatusCard(checkIn: intelligence.readiness.checkIn) {
+                    showingCoachCheckIn = true
+                }
+            }
+
+            DashboardSection(title: "Coach Controls") {
+                NavigationLink {
+                    CoachPreferencesView()
+                } label: {
+                    DashboardActionTile(
+                        title: "Coach Preferences",
+                        subtitle: "\(coachPreferencesSnapshot.aggressiveness.displayName), \(coachPreferencesSnapshot.trainingPriority.displayName.lowercased()) priority",
+                        systemImage: "slider.horizontal.3"
+                    )
+                }
+                .buttonStyle(PressableCardButtonStyle())
+                .accessibilityIdentifier("coach-preferences-open")
+            }
+
+            DashboardSection(title: "Weekly Summary") {
+                WeeklyCoachSummaryCard(summary: intelligence.weeklySummary)
+            }
+
+            DashboardSection(title: "Recent Coach Actions") {
+                CoachActionHistoryList(entries: Array(coachActionHistory.prefix(5)))
+
+                Button {
+                    route = .actionHistory
+                } label: {
+                    Label("Review action history", systemImage: "clock.arrow.circlepath")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(SecondaryFitnessButtonStyle())
+                .accessibilityIdentifier("coach-history-detail-open")
+            }
+
+            DashboardSection(title: "Saved Deload Blocks") {
+                SavedDeloadBlocksList(
+                    blocks: sortedDeloadBlocks,
+                    complete: completeDeloadBlock,
+                    cancel: cancelDeloadBlock
+                )
+            }
+
+            DashboardSection(title: "Weekly Insights") {
+                CoachInsightsFeedView(insights: intelligence.insights)
+            }
+
+            DashboardSection(title: "Fatigue / Deload Risk") {
+                FatigueRiskCard(risk: intelligence.fatigueRisk)
+            }
+
+            DashboardSection(title: "Muscle Fatigue Map") {
+                MuscleFatigueMapCard(items: intelligence.muscleFatigue)
+            }
+
+            DashboardSection(title: "Key Habit Contributors") {
+                CoachHabitContributorsCard(trends: intelligence.trends)
+            }
+
+            if !intelligence.liftInsights.isEmpty {
+                DashboardSection(title: "Lift-Specific Insights") {
+                    LiftProgressInsightsCard(insights: intelligence.liftInsights)
+                }
+            }
+
+            DashboardSection(title: "Signal Breakdown") {
+                LazyVStack(spacing: 12) {
+                    ForEach(intelligence.readiness.factors) { factor in
+                        ReadinessFactorCard(factor: factor)
+                    }
+                }
+            }
+
+            DashboardSection(title: "Suggested Workout Adjustment") {
+                FitnessCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("User controlled", systemImage: "hand.raised.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(appTheme.colors.textTertiary)
+                            .textCase(.uppercase)
+
+                        Text(intelligence.readiness.workoutAdjustment)
+                            .font(.headline)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text(intelligence.readiness.recoveryNote)
+                            .font(.subheadline)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
             FitnessCard(style: .hero) {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .top) {
@@ -129,16 +458,16 @@ struct CoachContentView: View {
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(appTheme.mutedText)
                                 .textCase(.uppercase)
-                            Text(weeklyReview.nextDecision.title)
+                            Text(weeklyReview?.nextDecision.title ?? "Preparing recommendation")
                                 .font(.title2.bold())
                         }
                         Spacer()
-                        CoachBadgeView(state: badgeState(for: weeklyReview.nextDecision.action))
+                        CoachBadgeView(state: badgeState(for: weeklyReview?.nextDecision.action ?? .buildBaseline))
                     }
 
-                    Text("Next: \(weeklyReview.nextDecision.recommendedSplitName ?? "Any split") - \(weeklyReview.nextDecision.recommendedMode.displayName)")
+                    Text("Next: \(weeklyReview?.nextDecision.recommendedSplitName ?? summary.recommendedSplitName ?? "Any split") - \((weeklyReview?.nextDecision.recommendedMode ?? .full).displayName)")
                         .font(.subheadline.weight(.semibold))
-                    Text(weeklyReview.nextDecision.reason)
+                    Text(weeklyReview?.nextDecision.reason ?? "Peakline is preparing your current weekly training decision.")
                         .font(.subheadline)
                         .foregroundStyle(appTheme.mutedText)
                 }
@@ -251,6 +580,7 @@ struct CoachContentView: View {
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(SecondaryFitnessButtonStyle())
+                        .accessibilityIdentifier("coach-weekly-review-open")
 
                         HStack(spacing: 10) {
                             MetricTile(
@@ -269,7 +599,7 @@ struct CoachContentView: View {
                         }
 
                         HStack(spacing: 10) {
-                            MetricTile(label: "PRs", value: "\(weeklyReview.prCount)", caption: "This week", systemImage: "trophy")
+                            MetricTile(label: "PRs", value: "\(weeklyReview?.prCount ?? 0)", caption: "This week", systemImage: "trophy")
                             MetricTile(label: "Balance", value: splitBalanceText, caption: nil, systemImage: "scale.3d")
                         }
 
@@ -289,7 +619,7 @@ struct CoachContentView: View {
             }
 
             insightList(title: "Progress Opportunities", insights: progressOpportunityInsights, empty: "No obvious load jumps yet. Repeat targets and build clean reps.")
-            insightList(title: "Watchlist", insights: weeklyReview.watchlist, empty: "No major fatigue or plateau warnings right now.")
+            insightList(title: "Watchlist", insights: weeklyReview?.watchlist ?? [], empty: "No major fatigue or plateau warnings right now.")
 
             DashboardSection(title: "Recent PRs") {
                 if recentPRs.isEmpty {
@@ -316,49 +646,156 @@ struct CoachContentView: View {
                     }
                 }
             }
+
+            #if DEBUG
+            if coachPreferencesSnapshot.showDiagnostics {
+                DashboardSection(title: "Diagnostics") {
+                    CoachDiagnosticsCard(diagnostics: intelligence.diagnostics)
+                }
+            }
+            #endif
         }
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
+        .accessibilityIdentifier("coach-screen")
+        .navigationDestination(item: $route) { route in
+            switch route {
+            case .actionHistory:
+                CoachActionHistoryDetailView(
+                    entries: coachActionHistory,
+                    feedback: recommendationFeedback
+                )
+            }
+        }
         .onAppear {
             sleepSettings = sleepSettingsStore.load()
             refreshSleepAnalytics(force: true)
+            refreshCoachSnapshot(force: true)
+            refreshCoachDerivedMetrics(force: true)
+            refreshWeeklyReview(force: true)
         }
-        .onChange(of: currentSleepAnalyticsSignature) { _, _ in
-            refreshSleepAnalytics()
+        .onDisappear {
+            sleepAnalyticsTask?.cancel()
+            coachSnapshotTask?.cancel()
+            coachDerivedTask?.cancel()
+            weeklyReviewTask?.cancel()
+        }
+        .sheet(isPresented: $showingCoachCheckIn) {
+            DailyCheckInSheet(existingCheckIn: coachSnapshot.readiness.checkIn)
         }
     }
 
     private func refreshSleepAnalytics(force: Bool = false) {
-        let signature = currentSleepAnalyticsSignature
-        guard force || signature != lastSleepAnalyticsSignature else { return }
+        sleepAnalyticsTask?.cancel()
+        sleepAnalyticsTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
 
-        sleepSnapshot = sleepAnalyticsStore.snapshot(
-            sessions: sleepSessions,
-            naps: napSessions,
-            workouts: recentCompletedSessions,
-            settings: sleepSettings,
-            workoutLimit: 20,
-            force: force
-        )
-        lastSleepAnalyticsSignature = signature
+            let signature = currentSleepAnalyticsSignature
+            guard force || signature != lastSleepAnalyticsSignature else { return }
+
+            sleepSnapshot = sleepAnalyticsStore.snapshot(
+                sessions: sleepSessions,
+                naps: napSessions,
+                workouts: recentCompletedSessions,
+                settings: sleepSettings,
+                workoutLimit: 20,
+                force: force
+            )
+            lastSleepAnalyticsSignature = signature
+        }
     }
 
-    private var progressOpportunityInsights: [CoachInsight] {
-        targetSuggestions
-            .filter { $0.recommendationType == .increaseLoad || $0.recommendationType == .addReps }
-            .prefix(4)
-            .map { suggestion in
-                CoachInsight(
-                    title: suggestion.exerciseName,
-                    message: suggestion.reason,
-                    severity: .positive,
-                    relatedExerciseName: suggestion.exerciseName,
-                    relatedSplitName: recommendedSplit?.name
+    private func refreshCoachSnapshot(force: Bool = false) {
+        coachSnapshotTask?.cancel()
+        coachSnapshotTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+
+            let signature = currentCoachSnapshotSignature
+            guard force || signature != lastCoachSnapshotSignature else { return }
+
+            coachSnapshot = makeCoachSnapshot()
+            lastCoachSnapshotSignature = signature
+        }
+    }
+
+    private func refreshWeeklyReview(force: Bool = false) {
+        weeklyReviewTask?.cancel()
+        weeklyReviewTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+
+            let signature = currentWeeklyReviewSignature
+            guard force || signature != lastWeeklyReviewSignature else { return }
+
+            let splitSnapshots = activeSplits.map(TrainingSplitSnapshot.init)
+            let sessionSnapshots = recentCompletedSessions.map(WorkoutAnalyticsSession.init)
+            let result = await Task.detached(priority: .userInitiated) {
+                WeeklyReviewBuilder().build(activeSplits: splitSnapshots, completedSessions: sessionSnapshots)
+            }.value
+
+            guard !Task.isCancelled else { return }
+            weeklyReview = result
+            lastWeeklyReviewSignature = signature
+        }
+    }
+
+    private func refreshCoachDerivedMetrics(force: Bool = false) {
+        coachDerivedTask?.cancel()
+        coachDerivedTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+
+            let signature = currentCoachDerivedSignature
+            guard force || signature != lastCoachDerivedSignature else { return }
+
+            let splitSnapshots = activeSplits.map(TrainingSplitSnapshot.init)
+            let sessionSnapshots = recentCompletedSessions.map(WorkoutAnalyticsSession.init)
+            let result = await Task.detached(priority: .userInitiated) {
+                CoachDerivedMetrics.make(
+                    activeSplits: splitSnapshots,
+                    completedSessions: sessionSnapshots
                 )
-            }
+            }.value
+
+            guard !Task.isCancelled else { return }
+            summary = result.summary
+            recentPRs = result.recentPRs
+            targetSuggestions = result.targetSuggestions
+            weeklyWorkoutCount = result.weeklyWorkoutCount
+            weeklyWorkingSetCount = result.weeklyWorkingSetCount
+            progressOpportunityInsights = result.progressOpportunityInsights
+            lastCoachDerivedSignature = signature
+        }
+    }
+
+    private func signature<Value>(_ values: [Value], limit: Int, transform: (Value) -> String) -> String {
+        values.prefix(limit).map(transform).joined(separator: ",")
+    }
+
+    private var sortedDeloadBlocks: [SavedCoachDeloadBlock] {
+        savedDeloadBlocks.sorted { lhs, rhs in
+            if lhs.state == .active, rhs.state != .active { return true }
+            if lhs.state != .active, rhs.state == .active { return false }
+            return lhs.updatedAt > rhs.updatedAt
+        }
+    }
+
+    private func completeDeloadBlock(_ block: SavedCoachDeloadBlock) {
+        deloadBlockService.complete(block)
+        try? modelContext.save()
+    }
+
+    private func cancelDeloadBlock(_ block: SavedCoachDeloadBlock) {
+        deloadBlockService.cancel(block)
+        try? modelContext.save()
     }
 
     private var splitBalanceText: String {
-        let split = weeklyReview.splitConsistency
+        guard let split = weeklyReview?.splitConsistency else {
+            return "--"
+        }
         return "\(split.pushCount)/\(split.pullCount)/\(split.legsCount)"
     }
 
@@ -454,4 +891,100 @@ struct CoachContentView: View {
             return .fatigueRisk
         }
     }
+}
+
+private struct CoachDerivedMetrics: Sendable {
+    let summary: CoachRecommendationSummary
+    let recentPRs: [PRRecord]
+    let targetSuggestions: [TargetSuggestion]
+    let weeklyWorkoutCount: Int
+    let weeklyWorkingSetCount: Int
+    let progressOpportunityInsights: [CoachInsight]
+
+    static func make(
+        activeSplits: [TrainingSplitSnapshot],
+        completedSessions: [WorkoutAnalyticsSession]
+    ) -> CoachDerivedMetrics {
+        let summary = CoachRecommendationEngine().makeSummary(
+            activeSplits: activeSplits,
+            completedSessions: completedSessions
+        )
+        let prRecords = TrainingAnalyticsService().prTimeline(from: completedSessions)
+        let targetSuggestions = makeTargetSuggestions(
+            summary: summary,
+            activeSplits: activeSplits,
+            completedSessions: completedSessions
+        )
+        let week = Calendar.current.dateInterval(of: .weekOfYear, for: .now) ?? DateInterval(start: .now, duration: 7 * 24 * 60 * 60)
+        let weekSessions = completedSessions.filter {
+            $0.completed && $0.date >= week.start && $0.date < week.end
+        }
+        let workingSets = weekSessions.reduce(0) { total, session in
+            total + session.exerciseLogs.flatMap { log in
+                log.setLogs.filter { $0.completed && !$0.isWarmup }
+            }.count
+        }
+        let progressInsights = targetSuggestions
+            .filter { $0.recommendationType == .increaseLoad || $0.recommendationType == .addReps }
+            .prefix(4)
+            .map { suggestion in
+                CoachInsight(
+                    title: suggestion.exerciseName,
+                    message: suggestion.reason,
+                    severity: .positive,
+                    relatedExerciseName: suggestion.exerciseName,
+                    relatedSplitName: summary.recommendedSplitName
+                )
+            }
+
+        return CoachDerivedMetrics(
+            summary: summary,
+            recentPRs: Array(prRecords.prefix(3)),
+            targetSuggestions: targetSuggestions,
+            weeklyWorkoutCount: weekSessions.count,
+            weeklyWorkingSetCount: workingSets,
+            progressOpportunityInsights: progressInsights
+        )
+    }
+
+    private static func makeTargetSuggestions(
+        summary: CoachRecommendationSummary,
+        activeSplits: [TrainingSplitSnapshot],
+        completedSessions: [WorkoutAnalyticsSession]
+    ) -> [TargetSuggestion] {
+        guard let recommendedSplit = activeSplits.first(where: { $0.name == summary.recommendedSplitName }) else {
+            return []
+        }
+
+        return recommendedSplit.exercises
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .prefix(4)
+            .map { exercise in
+                TargetSuggestionService().suggestion(
+                    exerciseId: exercise.exerciseId,
+                    exerciseName: exercise.exerciseNameSnapshot,
+                    minReps: exercise.minReps,
+                    maxReps: exercise.maxReps,
+                    completedSessions: completedSessions
+                )
+            }
+    }
+}
+
+private extension CoachRecommendationSummary {
+    static var placeholder: CoachRecommendationSummary {
+        CoachRecommendationSummary(
+            recommendedSplitName: nil,
+            reason: "Preparing recommendation.",
+            exerciseRecommendations: [],
+            recoveryWarnings: [],
+            weeklyInsights: []
+        )
+    }
+}
+
+private enum CoachRoute: Hashable, Identifiable {
+    case actionHistory
+
+    var id: Self { self }
 }
