@@ -1,232 +1,113 @@
-# GymTracker UI Style Guide
+# UI Style Guide
 
-## Purpose
+## Direction
 
-This file defines the visual direction for the GymTracker redesign. The goal is to create an interface that feels inspired by Apple's Fitness and Workout apps in broad design principles: dark, clean, card-based, high-contrast, metric-led, and motivating.
+Peakline should feel dark-first, metric-led, compact, and motivating. It can be inspired by the broad feel of Apple Fitness and Workout apps, but it must not copy Apple's exact Activity Rings, screen layouts, icons, colors, or branded identity.
 
-Do not copy Apple's exact Activity Rings, Fitness screens, icons, or branded visual identity. GymTracker needs its own lifting-focused design language.
+The active design language is a lifting-focused system: clear cards, strong metrics, restrained glass, exact exercise imagery where available, and fast controls that work in the gym.
 
-## Design Principles
+## Principles
 
-1. **Dark-first**
-   - Workout and Coach screens should feel best in dark mode.
-   - Light mode can exist, but the product identity should be strongest in dark mode.
+- Dark-first: dark mode should feel like the primary product identity.
+- Metrics first: lead with the number, target, split, duration, or action.
+- Fast gym use: large tap targets, short copy, minimal forms, no friction-heavy pre-workout questions.
+- Explainable coaching: every recommendation needs a short reason.
+- Original visual identity: use platform conventions, not copied Apple assets or layouts.
+- Consistency over decoration: shared cards, chips, buttons, motion, and theme tokens should carry the interface.
 
-2. **Metrics first**
-   - Show the important number clearly: target weight, reps, duration, sets, PR, or split.
-   - Use supporting text only after the key metric is visible.
+## Theme Tokens
 
-3. **Cards over tables**
-   - Use rounded cards for dashboard sections.
-   - Avoid dense spreadsheet-like layouts except in history detail or set editing.
+Use semantic theme values from `AppTheme` rather than hardcoded colors.
 
-4. **Fast gym use**
-   - Buttons must be large enough to tap during a workout.
-   - Avoid forms during active sessions.
-   - Prefer steppers, chips, and one-tap actions.
+Important token groups:
 
-5. **Explainable coaching**
-   - Every suggestion should include a short reason.
-   - No mysterious score without explanation.
+- Backgrounds: primary screen, secondary surface, card surface.
+- Borders: subtle card and divider strokes.
+- Text: primary, secondary, muted.
+- Accent: selected theme color.
+- States: success, warning, danger.
+- Materials: glass and elevated surfaces where appropriate.
 
-6. **Original, not a clone**
-   - Use Apple's platform conventions, not Apple's exact branding.
-   - GymTracker can use circular progress visuals, but they should not be exact Activity Rings.
+Destructive actions must stay system red or semantic danger. Do not tint delete actions with the selected accent.
 
-## Colour Direction
+## Cards, Buttons, And Chips
 
-### Core Palette
+- Use `FitnessCard` for primary dashboard cards, compact rows, and repeated content.
+- Use shared metrics from `appTheme.metrics` for radius, spacing, icon size, button height, and chip padding.
+- Avoid stacking cards inside cards.
+- Use `DashboardSection` for repeated screen sections.
+- Use filled primary buttons for the main action on a screen.
+- Use chips for mode/filter/selection states.
+- Use native or shared swipe-reveal patterns for delete actions.
 
-Use semantic colours rather than hardcoding everywhere.
+Delete behavior:
 
-Suggested semantic tokens:
-
-```swift
-AppColors.backgroundPrimary
-AppColors.backgroundSecondary
-AppColors.cardBackground
-AppColors.cardBorder
-AppColors.primaryAccent
-AppColors.secondaryAccent
-AppColors.success
-AppColors.warning
-AppColors.danger
-AppColors.mutedText
-```
-
-### Default Theme
-
-Keep Workout Green as the primary identity colour:
-
-```text
-Workout Green: #7CFC00
-```
-
-Suggested supporting colours:
-
-```text
-Background: near-black / system black
-Card: dark gray with subtle contrast
-Text primary: white
-Text secondary: gray
-Warning: orange/yellow
-Danger: system red
-Progress opportunity: green
-Plateau/fatigue: orange
-```
-
-### Avoid
-
-- Do not use the exact Activity Ring colour system as the core brand.
-- Do not make every card bright green.
-- Do not use theme accent for destructive actions. Delete should remain system red.
+- Do not show permanent red trash controls on normal dashboard rows.
+- Prefer native trailing swipe actions for `List` rows.
+- For card rows in `ScrollView`, slide the row left and reveal a red circular delete action.
+- Use confirmation dialogs for costly deletes such as workouts, sleep sessions, split templates, or saved foods.
 
 ## Typography
 
-Use system fonts and dynamic type.
+Use system fonts and Dynamic Type where practical.
 
-Suggested hierarchy:
+- Screen title: bold title or shared screen header.
+- Hero metric: large rounded bold type where space allows.
+- Card title: headline or title3 bold.
+- Body details: subheadline.
+- Reasons, labels, and helper text: footnote or caption.
 
-- Large dashboard number: `.system(size: 44, weight: .bold, design: .rounded)` if appropriate.
-- Card title: `.headline` or `.title3.bold()`.
-- Main metric: `.title.bold()`.
-- Detail text: `.subheadline`.
-- Explanatory reason: `.footnote` or `.caption`.
+Text should remain readable in light and dark mode and should not rely on color alone for meaning.
 
-## Layout Patterns
+## Motion
 
-### Dashboard Card
+Motion should feel smooth and useful, never flashy.
 
-Use for Today, Coach, Progress summary, and Session Summary.
+- Use shared `AppMotion` timings for card transitions, popup entry/exit, swipe reveal snap, and lightweight feedback.
+- Completion and celebration moments can have more personality, but they must not delay dismissal or logging.
+- Live workout controls should avoid heavy animation.
+- Avoid springy repeated scale effects that make selection feel noisy.
 
-Contents:
+## Feature Patterns
 
-- Small label.
-- Large metric.
-- Short explanation.
-- Optional CTA.
-
-Implementation rules:
-
-- Use `FitnessCard(style: .standard)` for normal dashboard content.
-- Use `FitnessCard(style: .compact)` for rows, utility tiles, dense lists, and repeated cards.
-- Use `FitnessCard(style: .hero)` only for the primary recommendation or identity card on a screen.
-- Pull spacing, card radius, icon size, button height, and chip padding from `appTheme.metrics`.
-- Use the shared `DashboardSection` for screen sections instead of private one-off wrappers.
-
-### Coach Card
-
-Use for coaching recommendations.
-
-Contents:
-
-- Icon.
-- Recommendation title.
-- Suggested action.
-- Reason.
-- Confidence/status badge.
-
-### Split Card
-
-Use for Push/Pull/Legs.
-
-Contents:
-
-- Split name.
-- Last trained date.
-- Estimated duration.
-- Exercise count.
-- Coach badge.
-- Start button.
-
-### Exercise Target Row
-
-Use in workout preview and split detail.
-
-Contents:
-
-- Exercise name.
-- Last best set.
-- Suggested target.
-- Badge: increase/repeat/reduce/plateau.
-
-### Live Workout Header
-
-Persistent top section during workout:
-
-- Active timer.
-- Pause/resume.
-- Current exercise index.
-- Finish button.
-
-## Interaction Patterns
-
-### Delete and Destructive Actions
-
-- Do not show permanent red bin/trash controls on normal dashboard cards or rows.
-- Prefer native trailing swipe actions for `List` rows.
-- For card rows inside `ScrollView`, use a custom left-swipe reveal: the row slides left, a red circular trash button appears, and the item is deleted only when the user taps that bin.
-- Keep destructive color scoped to the revealed action, overflow menu item, or confirmation dialog.
-- Use confirmation dialogs for costly deletes such as workouts, sleep sessions, or split templates.
-
-### Hydration Logs
-
-- Water entries in Today's Logs use the card-row swipe reveal pattern.
-- Swiping left reveals a red bin so users can remove accidental water logs without cluttering the default hydration history.
-- The visible row should stay neutral: amount, context, and time only.
-- Use the shared swipe reveal metrics from `appTheme.metrics`: a 96pt reveal lane, 56pt circular delete action, and 14pt trailing action inset.
-- During the drag, move the row directly with no implicit animation or scaling; only animate the final open/closed snap with `AppMotion.swipeRevealSnap`.
-
-## Progress Visuals
-
-Create original lifting-focused progress visuals:
-
-- Weekly training arc.
-- Split coverage arc.
-- Progress opportunity arc.
-
-Do not label them as Activity Rings. Do not copy the exact Move/Exercise/Stand model.
-
-Suggested GymTracker arcs:
-
-- **Train**: completed workouts this week.
-- **Progress**: exercises with a clear target improvement.
-- **Balance**: Push/Pull/Legs coverage.
-
-## Animation and Motion
-
-Use subtle motion:
-
-- Card fade/slide on appear.
-- Smooth number changes when target updates.
-- Lightweight completion celebration after finishing.
-
-Avoid:
-
-- Heavy animations in the live logger.
-- Anything that delays set entry.
+- Today: quick status, next action, and compact recovery/nutrition/sleep context.
+- Workout Preview: split, mode, exercise order, last best, target, remove/reorder, and start.
+- Live Logger: timer, current exercise, set controls, rest timer, quick complete, finish.
+- Session Summary: completed work, duration, rating, improvements, next suggestion.
+- Splits: training-day cards, last trained state, target rows, progression badges.
+- Coach: recommendation, action, reason, confidence/status; avoid walls of analytics.
+- Nutrition/Sleep/Hydration: reviewable local data, compact summaries, and clear permission/unavailable states.
 
 ## Accessibility
 
-- Support Dynamic Type where practical.
 - Keep contrast high in dark mode.
-- Avoid using colour alone to communicate fatigue/progress.
-- Add text labels for badges and icons.
-- Large tap targets for workout controls.
+- Support Dynamic Type where practical.
+- Use labels for icon-only controls.
+- Do not communicate fatigue, danger, success, or progress by color alone.
+- Keep workout controls large enough for tired hands during a session.
+- Smoke test smaller iPhone layouts for clipped rows or crowded controls.
 
-## Codex Implementation Notes
+## Implementation Notes
 
-Create reusable components before redesigning every screen:
+Prefer shared primitives in `GymTracker/Views/Shared/`:
 
 ```text
-Views/Shared/
-  FitnessCard.swift
-  MetricTile.swift
-  CoachBadgeView.swift
-  ProgressArcView.swift
-  SplitCardView.swift
-  ExerciseTargetRow.swift
-  LiveWorkoutHeader.swift
+AppTheme.swift
+AppMotion.swift
+FitnessCard.swift
+FitnessScreenHeader.swift
+MetricTile.swift
+MetricPill.swift
+CoachBadgeView.swift
+ExerciseTargetRow.swift
+ExerciseIconView.swift
+ExerciseIconTile.swift
+GlassCard.swift
+GlassIconBadge.swift
+ProgressArcView.swift
+SplitCardView.swift
+StepperValueControl.swift
+WorkoutModePicker.swift
 ```
 
-Initial implementation should focus on reusable components and applying them to Today, Coach, Workout Preview, and Session Summary. Do not redesign every screen in one Codex pass.
+If a feature needs a new visual pattern, first check whether it can be expressed as a small extension of an existing shared component.

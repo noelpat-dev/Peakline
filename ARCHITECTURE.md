@@ -2,27 +2,27 @@
 
 ## Overview
 
-Peakline is a SwiftUI and SwiftData iOS lifting tracker built around a personal Push/Pull/Legs workflow, progressive overload, workout history, progress charts, and local rule-based coaching.
+Peakline is a SwiftUI and SwiftData iOS app built around local workout logging, Push/Pull/Legs planning, deterministic coaching, progress history, sleep/recovery context, hydration, nutrition, and optional HealthKit bridges.
 
-The current architectural direction is:
+Core rule:
 
-- Keep workout start and set logging fast.
-- Keep Coach, Workout Preview, and Splits aligned through shared services.
-- Keep recommendations deterministic, explainable, and local.
-- Keep visual polish in reusable SwiftUI components.
-- Keep iCloud and external integrations out until local behavior is stable.
+```text
+Views present state and collect input.
+Services own business rules, calculations, imports, exports, and coaching.
+Models persist local source-of-truth data with SwiftData.
+Shared views and theme tokens keep the UI consistent.
+```
 
-## Technical Stack
+## Stack
 
-- Platform: iOS.
+- Platform: iOS 17+.
 - UI: SwiftUI.
 - Persistence: SwiftData.
 - Charts: Swift Charts.
-- Architecture style: feature-folder SwiftUI views, shared SwiftData models, and small business-logic services.
-- Coaching strategy: deterministic rules, no AI APIs.
-- Data strategy: local-first.
+- Coaching: deterministic local rules, no AI APIs.
+- Data posture: local-first, reviewable imports, graceful external-service failure.
 
-## App Entry
+## App Entry And Navigation
 
 ```text
 GymTracker/App/
@@ -30,9 +30,7 @@ GymTracker/App/
   RootTabView.swift
 ```
 
-`GymTrackerApp` creates the SwiftData `ModelContainer` and wraps the app in `AppThemeProvider`.
-
-`RootTabView` owns the main tabs:
+`GymTrackerApp` creates the SwiftData model container and installs the app theme provider. `RootTabView` owns the primary tabs:
 
 - Today.
 - Workout.
@@ -40,221 +38,111 @@ GymTracker/App/
 - History.
 - Settings.
 
-Progress and Coach are reachable from Today and Settings instead of being primary tabs.
+Coach, Progress, Nutrition, Sleep, Hydration, HealthKit settings, Backup/Export, Plate Calculator, Exercise Library, and templates are reached from those primary areas.
 
-## Core Rule
-
-Views should present state and collect input. They should not own progression or coaching decisions.
-
-```text
-Views = presentation and interaction
-Services = coaching, targeting, filtering, summaries, calculations
-Models = SwiftData persistence
-Shared Views = reusable UI primitives
-```
-
-## Models
+## Model Groups
 
 ```text
 GymTracker/Models/
-  BodyweightLog.swift
-  Enums.swift
-  Exercise.swift
-  ExerciseLog.swift
-  Recommendation.swift
-  SetLog.swift
-  TrainingSplit.swift
-  UserProfile.swift
-  WorkoutSession.swift
 ```
 
-Core relationships:
+- Workout core: `WorkoutSession`, `ExerciseLog`, `SetLog`, `Exercise`, `TrainingSplit`, `UserProfile`, `BodyweightLog`, shared enums.
+- Coach and readiness: recommendation models, coach workout adjustment models, readiness models.
+- Nutrition: food log/item models, import drafts, OCR/parse/comparison/insight models.
+- Sleep and recovery: sleep, nap, recovery, and coaching-support models.
+- HealthKit bridge: local models used to track sync state and review requirements.
 
-- `TrainingSplit` has many `SplitExercise` template rows.
-- `Exercise` stores reusable exercise-library records.
-- `WorkoutSession` has many `ExerciseLog` rows.
-- `ExerciseLog` snapshots exercise name, targets, order, and set logs for one workout.
-- `SetLog` stores weight, reps, RPE, completion, and set number.
+Guardrails:
 
-Important workout fields:
+- Treat saved local data and user-confirmed snapshots as source of truth.
+- Prefer optional/defaulted stored properties for migrations.
+- Do not pass live SwiftData models across `await`; build value snapshots first.
+- Preserve historical workout display even when exercises, splits, or templates change later.
 
-- `startedAt` and `endedAt` store actual clock timestamps.
-- History grouping uses the session start date, not finish date.
-- `pausedAt` and `accumulatedPausedSeconds` support the live timer.
-- `durationSeconds` stores exact active workout duration after finishing.
-- `perceivedDifficulty` stores the post-workout rating.
-
-## Services
+## Service Groups
 
 ```text
 GymTracker/Services/
-  CoachRecommendationEngine.swift
-  ExerciseIconMapper.swift
-  ExerciseSubstitutionService.swift
-  HistoryFilterService.swift
-  PlateCalculator.swift
-  RestTimerManager.swift
-  SeedDataService.swift
-  SessionSummaryBuilder.swift
-  TargetSuggestionService.swift
-  WorkoutModePlanner.swift
-  WorkoutSessionDateService.swift
 ```
 
-### SeedDataService
+- Workout planning and logging: `WorkoutModePlanner`, `WorkoutTemplateBuilder`, `WorkoutTemplateStore`, `WorkoutReuseBuilder`, `WorkoutSessionDateService`, `WorkoutSessionReopenService`, `SkippedExerciseReasonService`, `RestTimerManager`, `PlateCalculator`.
+- Coaching and analytics: `CoachRecommendationEngine`, `CoachIntelligenceService`, `CoachWorkoutAdjustmentService`, `WeeklyReviewBuilder`, `TargetSuggestionService`, `TrainingAnalyticsService`, `SessionSummaryBuilder`.
+- History and exports: `HistoryFilterService`, `LocalBackupExportService`, `WorkoutCSVExporter`, export models.
+- Exercise helpers: `ExerciseIconMapper`, `ExerciseSubstitutionService`, note templates.
+- Nutrition: calculator, barcode lookup, Open Food Facts, OCR, parser, comparison, insights, and data-integrity services.
+- Sleep and HealthKit: sleep scoring/recovery services plus HealthKit bridge services.
+- Seed data: `SeedDataService` owns default exercise, split, and UI-test fixture setup.
 
-Seeds the personal exercise library and Push/Pull/Legs split templates.
+Service guardrails:
 
-### CoachRecommendationEngine
+- Keep recommendation reasons short and explainable.
+- Keep external sources optional and non-destructive.
+- Keep parser/OCR/barcode results editable before save.
+- Keep expensive derived summaries out of hot SwiftUI `body` paths where possible.
 
-Owns deterministic coaching logic:
-
-- Next split recommendation.
-- PPL rotation explanations.
-- Weekly summary insights.
-- Recovery and fatigue warnings.
-- Missed split warnings.
-
-### TargetSuggestionService
-
-Returns reusable progression targets for Coach, Workout Preview, and Split rows:
-
-- Last best set.
-- Suggested weight and reps.
-- Recommendation type.
-- Short reason.
-- Confidence.
-
-### WorkoutModePlanner
-
-Applies Full, Quick, Recovery, and Heavy mode adjustments:
-
-- Exercise inclusion.
-- Set counts.
-- Duration estimate.
-- Target messaging.
-
-### SessionSummaryBuilder
-
-Builds post-workout summary data:
-
-- Duration.
-- Completed exercises.
-- Working sets.
-- Rating.
-- Coach-style takeaway.
-- Suggested next split.
-
-### HistoryFilterService
-
-Filters sessions by split, exercise, rating, and date range.
-
-### ExerciseIconMapper
-
-Maps exercise names and muscle groups to `ExerciseIconKey`. Exact icon matches should be placed before broad generic fallbacks.
-
-## Views
+## View Groups
 
 ```text
 GymTracker/Views/
-  Coach/
-  History/
-  Progress/
-  Settings/
-  Shared/
-  Splits/
-  Today/
-  Workout/
 ```
 
-Key Workout views:
+- `Today/`: dashboard and quick actions.
+- `Workout/`: start flow, preview, logger, rest timer, substitution, skipped reason, templates, completion, and session summary.
+- `Splits/`: Push/Pull/Legs programme cards, exercise rows, status badges, and split editing.
+- `History/`: calendar, filters, workout detail, and editing.
+- `Progress/`: exercise progress, PR timeline, charts, and summaries.
+- `Coach/`: coach dashboard and weekly review.
+- `Nutrition/`: dashboard, add-food flow, barcode/OCR import, comparison, insights, and review UI.
+- `Sleep/`: sleep, naps, recovery, and related coaching surfaces.
+- `Settings/`: profile, themes, library, HealthKit, backup/export, progress, coach, and utilities.
+- `Shared/`: theme, motion, cards, buttons, metrics, icons, rows, chips, headers, and reusable controls.
 
-- `WorkoutPreviewView`.
-- `WorkoutPreviewExerciseCard`.
-- `WorkoutLoggerView`.
-- `LiveWorkoutHeader`.
-- `RestTimerView`.
-- `PlateCalculatorView`.
-- `WorkoutCelebrationOverlay`.
-- `SessionSummaryView`.
+View guardrails:
 
-Key Shared components:
+- Prefer shared components over local one-off card styling.
+- Keep live workout logging dense and direct.
+- Keep destructive actions red and scoped.
+- Use stable IDs for navigation to saved/imported data rather than live model objects.
 
-- `AppTheme`.
-- `FitnessCard`.
-- `FitnessScreenHeader`.
-- `MetricTile`.
-- `MetricPill`.
-- `CoachBadgeView`.
-- `ExerciseTargetRow`.
-- `ExerciseIconKey`.
-- `ExerciseIconView`.
-- `ExerciseIconTile`.
-- `GlassCard`.
-- `GlassIconBadge`.
-- `ProgressArcView`.
-- `SplitCardView`.
-- `StepperValueControl`.
-- `WorkoutModePicker`.
+## Testing Setup
 
-## Exercise Icon Pipeline
+```text
+GymTrackerTests/
+GymTrackerUITests/
+```
 
-Source PNGs are intentionally kept outside the asset catalog:
+Current coverage includes coach intelligence, workout reliability, sleep recovery reliability, nutrition/export reliability, coach workout preview UI, nutrition scanner navigation UI, and workout logging UI.
+
+Useful UI-test launch arguments include in-memory storage and seeded fixtures handled by the app and `SeedDataService`.
+
+## Icon Pipeline
+
+Source PNGs live outside the asset catalog:
 
 ```text
 GymTracker/IconSource/ExerciseIcons/
 ```
 
-The generated assets live here:
+Generated assets live here:
 
 ```text
 GymTracker/Assets.xcassets/ExerciseIcons/
 ```
 
-When a source PNG is added or replaced:
+When adding or replacing an exact exercise icon:
 
-1. Add the filename to `ICON_MAP` in `Scripts/prepare_exercise_icons.py`.
-2. Ensure `ExerciseIconKey` has the expected asset case.
-3. Add or update matching rules in `ExerciseIconMapper`.
-4. Run:
+1. Add the source filename to `ICON_MAP` in `Scripts/prepare_exercise_icons.py`.
+2. Confirm the asset case in `ExerciseIconKey`.
+3. Add exact-name mapping rules in `ExerciseIconMapper` before broad fallbacks.
+4. Run `python3 Scripts/prepare_exercise_icons.py`.
+5. Build and visually verify the exercise rows that should use the asset.
 
-```bash
-python3 Scripts/prepare_exercise_icons.py
-```
+## Future Change Guardrails
 
-5. Build the app and verify the icon appears in the relevant exercise rows.
-
-Current exact mappings include Abdominal Crunch and Cable Lateral Raise.
-
-## Theme System
-
-```text
-GymTracker/Views/Shared/AppTheme.swift
-```
-
-The theme system provides:
-
-- Accent colour selection.
-- System, Light, and Dark appearance.
-- Semantic surface, border, text, success, warning, and danger colours.
-- App-wide tint application.
-
-Destructive actions should use standard destructive styling instead of the active accent.
-
-## Persistence
-
-The app currently uses local SwiftData only. iCloud/CloudKit is not enabled because it requires signing, capabilities, and an iCloud container.
-
-Before adding stored model fields, test migration behavior in the simulator.
-
-## Current Design Constraints
-
-- Keep workout start fast.
-- Avoid readiness forms and friction-heavy pre-workout questions.
-- Keep Push/Pull/Legs as the core structure.
-- Use kg by default.
-- Keep set logging dense and direct.
-- Keep chart rendering lazy.
-- Keep coaching deterministic and explainable.
-- Use exact PNG exercise icons when available.
-- Do not copy Apple's exact Fitness screens, Activity Rings, icons, or branding.
+- Keep Push/Pull/Legs and fast set logging as the core product path.
+- Do not reintroduce a multi-question readiness form.
+- Keep coaching deterministic, local, and modest in certainty.
+- Keep nutrition, barcode, OCR, HealthKit, and Open Food Facts data reviewable before it affects local truth.
+- Add backup/export or migration tests before risky schema changes.
+- Keep charts lazy-loaded and large history screens performance-aware.
+- Use the archive index for historical context; do not treat archived prompts as current architecture.

@@ -2,77 +2,71 @@
 
 ## Product Direction
 
-Peakline is a personal, local-first lifting coach for Noel's Push/Pull/Legs training. It should remember training history, suggest the next split, show realistic targets, and keep workout logging fast enough to use in the gym.
+Peakline is a personal, local-first lifting coach for Noel's Push/Pull/Legs training. It should make workout decisions easier, keep logging fast, show realistic targets, and explain coaching decisions without becoming a generic social fitness app or AI chatbot.
 
-The app should feel polished and focused: crisp cards, clear metrics, exact exercise imagery where available, and deterministic coaching. It should not become a generic social fitness app, nutrition tracker, or AI chatbot in the first serious version.
+The current product value is the training loop: plan the next workout, log it quickly, review what happened, and use that history to make the next target clearer.
 
 ## Current Features
 
-### Personal Push/Pull/Legs
+### Training Structure
 
-- Push, Pull, and Legs are seeded as training days inside one PPL programme.
-- Today and Coach recommend the next split from completed workout history.
-- Splits show training-day cards, exercise counts, last-trained status, and readiness/progression badges.
-- Abdominal Crunch can be added across split days.
+- Push, Pull, and Legs are seeded as the core programme.
+- Today and Coach recommend the next split from workout history.
+- Splits show training-day cards, exercise counts, last-trained state, readiness/progression badges, and target rows.
+- Exercise library and split editing support the personal programme.
 
 ### Workout Preview And Logging
 
-- Start from Push, Pull, Legs, or an empty workout.
+- Start from Push, Pull, Legs, templates, reuse flows, or an empty workout.
 - Choose Full, Quick, Recovery, or Heavy mode before logging.
-- Preview selected exercises before starting, including duration estimate, target suggestions, and exercise order.
-- Reorder preview exercises by long-press dragging.
-- Remove exercises from the preview with standard destructive styling.
-- Live workout logger includes timer, pause/resume, current exercise focus, set entry, rest timer, and post-workout rating.
-- Workout date is based on when the session started, so late-night workouts are logged on the correct training day.
-- Finished sessions show a glass celebration overlay and a session summary.
+- Preview exercises with duration estimate, last best set, target suggestions, notes, order, removal, and reorder controls.
+- Live logging includes timer, pause/resume, current exercise focus, set entry, quick set controls, rest timer, skipped-exercise reasons, substitutions, and post-workout rating.
+- Finished sessions show a celebration overlay and session summary.
+- Workout dates are based on session start time, so late-night workouts stay on the correct training day.
 
-### Target Suggestions And Coach
+### Coach And Progression
 
-- `TargetSuggestionService` owns reusable progression rules for Workout, Coach, and split rows.
-- Coach recommendations are local and deterministic.
-- Recommendation types include baseline, add reps, repeat, increase load, reduce load, plateau risk, fatigue risk, ready, recent, and progress.
-- Coach explains the next split, exercise targets, weekly summary, and recovery warnings without a multi-question readiness form.
+- `TargetSuggestionService` owns reusable progression targets for Workout, Coach, and Split rows.
+- Coach recommendations are deterministic, local, and explainable.
+- Coach surfaces next split, targets, weekly review, recovery warnings, workout adjustments, deload guidance, feedback, and action history.
+- Recommendation copy should stay modest: use language like "possible plateau" or "fatigue risk" rather than certainty.
 
-### History
+### History And Progress
 
-- Calendar highlights completed gym days.
-- Workouts can be filtered by split, exercise, rating, and date range.
-- Workout detail shows started date/time, duration, rating, completed exercises, and logged sets.
-- Historic workouts can be edited or deleted without entering the live logging flow.
+- History includes calendar context, filters, workout details, editing, deletion, and session metadata.
+- Progress includes latest best sets, estimated 1RM, best-set volume, set history, charts, and PR timeline.
+- Analytics should stay lazy-loaded and readable as history grows.
 
-### Progress
+### Nutrition, Hydration, Sleep, And Health
 
-- Exercise list with latest best set.
-- Exercise detail includes best set, estimated 1RM, best-set volume, set history, and trend charts.
-- Progress charts are reachable from Today and Settings.
+- Nutrition is local-first, with saved foods, food log snapshots, macro summaries, barcode lookup, Open Food Facts import, label OCR, parser review, source comparison, insights, and HealthKit bridge work.
+- Hydration supports quick water logging and daily context.
+- Sleep and recovery include sleep sessions, naps, scoring, recovery labels, and coaching context.
+- HealthKit features must remain optional and gracefully handle unavailable, denied, or revoked permissions.
 
-### Settings And Themes
+### Settings And Utilities
 
-- Settings includes Profile, Training Setup, Themes, Exercise Library, Plate Calculator, Progress, Coach, and local-data information.
-- Theme accent colours include Fitness Green, Purple, Orange, and Blue.
+- Settings includes profile, training setup, themes, exercise library, plate calculator, progress, coach, HealthKit, backup/export, and local-data information.
+- Theme accents include Fitness Green, Purple, Orange, and Blue.
 - Appearance supports System, Light, and Dark.
-- Workout and History screens respect the selected app appearance.
+- Local backup/export and workout CSV export support data portability.
 
 ### Exercise Icons
 
 - Exact PNG source icons live in `GymTracker/IconSource/ExerciseIcons/`.
-- Generated template assets live in `GymTracker/Assets.xcassets/ExerciseIcons/`.
+- Generated assets live in `GymTracker/Assets.xcassets/ExerciseIcons/`.
 - `Scripts/prepare_exercise_icons.py` copies approved source PNGs into the asset catalog.
 - `ExerciseIconMapper` maps exercise names to `ExerciseIconKey`.
-- `ExerciseIconView` and `ExerciseIconTile` render those assets across previews, splits, workout cards, and exercise rows.
-- Abdominal Crunch and Cable Lateral Raise now use their exact PNG assets.
-
-### Data
-
-- SwiftData local persistence.
-- iCloud/CloudKit is not enabled yet because it requires Apple signing, capabilities, and container setup.
+- Exact-name icon mappings should come before broad muscle-group fallbacks.
 
 ## Remaining Practical Expansion
 
-- Continue adding exact PNG coverage for exercises that still fall back to generic icons.
-- Add local backup/export before any risky persistence changes.
-- Add richer analytics only after the core logging and coaching screens feel stable.
-- Consider iCloud, HealthKit, Apple Watch, or AI only after the local-first app is excellent.
+- Continue visual QA across light/dark mode and dense workout flows.
+- Expand exact PNG coverage when source icons already exist.
+- Keep scanner, OCR, and nutrition import paths stable and reviewable.
+- Strengthen backup/export and migration safety before schema changes.
+- Add richer analytics only when the current history and progress surfaces remain fast.
+- Consider iCloud, deeper HealthKit, Apple Watch, or AI only after local-first behavior is excellent.
 
 ## Current Validation
 
