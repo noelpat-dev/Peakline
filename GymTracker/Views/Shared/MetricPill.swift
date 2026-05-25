@@ -9,14 +9,18 @@ struct MetricPill: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.caption)
+                .font(AppTypography.metadata)
                 .foregroundStyle(appTheme.colors.textSecondary)
             Text(value)
-                .font(.headline)
+                .font(AppTypography.compactCardTitle)
                 .foregroundStyle(appTheme.colors.textPrimary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .padding(appTheme.metrics.spacing12)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: appTheme.metrics.radius12, style: .continuous)
+                .stroke(appTheme.colors.cardBorder.opacity(0.45), lineWidth: 1)
+        }
     }
 }

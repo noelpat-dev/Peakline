@@ -11,18 +11,18 @@ struct DashboardHeaderView: View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 5) {
                 Text(dateText)
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppTypography.bodyEmphasis)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .lineLimit(1)
 
                 Text(title)
-                    .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                    .font(AppTypography.screenTitle)
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
 
                 Text(subtitle)
-                    .font(.subheadline)
+                    .font(AppTypography.screenSubtitle)
                     .foregroundStyle(appTheme.colors.textTertiary)
                     .lineLimit(1)
             }
@@ -30,7 +30,7 @@ struct DashboardHeaderView: View {
             Spacer(minLength: 12)
 
             Image(systemName: "person.crop.circle.fill")
-                .font(.system(size: 25, weight: .semibold))
+                .font(AppTypography.rounded(size: 25, weight: .semibold))
                 .foregroundStyle(appTheme.colors.accent)
                 .frame(width: 48, height: 48)
                 .background(appTheme.colors.cardBackgroundElevated, in: Circle())
@@ -78,12 +78,12 @@ struct HeroRecommendationCard: View {
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 9) {
                         Text(eyebrow)
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.metadataEmphasis)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .textCase(.uppercase)
 
                         Text(splitName)
-                            .font(.system(size: 46, weight: .bold, design: .rounded))
+                            .font(AppTypography.heroTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.68)
@@ -101,13 +101,13 @@ struct HeroRecommendationCard: View {
 
                 VStack(alignment: .leading, spacing: 7) {
                     Text(reason)
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
 
                     if let context, !context.isEmpty {
                         Text(context)
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -141,7 +141,10 @@ struct HeroRecommendationCard: View {
     }
 
     private var heroPrimaryButton: some View {
-        Button(action: primaryAction) {
+        Button {
+            AppHaptics.mediumImpact()
+            primaryAction()
+        } label: {
             Label(primaryTitle, systemImage: "play.fill")
                 .frame(maxWidth: .infinity)
         }
@@ -150,7 +153,10 @@ struct HeroRecommendationCard: View {
     }
 
     private var heroSecondaryButton: some View {
-        Button(action: secondaryAction) {
+        Button {
+            AppHaptics.selection()
+            secondaryAction()
+        } label: {
             Label(secondaryTitle, systemImage: "target")
                 .frame(maxWidth: .infinity)
         }
@@ -221,12 +227,14 @@ struct QuickActionTile: View {
     var body: some View {
         let identifier = action.identifier ?? "quick-action-\(action.title.lowercased().replacingOccurrences(of: " ", with: "-"))"
 
-        Button(action: action.action) {
+        Button {
+            action.action()
+        } label: {
             FitnessCard(style: .compact) {
                 VStack(alignment: .leading, spacing: 13) {
                     HStack {
                         Image(systemName: action.systemImage)
-                            .font(.title3.weight(.semibold))
+                            .font(AppTypography.cardTitle)
                             .foregroundStyle(iconColor)
                             .frame(width: appTheme.metrics.rowIconSize, height: appTheme.metrics.rowIconSize)
                             .background(iconBackground, in: Circle())
@@ -240,13 +248,13 @@ struct QuickActionTile: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(action.title)
-                            .font(.headline.weight(.semibold))
+                            .font(AppTypography.compactCardTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .lineLimit(2)
                             .minimumScaleFactor(0.82)
 
                         Text(action.subtitle)
-                            .font(.caption)
+                            .font(AppTypography.metadata)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -316,12 +324,12 @@ struct CoachInsightCard: View {
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text(title)
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.metadataEmphasis)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .textCase(.uppercase)
 
                         Text(recommendation)
-                            .font(.title3.bold())
+                            .font(AppTypography.cardTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -329,7 +337,7 @@ struct CoachInsightCard: View {
                     Spacer(minLength: 8)
 
                     Text(badge)
-                        .font(.caption.weight(.bold))
+                        .font(AppTypography.chip)
                         .foregroundStyle(appTheme.colors.accent)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
@@ -338,11 +346,14 @@ struct CoachInsightCard: View {
                 }
 
                 Text(reason)
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Button(action: action) {
+                Button {
+                    AppHaptics.selection()
+                    action()
+                } label: {
                     Label(buttonTitle, systemImage: "target")
                         .frame(maxWidth: .infinity)
                 }
@@ -365,23 +376,23 @@ struct WeekMetricTile: View {
         FitnessCard(style: .compact) {
             VStack(alignment: .leading, spacing: 8) {
                 Image(systemName: systemImage)
-                    .font(.headline.weight(.semibold))
+                    .font(AppTypography.metadataEmphasis)
                     .foregroundStyle(appTheme.colors.accent)
 
                 Text(value)
-                    .font(.system(.title2, design: .rounded).weight(.bold))
+                    .font(AppTypography.largeMetric)
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label)
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.metadataEmphasis)
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .lineLimit(1)
 
                     Text(caption)
-                        .font(.caption2)
+                        .font(AppTypography.badge)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .lineLimit(2)
                 }
@@ -410,18 +421,18 @@ struct SplitCoverageBarView: View {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(title)
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         Text(subtitle)
-                            .font(.caption)
+                            .font(AppTypography.metadata)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
 
                     Spacer()
 
                     Text("\(completedCount)/\(items.count)")
-                        .font(.headline.weight(.bold))
+                        .font(AppTypography.workoutNumber)
                         .foregroundStyle(appTheme.colors.accent)
                 }
 
@@ -441,7 +452,7 @@ struct SplitCoverageBarView: View {
                 HStack(spacing: 8) {
                     ForEach(items) { item in
                         Text(item.name)
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.metadataEmphasis)
                             .foregroundStyle(item.isComplete ? appTheme.colors.textPrimary : appTheme.colors.textTertiary)
                             .frame(maxWidth: .infinity)
                             .lineLimit(1)
@@ -487,12 +498,12 @@ struct DashboardSection<Content: View>: View {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     if let subtitle, !subtitle.isEmpty {
                         Text(subtitle)
-                            .font(.caption)
+                            .font(AppTypography.metadata)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
                 }
@@ -500,8 +511,13 @@ struct DashboardSection<Content: View>: View {
                 Spacer()
 
                 if let actionTitle, let action {
-                    Button(actionTitle, action: action)
-                        .font(.subheadline.weight(.semibold))
+                    Button {
+                        AppHaptics.selection()
+                        action()
+                    } label: {
+                        Text(actionTitle)
+                    }
+                        .font(AppTypography.bodyEmphasis)
                         .foregroundStyle(appTheme.colors.accent)
                 }
             }
@@ -525,11 +541,11 @@ struct DashboardEmptyStateCard: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title)
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     Text(message)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -547,16 +563,16 @@ private struct DashboardMetadataChip: View {
         HStack(spacing: 6) {
             if let systemImage = chip.systemImage {
                 Image(systemName: systemImage)
-                    .font(.caption2.weight(.bold))
+                    .font(AppTypography.badge)
             }
 
             Text(chip.title)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
                 .lineLimit(1)
         }
         .foregroundStyle(appTheme.colors.textPrimary)
-        .padding(.horizontal, 11)
-        .padding(.vertical, 8)
+        .padding(.horizontal, appTheme.metrics.chipHorizontalPadding)
+        .padding(.vertical, appTheme.metrics.chipVerticalPadding)
         .background(appTheme.colors.cardBackgroundElevated, in: Capsule())
         .overlay {
             Capsule()

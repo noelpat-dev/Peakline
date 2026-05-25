@@ -63,20 +63,20 @@ struct CoachBriefCard: View {
     private var readinessScoreBlock: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text("\(readiness.value)")
-                .font(.system(size: 46, weight: .bold, design: .rounded))
+                .font(AppTypography.heroTitle)
                 .foregroundStyle(scoreColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
 
             Text("/100")
-                .font(.headline.weight(.semibold))
+                .font(AppTypography.bodyEmphasis)
                 .foregroundStyle(appTheme.colors.textTertiary)
         }
     }
 
     private var readinessBadge: some View {
         Label(readiness.category.displayName, systemImage: readinessCategoryImage)
-            .font(.caption.weight(.semibold))
+            .font(AppTypography.chip)
             .foregroundStyle(scoreColor)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -85,7 +85,10 @@ struct CoachBriefCard: View {
     }
 
     private var viewBriefButton: some View {
-        Button(action: viewBrief) {
+        Button {
+            AppHaptics.selection()
+            viewBrief()
+        } label: {
             Label("View brief", systemImage: "doc.text.magnifyingglass")
                 .frame(maxWidth: .infinity)
         }
@@ -95,13 +98,19 @@ struct CoachBriefCard: View {
     @ViewBuilder
     private var checkInButton: some View {
         if readiness.hasCompletedTodayCheckIn {
-            Button(action: checkIn) {
+            Button {
+                AppHaptics.selection()
+                checkIn()
+            } label: {
                 Label("Edit check-in", systemImage: "slider.horizontal.3")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(NeutralFitnessButtonStyle())
         } else {
-            Button(action: checkIn) {
+            Button {
+                AppHaptics.selection()
+                checkIn()
+            } label: {
                 Label("Check in", systemImage: "plus.circle")
                     .frame(maxWidth: .infinity)
             }
@@ -169,12 +178,12 @@ struct ReadinessDetailHeaderCard: View {
     private var headerText: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(readiness.recommendation.title)
-                .font(.title2.bold())
+                .font(AppTypography.largeMetric)
                 .foregroundStyle(appTheme.colors.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text(readiness.category.meaning)
-                .font(.subheadline.weight(.semibold))
+                .font(AppTypography.bodyEmphasis)
                 .foregroundStyle(readinessColor(for: readiness.category, theme: appTheme))
 
             Text(readiness.recommendation.summary)
@@ -318,13 +327,19 @@ struct CheckInStatusCard: View {
                 }
 
                 if checkIn == nil {
-                    Button(action: action) {
+                    Button {
+                        AppHaptics.selection()
+                        action()
+                    } label: {
                         Label("Check in", systemImage: "plus.circle")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(PrimaryFitnessButtonStyle())
                 } else {
-                    Button(action: action) {
+                    Button {
+                        AppHaptics.selection()
+                        action()
+                    } label: {
                         Label("Edit check-in", systemImage: "pencil")
                             .frame(maxWidth: .infinity)
                     }
@@ -430,7 +445,10 @@ struct WeeklyInsightPreviewCard: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            AppHaptics.selection()
+            action()
+        } label: {
             FitnessCard(style: .compact) {
                 HStack(alignment: .top, spacing: 12) {
                     FitnessIconBadge(systemImage: "chart.line.uptrend.xyaxis", size: 40)
@@ -1040,24 +1058,27 @@ struct DailyCheckInSheet: View {
                 FitnessCard {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Optional note")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         TextField("Anything affecting today?", text: $note, axis: .vertical)
                             .lineLimit(2...4)
                             .textFieldStyle(.plain)
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textPrimary)
                     }
                 }
 
                 if let errorText {
                     Text(errorText)
-                        .font(.footnote)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.danger)
                 }
 
-                Button(action: save) {
+                Button {
+                    AppHaptics.success()
+                    save()
+                } label: {
                     Label(existingCheckIn == nil ? "Save check-in" : "Update check-in", systemImage: "checkmark.circle.fill")
                         .frame(maxWidth: .infinity)
                 }

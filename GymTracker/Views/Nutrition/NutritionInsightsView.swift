@@ -4,16 +4,18 @@ import UIKit
 
 struct NutritionInsightsDashboardView: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @Query(sort: \FoodLogEntry.loggedAt, order: .reverse)
+    @Query
     private var foodLogs: [FoodLogEntry]
 
-    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    @Query
     private var completedSessions: [WorkoutSession]
 
     @State private var goal = NutritionGoal.empty
     @State private var healthPreferences = HealthKitSyncPreferences.default
     @State private var appleHealthContext: HealthKitDailyContext?
+    @State private var selectedRoute: NutritionInsightsRoute?
 
     private let goalService = NutritionGoalService()
     private let summaryService = NutritionSummaryService()
@@ -22,6 +24,28 @@ struct NutritionInsightsDashboardView: View {
     private let insightService = NutritionInsightService()
     private let healthPreferenceStore = HealthKitPreferenceStore()
     private let healthBridge = NutritionHealthKitBridge()
+
+    init() {
+        _foodLogs = Query(Self.foodLogsDescriptor)
+        _completedSessions = Query(Self.completedSessionsDescriptor)
+    }
+
+    private static var foodLogsDescriptor: FetchDescriptor<FoodLogEntry> {
+        var descriptor = FetchDescriptor<FoodLogEntry>(
+            sortBy: [SortDescriptor(\.loggedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 200
+        return descriptor
+    }
+
+    private static var completedSessionsDescriptor: FetchDescriptor<WorkoutSession> {
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 40
+        return descriptor
+    }
 
     private var todaySummary: DailyNutritionSummary {
         summaryService.dailySummary(for: .now, foodLogs: foodLogs, workouts: completedSessions)
@@ -85,44 +109,66 @@ struct NutritionInsightsDashboardView: View {
 
             DashboardSection(title: "Actions") {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    NavigationLink {
-                        AddFoodHubView()
+                    Button {
+                        navigate(to: .logFood)
                     } label: {
                         NutritionInsightActionTile(title: "Log Food", subtitle: "Add or reuse foods", systemImage: "plus.circle.fill")
                     }
                     .buttonStyle(PressableCardButtonStyle())
+                    .accessibilityIdentifier("nutrition-insights-log-food")
 
-                    NavigationLink {
-                        NutritionTargetsView()
+                    Button {
+                        navigate(to: .targets)
                     } label: {
                         NutritionInsightActionTile(title: "Targets", subtitle: goal.hasTargets ? "Edit daily goals" : "Set goals", systemImage: "target")
                     }
                     .buttonStyle(PressableCardButtonStyle())
+                    .accessibilityIdentifier("nutrition-insights-targets")
 
-                    NavigationLink {
-                        WeeklyNutritionTrendsView()
+                    Button {
+                        navigate(to: .weekly)
                     } label: {
                         NutritionInsightActionTile(title: "Weekly", subtitle: "Review 7 days", systemImage: "chart.bar.fill")
                     }
                     .buttonStyle(PressableCardButtonStyle())
+                    .accessibilityIdentifier("nutrition-insights-weekly")
 
-                    NavigationLink {
-                        NutritionDashboardView()
+                    Button {
+                        navigate(to: .foodLog)
                     } label: {
                         NutritionInsightActionTile(title: "Food Log", subtitle: "Today by meal", systemImage: "fork.knife")
                     }
                     .buttonStyle(PressableCardButtonStyle())
+                    .accessibilityIdentifier("nutrition-insights-food-log")
                 }
             }
         }
         .navigationTitle("Insights")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(item: $selectedRoute) { route in
+            switch route {
+            case .logFood:
+                AddFoodHubView()
+            case .targets:
+                NutritionTargetsView()
+            case .weekly:
+                WeeklyNutritionTrendsView()
+            case .foodLog:
+                NutritionDashboardView()
+            }
+        }
         .onAppear {
             goal = goalService.loadGoal()
             healthPreferences = healthPreferenceStore.load()
             Task {
                 appleHealthContext = await healthBridge.dailyContext(for: .now, preferences: healthPreferences)
             }
+        }
+    }
+
+    private func navigate(to route: NutritionInsightsRoute) {
+        AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
+            selectedRoute = route
         }
     }
 
@@ -263,6 +309,15 @@ struct NutritionInsightsDashboardView: View {
 
         return "Timing details depend on workout start/end times and food log timestamps."
     }
+}
+
+private enum NutritionInsightsRoute: Hashable, Identifiable {
+    case logFood
+    case targets
+    case weekly
+    case foodLog
+
+    var id: Self { self }
 }
 
 struct NutritionTargetsView: View {
@@ -541,6 +596,7 @@ struct NutritionHomeSummaryCard: View {
             goal = goalService.loadGoal()
         }
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("today-nutrition-summary")
         .accessibilityLabel("Nutrition today, \(phase7Kcal(today.calories)) calories, \(phase7Grams(today.protein)) grams protein")
     }
 

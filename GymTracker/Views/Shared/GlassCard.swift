@@ -5,8 +5,8 @@ struct GlassCard<Content: View>: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    var cornerRadius: CGFloat = 36
-    var padding: CGFloat = 24
+    var cornerRadius: CGFloat = AppThemeMetrics().radius32
+    var padding: CGFloat = AppThemeMetrics().spacing24
     @ViewBuilder var content: () -> Content
 
     var body: some View {
@@ -23,7 +23,7 @@ struct GlassCard<Content: View>: View {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(borderColor, lineWidth: 1)
             }
-            .shadow(color: shadowColor, radius: colorScheme == .dark ? 18 : 28, y: 14)
+            .shadow(color: shadowColor, radius: colorScheme == .dark ? 16 : 24, y: 12)
     }
 
     private var cardBackground: AnyShapeStyle {

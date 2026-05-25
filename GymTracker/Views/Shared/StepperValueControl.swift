@@ -32,27 +32,34 @@ struct StepperValueControl: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(label)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.metadataEmphasis)
                 .foregroundStyle(appTheme.colors.textSecondary)
 
             HStack(spacing: 0) {
-                Button(action: decrement) {
+                Button {
+                    AppHaptics.selection()
+                    decrement()
+                } label: {
                     Image(systemName: "minus")
-                        .font(.caption.weight(.bold))
+                        .font(AppTypography.badge)
                         .frame(width: 38, height: 38)
                 }
                 .disabled(!canDecrement)
+                .accessibilityIdentifier("stepper-\(identifierBase)-decrement")
 
-                Button(action: edit) {
+                Button {
+                    AppHaptics.selection()
+                    edit()
+                } label: {
                     HStack(spacing: 3) {
                         Text(valueText)
-                            .font(.system(.headline, design: .rounded).monospacedDigit().weight(.bold))
+                            .font(AppTypography.workoutNumber)
                             .lineLimit(1)
                             .minimumScaleFactor(0.78)
 
                         if let unitSuffix {
                             Text(unitSuffix)
-                                .font(.caption.weight(.semibold))
+                                .font(AppTypography.metadataEmphasis)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .lineLimit(1)
                         }
@@ -61,12 +68,17 @@ struct StepperValueControl: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("stepper-\(identifierBase)-edit")
 
-                Button(action: increment) {
+                Button {
+                    AppHaptics.selection()
+                    increment()
+                } label: {
                     Image(systemName: "plus")
-                        .font(.caption.weight(.bold))
+                        .font(AppTypography.badge)
                         .frame(width: 38, height: 38)
                 }
+                .accessibilityIdentifier("stepper-\(identifierBase)-increment")
             }
             .buttonStyle(.borderless)
             .foregroundStyle(appTheme.colors.textPrimary)
@@ -76,5 +88,10 @@ struct StepperValueControl: View {
                     .stroke(appTheme.colors.cardBorder, lineWidth: 1)
             )
         }
+    }
+
+    private var identifierBase: String {
+        let filtered = label.lowercased().filter { $0.isLetter || $0.isNumber }
+        return filtered.isEmpty ? "value" : String(filtered)
     }
 }

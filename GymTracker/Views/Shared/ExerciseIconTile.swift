@@ -44,10 +44,10 @@ struct ExerciseIconTile: View {
                 .frame(maxWidth: .infinity, minHeight: size + 36, alignment: .leading)
             }
         }
-        .padding(style == .compact ? 8 : 12)
-        .background(tileBackground, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(style == .compact ? appTheme.metrics.spacing8 : appTheme.metrics.spacing12)
+        .background(tileBackground, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous)
                 .stroke(tintColor.opacity(0.22), lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
@@ -62,7 +62,7 @@ struct ExerciseIconTile: View {
     private var titleText: some View {
         if let title {
             Text(title)
-                .font(style == .hero ? .headline : .caption.weight(.semibold))
+                .font(style == .hero ? AppTypography.sectionTitle : AppTypography.metadataEmphasis)
                 .foregroundStyle(appTheme.colors.textPrimary)
                 .lineLimit(2)
                 .minimumScaleFactor(0.78)

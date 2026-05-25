@@ -11,7 +11,7 @@ struct GlassIconBadge: View {
 
     var body: some View {
         Image(systemName: systemName)
-            .font(.system(size: size * 0.38, weight: .bold, design: .rounded))
+            .font(AppTypography.rounded(size: size * 0.38, weight: .bold))
             .foregroundStyle(tint ?? appTheme.colors.accent)
             .frame(width: size, height: size)
             .background(badgeBackground, in: Circle())

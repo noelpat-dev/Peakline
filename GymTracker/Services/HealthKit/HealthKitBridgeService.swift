@@ -98,6 +98,48 @@ struct HealthKitAvailabilityService {
     }
 }
 
+struct HealthKitFoodLogSyncSnapshot {
+    let id: UUID
+    let foodItemId: UUID
+    let foodNameSnapshot: String
+    let mealType: MealType
+    let caloriesSnapshot: Double
+    let proteinSnapshot: Double
+    let carbsSnapshot: Double
+    let fatSnapshot: Double
+    let sugarSnapshot: Double?
+    let fibreSnapshot: Double?
+    let saltSnapshot: Double?
+    let loggedAt: Date
+    let updatedAt: Date
+
+    init(entry: FoodLogEntry) {
+        self.id = entry.id
+        self.foodItemId = entry.foodItemId
+        self.foodNameSnapshot = entry.foodNameSnapshot
+        self.mealType = entry.mealType
+        self.caloriesSnapshot = entry.caloriesSnapshot
+        self.proteinSnapshot = entry.proteinSnapshot
+        self.carbsSnapshot = entry.carbsSnapshot
+        self.fatSnapshot = entry.fatSnapshot
+        self.sugarSnapshot = entry.sugarSnapshot
+        self.fibreSnapshot = entry.fibreSnapshot
+        self.saltSnapshot = entry.saltSnapshot
+        self.loggedAt = entry.loggedAt
+        self.updatedAt = entry.updatedAt
+    }
+}
+
+struct HealthKitFoodItemSyncSnapshot {
+    let id: UUID
+    let verificationStatus: FoodVerificationStatus
+
+    init(food: FoodItem) {
+        self.id = food.id
+        self.verificationStatus = food.verificationStatus
+    }
+}
+
 #if canImport(HealthKit)
 private enum HealthKitTypeRegistry {
     static func writeTypes(preferences: HealthKitSyncPreferences) -> Set<HKSampleType> {
@@ -235,6 +277,28 @@ final class NutritionHealthKitBridge: HealthKitProviding {
         foodItemsById: [UUID: FoodItem] = [:],
         preferences: HealthKitSyncPreferences
     ) async -> HealthKitSyncSummary {
+        let entrySnapshots = entries.map { HealthKitFoodLogSyncSnapshot(entry: $0) }
+        let foodSnapshots = Dictionary(uniqueKeysWithValues: foodItemsById.map { key, value in
+            (key, HealthKitFoodItemSyncSnapshot(food: value))
+        })
+        return await sync(entries: entrySnapshots, foodItemsById: foodSnapshots, preferences: preferences)
+    }
+
+    func sync(
+        entries: [HealthKitFoodLogSyncSnapshot],
+        foodItemsById: [UUID: HealthKitFoodItemSyncSnapshot] = [:],
+        preferences: HealthKitSyncPreferences
+    ) async -> HealthKitSyncSummary {
+        await PerformanceTracer.traceAsync(.nutritionHealthKitSync) {
+            await syncUntraced(entries: entries, foodItemsById: foodItemsById, preferences: preferences)
+        }
+    }
+
+    private func syncUntraced(
+        entries: [HealthKitFoodLogSyncSnapshot],
+        foodItemsById: [UUID: HealthKitFoodItemSyncSnapshot] = [:],
+        preferences: HealthKitSyncPreferences
+    ) async -> HealthKitSyncSummary {
         var summary = HealthKitSyncSummary()
 
         guard preferences.isHealthKitEnabled, preferences.writeNutritionToHealthKit else {
@@ -357,7 +421,7 @@ final class NutritionHealthKitBridge: HealthKitProviding {
     }
 
     private func record(
-        for entry: FoodLogEntry,
+        for entry: HealthKitFoodLogSyncSnapshot,
         status: HealthKitSyncStatus,
         sampleIdentifiers: [String] = [],
         syncedAt: Date? = nil,
@@ -391,7 +455,7 @@ private extension NutritionHealthKitBridge {
         var warnings: [String]
     }
 
-    func makeSamples(for entry: FoodLogEntry, preferences: HealthKitSyncPreferences) throws -> SampleBuild {
+    func makeSamples(for entry: HealthKitFoodLogSyncSnapshot, preferences: HealthKitSyncPreferences) throws -> SampleBuild {
         let metadata: [String: Any] = [
             "GymTrackerFoodLogEntryID": entry.id.uuidString,
             "GymTrackerFoodItemID": entry.foodItemId.uuidString,

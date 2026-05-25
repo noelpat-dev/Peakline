@@ -17,7 +17,7 @@ struct FitnessScreenHeader: View {
         HStack(alignment: .top, spacing: 12) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.title2.weight(.semibold))
+                    .font(AppTypography.largeMetric)
                     .foregroundStyle(appTheme.colors.accent)
                     .frame(width: 34, height: 34)
                     .background(appTheme.colors.accentSurface, in: Circle())
@@ -25,14 +25,14 @@ struct FitnessScreenHeader: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(title)
-                    .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                    .font(AppTypography.screenTitle)
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .lineLimit(2)
                     .minimumScaleFactor(0.78)
 
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.subheadline)
+                        .font(AppTypography.screenSubtitle)
                         .foregroundStyle(appTheme.mutedText)
                         .fixedSize(horizontal: false, vertical: true)
                 }

@@ -105,12 +105,12 @@ struct CoachBadgeView: View {
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: state.systemImage)
-                .font(.caption2.weight(.bold))
+                .font(AppTypography.badge)
             Text(state.label)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
+        .padding(.horizontal, appTheme.metrics.spacing10)
+        .padding(.vertical, appTheme.metrics.spacing6)
         .foregroundStyle(foregroundColor)
         .background(badgeColor.opacity(0.14))
         .clipShape(Capsule())

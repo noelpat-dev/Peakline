@@ -29,6 +29,12 @@ struct OpenFoodFactsService {
     }
 
     func productDraft(for barcode: String) async throws -> FoodImportDraft {
+        try await PerformanceTracer.traceAsync(.openFoodFactsRequest) {
+            try await productDraftUntraced(for: barcode)
+        }
+    }
+
+    private func productDraftUntraced(for barcode: String) async throws -> FoodImportDraft {
         let normalizedBarcode = BarcodeFoodLookupService.normalizedBarcode(barcode)
         guard !normalizedBarcode.isEmpty else {
             throw OpenFoodFactsError.invalidBarcode

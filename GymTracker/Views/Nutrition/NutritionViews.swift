@@ -3,29 +3,33 @@ import SwiftUI
 
 struct NutritionDashboardView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @Query(sort: \FoodItem.name)
     private var foodItems: [FoodItem]
 
-    @Query(sort: \FoodLogEntry.loggedAt, order: .reverse)
+    @Query
     private var logEntries: [FoodLogEntry]
 
-    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    @Query
     private var completedSessions: [WorkoutSession]
 
-    @Query(sort: \SleepSession.createdAt, order: .reverse)
+    @Query
     private var sleepSessions: [SleepSession]
 
-    @Query(sort: \NapSession.startDate, order: .reverse)
+    @Query
     private var napSessions: [NapSession]
 
-    @Query(sort: \HydrationEntry.loggedAt, order: .reverse)
+    @Query
     private var hydrationEntries: [HydrationEntry]
 
-    @Query(sort: \DailyCoachCheckIn.date, order: .reverse)
+    @Query
     private var coachCheckIns: [DailyCoachCheckIn]
 
     @State private var sleepSettings = SleepSettingsStore().load()
+    @State private var healthPreferences = HealthKitPreferenceStore().load()
+    @State private var hydrationTargetML = HydrationSettingsStore().dailyTargetML()
+    @State private var nutritionGoal = NutritionGoalService().loadGoal()
 
     private let coachIntelligence = CoachIntelligenceService()
     private let calculator = NutritionCalculatorService()
@@ -33,31 +37,201 @@ struct NutritionDashboardView: View {
     private let hydrationSettingsStore = HydrationSettingsStore()
     private let nutritionGoalStore = NutritionGoalService()
     @State private var pendingDeleteLogEntry: FoodLogEntry?
+    @State private var dashboardSnapshot = NutritionDashboardSnapshot.empty
+    @State private var lastDashboardSignature: String?
+    @State private var selectedRoute: NutritionRoute?
+    @State private var didRequestInitialRefresh = false
+
+    init() {
+        _logEntries = Query(Self.logEntriesDescriptor)
+        _completedSessions = Query(Self.completedSessionsDescriptor)
+        _sleepSessions = Query(Self.sleepSessionsDescriptor)
+        _napSessions = Query(Self.napSessionsDescriptor)
+        _hydrationEntries = Query(Self.hydrationEntriesDescriptor)
+        _coachCheckIns = Query(Self.coachCheckInsDescriptor)
+    }
+
+    private static var logEntriesDescriptor: FetchDescriptor<FoodLogEntry> {
+        var descriptor = FetchDescriptor<FoodLogEntry>(
+            sortBy: [SortDescriptor(\.loggedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 200
+        return descriptor
+    }
+
+    private static var completedSessionsDescriptor: FetchDescriptor<WorkoutSession> {
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 40
+        return descriptor
+    }
+
+    private static var sleepSessionsDescriptor: FetchDescriptor<SleepSession> {
+        var descriptor = FetchDescriptor<SleepSession>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 60
+        return descriptor
+    }
+
+    private static var napSessionsDescriptor: FetchDescriptor<NapSession> {
+        var descriptor = FetchDescriptor<NapSession>(
+            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        descriptor.fetchLimit = 30
+        return descriptor
+    }
+
+    private static var hydrationEntriesDescriptor: FetchDescriptor<HydrationEntry> {
+        var descriptor = FetchDescriptor<HydrationEntry>(
+            sortBy: [SortDescriptor(\.loggedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 120
+        return descriptor
+    }
+
+    private static var coachCheckInsDescriptor: FetchDescriptor<DailyCoachCheckIn> {
+        var descriptor = FetchDescriptor<DailyCoachCheckIn>(
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 30
+        return descriptor
+    }
+
+    private var currentDashboardSnapshot: NutritionDashboardSnapshot {
+        let signature = dashboardSignature
+        if signature == lastDashboardSignature {
+            return dashboardSnapshot
+        }
+
+        return makeDashboardSnapshot()
+    }
+
+    private var dashboardSignature: String {
+        let foodItemsSignature = foodItems.map(foodItemSignature).joined(separator: ",")
+        let logEntriesSignature = logEntries.prefix(160).map(foodLogEntrySignature).joined(separator: ",")
+        let workoutsSignature = completedSessions.prefix(40).map(workoutSignature).joined(separator: ",")
+        let sleepSignature = sleepSessions.prefix(60).map(sleepSessionSignature).joined(separator: ",")
+        let napSignature = napSessions.prefix(30).map(napSessionSignature).joined(separator: ",")
+        let hydrationSignature = hydrationEntries.prefix(120).map(hydrationEntrySignature).joined(separator: ",")
+        let checkInSignature = coachCheckIns.prefix(30).map(coachCheckInSignature).joined(separator: ",")
+        let sleepSettingsSignature = String(sleepSettings.lastHealthKitSleepSyncAt?.timeIntervalSince1970 ?? 0)
+        let hydrationTargetSignature = String(hydrationTargetML)
+        let nutritionGoalSignature = String(nutritionGoal.updatedAt.timeIntervalSince1970)
+        let healthKitSignature = healthPreferences.isHealthKitEnabled ? "healthkit-on" : "healthkit-off"
+        let parts: [String] = [
+            foodItemsSignature,
+            logEntriesSignature,
+            workoutsSignature,
+            sleepSignature,
+            napSignature,
+            hydrationSignature,
+            checkInSignature,
+            sleepSettingsSignature,
+            hydrationTargetSignature,
+            nutritionGoalSignature,
+            healthKitSignature
+        ]
+        return parts.joined(separator: "|")
+    }
+
+    private func workoutSignature(_ session: WorkoutSession) -> String {
+        let endedAt = session.endedAt?.timeIntervalSince1970 ?? 0
+        return "\(session.id.uuidString):\(endedAt)"
+    }
+
+    private func foodItemSignature(_ food: FoodItem) -> String {
+        "\(food.id.uuidString):\(food.updatedAt.timeIntervalSince1970)"
+    }
+
+    private func foodLogEntrySignature(_ entry: FoodLogEntry) -> String {
+        "\(entry.id.uuidString):\(entry.updatedAt.timeIntervalSince1970):\(entry.loggedAt.timeIntervalSince1970)"
+    }
+
+    private func sleepSessionSignature(_ session: SleepSession) -> String {
+        "\(session.id.uuidString):\(session.updatedAt.timeIntervalSince1970)"
+    }
+
+    private func napSessionSignature(_ session: NapSession) -> String {
+        "\(session.id.uuidString):\(session.updatedAt.timeIntervalSince1970)"
+    }
+
+    private func hydrationEntrySignature(_ entry: HydrationEntry) -> String {
+        "\(entry.id.uuidString):\(entry.updatedAt.timeIntervalSince1970)"
+    }
+
+    private func coachCheckInSignature(_ checkIn: DailyCoachCheckIn) -> String {
+        "\(checkIn.id.uuidString):\(checkIn.updatedAt.timeIntervalSince1970)"
+    }
 
     private var todaysEntries: [FoodLogEntry] {
-        logEntries.filter { Calendar.current.isDateInToday($0.loggedAt) }
+        currentDashboardSnapshot.todaysEntries
     }
 
     private var totals: NutritionMacroSnapshot {
-        calculator.totals(from: todaysEntries)
+        currentDashboardSnapshot.totals
     }
 
     private var readinessScore: ReadinessScore {
-        coachIntelligence.readiness(
-            sleepSessions: sleepSessions,
-            napSessions: napSessions,
-            hydrationEntries: hydrationEntries,
-            completedWorkouts: completedSessions,
-            foodLogs: logEntries,
-            checkIns: coachCheckIns,
-            sleepSettings: sleepSettings,
-            hydrationTargetML: hydrationSettingsStore.dailyTargetML(),
-            nutritionGoal: nutritionGoalStore.loadGoal()
-        )
+        currentDashboardSnapshot.readiness
     }
 
     private var recentlyLoggedFoods: [FoodItem] {
-        let recentIds = logEntries.map(\.foodItemId)
+        currentDashboardSnapshot.recentlyLoggedFoods
+    }
+
+    private func refreshDashboardSnapshot(force: Bool = false) {
+        let signature = dashboardSignature
+        guard force || signature != lastDashboardSignature else { return }
+        dashboardSnapshot = PerformanceTracer.trace(.nutritionDashboardSnapshot) {
+            makeDashboardSnapshot()
+        }
+        lastDashboardSignature = signature
+    }
+
+    private func makeDashboardSnapshot() -> NutritionDashboardSnapshot {
+        let todaysEntries = logEntries.filter { Calendar.current.isDateInToday($0.loggedAt) }
+        let recentFoods = recentlyLoggedFoods(from: logEntries, foodItems: foodItems)
+        let mealEntries = Dictionary(grouping: todaysEntries.sorted { $0.loggedAt < $1.loggedAt }, by: \.mealType)
+        let readiness = coachIntelligence.readiness(
+            sleepSessions: Array(sleepSessions.prefix(60)),
+            napSessions: Array(napSessions.prefix(30)),
+            hydrationEntries: Array(hydrationEntries.prefix(120)),
+            completedWorkouts: Array(completedSessions.prefix(40)),
+            foodLogs: Array(logEntries.prefix(160)),
+            checkIns: Array(coachCheckIns.prefix(30)),
+            sleepSettings: sleepSettings,
+            hydrationTargetML: hydrationTargetML,
+            nutritionGoal: nutritionGoal
+        )
+        let healthKitSyncRecords = healthKitSyncRecordsByEntryId(for: todaysEntries)
+
+        return NutritionDashboardSnapshot(
+            todaysEntries: todaysEntries,
+            totals: calculator.totals(from: todaysEntries),
+            readiness: readiness,
+            recentlyLoggedFoods: recentFoods,
+            mealEntries: mealEntries,
+            shouldShowHealthKitStatus: healthPreferences.isHealthKitEnabled,
+            healthKitSyncRecordsByEntryId: healthKitSyncRecords
+        )
+    }
+
+    private func healthKitSyncRecordsByEntryId(for entries: [FoodLogEntry]) -> [UUID: HealthKitFoodLogSyncRecord] {
+        PerformanceTracer.trace(.nutritionHealthKitRowStatus) {
+            guard healthPreferences.isHealthKitEnabled else { return [:] }
+            let entryIds = Set(entries.map(\.id))
+            return Dictionary(uniqueKeysWithValues: HealthKitSyncStateStore().records().compactMap { record in
+                guard entryIds.contains(record.foodLogEntryId) else { return nil }
+                return (record.foodLogEntryId, record)
+            })
+        }
+    }
+
+    private func recentlyLoggedFoods(from logEntries: [FoodLogEntry], foodItems: [FoodItem]) -> [FoodItem] {
+        let recentIds = logEntries.prefix(160).map(\.foodItemId)
         var seenIds = Set<UUID>()
         let orderedUniqueIds = recentIds.filter { id in
             if seenIds.contains(id) { return false }
@@ -77,6 +251,8 @@ struct NutritionDashboardView: View {
     }
 
     var body: some View {
+        let snapshot = currentDashboardSnapshot
+
         FitnessScreen(title: nil) {
             DashboardHeaderView(
                 dateText: todayDateText,
@@ -84,24 +260,24 @@ struct NutritionDashboardView: View {
                 subtitle: "Fuel today and keep macros visible"
             )
 
-            NutritionHeroCard(totals: totals, entryCount: todaysEntries.count)
+            NutritionHeroCard(totals: snapshot.totals, entryCount: snapshot.todaysEntries.count)
 
             DashboardSection(title: "Coach Context") {
                 ReadinessContextCard(
-                    readiness: readinessScore,
+                    readiness: snapshot.readiness,
                     focus: .nutrition,
                     title: "Nutrition in today's readiness"
                 )
             }
 
             DashboardSection(title: "Macros") {
-                MacroSummaryGrid(totals: totals)
+                MacroSummaryGrid(totals: snapshot.totals)
             }
 
             DashboardSection(title: "Quick Actions") {
                 LazyVGrid(columns: actionColumns, spacing: 12) {
-                    NavigationLink {
-                        AddFoodHubView()
+                    Button {
+                        navigate(to: .addFood)
                     } label: {
                         NutritionActionCard(
                             title: "Add Food",
@@ -111,8 +287,8 @@ struct NutritionDashboardView: View {
                     }
                     .buttonStyle(PressableCardButtonStyle())
 
-                    NavigationLink {
-                        FoodDatabaseView()
+                    Button {
+                        navigate(to: .savedFoods)
                     } label: {
                         NutritionActionCard(
                             title: "Saved Foods",
@@ -122,8 +298,8 @@ struct NutritionDashboardView: View {
                     }
                     .buttonStyle(PressableCardButtonStyle())
 
-                    NavigationLink {
-                        NutritionInsightsDashboardView()
+                    Button {
+                        navigate(to: .insights)
                     } label: {
                         NutritionActionCard(
                             title: "Insights",
@@ -133,8 +309,8 @@ struct NutritionDashboardView: View {
                     }
                     .buttonStyle(PressableCardButtonStyle())
 
-                    NavigationLink {
-                        NutritionTargetsView()
+                    Button {
+                        navigate(to: .targets)
                     } label: {
                         NutritionActionCard(
                             title: "Targets",
@@ -146,11 +322,11 @@ struct NutritionDashboardView: View {
                 }
             }
 
-            if !recentlyLoggedFoods.isEmpty {
+            if !snapshot.recentlyLoggedFoods.isEmpty {
                 DashboardSection(title: "Quick Log") {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
-                            ForEach(recentlyLoggedFoods) { food in
+                            ForEach(snapshot.recentlyLoggedFoods) { food in
                                 NavigationLink {
                                     LogFoodView(food: food)
                                 } label: {
@@ -166,9 +342,9 @@ struct NutritionDashboardView: View {
             }
 
             DashboardSection(title: "Today") {
-                if todaysEntries.isEmpty {
-                    NavigationLink {
-                        AddFoodHubView()
+                if snapshot.todaysEntries.isEmpty {
+                    Button {
+                        navigate(to: .addFood)
                     } label: {
                         NutritionEmptyState(
                             title: "Nothing logged today",
@@ -183,14 +359,14 @@ struct NutritionDashboardView: View {
                 } else {
                     LazyVStack(spacing: 12) {
                         ForEach(MealType.allCases) { mealType in
-                            let entries = todaysEntries
-                                .filter { $0.mealType == mealType }
-                                .sorted { $0.loggedAt < $1.loggedAt }
+                            let entries = snapshot.mealEntries[mealType] ?? []
 
                             if !entries.isEmpty {
                                 MealSectionCard(
                                     mealType: mealType,
                                     entries: entries,
+                                    shouldShowHealthKitStatus: snapshot.shouldShowHealthKitStatus,
+                                    syncRecordsByEntryId: snapshot.healthKitSyncRecordsByEntryId,
                                     requestDelete: { pendingDeleteLogEntry = $0 }
                                 )
                             }
@@ -201,6 +377,22 @@ struct NutritionDashboardView: View {
         }
         .navigationTitle("Nutrition")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(item: $selectedRoute) { route in
+            switch route {
+            case .addFood:
+                AddFoodHubView()
+            case .savedFoods:
+                FoodDatabaseView()
+            case .insights:
+                NutritionInsightsDashboardView()
+            case .targets:
+                NutritionTargetsView()
+            case .barcode:
+                BarcodeScannerView()
+            case .labelScan:
+                NutritionLabelScanView()
+            }
+        }
         .alert("Remove food log?", isPresented: deleteLogAlertBinding) {
             Button("Cancel", role: .cancel) {
                 pendingDeleteLogEntry = nil
@@ -213,6 +405,15 @@ struct NutritionDashboardView: View {
         }
         .onAppear {
             sleepSettings = sleepSettingsStore.load()
+            healthPreferences = HealthKitPreferenceStore().load()
+            hydrationTargetML = hydrationSettingsStore.dailyTargetML()
+            nutritionGoal = nutritionGoalStore.loadGoal()
+            let shouldForceRefresh = !didRequestInitialRefresh
+            didRequestInitialRefresh = true
+            refreshDashboardSnapshot(force: shouldForceRefresh)
+        }
+        .onChange(of: dashboardSignature) { _, _ in
+            refreshDashboardSnapshot()
         }
     }
 
@@ -221,6 +422,12 @@ struct NutritionDashboardView: View {
             GridItem(.flexible(), spacing: 12),
             GridItem(.flexible(), spacing: 12)
         ]
+    }
+
+    private func navigate(to route: NutritionRoute) {
+        AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
+            selectedRoute = route
+        }
     }
 
     private var todayDateText: String {
@@ -242,15 +449,50 @@ struct NutritionDashboardView: View {
         HealthKitSyncStateStore().removeRecord(for: pendingDeleteLogEntry.id)
         modelContext.delete(pendingDeleteLogEntry)
         try? modelContext.save()
+        AppHaptics.warning()
         self.pendingDeleteLogEntry = nil
     }
 }
 
+fileprivate enum NutritionRoute: Hashable, Identifiable {
+    case addFood
+    case savedFoods
+    case insights
+    case targets
+    case barcode
+    case labelScan
+
+    var id: Self { self }
+}
+
+private struct NutritionDashboardSnapshot {
+    var todaysEntries: [FoodLogEntry]
+    var totals: NutritionMacroSnapshot
+    var readiness: ReadinessScore
+    var recentlyLoggedFoods: [FoodItem]
+    var mealEntries: [MealType: [FoodLogEntry]]
+    var shouldShowHealthKitStatus: Bool
+    var healthKitSyncRecordsByEntryId: [UUID: HealthKitFoodLogSyncRecord]
+
+    static let empty = NutritionDashboardSnapshot(
+        todaysEntries: [],
+        totals: NutritionMacroSnapshot(calories: 0, protein: 0, carbs: 0, fat: 0, sugar: nil, fibre: nil, salt: nil),
+        readiness: CoachIntelligenceService.emptySnapshot().readiness,
+        recentlyLoggedFoods: [],
+        mealEntries: [:],
+        shouldShowHealthKitStatus: false,
+        healthKitSyncRecordsByEntryId: [:]
+    )
+}
+
 struct AddFoodHubView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @Query(sort: \FoodItem.name)
     private var foodItems: [FoodItem]
 
     @State private var showingManualEntry = false
+    @State private var selectedRoute: AddFoodHubRoute?
 
     var body: some View {
         FitnessScreen(
@@ -260,31 +502,9 @@ struct AddFoodHubView: View {
         ) {
             DashboardSection(title: "Available Now") {
                 LazyVStack(spacing: 12) {
-                    NavigationLink {
-                        BarcodeScannerView()
-                    } label: {
-                        NutritionHubActionCard(
-                            title: "Scan Barcode",
-                            subtitle: "Check saved foods first, then import nutrition data.",
-                            systemImage: "barcode.viewfinder",
-                            status: "Fast lookup",
-                            isEnabled: true
-                        )
-                    }
-                    .buttonStyle(PressableCardButtonStyle())
+                    barcodeAction
 
-                    NavigationLink {
-                        NutritionLabelScanView()
-                    } label: {
-                        NutritionHubActionCard(
-                            title: "Scan Label",
-                            subtitle: "Read a nutrition label from a photo, then confirm values.",
-                            systemImage: "text.viewfinder",
-                            status: "OCR MVP",
-                            isEnabled: true
-                        )
-                    }
-                    .buttonStyle(PressableCardButtonStyle())
+                    labelScanAction
 
                     Button {
                         showingManualEntry = true
@@ -299,27 +519,100 @@ struct AddFoodHubView: View {
                     }
                     .buttonStyle(PressableCardButtonStyle())
 
-                    NavigationLink {
-                        FoodDatabaseView()
-                    } label: {
-                        NutritionHubActionCard(
-                            title: "Saved Foods",
-                            subtitle: foodItems.isEmpty ? "Create a food first, then reuse it here." : "Log one of \(foodItems.count) local foods.",
-                            systemImage: "tray.full",
-                            status: "Local",
-                            isEnabled: true
-                        )
-                    }
-                    .buttonStyle(PressableCardButtonStyle())
+                    savedFoodsAction
                 }
             }
         }
         .navigationTitle("Add Food")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(item: $selectedRoute) { route in
+            switch route {
+            case .barcode:
+                BarcodeScannerView()
+            case .labelScan:
+                NutritionLabelScanView()
+            case .savedFoods:
+                FoodDatabaseView()
+            }
+        }
         .sheet(isPresented: $showingManualEntry) {
             ManualFoodEntryView()
         }
     }
+
+    @ViewBuilder
+    private var barcodeAction: some View {
+        Button {
+            navigate(to: .barcode)
+        } label: {
+            barcodeActionCard
+        }
+        .buttonStyle(PressableCardButtonStyle())
+    }
+
+    @ViewBuilder
+    private var labelScanAction: some View {
+        Button {
+            navigate(to: .labelScan)
+        } label: {
+            labelScanActionCard
+        }
+        .buttonStyle(PressableCardButtonStyle())
+    }
+
+    @ViewBuilder
+    private var savedFoodsAction: some View {
+        Button {
+            navigate(to: .savedFoods)
+        } label: {
+            savedFoodsActionCard
+        }
+        .buttonStyle(PressableCardButtonStyle())
+    }
+
+    private func navigate(to route: AddFoodHubRoute) {
+        AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
+            selectedRoute = route
+        }
+    }
+
+    private var barcodeActionCard: some View {
+        NutritionHubActionCard(
+            title: "Scan Barcode",
+            subtitle: "Check saved foods first, then import nutrition data.",
+            systemImage: "barcode.viewfinder",
+            status: "Fast lookup",
+            isEnabled: true
+        )
+    }
+
+    private var labelScanActionCard: some View {
+        NutritionHubActionCard(
+            title: "Scan Label",
+            subtitle: "Read a nutrition label from a photo, then confirm values.",
+            systemImage: "text.viewfinder",
+            status: "OCR MVP",
+            isEnabled: true
+        )
+    }
+
+    private var savedFoodsActionCard: some View {
+        NutritionHubActionCard(
+            title: "Saved Foods",
+            subtitle: foodItems.isEmpty ? "Create a food first, then reuse it here." : "Log one of \(foodItems.count) local foods.",
+            systemImage: "tray.full",
+            status: "Local",
+            isEnabled: true
+        )
+    }
+}
+
+private enum AddFoodHubRoute: Hashable, Identifiable {
+    case barcode
+    case labelScan
+    case savedFoods
+
+    var id: Self { self }
 }
 
 struct FoodDatabaseView: View {
@@ -425,6 +718,7 @@ struct FoodDatabaseView: View {
         guard let pendingDelete else { return }
         modelContext.delete(pendingDelete)
         try? modelContext.save()
+        AppHaptics.warning()
         self.pendingDelete = nil
     }
 }
@@ -640,6 +934,7 @@ struct ManualFoodEntryView: View {
         }
 
         try? modelContext.save()
+        AppHaptics.success()
         dismiss()
     }
 
@@ -804,13 +1099,16 @@ struct LogFoodView: View {
 
         modelContext.insert(entry)
         try? modelContext.save()
+        AppHaptics.success()
 
         let healthPreferences = HealthKitPreferenceStore().load()
         if healthPreferences.isHealthKitEnabled,
            healthPreferences.writeNutritionToHealthKit,
            healthPreferences.autoSyncNewFoodLogs {
+            let entrySnapshot = HealthKitFoodLogSyncSnapshot(entry: entry)
+            let foodSnapshot = HealthKitFoodItemSyncSnapshot(food: food)
             Task {
-                _ = await NutritionHealthKitBridge().sync(entries: [entry], foodItemsById: [food.id: food], preferences: healthPreferences)
+                _ = await NutritionHealthKitBridge().sync(entries: [entrySnapshot], foodItemsById: [food.id: foodSnapshot], preferences: healthPreferences)
             }
         }
 
@@ -972,6 +1270,8 @@ private struct MealSectionCard: View {
 
     let mealType: MealType
     let entries: [FoodLogEntry]
+    let shouldShowHealthKitStatus: Bool
+    let syncRecordsByEntryId: [UUID: HealthKitFoodLogSyncRecord]
     let requestDelete: (FoodLogEntry) -> Void
 
     private let calculator = NutritionCalculatorService()
@@ -1014,6 +1314,8 @@ private struct MealSectionCard: View {
                     ForEach(entries) { entry in
                         FoodLogRow(
                             entry: entry,
+                            shouldShowHealthKitStatus: shouldShowHealthKitStatus,
+                            syncRecord: syncRecordsByEntryId[entry.id],
                             requestDelete: { requestDelete(entry) }
                         )
                     }
@@ -1028,18 +1330,12 @@ private struct FoodLogRow: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let entry: FoodLogEntry
+    let shouldShowHealthKitStatus: Bool
+    let syncRecord: HealthKitFoodLogSyncRecord?
     let requestDelete: () -> Void
 
     @State private var horizontalOffset: CGFloat = 0
     @GestureState private var dragTranslation: CGFloat = 0
-
-    private var syncRecord: HealthKitFoodLogSyncRecord? {
-        HealthKitSyncStateStore().record(for: entry.id)
-    }
-
-    private var shouldShowHealthKitStatus: Bool {
-        HealthKitPreferenceStore().load().isHealthKitEnabled
-    }
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -1056,7 +1352,10 @@ private struct FoodLogRow: View {
                 }
         }
         .contextMenu {
-            Button(role: .destructive, action: requestDelete) {
+            Button(role: .destructive) {
+                AppHaptics.selection()
+                requestDelete()
+            } label: {
                 Label("Remove Log", systemImage: "trash")
             }
         }
@@ -1067,13 +1366,13 @@ private struct FoodLogRow: View {
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 5) {
                 Text(entry.foodNameSnapshot)
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppTypography.bodyEmphasis)
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
 
                 Text("\(amountText) - P \(gramsText(entry.proteinSnapshot))g C \(gramsText(entry.carbsSnapshot))g F \(gramsText(entry.fatSnapshot))g")
-                    .font(.caption)
+                    .font(AppTypography.metadata)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
@@ -1086,21 +1385,24 @@ private struct FoodLogRow: View {
             Spacer(minLength: 8)
 
             Text(kcalText(entry.caloriesSnapshot))
-                .font(.subheadline.weight(.bold))
+                .font(AppTypography.bodyEmphasis)
                 .foregroundStyle(appTheme.colors.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal, appTheme.metrics.spacing12)
+        .padding(.vertical, appTheme.metrics.spacing10)
+        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous))
         .contentShape(Rectangle())
     }
 
     private var deleteAction: some View {
-        Button(role: .destructive, action: requestDelete) {
+        Button(role: .destructive) {
+            AppHaptics.selection()
+            requestDelete()
+        } label: {
             Image(systemName: "trash")
-                .font(.title3.weight(.semibold))
+                .font(AppTypography.cardTitle)
                 .frame(width: appTheme.metrics.swipeRevealActionSize, height: appTheme.metrics.swipeRevealActionSize)
                 .foregroundStyle(.white)
                 .background(appTheme.colors.danger, in: Circle())
@@ -1245,9 +1547,12 @@ private struct SavedFoodCard: View {
     }
 
     private var deleteAction: some View {
-        Button(role: .destructive, action: delete) {
+        Button(role: .destructive) {
+            AppHaptics.warning()
+            delete()
+        } label: {
             Image(systemName: "trash")
-                .font(.title3.weight(.semibold))
+                .font(AppTypography.cardTitle)
                 .frame(width: appTheme.metrics.swipeRevealActionSize, height: appTheme.metrics.swipeRevealActionSize)
                 .foregroundStyle(.white)
                 .background(appTheme.colors.danger, in: Circle())

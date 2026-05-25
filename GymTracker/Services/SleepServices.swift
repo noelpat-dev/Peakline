@@ -1859,9 +1859,11 @@ final class SleepAnalyticsSnapshotStore {
         let signature = SleepAnalyticsInputSignature(sessions: sessions, naps: naps, workouts: workouts, settings: settings, sessionLimit: sessionLimit, workoutLimit: workoutLimit)
 
         if !force, signature == cachedSignature, let cachedSnapshot {
+            PerformanceTracer.mark(.sleepAnalyticsCache, "hit sessions=\(min(sessions.count, sessionLimit)) workouts=\(min(workouts.count, workoutLimit))")
             return cachedSnapshot
         }
 
+        PerformanceTracer.mark(.sleepAnalyticsCache, force ? "miss force=true" : "miss signature_changed")
         let limitedSessions = Array(sessions.prefix(sessionLimit))
         let limitedNaps = Array(naps.prefix(sessionLimit))
         let limitedWorkouts = Array(workouts.prefix(workoutLimit))
@@ -1885,9 +1887,11 @@ final class SleepWorkoutReadinessSnapshotStore {
         let signature = SleepAnalyticsInputSignature(sessions: sessions, naps: naps, workouts: workouts, settings: settings, sessionLimit: sessionLimit, workoutLimit: workoutLimit)
 
         if !force, signature == cachedSignature, let cachedSnapshot {
+            PerformanceTracer.mark(.sleepReadinessCache, "hit sessions=\(min(sessions.count, sessionLimit)) workouts=\(min(workouts.count, workoutLimit))")
             return cachedSnapshot
         }
 
+        PerformanceTracer.mark(.sleepReadinessCache, force ? "miss force=true" : "miss signature_changed")
         let limitedSessions = Array(sessions.prefix(sessionLimit))
         let limitedNaps = Array(naps.prefix(sessionLimit))
         let limitedWorkouts = Array(workouts.prefix(workoutLimit))
@@ -2218,7 +2222,12 @@ struct SleepNotificationService {
 struct SleepNotificationScheduler {
     private let center = UNUserNotificationCenter.current()
 
-    func refreshAllSleepNotifications(settings: SleepSettings, sessions: [SleepSession], workouts: [WorkoutSession], calendar: Calendar = .current) async {
+    func refreshAllSleepNotifications(
+        settings: SleepSettings,
+        sessions: [SleepNotificationSessionSnapshot],
+        workouts: [SleepNotificationWorkoutSnapshot],
+        calendar: Calendar = .current
+    ) async {
         guard settings.notificationPreferences.isEnabled else {
             cancelSleepNotifications()
             return
@@ -2240,7 +2249,7 @@ struct SleepNotificationScheduler {
         scheduleTrainingAwareReminder(settings: settings, sessions: sessions, workouts: workouts, calendar: calendar)
     }
 
-    func scheduleBedtimeReminder(settings: SleepSettings, sessions: [SleepSession], calendar: Calendar = .current) {
+    func scheduleBedtimeReminder(settings: SleepSettings, sessions: [SleepNotificationSessionSnapshot], calendar: Calendar = .current) {
         let preferences = settings.notificationPreferences
         guard preferences.bedtimeReminderEnabled, !preferences.isQuietDay(.now, calendar: calendar) else { return }
         guard !sessions.contains(where: { $0.status == .active }) else { return }
@@ -2256,7 +2265,7 @@ struct SleepNotificationScheduler {
         )
     }
 
-    func scheduleWindDownReminder(settings: SleepSettings, sessions: [SleepSession], calendar: Calendar = .current) {
+    func scheduleWindDownReminder(settings: SleepSettings, sessions: [SleepNotificationSessionSnapshot], calendar: Calendar = .current) {
         let preferences = settings.notificationPreferences
         guard preferences.windDownReminderEnabled, !preferences.isQuietDay(.now, calendar: calendar) else { return }
         guard !sessions.contains(where: { $0.status == .active }) else { return }
@@ -2274,7 +2283,7 @@ struct SleepNotificationScheduler {
         )
     }
 
-    func scheduleMorningConfirmationReminder(for session: SleepSession, settings: SleepSettings, calendar: Calendar = .current) {
+    func scheduleMorningConfirmationReminder(for session: SleepNotificationSessionSnapshot, settings: SleepSettings, calendar: Calendar = .current) {
         let preferences = settings.notificationPreferences
         guard preferences.morningConfirmationEnabled else { return }
         guard session.morningReminderSentAt == nil else { return }
@@ -2289,7 +2298,7 @@ struct SleepNotificationScheduler {
         )
     }
 
-    func scheduleUnfinishedSessionReminder(for session: SleepSession) {
+    func scheduleUnfinishedSessionReminder(for session: SleepNotificationSessionSnapshot) {
         guard session.unfinishedReminderSentAt == nil else { return }
         let start = session.sleepModeStartedAt ?? session.confirmedSleepStartAt
         let fireDate = start.addingTimeInterval(12 * 3_600)
@@ -2304,7 +2313,7 @@ struct SleepNotificationScheduler {
         )
     }
 
-    func scheduleMissedSleepReminder(settings: SleepSettings, sessions: [SleepSession], calendar: Calendar = .current) {
+    func scheduleMissedSleepReminder(settings: SleepSettings, sessions: [SleepNotificationSessionSnapshot], calendar: Calendar = .current) {
         let preferences = settings.notificationPreferences
         guard preferences.missedSleepReminderEnabled else { return }
         guard recentTrackedCount(sessions: sessions, calendar: calendar) >= 3 else { return }
@@ -2323,7 +2332,12 @@ struct SleepNotificationScheduler {
         )
     }
 
-    func scheduleTrainingAwareReminder(settings: SleepSettings, sessions: [SleepSession], workouts: [WorkoutSession], calendar: Calendar = .current) {
+    func scheduleTrainingAwareReminder(
+        settings: SleepSettings,
+        sessions: [SleepNotificationSessionSnapshot],
+        workouts: [SleepNotificationWorkoutSnapshot],
+        calendar: Calendar = .current
+    ) {
         let preferences = settings.notificationPreferences
         guard preferences.trainingAwareRemindersEnabled, !preferences.isQuietDay(.now, calendar: calendar) else { return }
         guard !sessions.contains(where: { $0.status == .active }) else { return }
@@ -2359,6 +2373,14 @@ struct SleepNotificationScheduler {
         ])
     }
 
+    static func sessionSnapshots(from sessions: [SleepSession]) -> [SleepNotificationSessionSnapshot] {
+        sessions.map { SleepNotificationSessionSnapshot(session: $0) }
+    }
+
+    static func workoutSnapshots(from workouts: [WorkoutSession]) -> [SleepNotificationWorkoutSnapshot] {
+        workouts.map { SleepNotificationWorkoutSnapshot(workout: $0) }
+    }
+
     private func scheduleCalendarNotification(id: String, title: String, body: String, components: DateComponents, repeats: Bool, destination: SleepNotificationDestination) {
         let content = UNMutableNotificationContent()
         content.title = title
@@ -2379,24 +2401,24 @@ struct SleepNotificationScheduler {
         center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
     }
 
-    private func hasSessionForUpcomingNight(sessions: [SleepSession], calendar: Calendar) -> Bool {
+    private func hasSessionForUpcomingNight(sessions: [SleepNotificationSessionSnapshot], calendar: Calendar) -> Bool {
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: .now) ?? .now
         let night = SleepCalendar.nightDate(for: tomorrow, calendar: calendar)
         return sessions.contains { $0.status == .completed && calendar.isDate($0.nightDate, inSameDayAs: night) }
     }
 
-    private func hasSessionForLastNight(sessions: [SleepSession], calendar: Calendar) -> Bool {
+    private func hasSessionForLastNight(sessions: [SleepNotificationSessionSnapshot], calendar: Calendar) -> Bool {
         let yesterday = calendar.date(byAdding: .day, value: -1, to: .now) ?? .now
         let night = SleepCalendar.nightDate(for: yesterday, calendar: calendar)
         return sessions.contains { $0.status == .completed && calendar.isDate($0.nightDate, inSameDayAs: night) }
     }
 
-    private func recentTrackedCount(sessions: [SleepSession], calendar: Calendar) -> Int {
+    private func recentTrackedCount(sessions: [SleepNotificationSessionSnapshot], calendar: Calendar) -> Int {
         let cutoff = calendar.date(byAdding: .day, value: -7, to: .now) ?? .now.addingTimeInterval(-7 * 86_400)
         return Set(sessions.filter { $0.status == .completed && $0.confirmedSleepStartAt >= cutoff }.map(\.nightDate)).count
     }
 
-    private func likelyWorkoutTomorrow(workouts: [WorkoutSession], calendar: Calendar) -> Bool {
+    private func likelyWorkoutTomorrow(workouts: [SleepNotificationWorkoutSnapshot], calendar: Calendar) -> Bool {
         let tomorrowWeekday = calendar.component(.weekday, from: calendar.date(byAdding: .day, value: 1, to: .now) ?? .now)
         let cutoff = calendar.date(byAdding: .day, value: -56, to: .now) ?? .now.addingTimeInterval(-56 * 86_400)
         return workouts.contains { workout in
@@ -2411,6 +2433,34 @@ struct SleepNotificationScheduler {
             second: 0,
             of: date
         ) ?? date
+    }
+}
+
+struct SleepNotificationSessionSnapshot: Sendable {
+    let id: UUID
+    let status: SleepSessionStatus
+    let nightDate: Date
+    let confirmedSleepStartAt: Date
+    let sleepModeStartedAt: Date?
+    let morningReminderSentAt: Date?
+    let unfinishedReminderSentAt: Date?
+
+    init(session: SleepSession) {
+        self.id = session.id
+        self.status = session.status
+        self.nightDate = session.nightDate
+        self.confirmedSleepStartAt = session.confirmedSleepStartAt
+        self.sleepModeStartedAt = session.sleepModeStartedAt
+        self.morningReminderSentAt = session.morningReminderSentAt
+        self.unfinishedReminderSentAt = session.unfinishedReminderSentAt
+    }
+}
+
+struct SleepNotificationWorkoutSnapshot: Sendable {
+    let date: Date
+
+    init(workout: WorkoutSession) {
+        self.date = workout.date
     }
 }
 

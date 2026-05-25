@@ -2,9 +2,21 @@ import SwiftData
 import SwiftUI
 
 struct StartWorkoutView: View {
+    @State private var navigationPath = NavigationPath()
+
     var body: some View {
-        NavigationStack {
-            StartWorkoutContentView()
+        NavigationStack(path: $navigationPath) {
+            StartWorkoutContentView { route in
+                navigationPath.append(route)
+            }
+            .navigationDestination(for: StartWorkoutRoute.self) { route in
+                switch route {
+                case .coach:
+                    CoachContentView()
+                case .templates:
+                    WorkoutTemplateLibraryView()
+                }
+            }
         }
     }
 }
@@ -12,31 +24,33 @@ struct StartWorkoutView: View {
 struct StartWorkoutContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @Query(filter: #Predicate<TrainingSplit> { $0.isActive }, sort: \TrainingSplit.name)
+    @Query
     private var activeSplits: [TrainingSplit]
 
-    @Query(filter: #Predicate<WorkoutSession> { !$0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    @Query
     private var unfinishedSessions: [WorkoutSession]
 
-    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    @Query
     private var completedSessions: [WorkoutSession]
 
-    @Query(sort: \SleepSession.createdAt, order: .reverse)
+    @Query
     private var sleepSessions: [SleepSession]
 
-    @Query(sort: \NapSession.startDate, order: .reverse)
+    @Query
     private var napSessions: [NapSession]
 
     @State private var activeSession: WorkoutSession?
     @State private var pendingDiscardSession: WorkoutSession?
     @State private var previewSplit: WorkoutPreviewSplit?
-    @State private var route: StartWorkoutRoute?
+    @State private var fallbackRoute: StartWorkoutRoute?
     @State private var templateCount = 0
     @State private var sleepSettings = SleepSettingsStore().load()
     @State private var sleepReadinessSnapshot = SleepAnalyticsService.emptyReadinessSnapshot()
     @State private var lastSleepReadinessSignature: SleepAnalyticsInputSignature?
 
+    private let openRoute: ((StartWorkoutRoute) -> Void)?
     private let coachEngine = CoachRecommendationEngine()
     private let modePlanner = WorkoutModePlanner()
     private let summaryBuilder = SessionSummaryBuilder()
@@ -45,6 +59,58 @@ struct StartWorkoutContentView: View {
     private let sleepCoaching = SleepCoachingService()
     private let sleepSettingsStore = SleepSettingsStore()
     private let sleepReadinessStore = SleepWorkoutReadinessSnapshotStore.shared
+
+    init(openRoute: ((StartWorkoutRoute) -> Void)? = nil) {
+        self.openRoute = openRoute
+        _activeSplits = Query(Self.activeSplitsDescriptor)
+        _unfinishedSessions = Query(Self.unfinishedSessionsDescriptor)
+        _completedSessions = Query(Self.completedSessionsDescriptor)
+        _sleepSessions = Query(Self.sleepSessionsDescriptor)
+        _napSessions = Query(Self.napSessionsDescriptor)
+    }
+
+    private static var activeSplitsDescriptor: FetchDescriptor<TrainingSplit> {
+        var descriptor = FetchDescriptor<TrainingSplit>(
+            predicate: #Predicate<TrainingSplit> { $0.isActive },
+            sortBy: [SortDescriptor(\.name)]
+        )
+        descriptor.fetchLimit = 12
+        return descriptor
+    }
+
+    private static var unfinishedSessionsDescriptor: FetchDescriptor<WorkoutSession> {
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { !$0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 3
+        return descriptor
+    }
+
+    private static var completedSessionsDescriptor: FetchDescriptor<WorkoutSession> {
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 40
+        return descriptor
+    }
+
+    private static var sleepSessionsDescriptor: FetchDescriptor<SleepSession> {
+        var descriptor = FetchDescriptor<SleepSession>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 60
+        return descriptor
+    }
+
+    private static var napSessionsDescriptor: FetchDescriptor<NapSession> {
+        var descriptor = FetchDescriptor<NapSession>(
+            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        descriptor.fetchLimit = 30
+        return descriptor
+    }
 
     private var coachSummary: CoachRecommendationSummary {
         coachEngine.makeSummary(activeSplits: activeSplits, completedSessions: completedSessions)
@@ -116,7 +182,7 @@ struct StartWorkoutContentView: View {
         .navigationDestination(item: $previewSplit) { split in
             WorkoutPreviewView(split: split)
         }
-        .navigationDestination(item: $route) { route in
+        .navigationDestination(item: $fallbackRoute) { route in
             switch route {
             case .coach:
                 CoachContentView()
@@ -137,7 +203,7 @@ struct StartWorkoutContentView: View {
         .onAppear {
             templateCount = templateStore.loadTemplates().count
             sleepSettings = sleepSettingsStore.load()
-            refreshSleepReadiness(force: true)
+            refreshSleepReadiness()
         }
         .onChange(of: currentSleepReadinessSignature) { _, _ in
             refreshSleepReadiness()
@@ -148,13 +214,15 @@ struct StartWorkoutContentView: View {
         let signature = currentSleepReadinessSignature
         guard force || signature != lastSleepReadinessSignature else { return }
 
-        sleepReadinessSnapshot = sleepReadinessStore.snapshot(
-            sessions: sleepSessions,
-            naps: napSessions,
-            workouts: completedSessions,
-            settings: sleepSettings,
-            force: force
-        )
+        sleepReadinessSnapshot = PerformanceTracer.trace(.workoutStartSleepReadiness) {
+            sleepReadinessStore.snapshot(
+                sessions: sleepSessions,
+                naps: napSessions,
+                workouts: completedSessions,
+                settings: sleepSettings,
+                force: force
+            )
+        }
         lastSleepReadinessSignature = signature
     }
 
@@ -171,11 +239,11 @@ struct StartWorkoutContentView: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Active Workout")
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.metadataEmphasis)
                             .foregroundStyle(appTheme.mutedText)
                             .textCase(.uppercase)
                         Text(session.splitNameSnapshot)
-                            .font(.title2.bold())
+                            .font(AppTypography.largeMetric)
                     }
 
                     Spacer()
@@ -185,12 +253,12 @@ struct StartWorkoutContentView: View {
                 }
 
                 Text(resumeSummary(for: session))
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.mutedText)
 
                 HStack {
                     Button {
-                        activeSession = session
+                        openSession(session)
                     } label: {
                         Label("Resume", systemImage: "play.circle.fill")
                             .frame(maxWidth: .infinity)
@@ -222,11 +290,11 @@ struct StartWorkoutContentView: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Recommended Today")
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.metadataEmphasis)
                             .foregroundStyle(appTheme.mutedText)
                             .textCase(.uppercase)
                         Text(split.name)
-                            .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                            .font(AppTypography.screenTitle)
                     }
 
                     Spacer()
@@ -234,7 +302,7 @@ struct StartWorkoutContentView: View {
                 }
 
                 Text(coachSummary.reason)
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.mutedText)
 
                 HStack {
@@ -248,7 +316,7 @@ struct StartWorkoutContentView: View {
                     .accessibilityIdentifier("workout-recommended-preview")
 
                     Button {
-                        route = .coach
+                        navigate(to: .coach)
                     } label: {
                         Label("Coach", systemImage: "sparkles")
                             .frame(maxWidth: .infinity)
@@ -263,18 +331,18 @@ struct StartWorkoutContentView: View {
         FitnessCard(style: .compact) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "moon.stars.fill")
-                    .font(.title3.weight(.semibold))
+                    .font(AppTypography.cardTitle)
                     .foregroundStyle(appTheme.colors.accent)
                     .frame(width: 44, height: 44)
                     .background(appTheme.colors.accentSurface, in: Circle())
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title)
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     Text("Suggestion: \(suggestion)")
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -287,14 +355,14 @@ struct StartWorkoutContentView: View {
         FitnessCard(style: .compact) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: recoveryIcon(for: recommendation.level))
-                    .font(.title3.weight(.semibold))
+                    .font(AppTypography.cardTitle)
                     .foregroundStyle(recoveryTint(for: recommendation.level))
                     .frame(width: 44, height: 44)
                     .background(recoveryTint(for: recommendation.level).opacity(0.16), in: Circle())
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(recommendation.title)
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     Text(recommendation.message)
@@ -364,7 +432,7 @@ struct StartWorkoutContentView: View {
     }
 
     private func preview(_ split: TrainingSplit) {
-        previewSplit = WorkoutPreviewSplit(split)
+        openPreview(WorkoutPreviewSplit(split))
     }
 
     private var emptyWorkoutCard: some View {
@@ -380,9 +448,9 @@ struct StartWorkoutContentView: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Empty Workout")
-                            .font(.title3.bold())
+                            .font(AppTypography.cardTitle)
                         Text("Build a one-off session from scratch.")
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.mutedText)
                     }
 
@@ -391,7 +459,7 @@ struct StartWorkoutContentView: View {
                 }
 
                 Button {
-                    activeSession = createEmptyWorkout()
+                    openSession(createEmptyWorkout())
                 } label: {
                     Label("Start Empty", systemImage: "plus.circle.fill")
                         .frame(maxWidth: .infinity)
@@ -414,13 +482,13 @@ struct StartWorkoutContentView: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Reuse")
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.metadataEmphasis)
                             .foregroundStyle(appTheme.mutedText)
                             .textCase(.uppercase)
                         Text("Repeat or start from a template")
-                            .font(.title3.bold())
+                            .font(AppTypography.cardTitle)
                         Text(templateCount == 0 ? "No saved templates yet" : "\(templateCount) saved templates")
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.mutedText)
                     }
 
@@ -430,7 +498,7 @@ struct StartWorkoutContentView: View {
                 HStack {
                     Button {
                         if let lastSession = completedSessions.first {
-                            previewSplit = reuseBuilder.previewSplit(from: lastSession)
+                            openPreview(reuseBuilder.previewSplit(from: lastSession))
                         }
                     } label: {
                         Label("Repeat Last", systemImage: "repeat")
@@ -440,7 +508,7 @@ struct StartWorkoutContentView: View {
                     .disabled(completedSessions.isEmpty)
 
                     Button {
-                        route = .templates
+                        navigate(to: .templates)
                     } label: {
                         Label("Templates", systemImage: "rectangle.stack")
                             .frame(maxWidth: .infinity)
@@ -466,11 +534,11 @@ struct StartWorkoutContentView: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Recent Session")
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.metadataEmphasis)
                             .foregroundStyle(appTheme.mutedText)
                             .textCase(.uppercase)
                         Text(session.splitNameSnapshot)
-                            .font(.title3.bold())
+                            .font(AppTypography.cardTitle)
                     }
 
                     Spacer()
@@ -487,7 +555,7 @@ struct StartWorkoutContentView: View {
                     .foregroundStyle(appTheme.mutedText)
 
                 Button {
-                    previewSplit = reuseBuilder.previewSplit(from: session)
+                    openPreview(reuseBuilder.previewSplit(from: session))
                 } label: {
                     Label("Repeat Last Workout", systemImage: "repeat")
                         .frame(maxWidth: .infinity)
@@ -557,9 +625,31 @@ struct StartWorkoutContentView: View {
     private func baseSplitName(_ snapshot: String) -> String {
         snapshot.components(separatedBy: " - ").first ?? snapshot
     }
+
+    private func navigate(to route: StartWorkoutRoute) {
+        if let openRoute {
+            openRoute(route)
+        } else {
+            AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
+                fallbackRoute = route
+            }
+        }
+    }
+
+    private func openSession(_ session: WorkoutSession) {
+        AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
+            activeSession = session
+        }
+    }
+
+    private func openPreview(_ preview: WorkoutPreviewSplit) {
+        AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
+            previewSplit = preview
+        }
+    }
 }
 
-private enum StartWorkoutRoute: Hashable, Identifiable {
+enum StartWorkoutRoute: Hashable, Identifiable {
     case coach
     case templates
 

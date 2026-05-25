@@ -19,7 +19,6 @@ struct ProgressContentView: View {
     @State private var selectedExercise: Exercise?
     @State private var isExerciseChartsPresented = false
     @State private var isPRTimelinePresented = false
-    @State private var exercisesTask: Task<Void, Never>?
     @State private var didRequestInitialRefresh = false
     @State private var weeklySummary: WeeklyTrainingSummary?
     @State private var splitConsistency: SplitConsistencySummary?
@@ -177,7 +176,6 @@ struct ProgressContentView: View {
             refreshSummary(force: true)
         }
         .onDisappear {
-            exercisesTask?.cancel()
             summaryTask?.cancel()
         }
     }
@@ -198,53 +196,50 @@ struct ProgressContentView: View {
     private func refreshExercises(force: Bool = false) {
         guard force || !exercisesLoaded else { return }
 
-        exercisesTask?.cancel()
-        exercisesTask = Task { @MainActor in
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-
-            do {
-                exercises = try modelContext.fetch(Self.exercisesDescriptor)
-            } catch {
-                exercises = []
+        do {
+            exercises = try PerformanceTracer.trace(.progressFetchExercises) {
+                try modelContext.fetch(Self.exercisesDescriptor)
             }
-            exercisesLoaded = true
+        } catch {
+            exercises = []
         }
+        exercisesLoaded = true
     }
 
     private func refreshSummary(force: Bool = false) {
         summaryTask?.cancel()
+
+        let recentSessions: [WorkoutSession]
+        do {
+            recentSessions = try modelContext.fetch(Self.completedSessionsDescriptor)
+        } catch {
+            weeklySummary = nil
+            splitConsistency = nil
+            return
+        }
+
+        let signature = Self.summarySignature(for: recentSessions)
+        guard force || signature != lastSummarySignature else { return }
+
+        let snapshots: [WorkoutAnalyticsSession]
+        do {
+            snapshots = try WorkoutAnalyticsSnapshotBuilder.snapshots(from: recentSessions, in: modelContext)
+        } catch {
+            weeklySummary = nil
+            splitConsistency = nil
+            return
+        }
+
         summaryTask = Task { @MainActor in
-            await Task.yield()
             guard !Task.isCancelled else { return }
-
-            let recentSessions: [WorkoutSession]
-            do {
-                recentSessions = try modelContext.fetch(Self.completedSessionsDescriptor)
-            } catch {
-                weeklySummary = nil
-                splitConsistency = nil
-                return
-            }
-
-            let signature = Self.summarySignature(for: recentSessions)
-            guard force || signature != lastSummarySignature else { return }
-
-            let snapshots: [WorkoutAnalyticsSession]
-            do {
-                snapshots = try WorkoutAnalyticsSnapshotBuilder.snapshots(from: recentSessions, in: modelContext)
-            } catch {
-                weeklySummary = nil
-                splitConsistency = nil
-                return
-            }
-
             let result = await Task.detached(priority: .userInitiated) {
-                let analytics = TrainingAnalyticsService()
-                let records = analytics.prTimeline(from: snapshots)
-                let weekly = analytics.weeklySummary(from: snapshots, prRecords: records)
-                let consistency = analytics.splitConsistency(from: snapshots)
-                return (weekly, consistency)
+                PerformanceTracer.trace(.progressAnalytics) {
+                    let analytics = TrainingAnalyticsService()
+                    let records = analytics.prTimeline(from: snapshots)
+                    let weekly = analytics.weeklySummary(from: snapshots, prRecords: records)
+                    let consistency = analytics.splitConsistency(from: snapshots)
+                    return (weekly, consistency)
+                }
             }.value
 
             guard !Task.isCancelled else { return }

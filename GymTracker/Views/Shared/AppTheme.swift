@@ -22,6 +22,30 @@ struct AppThemeColors {
 }
 
 struct AppThemeMetrics {
+    let spacing2: CGFloat = 2
+    let spacing4: CGFloat = 4
+    let spacing6: CGFloat = 6
+    let spacing8: CGFloat = 8
+    let spacing10: CGFloat = 10
+    let spacing12: CGFloat = 12
+    let spacing14: CGFloat = 14
+    let spacing16: CGFloat = 16
+    let spacing18: CGFloat = 18
+    let spacing20: CGFloat = 20
+    let spacing22: CGFloat = 22
+    let spacing24: CGFloat = 24
+    let spacing28: CGFloat = 28
+    let spacing32: CGFloat = 32
+    let radius8: CGFloat = 8
+    let radius10: CGFloat = 10
+    let radius12: CGFloat = 12
+    let radius14: CGFloat = 14
+    let radius16: CGFloat = 16
+    let radius18: CGFloat = 18
+    let radius20: CGFloat = 20
+    let radius24: CGFloat = 24
+    let radius28: CGFloat = 28
+    let radius32: CGFloat = 32
     let screenPadding: CGFloat = 16
     let screenBottomPadding: CGFloat = 28
     let screenContentSpacing: CGFloat = 18
@@ -38,9 +62,40 @@ struct AppThemeMetrics {
     let buttonHeight: CGFloat = 50
     let chipVerticalPadding: CGFloat = 8
     let chipHorizontalPadding: CGFloat = 13
+    let minimumHitTarget: CGFloat = 44
+    let compactRowMinHeight: CGFloat = 48
+    let standardRowMinHeight: CGFloat = 56
+    let largeRowMinHeight: CGFloat = 64
+    let metricTileMinHeight: CGFloat = 104
+    let chartCompactHeight: CGFloat = 180
+    let chartStandardHeight: CGFloat = 240
     let swipeRevealWidth: CGFloat = 96
     let swipeRevealActionSize: CGFloat = 56
     let swipeRevealActionTrailingPadding: CGFloat = 14
+}
+
+enum AppTypography {
+    static let screenTitle = Font.system(.largeTitle, design: .rounded).weight(.bold)
+    static let screenSubtitle = Font.subheadline
+    static let heroTitle = Font.system(size: 46, weight: .bold, design: .rounded)
+    static let heroMetric = Font.system(size: 44, weight: .bold, design: .rounded)
+    static let largeMetric = Font.system(.title2, design: .rounded).weight(.bold)
+    static let sectionTitle = Font.headline
+    static let cardTitle = Font.title3.bold()
+    static let compactCardTitle = Font.headline.weight(.semibold)
+    static let body = Font.subheadline
+    static let bodyEmphasis = Font.subheadline.weight(.semibold)
+    static let metadata = Font.caption
+    static let metadataEmphasis = Font.caption.weight(.semibold)
+    static let badge = Font.caption2.weight(.bold)
+    static let chip = Font.caption.weight(.semibold)
+    static let button = Font.headline.weight(.semibold)
+    static let workoutNumber = Font.system(.headline, design: .rounded).monospacedDigit().weight(.bold)
+    static let workoutLargeNumber = Font.system(.title2, design: .rounded).monospacedDigit().weight(.bold)
+
+    static func rounded(size: CGFloat, weight: Font.Weight = .semibold) -> Font {
+        .system(size: size, weight: weight, design: .rounded)
+    }
 }
 
 enum AppTheme: String, CaseIterable, Identifiable {
@@ -283,6 +338,7 @@ private struct AppSwitchToggleStyle: ToggleStyle {
     let theme: AppTheme
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var activeTrack: Color {
         if theme == .black && colorScheme == .dark {
@@ -312,7 +368,8 @@ private struct AppSwitchToggleStyle: ToggleStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         Button {
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
+            AppHaptics.selection()
+            withAnimation(AppMotion.toggle(reduceMotion: reduceMotion)) {
                 configuration.isOn.toggle()
             }
         } label: {
@@ -331,10 +388,10 @@ private struct AppSwitchToggleStyle: ToggleStyle {
 
     private func switchBody(isOn: Bool) -> some View {
         ZStack(alignment: isOn ? .trailing : .leading) {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: theme.metrics.radius18, style: .continuous)
                 .fill(isOn ? activeTrack : inactiveTrack)
                 .overlay {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    RoundedRectangle(cornerRadius: theme.metrics.radius18, style: .continuous)
                         .stroke(
                             isOn ? activeTrack.opacity(0.28) : Color.black.opacity(colorScheme == .dark ? 0 : 0.08),
                             lineWidth: 1
@@ -355,6 +412,6 @@ private struct AppSwitchToggleStyle: ToggleStyle {
                 .padding(3)
         }
         .frame(width: 58, height: 34)
-        .animation(.spring(response: 0.25, dampingFraction: 0.82), value: isOn)
+        .animation(AppMotion.toggle(reduceMotion: reduceMotion), value: isOn)
     }
 }

@@ -19,7 +19,7 @@ struct NutritionComparisonView: View {
     @State private var baseUnit: FoodAmountUnit
     @State private var finalValues: [ComparedNutrientKind: String]
     @State private var errorText: String?
-    @State private var savedFoodForLogging: FoodItem?
+    @State private var savedFoodForLogging: NutritionComparisonLogRoute?
     @State private var isRawTextExpanded = false
 
     init(importedDraft: FoodImportDraft? = nil, labelDraft: FoodImportDraft, localFood: FoodItem? = nil) {
@@ -109,8 +109,26 @@ struct NutritionComparisonView: View {
         }
         .navigationTitle("Compare")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(item: $savedFoodForLogging) { food in
-            LogFoodView(food: food)
+        .navigationDestination(item: $savedFoodForLogging) { route in
+            if let food = savedFoods.first(where: { $0.id == route.id }) {
+                LogFoodView(food: food)
+            } else {
+                missingSavedFoodView
+            }
+        }
+    }
+
+    private var missingSavedFoodView: some View {
+        FitnessScreen(
+            title: "Food unavailable",
+            subtitle: "Go back and try again.",
+            systemImage: "exclamationmark.triangle"
+        ) {
+            ComparisonNoticeCard(
+                message: "The selected food is no longer available.",
+                systemImage: "exclamationmark.triangle",
+                foregroundColor: appTheme.colors.warning
+            )
         }
     }
 
@@ -471,7 +489,7 @@ struct NutritionComparisonView: View {
         }
 
         if shouldLog {
-            savedFoodForLogging = food
+            savedFoodForLogging = NutritionComparisonLogRoute(id: food.id)
         } else {
             dismiss()
         }
@@ -489,6 +507,10 @@ struct NutritionComparisonView: View {
     private static func cleanedText(_ text: String?) -> String? {
         text?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
     }
+}
+
+private struct NutritionComparisonLogRoute: Identifiable, Hashable {
+    let id: UUID
 }
 
 private struct ResolvedComparisonValues {

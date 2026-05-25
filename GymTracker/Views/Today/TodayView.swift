@@ -3,6 +3,7 @@ import SwiftUI
 
 struct TodayView: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @Query
     private var activeSplits: [TrainingSplit]
@@ -31,17 +32,21 @@ struct TodayView: View {
     @Query
     private var coachCheckIns: [DailyCoachCheckIn]
 
-    @State private var navigationPath = NavigationPath()
+    @State private var selectedRoute: TodayRoute?
     @State private var showingRestDayConfirmation = false
     @State private var showingCoachCheckIn = false
     @State private var previewSplit: WorkoutPreviewSplit?
     @State private var sleepSettings = SleepSettingsStore().load()
     @State private var sleepReadinessSnapshot = SleepAnalyticsService.emptyReadinessSnapshot()
     @State private var lastSleepReadinessSignature: SleepAnalyticsInputSignature?
-    @State private var sleepReadinessTask: Task<Void, Never>?
     @State private var coachSnapshot = CoachIntelligenceService.emptySnapshot()
     @State private var lastCoachSnapshotSignature: String?
-    @State private var coachSnapshotTask: Task<Void, Never>?
+    @State private var todaySnapshot = TodayDashboardSnapshot.empty
+    @State private var lastTodaySnapshotSignature: String?
+    @State private var hydrationTargetML = HydrationSettingsStore().dailyTargetML()
+    @State private var nutritionGoal = NutritionGoalService().loadGoal()
+    @State private var didRequestInitialRefresh = false
+    @State private var pendingRouteNavigation: TodayRouteNavigationStart?
 
     private let coachIntelligence = CoachIntelligenceService()
     private let decisionService = TrainingDecisionService()
@@ -146,8 +151,41 @@ struct TodayView: View {
         return descriptor
     }
 
+    private var currentTodaySnapshot: TodayDashboardSnapshot {
+        guard lastTodaySnapshotSignature != nil else {
+            return todaySnapshot
+        }
+
+        let signature = todaySnapshotSignature
+        if signature == lastTodaySnapshotSignature {
+            return todaySnapshot
+        }
+
+        return todaySnapshot
+    }
+
+    private var todaySnapshotSignature: String {
+        let splitSignature = signature(activeSplits, limit: 12) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970):\($0.exercises.count)" }
+        let sessionSignature = signature(completedSessions, limit: 40) { session in
+            let setSignature = session.exerciseLogs
+                .flatMap(\.setLogs)
+                .map { "\($0.id.uuidString):\($0.completed):\($0.isWarmup):\($0.weight):\($0.reps)" }
+                .joined(separator: ",")
+            return "\(session.id.uuidString):\(session.date.timeIntervalSince1970):\(session.endedAt?.timeIntervalSince1970 ?? 0):\(setSignature)"
+        }
+        let unfinishedSignature = signature(unfinishedSessions, limit: 5) { "\($0.id.uuidString):\($0.date.timeIntervalSince1970)" }
+        let hydrationSignature = signature(hydrationEntries, limit: 120) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" }
+        return [
+            splitSignature,
+            sessionSignature,
+            unfinishedSignature,
+            hydrationSignature,
+            String(hydrationTargetML)
+        ].joined(separator: "|")
+    }
+
     private var trainingDecision: TrainingDecision {
-        decisionService.decision(activeSplits: activeSplits, completedSessions: Array(completedSessions.prefix(40)))
+        currentTodaySnapshot.trainingDecision
     }
 
     private var currentSleepReadinessSignature: SleepAnalyticsInputSignature {
@@ -155,14 +193,37 @@ struct TodayView: View {
     }
 
     private var hydrationSummary: DailyHydrationSummary {
-        hydrationService.summary(
-            entries: hydrationEntries,
-            targetML: hydrationSettingsStore.dailyTargetML()
-        )
+        currentTodaySnapshot.hydrationSummary
     }
 
     private var readinessScore: ReadinessScore {
-        coachSnapshot.readiness
+        currentCoachSnapshot.readiness
+    }
+
+    private var currentSleepReadinessSnapshot: SleepWorkoutReadinessSnapshot {
+        guard lastSleepReadinessSignature != nil else {
+            return sleepReadinessSnapshot
+        }
+
+        let signature = currentSleepReadinessSignature
+        if signature == lastSleepReadinessSignature {
+            return sleepReadinessSnapshot
+        }
+
+        return sleepReadinessSnapshot
+    }
+
+    private var currentCoachSnapshot: CoachIntelligenceSnapshot {
+        guard lastCoachSnapshotSignature != nil else {
+            return coachSnapshot
+        }
+
+        let signature = currentCoachSnapshotSignature
+        if signature == lastCoachSnapshotSignature {
+            return coachSnapshot
+        }
+
+        return coachSnapshot
     }
 
     private var currentCoachSnapshotSignature: String {
@@ -176,8 +237,8 @@ struct TodayView: View {
             signature(foodLogEntries, limit: 80) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
             signature(coachCheckIns, limit: 14) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
             sleepSettingsSignature,
-            "\(hydrationSettingsStore.dailyTargetML())",
-            "\(nutritionGoalStore.loadGoal().updatedAt.timeIntervalSince1970)"
+            "\(hydrationTargetML)",
+            "\(nutritionGoal.updatedAt.timeIntervalSince1970)"
         ].joined(separator: "|")
     }
 
@@ -194,27 +255,74 @@ struct TodayView: View {
     }
 
     private func makeCoachSnapshot() -> CoachIntelligenceSnapshot {
-        coachIntelligence.snapshot(
+        PerformanceTracer.trace(.todayCoachSnapshot) {
+            coachIntelligence.snapshot(
+                activeSplits: activeSplits,
+                exercises: exercises,
+                sleepSessions: sleepSessions,
+                napSessions: napSessions,
+                hydrationEntries: hydrationEntries,
+                completedWorkouts: Array(completedSessions.prefix(40)),
+                foodLogs: foodLogEntries,
+                checkIns: coachCheckIns,
+                sleepSettings: sleepSettings,
+                hydrationTargetML: hydrationTargetML,
+                nutritionGoal: nutritionGoal
+            )
+        }
+    }
+
+    private func refreshTodaySnapshot(force: Bool = false) {
+        let signature = todaySnapshotSignature
+        guard force || signature != lastTodaySnapshotSignature else { return }
+        todaySnapshot = PerformanceTracer.trace(.todaySnapshot) {
+            makeTodaySnapshot()
+        }
+        lastTodaySnapshotSignature = signature
+    }
+
+    private func makeTodaySnapshot() -> TodayDashboardSnapshot {
+        let decision = decisionService.decision(
             activeSplits: activeSplits,
-            exercises: exercises,
-            sleepSessions: sleepSessions,
-            napSessions: napSessions,
-            hydrationEntries: hydrationEntries,
-            completedWorkouts: Array(completedSessions.prefix(40)),
-            foodLogs: foodLogEntries,
-            checkIns: coachCheckIns,
-            sleepSettings: sleepSettings,
-            hydrationTargetML: hydrationSettingsStore.dailyTargetML(),
-            nutritionGoal: nutritionGoalStore.loadGoal()
+            completedSessions: Array(completedSessions.prefix(40))
+        )
+        let recentCycleNames = makeRecentPPLCycleNames(from: completedSessions)
+        let suggested = makeSuggestedSplit(recentPPLCycleNames: recentCycleNames)
+        let weekSessions = makeWeeklySessions(from: completedSessions)
+        let workingSets = weekSessions.reduce(0) { total, session in
+            total + workingSetCount(in: session)
+        }
+        let coverageNames = makeSplitCoverageNames(from: activeSplits)
+        let trainedNames = Set(weekSessions.map { baseSplitName($0.splitNameSnapshot) })
+        let coverageItems = coverageNames.map { name in
+            SplitCoverageItem(name: name, isComplete: trainedNames.contains(name))
+        }
+
+        return TodayDashboardSnapshot(
+            trainingDecision: decision,
+            hydrationSummary: hydrationService.summary(
+                entries: hydrationEntries,
+                targetML: hydrationTargetML
+            ),
+            suggestedSplit: suggested,
+            recentPPLCycleNames: recentCycleNames,
+            weeklySessions: weekSessions,
+            workoutsThisWeek: weekSessions.count,
+            workingSetsThisWeek: workingSets,
+            volumeThisWeekText: makeVolumeThisWeekText(from: weekSessions),
+            splitCoverageItems: coverageItems,
+            splitCoverageNames: coverageNames,
+            splitBalanceText: makeSplitBalanceText(from: coverageItems),
+            splitCoverageSubtitle: makeSplitCoverageSubtitle(from: coverageItems)
         )
     }
 
     var body: some View {
-        let intelligence = coachSnapshot
+        let intelligence = currentCoachSnapshot
 
-        NavigationStack(path: $navigationPath) {
+        NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: appTheme.metrics.screenContentSpacing) {
+                LazyVStack(alignment: .leading, spacing: appTheme.metrics.screenContentSpacing) {
                     DashboardHeaderView(
                         dateText: todayDateText,
                         title: "Today",
@@ -252,8 +360,8 @@ struct TodayView: View {
                     }
 
                     DashboardSection(title: "Recovery") {
-                        NavigationLink {
-                            SleepDashboardView()
+                        Button {
+                            openRoute(.sleep)
                         } label: {
                             TodaySleepRecoveryCard(summary: sleepSummary, recommendation: todayRecoveryRecommendation)
                         }
@@ -265,8 +373,8 @@ struct TodayView: View {
                     }
 
                     DashboardSection(title: "Nutrition") {
-                        NavigationLink {
-                            NutritionInsightsDashboardView()
+                        Button {
+                            openRoute(.nutrition)
                         } label: {
                             NutritionHomeSummaryCard()
                         }
@@ -331,21 +439,8 @@ struct TodayView: View {
             .navigationTitle("Today")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(for: TodayRoute.self) { route in
-                switch route {
-                case .workout:
-                    StartWorkoutContentView()
-                case .coach:
-                    CoachContentView()
-                case .progress:
-                    ProgressContentView()
-                case .nutrition:
-                    NutritionDashboardView()
-                case .sleep:
-                    SleepDashboardView()
-                case .hydration:
-                    HydrationView()
-                }
+            .navigationDestination(item: $selectedRoute) { route in
+                destination(for: route)
             }
             .navigationDestination(item: $previewSplit) { split in
                 WorkoutPreviewView(split: split)
@@ -360,12 +455,24 @@ struct TodayView: View {
             }
             .onAppear {
                 sleepSettings = sleepSettingsStore.load()
-                refreshSleepReadiness(force: true)
-                refreshCoachSnapshot(force: true)
+                hydrationTargetML = hydrationSettingsStore.dailyTargetML()
+                nutritionGoal = nutritionGoalStore.loadGoal()
+                let shouldForceRefresh = !didRequestInitialRefresh
+                didRequestInitialRefresh = true
+                refreshTodaySnapshot(force: shouldForceRefresh)
+                DispatchQueue.main.async {
+                    refreshSleepReadiness()
+                    refreshCoachSnapshot()
+                }
             }
-            .onDisappear {
-                sleepReadinessTask?.cancel()
-                coachSnapshotTask?.cancel()
+            .onChange(of: todaySnapshotSignature) { _, _ in
+                refreshTodaySnapshot()
+            }
+            .onChange(of: currentSleepReadinessSignature) { _, _ in
+                refreshSleepReadiness()
+            }
+            .onChange(of: currentCoachSnapshotSignature) { _, _ in
+                refreshCoachSnapshot()
             }
         }
     }
@@ -399,7 +506,7 @@ struct TodayView: View {
             QuickAction(
                 identifier: "quick-action-readiness",
                 title: "Readiness",
-                subtitle: "\(readinessScore.value) - \(readinessScore.category.displayName)",
+                subtitle: readinessQuickActionSubtitle,
                 systemImage: "sparkles",
                 style: .neutral,
                 action: { openRoute(.coach) }
@@ -424,7 +531,47 @@ struct TodayView: View {
     }
 
     private func openRoute(_ route: TodayRoute) {
-        navigationPath.append(route)
+        pendingRouteNavigation = TodayRouteNavigationStart(route: route, startedAt: ContinuousClock.now)
+        PerformanceTracer.mark(.todayRouteSelection, "\(route.analyticsName) requested")
+        AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
+            PerformanceTracer.trace(.todayRouteSelection) {
+                selectedRoute = route
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func destination(for route: TodayRoute) -> some View {
+        Group {
+            switch route {
+            case .workout:
+                StartWorkoutContentView()
+            case .coach:
+                DeferredCoachDestinationView(initialSnapshot: coachNavigationSnapshot)
+            case .progress:
+                ProgressContentView()
+            case .nutrition:
+                NutritionDashboardView()
+            case .sleep:
+                SleepDashboardView()
+            case .hydration:
+                HydrationView()
+            }
+        }
+        .onAppear {
+            markRouteAppeared(route)
+        }
+    }
+
+    private func markRouteAppeared(_ route: TodayRoute) {
+        guard let pendingRouteNavigation, pendingRouteNavigation.route == route else {
+            return
+        }
+
+        let elapsed = pendingRouteNavigation.startedAt.duration(to: ContinuousClock.now)
+        let milliseconds = elapsed.components.seconds * 1_000 + elapsed.components.attoseconds / 1_000_000_000_000_000
+        PerformanceTracer.mark(.todayRouteAppear, "\(route.analyticsName) appeared in \(milliseconds)ms")
+        self.pendingRouteNavigation = nil
     }
 
     private var lastWorkoutInsight: some View {
@@ -440,17 +587,17 @@ struct TodayView: View {
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text(last.splitNameSnapshot)
-                            .font(.title3.bold())
+                            .font(AppTypography.cardTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.75)
 
                         Text(last.date.formatted(date: .abbreviated, time: .omitted))
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
 
                         Text("\(last.exerciseLogs.count) exercises - \(workingSetCount(in: last)) working sets")
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.metadataEmphasis)
                             .foregroundStyle(appTheme.colors.textTertiary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
@@ -459,7 +606,7 @@ struct TodayView: View {
                     Spacer(minLength: 8)
 
                     Image(systemName: "checkmark.seal.fill")
-                        .font(.title3.weight(.semibold))
+                        .font(AppTypography.cardTitle)
                         .foregroundStyle(appTheme.colors.accent)
                 }
             } else {
@@ -546,45 +693,47 @@ struct TodayView: View {
     }
 
     private var sleepSummary: SleepSummary {
-        sleepReadinessSnapshot.latestSummary
+        currentSleepReadinessSnapshot.latestSummary
     }
 
     private var todayRecoveryRecommendation: String {
-        sleepReadinessSnapshot.adaptiveRecommendation?.message ?? sleepCoaching.recommendation(for: sleepSummary, settings: sleepSettings)
+        currentSleepReadinessSnapshot.adaptiveRecommendation?.message ?? sleepCoaching.recommendation(for: sleepSummary, settings: sleepSettings)
+    }
+
+    private var readinessQuickActionSubtitle: String {
+        guard lastCoachSnapshotSignature != nil else {
+            return "Preparing coach brief"
+        }
+
+        return "\(readinessScore.value) - \(readinessScore.category.displayName)"
+    }
+
+    private var coachNavigationSnapshot: CoachIntelligenceSnapshot? {
+        lastCoachSnapshotSignature == nil ? nil : coachSnapshot
     }
 
     private func refreshSleepReadiness(force: Bool = false) {
-        sleepReadinessTask?.cancel()
-        sleepReadinessTask = Task { @MainActor in
-            await Task.yield()
-            guard !Task.isCancelled else { return }
+        let signature = currentSleepReadinessSignature
+        guard force || signature != lastSleepReadinessSignature else { return }
 
-            let signature = currentSleepReadinessSignature
-            guard force || signature != lastSleepReadinessSignature else { return }
-
-            sleepReadinessSnapshot = sleepReadinessStore.snapshot(
+        sleepReadinessSnapshot = PerformanceTracer.trace(.todaySleepReadiness) {
+            sleepReadinessStore.snapshot(
                 sessions: sleepSessions,
                 naps: napSessions,
                 workouts: Array(completedSessions.prefix(12)),
                 settings: sleepSettings,
                 force: force
             )
-            lastSleepReadinessSignature = signature
         }
+        lastSleepReadinessSignature = signature
     }
 
     private func refreshCoachSnapshot(force: Bool = false) {
-        coachSnapshotTask?.cancel()
-        coachSnapshotTask = Task { @MainActor in
-            await Task.yield()
-            guard !Task.isCancelled else { return }
+        let signature = currentCoachSnapshotSignature
+        guard force || signature != lastCoachSnapshotSignature else { return }
 
-            let signature = currentCoachSnapshotSignature
-            guard force || signature != lastCoachSnapshotSignature else { return }
-
-            coachSnapshot = makeCoachSnapshot()
-            lastCoachSnapshotSignature = signature
-        }
+        coachSnapshot = makeCoachSnapshot()
+        lastCoachSnapshotSignature = signature
     }
 
     private func signature<Value>(_ values: [Value], limit: Int, transform: (Value) -> String) -> String {
@@ -603,6 +752,40 @@ struct TodayView: View {
     }
 
     private var suggestedSplit: TrainingSplit? {
+        currentTodaySnapshot.suggestedSplit
+    }
+
+    private var pplOrderedSplits: [TrainingSplit] {
+        PPLRotation.names.compactMap { name in
+            activeSplits.first { $0.name == name }
+        }
+    }
+
+    private var recentPPLCycleNames: [String] {
+        currentTodaySnapshot.recentPPLCycleNames
+    }
+
+    private func makeRecentPPLCycleNames(from sessions: [WorkoutSession]) -> [String] {
+        var names: [String] = []
+
+        for session in sessions {
+            guard let name = pplName(for: session.splitNameSnapshot) else { continue }
+
+            if names.contains(name) {
+                break
+            }
+
+            names.append(name)
+
+            if names.count == PPLRotation.names.count {
+                break
+            }
+        }
+
+        return names
+    }
+
+    private func makeSuggestedSplit(recentPPLCycleNames: [String]) -> TrainingSplit? {
         let orderedSplits = pplOrderedSplits
         guard !orderedSplits.isEmpty else { return activeSplits.first }
 
@@ -622,32 +805,6 @@ struct TodayView: View {
         return orderedSplits.first { $0.name == nextName } ?? orderedSplits.first
     }
 
-    private var pplOrderedSplits: [TrainingSplit] {
-        PPLRotation.names.compactMap { name in
-            activeSplits.first { $0.name == name }
-        }
-    }
-
-    private var recentPPLCycleNames: [String] {
-        var names: [String] = []
-
-        for session in completedSessions {
-            guard let name = pplName(for: session.splitNameSnapshot) else { continue }
-
-            if names.contains(name) {
-                break
-            }
-
-            names.append(name)
-
-            if names.count == PPLRotation.names.count {
-                break
-            }
-        }
-
-        return names
-    }
-
     private func pplName(for splitNameSnapshot: String) -> String? {
         PPLRotation.names.first { name in
             splitNameSnapshot == name || splitNameSnapshot.hasPrefix("\(name) - ")
@@ -655,21 +812,27 @@ struct TodayView: View {
     }
 
     private var weeklySessions: [WorkoutSession] {
-        completedSessions.filter { Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .weekOfYear) }
+        currentTodaySnapshot.weeklySessions
+    }
+
+    private func makeWeeklySessions(from sessions: [WorkoutSession]) -> [WorkoutSession] {
+        sessions.filter { Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .weekOfYear) }
     }
 
     private var workoutsThisWeek: Int {
-        weeklySessions.count
+        currentTodaySnapshot.workoutsThisWeek
     }
 
     private var workingSetsThisWeek: Int {
-        weeklySessions.reduce(0) { total, session in
-            total + workingSetCount(in: session)
-        }
+        currentTodaySnapshot.workingSetsThisWeek
     }
 
     private var volumeThisWeekText: String {
-        let volume = weeklySessions.reduce(0) { total, session in
+        currentTodaySnapshot.volumeThisWeekText
+    }
+
+    private func makeVolumeThisWeekText(from sessions: [WorkoutSession]) -> String {
+        let volume = sessions.reduce(0) { total, session in
             total + session.exerciseLogs
                 .flatMap(\.setLogs)
                 .filter { $0.completed && !$0.isWarmup }
@@ -689,37 +852,44 @@ struct TodayView: View {
     }
 
     private var splitCoverageItems: [SplitCoverageItem] {
-        let names = splitCoverageNames
-        let trainedNames = Set(weeklySessions.map { baseSplitName($0.splitNameSnapshot) })
-
-        return names.map { name in
-            SplitCoverageItem(name: name, isComplete: trainedNames.contains(name))
-        }
+        currentTodaySnapshot.splitCoverageItems
     }
 
     private var splitCoverageNames: [String] {
+        currentTodaySnapshot.splitCoverageNames
+    }
+
+    private func makeSplitCoverageNames(from splits: [TrainingSplit]) -> [String] {
         let activePPLNames = PPLRotation.names.filter { name in
-            activeSplits.contains { $0.name == name }
+            splits.contains { $0.name == name }
         }
 
         if !activePPLNames.isEmpty {
             return activePPLNames
         }
 
-        return Array(activeSplits.map(\.name).prefix(3))
+        return Array(splits.map(\.name).prefix(3))
     }
 
     private var splitBalanceText: String {
-        guard !splitCoverageItems.isEmpty else { return "0/0" }
-        return "\(splitCoverageItems.filter(\.isComplete).count)/\(splitCoverageItems.count)"
+        currentTodaySnapshot.splitBalanceText
+    }
+
+    private func makeSplitBalanceText(from items: [SplitCoverageItem]) -> String {
+        guard !items.isEmpty else { return "0/0" }
+        return "\(items.filter(\.isComplete).count)/\(items.count)"
     }
 
     private var splitCoverageSubtitle: String {
-        guard !splitCoverageItems.isEmpty else {
+        currentTodaySnapshot.splitCoverageSubtitle
+    }
+
+    private func makeSplitCoverageSubtitle(from items: [SplitCoverageItem]) -> String {
+        guard !items.isEmpty else {
             return "Create active splits to track weekly coverage."
         }
 
-        if splitCoverageItems.allSatisfy(\.isComplete) {
+        if items.allSatisfy(\.isComplete) {
             return "Balanced week complete."
         }
 
@@ -743,7 +913,7 @@ struct TodayView: View {
 
     private func previewSuggestedSplit() {
         guard let suggestedSplit else { return }
-        previewSplit = WorkoutPreviewSplit(suggestedSplit)
+        openPreview(WorkoutPreviewSplit(suggestedSplit))
     }
 
     private func previewRecommendedSplit() {
@@ -752,8 +922,58 @@ struct TodayView: View {
             let split = activeSplits.first(where: { $0.name == splitName })
         else { return }
 
-        previewSplit = WorkoutPreviewSplit(split)
+        openPreview(WorkoutPreviewSplit(split))
     }
+
+    private func openPreview(_ split: WorkoutPreviewSplit) {
+        AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
+            previewSplit = split
+        }
+    }
+}
+
+private struct TodayDashboardSnapshot {
+    let trainingDecision: TrainingDecision
+    let hydrationSummary: DailyHydrationSummary
+    let suggestedSplit: TrainingSplit?
+    let recentPPLCycleNames: [String]
+    let weeklySessions: [WorkoutSession]
+    let workoutsThisWeek: Int
+    let workingSetsThisWeek: Int
+    let volumeThisWeekText: String
+    let splitCoverageItems: [SplitCoverageItem]
+    let splitCoverageNames: [String]
+    let splitBalanceText: String
+    let splitCoverageSubtitle: String
+
+    static let empty = TodayDashboardSnapshot(
+        trainingDecision: TrainingDecision(
+            recommendedSplitName: nil,
+            recommendedMode: .full,
+            action: .buildBaseline,
+            title: "",
+            reason: ""
+        ),
+        hydrationSummary: DailyHydrationSummary(
+            date: .now,
+            totalML: 0,
+            targetML: 0,
+            progress: 0,
+            remainingML: 0,
+            status: .low,
+            lastLoggedAt: nil
+        ),
+        suggestedSplit: nil,
+        recentPPLCycleNames: [],
+        weeklySessions: [],
+        workoutsThisWeek: 0,
+        workingSetsThisWeek: 0,
+        volumeThisWeekText: "0",
+        splitCoverageItems: [],
+        splitCoverageNames: [],
+        splitBalanceText: "0/0",
+        splitCoverageSubtitle: "Create active splits to track weekly coverage."
+    )
 }
 
 private enum PPLRotation {
@@ -769,6 +989,106 @@ private enum TodayRoute: Hashable, Identifiable {
     case hydration
 
     var id: Self { self }
+
+    var analyticsName: String {
+        switch self {
+        case .workout:
+            return "workout"
+        case .coach:
+            return "coach"
+        case .progress:
+            return "progress"
+        case .nutrition:
+            return "nutrition"
+        case .sleep:
+            return "sleep"
+        case .hydration:
+            return "hydration"
+        }
+    }
+}
+
+private struct TodayRouteNavigationStart {
+    let route: TodayRoute
+    let startedAt: ContinuousClock.Instant
+}
+
+private struct DeferredCoachDestinationView: View {
+    @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let initialSnapshot: CoachIntelligenceSnapshot?
+
+    @State private var showFullContent = false
+
+    var body: some View {
+        ZStack {
+            if showFullContent {
+                CoachContentView(initialSnapshot: initialSnapshot)
+                    .transition(.opacity)
+            } else {
+                coachWarmStartView
+                    .transition(.opacity)
+            }
+        }
+        .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
+        .navigationTitle("Coach")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            guard !showFullContent else { return }
+            if !reduceMotion {
+                try? await Task.sleep(nanoseconds: 260_000_000)
+            } else {
+                await Task.yield()
+            }
+            guard !Task.isCancelled else { return }
+            PerformanceTracer.trace(.todayCoachContentMount) {
+                showFullContent = true
+            }
+        }
+        .animation(AppMotion.gentleFade(reduceMotion: reduceMotion), value: showFullContent)
+    }
+
+    @ViewBuilder
+    private var coachWarmStartView: some View {
+        if let initialSnapshot {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: appTheme.metrics.screenContentSpacing) {
+                    FitnessScreenHeader(
+                        title: "Coach",
+                        subtitle: "Readiness, targets, and recovery.",
+                        systemImage: "sparkles"
+                    )
+
+                    ReadinessDetailHeaderCard(readiness: initialSnapshot.readiness)
+
+                    DashboardSection(title: "Recommendation") {
+                        ReadinessRecommendationCard(readiness: initialSnapshot.readiness)
+                    }
+
+                    DashboardSection(title: "Weekly Summary") {
+                        WeeklyCoachSummaryCard(summary: initialSnapshot.weeklySummary)
+                    }
+                }
+                .padding(appTheme.metrics.screenPadding)
+                .padding(.bottom, appTheme.metrics.screenBottomPadding)
+            }
+        } else {
+            FitnessScreen(
+                title: "Coach",
+                subtitle: "Readiness, targets, and recovery.",
+                systemImage: "sparkles"
+            ) {
+                ReadinessDetailHeaderCard(readiness: CoachIntelligenceService.emptySnapshot().readiness)
+
+                DashboardSection(title: "Recommendation") {
+                    ReadinessRecommendationCard(readiness: CoachIntelligenceService.emptySnapshot().readiness)
+                }
+            }
+            .redacted(reason: .placeholder)
+            .allowsHitTesting(false)
+        }
+    }
 }
 
 private struct TodaySleepRecoveryCard: View {
@@ -781,7 +1101,7 @@ private struct TodaySleepRecoveryCard: View {
         FitnessCard {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "moon.stars.fill")
-                    .font(.title3.weight(.semibold))
+                    .font(AppTypography.cardTitle)
                     .foregroundStyle(appTheme.colors.accent)
                     .frame(width: 46, height: 46)
                     .background(appTheme.colors.accentSurface, in: Circle())
@@ -789,7 +1109,7 @@ private struct TodaySleepRecoveryCard: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
                         Text(recoveryTitle)
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         if let source = summary.source {
@@ -999,18 +1319,18 @@ struct HydrationView: View {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Today")
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.metadataEmphasis)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .textCase(.uppercase)
                         Text("\(HydrationService.formatAmount(summary.totalML)) / \(HydrationService.formatAmount(summary.targetML))")
-                            .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                            .font(AppTypography.screenTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                     }
 
                     Spacer()
 
                     Image(systemName: "drop.fill")
-                        .font(.title2.weight(.semibold))
+                        .font(AppTypography.largeMetric)
                         .foregroundStyle(appTheme.colors.hydration)
                         .frame(width: 52, height: 52)
                         .background(appTheme.colors.hydration.opacity(0.14), in: Circle())
@@ -1105,10 +1425,12 @@ struct HydrationView: View {
         do {
             try modelContext.save()
             errorText = nil
+            AppHaptics.success()
             withAnimation(AppMotion.transientConfirmation(reduceMotion: reduceMotion)) {
                 confirmation = entry
             }
         } catch {
+            AppHaptics.error()
             errorText = "Could not save that water entry."
         }
     }
@@ -1117,12 +1439,14 @@ struct HydrationView: View {
         modelContext.delete(entry)
         do {
             try modelContext.save()
+            AppHaptics.warning()
             if confirmation?.id == entry.id {
                 withAnimation(AppMotion.gentleFade(reduceMotion: reduceMotion)) {
                     confirmation = nil
                 }
             }
         } catch {
+            AppHaptics.error()
             errorText = "Could not delete that water entry."
         }
     }
@@ -1161,17 +1485,17 @@ private struct HydrationLogRow: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(HydrationService.formatAmount(entry.amountML))
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
                     Text(entry.context.displayName)
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textTertiary)
                 }
 
                 Spacer()
 
                 Text(entry.loggedAt.formatted(date: .omitted, time: .shortened))
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppTypography.bodyEmphasis)
                     .foregroundStyle(appTheme.colors.textSecondary)
             }
         }
@@ -1179,9 +1503,11 @@ private struct HydrationLogRow: View {
     }
 
     private var deleteAction: some View {
-        Button(role: .destructive, action: delete) {
+        Button(role: .destructive) {
+            delete()
+        } label: {
             Image(systemName: "trash")
-                .font(.title3.weight(.semibold))
+                .font(AppTypography.cardTitle)
                 .frame(width: appTheme.metrics.swipeRevealActionSize, height: appTheme.metrics.swipeRevealActionSize)
                 .foregroundStyle(.white)
                 .background(appTheme.colors.danger, in: Circle())

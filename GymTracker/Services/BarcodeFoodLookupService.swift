@@ -42,6 +42,12 @@ struct BarcodeFoodLookupService {
     }
 
     func lookup(barcode rawBarcode: String, localFoods: [FoodItem]) async -> BarcodeLookupState {
+        await PerformanceTracer.traceAsync(.barcodeLookup) {
+            await lookupUntraced(barcode: rawBarcode, localFoods: localFoods)
+        }
+    }
+
+    private func lookupUntraced(barcode rawBarcode: String, localFoods: [FoodItem]) async -> BarcodeLookupState {
         let barcode = Self.normalizedBarcode(rawBarcode)
         guard !barcode.isEmpty else {
             return .error(message: "Enter a valid barcode.", barcode: nil)
@@ -49,6 +55,31 @@ struct BarcodeFoodLookupService {
 
         if let localFood = findLocalFood(by: barcode, in: localFoods) {
             return .localFound(localFood)
+        }
+
+        do {
+            var draft = try await openFoodFactsService.productDraft(for: barcode)
+            if draft.barcode.isEmpty {
+                draft.barcode = barcode
+            }
+            return draft.isIncomplete ? .remoteIncomplete(draft) : .remoteFound(draft)
+        } catch OpenFoodFactsError.productNotFound {
+            return .notFound(barcode: barcode)
+        } catch {
+            return .error(message: error.localizedDescription, barcode: barcode)
+        }
+    }
+
+    func lookupRemote(barcode rawBarcode: String) async -> BarcodeLookupState {
+        await PerformanceTracer.traceAsync(.barcodeLookup) {
+            await lookupRemoteUntraced(barcode: rawBarcode)
+        }
+    }
+
+    private func lookupRemoteUntraced(barcode rawBarcode: String) async -> BarcodeLookupState {
+        let barcode = Self.normalizedBarcode(rawBarcode)
+        guard !barcode.isEmpty else {
+            return .error(message: "Enter a valid barcode.", barcode: nil)
         }
 
         do {

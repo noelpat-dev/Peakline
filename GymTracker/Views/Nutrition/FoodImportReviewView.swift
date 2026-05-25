@@ -23,7 +23,7 @@ struct FoodImportReviewView: View {
     @State private var fibre: String
     @State private var salt: String
     @State private var errorText: String?
-    @State private var savedFoodForLogging: FoodItem?
+    @State private var savedFoodForLogging: FoodImportLogRoute?
     @State private var isDetectedTextExpanded = false
     @State private var didCopyDetectedText = false
 
@@ -142,8 +142,26 @@ struct FoodImportReviewView: View {
         }
         .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(item: $savedFoodForLogging) { food in
-            LogFoodView(food: food)
+        .navigationDestination(item: $savedFoodForLogging) { route in
+            if let food = savedFoods.first(where: { $0.id == route.id }) {
+                LogFoodView(food: food)
+            } else {
+                missingSavedFoodView
+            }
+        }
+    }
+
+    private var missingSavedFoodView: some View {
+        FitnessScreen(
+            title: "Food unavailable",
+            subtitle: "Go back and try again.",
+            systemImage: "exclamationmark.triangle"
+        ) {
+            ReviewNoticeCard(
+                message: "The selected food is no longer available.",
+                systemImage: "exclamationmark.triangle",
+                foregroundColor: appTheme.colors.warning
+            )
         }
     }
 
@@ -577,7 +595,7 @@ struct FoodImportReviewView: View {
         }
 
         if shouldLog {
-            savedFoodForLogging = food
+            savedFoodForLogging = FoodImportLogRoute(id: food.id)
         } else {
             dismiss()
         }
@@ -620,6 +638,10 @@ struct FoodImportReviewView: View {
         guard let value else { return "" }
         return value.formatted(.number.precision(.fractionLength(0...2)))
     }
+}
+
+private struct FoodImportLogRoute: Identifiable, Hashable {
+    let id: UUID
 }
 
 private struct ParsedReviewValues {

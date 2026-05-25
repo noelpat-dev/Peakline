@@ -41,11 +41,21 @@ struct WorkoutLoggerView: View {
     @State private var showingSkippedReasonSheet = false
     @State private var showingWorkoutOrder = false
     @State private var motivationActionInFlight = false
+    @State private var previousPerformanceByExerciseId: [UUID: PreviousExercisePerformance] = [:]
+    @State private var previousPerformanceSignature: String?
+    @State private var orderedExerciseLogsCache: [ExerciseLog] = []
+    @State private var orderedExerciseLogsSignature: String?
+    @State private var templateNotesByExerciseId: [UUID: String] = [:]
+    @State private var templateNotesSignature: String?
 
     private let skippedReasonService = SkippedExerciseReasonService()
 
     private var orderedExerciseLogs: [ExerciseLog] {
-        session.exerciseLogs.sorted { $0.orderIndex < $1.orderIndex }
+        if orderedExerciseLogsSignature == exerciseLogOrderSignature {
+            return orderedExerciseLogsCache
+        }
+
+        return session.exerciseLogs.sorted { $0.orderIndex < $1.orderIndex }
     }
 
     private var currentExerciseLog: ExerciseLog? {
@@ -115,6 +125,23 @@ struct WorkoutLoggerView: View {
             withExerciseChangeAnimation {
                 currentExerciseIndex = min(currentExerciseIndex, max(orderedExerciseLogs.count - 1, 0))
             }
+            refreshOrderedExerciseLogsCache()
+            refreshTemplateNotesCache()
+            refreshPreviousPerformanceCache()
+        }
+        .onAppear {
+            refreshOrderedExerciseLogsCache(force: true)
+            refreshTemplateNotesCache(force: true)
+            refreshPreviousPerformanceCache(force: true)
+        }
+        .onChange(of: previousPerformanceInputSignature) { _, _ in
+            refreshPreviousPerformanceCache()
+        }
+        .onChange(of: exerciseLogOrderSignature) { _, _ in
+            refreshOrderedExerciseLogsCache()
+        }
+        .onChange(of: templateNotesInputSignature) { _, _ in
+            refreshTemplateNotesCache()
         }
     }
 
@@ -160,6 +187,7 @@ struct WorkoutLoggerView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(PrimaryFitnessButtonStyle())
+                .accessibilityIdentifier("workout-logger-finish")
             }
         }
         .scrollContentBackground(.hidden)
@@ -249,7 +277,7 @@ struct WorkoutLoggerView: View {
             ExerciseLoggerSection(
                 exerciseLog: currentExerciseLog,
                 templateNote: templateNote(for: currentExerciseLog),
-                previousPerformance: previousPerformance(for: currentExerciseLog),
+                previousPerformance: previousPerformanceByExerciseId[currentExerciseLog.exerciseId],
                 completedSessions: completedSessions,
                 startRestTimer: startRestTimer
             )
@@ -265,6 +293,7 @@ struct WorkoutLoggerView: View {
             } footer: {
                 Text(isLastExercise ? "Finish when today's final exercise is logged." : "Move forward when this exercise is done.")
             }
+            .accessibilityIdentifier(isLastExercise ? "workout-logger-current-finish" : "workout-logger-continue")
         } else {
             ContentUnavailableView(
                 "No Exercises Selected",
@@ -295,7 +324,7 @@ struct WorkoutLoggerView: View {
                 ExerciseLoggerSection(
                     exerciseLog: exerciseLog,
                     templateNote: templateNote(for: exerciseLog),
-                    previousPerformance: previousPerformance(for: exerciseLog),
+                    previousPerformance: previousPerformanceByExerciseId[exerciseLog.exerciseId],
                     completedSessions: completedSessions
                 )
             }
@@ -306,62 +335,114 @@ struct WorkoutLoggerView: View {
         currentExerciseIndex >= orderedExerciseLogs.count - 1
     }
 
-    private func previousPerformance(for exerciseLog: ExerciseLog) -> PreviousExercisePerformance? {
-        for previousSession in completedSessions where previousSession.id != session.id {
-            if let previousLog = previousSession.exerciseLogs.first(where: { $0.exerciseId == exerciseLog.exerciseId }) {
-                let workingSets = previousLog.setLogs
-                    .filter { !$0.isWarmup && ($0.completed || $0.weight > 0 || $0.reps > 0 || $0.rpe != nil) }
-                    .sorted { $0.setNumber < $1.setNumber }
-
-                guard !workingSets.isEmpty else { return nil }
-
-                let snapshots = workingSets.map { set in
-                    PreviousSetSnapshot(weight: set.weight, reps: set.reps, rpe: set.rpe)
-                }
-                let summary = snapshots
-                    .map { "\($0.formattedWeight)kg x \($0.reps)" }
-                    .joined(separator: ", ")
-
-                return PreviousExercisePerformance(summary: summary, workingSets: snapshots)
+    private var previousPerformanceInputSignature: String {
+        [
+            session.id.uuidString,
+            orderedExerciseLogs.map { "\($0.id.uuidString):\($0.exerciseId.uuidString):\($0.orderIndex)" }.joined(separator: ","),
+            completedSessions.prefix(40).map { completedSession in
+                let exerciseLogSignature = completedSession.exerciseLogs
+                    .map { "\($0.id.uuidString):\($0.exerciseId.uuidString):\($0.setLogs.count)" }
+                    .joined(separator: ";")
+                return "\(completedSession.id.uuidString):\(completedSession.endedAt?.timeIntervalSince1970 ?? 0):\(exerciseLogSignature)"
             }
-        }
-
-        return nil
+            .joined(separator: "|")
+        ].joined(separator: "|")
     }
 
-    private func addSelectedExercise() {
-        guard
-            let selectedExerciseId,
-            let exercise = exercises.first(where: { $0.id == selectedExerciseId })
-        else { return }
-
-        let log = ExerciseLog(
-            workoutSessionId: session.id,
-            exerciseId: exercise.id,
-            exerciseNameSnapshot: exercise.name,
-            orderIndex: orderedExerciseLogs.count,
-            targetSets: 2,
-            minReps: 8,
-            maxReps: 12
-        )
-        log.workoutSession = session
-        session.exerciseLogs.append(log)
-        self.selectedExerciseId = nil
-        if orderedExerciseLogs.count == 1 {
-            currentExerciseIndex = 0
-        }
-        try? modelContext.save()
+    private var exerciseLogOrderSignature: String {
+        session.exerciseLogs
+            .map { "\($0.id.uuidString):\($0.orderIndex)" }
+            .sorted()
+            .joined(separator: ",")
     }
 
-    private func templateNote(for exerciseLog: ExerciseLog) -> String? {
+    private var templateNotesInputSignature: String {
+        [
+            session.splitId?.uuidString ?? "none",
+            activeSplits.map { split in
+                let exerciseSignature = split.exercises
+                    .map { "\($0.exerciseId.uuidString):\($0.notes ?? "")" }
+                    .sorted()
+                    .joined(separator: ";")
+                return "\(split.id.uuidString):\(split.updatedAt.timeIntervalSince1970):\(exerciseSignature)"
+            }
+            .joined(separator: "|")
+        ].joined(separator: "|")
+    }
+
+    private func refreshOrderedExerciseLogsCache(force: Bool = false) {
+        let signature = exerciseLogOrderSignature
+        guard force || signature != orderedExerciseLogsSignature else { return }
+        orderedExerciseLogsCache = session.exerciseLogs.sorted { $0.orderIndex < $1.orderIndex }
+        orderedExerciseLogsSignature = signature
+    }
+
+    private func refreshTemplateNotesCache(force: Bool = false) {
+        let signature = templateNotesInputSignature
+        guard force || signature != templateNotesSignature else { return }
+
         guard
             let splitId = session.splitId,
             let split = activeSplits.first(where: { $0.id == splitId })
-        else { return nil }
+        else {
+            templateNotesByExerciseId = [:]
+            templateNotesSignature = signature
+            return
+        }
 
-        return split.exercises.first { splitExercise in
-            splitExercise.exerciseId == exerciseLog.exerciseId
-        }?.notes
+        var notesByExerciseId: [UUID: String] = [:]
+        for splitExercise in split.exercises {
+            if let notes = splitExercise.notes {
+                notesByExerciseId[splitExercise.exerciseId] = notes
+            }
+        }
+        templateNotesByExerciseId = notesByExerciseId
+        templateNotesSignature = signature
+    }
+
+    private func refreshPreviousPerformanceCache(force: Bool = false) {
+        let signature = previousPerformanceInputSignature
+        guard force || signature != previousPerformanceSignature else { return }
+
+        previousPerformanceByExerciseId = PerformanceTracer.trace(.workoutLoggerPreviousPerformance) {
+            WorkoutLoggerPerformanceCache.previousPerformanceByExerciseId(
+                for: orderedExerciseLogs,
+                currentSessionId: session.id,
+                completedSessions: Array(completedSessions.prefix(40))
+            )
+        }
+        previousPerformanceSignature = signature
+    }
+
+    private func addSelectedExercise() {
+        PerformanceTracer.trace(.workoutLoggerAddExercise) {
+            guard
+                let selectedExerciseId,
+                let exercise = exercises.first(where: { $0.id == selectedExerciseId })
+            else { return }
+
+            let log = ExerciseLog(
+                workoutSessionId: session.id,
+                exerciseId: exercise.id,
+                exerciseNameSnapshot: exercise.name,
+                orderIndex: orderedExerciseLogs.count,
+                targetSets: 2,
+                minReps: 8,
+                maxReps: 12
+            )
+            log.workoutSession = session
+            session.exerciseLogs.append(log)
+            self.selectedExerciseId = nil
+            refreshOrderedExerciseLogsCache(force: true)
+            if orderedExerciseLogs.count == 1 {
+                currentExerciseIndex = 0
+            }
+            try? modelContext.save()
+        }
+    }
+
+    private func templateNote(for exerciseLog: ExerciseLog) -> String? {
+        templateNotesByExerciseId[exerciseLog.exerciseId]
     }
 
     private func moveExerciseLog(_ exerciseLog: ExerciseLog, offset: Int) {
@@ -377,6 +458,7 @@ struct WorkoutLoggerView: View {
         for (orderIndex, log) in logs.enumerated() {
             log.orderIndex = orderIndex
         }
+        refreshOrderedExerciseLogsCache(force: true)
 
         if let currentId, let updatedCurrentIndex = logs.firstIndex(where: { $0.id == currentId }) {
             withExerciseChangeAnimation {
@@ -396,7 +478,7 @@ struct WorkoutLoggerView: View {
         }
 
         pendingExerciseIndex = currentExerciseIndex + 1
-        WorkoutFeedback.lightImpact()
+        AppHaptics.lightImpact()
         configureMotivation(
             message: MotivationMessage.next(),
             detail: "One exercise banked. Keep the reps clean and own the next set.",
@@ -485,21 +567,23 @@ struct WorkoutLoggerView: View {
     }
 
     private func finishWorkout() {
-        guard !isEditingCompletedWorkout else {
+        PerformanceTracer.trace(.workoutLoggerFinish) {
+            guard !isEditingCompletedWorkout else {
+                markEnteredSetsComplete()
+                try? modelContext.save()
+                dismiss()
+                return
+            }
+
+            if session.endedAt == nil {
+                session.endedAt = Date()
+            }
+
+            finalizePausedTime(at: session.endedAt ?? Date())
             markEnteredSetsComplete()
-            try? modelContext.save()
-            dismiss()
-            return
+            restTimerState = RestTimerState()
+            presentRatingOverlay()
         }
-
-        if session.endedAt == nil {
-            session.endedAt = Date()
-        }
-
-        finalizePausedTime(at: session.endedAt ?? Date())
-        markEnteredSetsComplete()
-        restTimerState = RestTimerState()
-        presentRatingOverlay()
     }
 
     private func handleRatingSelection(_ rating: WorkoutRating) {
@@ -539,7 +623,7 @@ struct WorkoutLoggerView: View {
 
         try? modelContext.save()
         shouldShowSummaryAfterMotivation = true
-        WorkoutFeedback.success()
+        AppHaptics.success()
         configureMotivation(
             message: rating.completionTitle,
             detail: "\(rating.completionMessage) You spent \(durationText(seconds: activeSeconds)) in the gym.",
@@ -660,29 +744,52 @@ struct WorkoutLoggerView: View {
     }
 }
 
-private enum WorkoutFeedback {
-    static func lightImpact() {
-        #if canImport(UIKit)
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        #endif
-    }
-
-    static func selectionChanged() {
-        #if canImport(UIKit)
-        UISelectionFeedbackGenerator().selectionChanged()
-        #endif
-    }
-
-    static func success() {
-        #if canImport(UIKit)
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
-        #endif
-    }
-}
-
 private struct PreviousExercisePerformance {
     let summary: String
     let workingSets: [PreviousSetSnapshot]
+}
+
+private enum WorkoutLoggerPerformanceCache {
+    static func previousPerformanceByExerciseId(
+        for exerciseLogs: [ExerciseLog],
+        currentSessionId: UUID,
+        completedSessions: [WorkoutSession]
+    ) -> [UUID: PreviousExercisePerformance] {
+        let neededExerciseIds = Set(exerciseLogs.map(\.exerciseId))
+        guard !neededExerciseIds.isEmpty else { return [:] }
+
+        var results: [UUID: PreviousExercisePerformance] = [:]
+
+        for previousSession in completedSessions where previousSession.id != currentSessionId {
+            for previousLog in previousSession.exerciseLogs where neededExerciseIds.contains(previousLog.exerciseId) && results[previousLog.exerciseId] == nil {
+                guard let performance = previousPerformance(from: previousLog) else { continue }
+                results[previousLog.exerciseId] = performance
+
+                if results.count == neededExerciseIds.count {
+                    return results
+                }
+            }
+        }
+
+        return results
+    }
+
+    private static func previousPerformance(from exerciseLog: ExerciseLog) -> PreviousExercisePerformance? {
+        let workingSets = exerciseLog.setLogs
+            .filter { !$0.isWarmup && ($0.completed || $0.weight > 0 || $0.reps > 0 || $0.rpe != nil) }
+            .sorted { $0.setNumber < $1.setNumber }
+
+        guard !workingSets.isEmpty else { return nil }
+
+        let snapshots = workingSets.map { set in
+            PreviousSetSnapshot(weight: set.weight, reps: set.reps, rpe: set.rpe)
+        }
+        let summary = snapshots
+            .map { "\($0.formattedWeight)kg x \($0.reps)" }
+            .joined(separator: ", ")
+
+        return PreviousExercisePerformance(summary: summary, workingSets: snapshots)
+    }
 }
 
 private struct LiveWorkoutOrderRow: View {
@@ -710,7 +817,7 @@ private struct LiveWorkoutOrderRow: View {
                 )
 
                 Text(positionText)
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .font(AppTypography.rounded(size: 10, weight: .bold))
                     .foregroundStyle(isCurrent ? .white : appTheme.actionColor)
                     .frame(width: 16, height: 16)
                     .background(isCurrent ? appTheme.actionColor : appTheme.actionColor.opacity(0.14), in: Circle())
@@ -718,14 +825,15 @@ private struct LiveWorkoutOrderRow: View {
             }
 
             Button {
+                AppHaptics.selection()
                 jump()
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(exerciseName)
-                        .font(.subheadline.weight(.semibold))
+                        .font(AppTypography.bodyEmphasis)
                         .foregroundStyle(appTheme.colors.textPrimary)
                     Text(isCurrent ? "Current exercise" : "Tap to jump here")
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textSecondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -733,12 +841,18 @@ private struct LiveWorkoutOrderRow: View {
             .buttonStyle(.plain)
 
             HStack(spacing: 6) {
-                Button(action: moveUp) {
+                Button {
+                    AppHaptics.selection()
+                    moveUp()
+                } label: {
                     Image(systemName: "chevron.up")
                 }
                 .disabled(!canMoveUp)
 
-                Button(action: moveDown) {
+                Button {
+                    AppHaptics.selection()
+                    moveDown()
+                } label: {
                     Image(systemName: "chevron.down")
                 }
                 .disabled(!canMoveDown)
@@ -824,12 +938,12 @@ private struct WorkoutRatingOverlay: View {
                 VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 7) {
                         Text("How did it go?")
-                            .font(.system(.title, design: .rounded).weight(.bold))
+                            .font(AppTypography.rounded(size: 28, weight: .bold))
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .minimumScaleFactor(0.82)
 
                         Text("Rate the workout so Peakline remembers how the session felt, not just what you lifted.")
-                            .font(.subheadline.weight(.semibold))
+                            .font(AppTypography.bodyEmphasis)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -837,7 +951,7 @@ private struct WorkoutRatingOverlay: View {
                     ratingOptions
 
                     Text("Saved with this workout and used for the completion message.")
-                        .font(.footnote.weight(.semibold))
+                        .font(AppTypography.metadataEmphasis)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -888,10 +1002,10 @@ private struct WorkoutRatingOverlay: View {
         } label: {
             VStack(spacing: 8) {
                 Text(rating.face)
-                    .font(.system(size: 34))
+                    .font(AppTypography.rounded(size: 34))
 
                 Text(rating.title)
-                    .font(.caption.weight(.semibold))
+                    .font(AppTypography.metadataEmphasis)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
             }
@@ -908,7 +1022,7 @@ private struct WorkoutRatingOverlay: View {
         guard selectedRating == nil, !isTransitioning else { return }
 
         isTransitioning = true
-        WorkoutFeedback.selectionChanged()
+        AppHaptics.selection()
         withAnimation(AppMotion.quickSpring(reduceMotion: reduceMotion)) {
             selectedRating = rating
         }
@@ -1026,12 +1140,12 @@ private struct ExerciseLoggerSection: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(exerciseLog.exerciseNameSnapshot)
-                            .font(.system(.title3, design: .rounded).weight(.bold))
+                            .font(AppTypography.cardTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .lineLimit(2)
 
                         Text(targetText)
-                            .font(.subheadline.weight(.semibold))
+                            .font(AppTypography.bodyEmphasis)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
 
@@ -1120,6 +1234,7 @@ private struct ExerciseLoggerSection: View {
                     Label("Add Set", systemImage: "plus.circle")
                 }
                 .buttonStyle(.borderless)
+                .accessibilityIdentifier("workout-logger-add-set")
             }
         }
         .sheet(isPresented: $showingSubstitutionSheet) {
@@ -1316,6 +1431,7 @@ private struct SetRowView: View {
                 Text("Set \(setLog.setNumber)")
                     .font(.headline.weight(.bold))
                     .foregroundStyle(appTheme.colors.textPrimary)
+                    .accessibilityIdentifier("set-row-\(setLog.setNumber)")
 
                 Spacer()
 
@@ -1603,9 +1719,9 @@ private struct EffortPickerSheet: View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Effort")
-                    .font(.title2.weight(.bold))
+                    .font(AppTypography.largeMetric)
                 Text("Optional intensity for coaching and progression.")
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
             }
 

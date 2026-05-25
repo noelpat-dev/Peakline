@@ -617,6 +617,7 @@ struct ManualDeloadPlannerSheet: View {
                         Text("Review Calendar Impact")
                             .font(.headline)
                             .foregroundStyle(appTheme.colors.textPrimary)
+                            .accessibilityIdentifier("manual-deload-calendar-review")
                         Text("\(preview.startsAt.formatted(date: .abbreviated, time: .omitted)) - \(preview.endsAt.formatted(date: .abbreviated, time: .omitted))")
                             .font(.caption)
                             .foregroundStyle(appTheme.colors.textSecondary)
@@ -666,7 +667,6 @@ struct ManualDeloadPlannerSheet: View {
                 }
             }
         }
-        .accessibilityIdentifier("manual-deload-calendar-review")
     }
 
     private var durationPicker: some View {

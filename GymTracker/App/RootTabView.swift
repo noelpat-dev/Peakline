@@ -6,17 +6,41 @@ struct RootTabView: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.scenePhase) private var scenePhase
 
-    @Query(sort: \SleepSession.createdAt, order: .reverse)
+    @Query
     private var sleepSessions: [SleepSession]
 
-    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    @Query
     private var workouts: [WorkoutSession]
 
     @State private var selectedTab: RootTab = .today
     @State private var sleepSettings = SleepSettingsStore().load()
     @State private var sleepDestination: SleepNotificationDestination?
+    @State private var didPrepareRootData = false
+    @State private var sleepNotificationRefreshTask: Task<Void, Never>?
 
     private let sleepSettingsStore = SleepSettingsStore()
+
+    init() {
+        _sleepSessions = Query(Self.sleepSessionsDescriptor)
+        _workouts = Query(Self.workoutsDescriptor)
+    }
+
+    private static var sleepSessionsDescriptor: FetchDescriptor<SleepSession> {
+        var descriptor = FetchDescriptor<SleepSession>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 60
+        return descriptor
+    }
+
+    private static var workoutsDescriptor: FetchDescriptor<WorkoutSession> {
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 40
+        return descriptor
+    }
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -64,18 +88,22 @@ struct RootTabView: View {
             sleepDestination = notification.object as? SleepNotificationDestination ?? .sleepDashboard
         }
         .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .background || newPhase == .inactive {
+            if newPhase == .background {
                 refreshSleepNotifications()
             }
         }
         .onChange(of: sleepSettings) { _, newValue in
             sleepSettingsStore.save(newValue)
         }
-        .task {
-            await SeedDataService.seedIfNeeded(in: modelContext)
-            WorkoutSessionDateService.repairCompletedSessionDates(in: modelContext)
+        .onAppear {
+            guard !didPrepareRootData else { return }
+            didPrepareRootData = true
+            PerformanceTracer.trace(.appLaunchPreparation) {
+                SeedDataService.seedIfNeeded(in: modelContext)
+                WorkoutSessionDateService.repairCompletedSessionDates(in: modelContext)
+            }
             sleepSettings = sleepSettingsStore.load()
-            refreshSleepNotifications()
+            refreshSleepNotifications(deferred: true)
         }
     }
 
@@ -101,13 +129,25 @@ struct RootTabView: View {
         }
     }
 
-    private func refreshSleepNotifications() {
-        Task {
-            await SleepNotificationScheduler().refreshAllSleepNotifications(
-                settings: sleepSettingsStore.load(),
-                sessions: sleepSessions,
-                workouts: workouts
-            )
+    private func refreshSleepNotifications(deferred: Bool = false) {
+        let sessionSnapshots = SleepNotificationScheduler.sessionSnapshots(from: sleepSessions)
+        let workoutSnapshots = SleepNotificationScheduler.workoutSnapshots(from: workouts)
+        let settings = sleepSettingsStore.load()
+
+        sleepNotificationRefreshTask?.cancel()
+        sleepNotificationRefreshTask = Task(priority: .utility) {
+            if deferred {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard !Task.isCancelled else { return }
+            }
+
+            await PerformanceTracer.traceAsync(.rootNotificationRefresh) {
+                await SleepNotificationScheduler().refreshAllSleepNotifications(
+                    settings: settings,
+                    sessions: sessionSnapshots,
+                    workouts: workoutSnapshots
+                )
+            }
         }
     }
 }

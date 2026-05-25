@@ -12,6 +12,7 @@ struct CoachView: View {
 struct CoachContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @Query
     private var activeSplits: [TrainingSplit]
@@ -58,10 +59,9 @@ struct CoachContentView: View {
     @State private var sleepSettings = SleepSettingsStore().load()
     @State private var sleepSnapshot = SleepAnalyticsService.emptySnapshot()
     @State private var lastSleepAnalyticsSignature: SleepAnalyticsInputSignature?
-    @State private var sleepAnalyticsTask: Task<Void, Never>?
     @State private var coachSnapshot = CoachIntelligenceService.emptySnapshot()
     @State private var lastCoachSnapshotSignature: String?
-    @State private var coachSnapshotTask: Task<Void, Never>?
+    @State private var hasLoadedCoachSnapshot = false
     @State private var showingCoachCheckIn = false
     @State private var route: CoachRoute?
     @State private var weeklyReview: WeeklyReview?
@@ -75,6 +75,10 @@ struct CoachContentView: View {
     @State private var progressOpportunityInsights: [CoachInsight] = []
     @State private var lastCoachDerivedSignature: String?
     @State private var coachDerivedTask: Task<Void, Never>?
+    @State private var hydrationTargetML = HydrationSettingsStore().dailyTargetML()
+    @State private var nutritionGoal = NutritionGoalService().loadGoal()
+    @State private var deferredCoachRefreshWorkItem: DispatchWorkItem?
+    @State private var deferredFullCoachSnapshotWorkItem: DispatchWorkItem?
 
     private let coachIntelligence = CoachIntelligenceService()
     private let sleepSettingsStore = SleepSettingsStore()
@@ -83,8 +87,10 @@ struct CoachContentView: View {
     private let nutritionGoalStore = NutritionGoalService()
     private let deloadBlockService = SavedCoachDeloadBlockService()
     private let coachPreferencesService = CoachPreferencesService()
+    private let initialSnapshot: CoachIntelligenceSnapshot?
 
-    init() {
+    init(initialSnapshot: CoachIntelligenceSnapshot? = nil) {
+        self.initialSnapshot = initialSnapshot
         _activeSplits = Query(Self.activeSplitsDescriptor)
         _completedSessions = Query(Self.completedSessionsDescriptor)
         _exercises = Query(Self.exercisesDescriptor)
@@ -99,6 +105,10 @@ struct CoachContentView: View {
         _exerciseMetadata = Query(Self.exerciseMetadataDescriptor)
         _coachPreferences = Query(Self.coachPreferencesDescriptor)
         _splitMetadataRecords = Query(Self.splitMetadataDescriptor)
+        if let initialSnapshot {
+            _coachSnapshot = State(initialValue: initialSnapshot)
+            _hasLoadedCoachSnapshot = State(initialValue: true)
+        }
     }
 
     private static var activeSplitsDescriptor: FetchDescriptor<TrainingSplit> {
@@ -115,7 +125,7 @@ struct CoachContentView: View {
             predicate: #Predicate<WorkoutSession> { $0.completed },
             sortBy: [SortDescriptor(\.date, order: .reverse)]
         )
-        descriptor.fetchLimit = 60
+        descriptor.fetchLimit = 40
         return descriptor
     }
 
@@ -124,7 +134,7 @@ struct CoachContentView: View {
             predicate: #Predicate<Exercise> { !$0.isArchived },
             sortBy: [SortDescriptor(\.name)]
         )
-        descriptor.fetchLimit = 180
+        descriptor.fetchLimit = 140
         return descriptor
     }
 
@@ -132,7 +142,7 @@ struct CoachContentView: View {
         var descriptor = FetchDescriptor<SleepSession>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
-        descriptor.fetchLimit = 90
+        descriptor.fetchLimit = 60
         return descriptor
     }
 
@@ -140,7 +150,7 @@ struct CoachContentView: View {
         var descriptor = FetchDescriptor<NapSession>(
             sortBy: [SortDescriptor(\.startDate, order: .reverse)]
         )
-        descriptor.fetchLimit = 45
+        descriptor.fetchLimit = 30
         return descriptor
     }
 
@@ -148,7 +158,7 @@ struct CoachContentView: View {
         var descriptor = FetchDescriptor<HydrationEntry>(
             sortBy: [SortDescriptor(\.loggedAt, order: .reverse)]
         )
-        descriptor.fetchLimit = 120
+        descriptor.fetchLimit = 80
         return descriptor
     }
 
@@ -156,7 +166,7 @@ struct CoachContentView: View {
         var descriptor = FetchDescriptor<FoodLogEntry>(
             sortBy: [SortDescriptor(\.loggedAt, order: .reverse)]
         )
-        descriptor.fetchLimit = 160
+        descriptor.fetchLimit = 100
         return descriptor
     }
 
@@ -164,7 +174,7 @@ struct CoachContentView: View {
         var descriptor = FetchDescriptor<DailyCoachCheckIn>(
             sortBy: [SortDescriptor(\.date, order: .reverse)]
         )
-        descriptor.fetchLimit = 45
+        descriptor.fetchLimit = 30
         return descriptor
     }
 
@@ -172,7 +182,7 @@ struct CoachContentView: View {
         var descriptor = FetchDescriptor<CoachActionHistoryEntry>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
-        descriptor.fetchLimit = 120
+        descriptor.fetchLimit = 60
         return descriptor
     }
 
@@ -188,7 +198,7 @@ struct CoachContentView: View {
         var descriptor = FetchDescriptor<CoachRecommendationFeedback>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
-        descriptor.fetchLimit = 120
+        descriptor.fetchLimit = 60
         return descriptor
     }
 
@@ -196,7 +206,7 @@ struct CoachContentView: View {
         var descriptor = FetchDescriptor<CoachExerciseMetadata>(
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
         )
-        descriptor.fetchLimit = 180
+        descriptor.fetchLimit = 120
         return descriptor
     }
 
@@ -225,11 +235,37 @@ struct CoachContentView: View {
     }
 
     private var sleepDashboardSummary: SleepDashboardSummary {
-        sleepSnapshot.dashboardSummary
+        currentSleepSnapshot.dashboardSummary
     }
 
     private var readinessScore: ReadinessScore {
-        coachSnapshot.readiness
+        currentCoachSnapshot.readiness
+    }
+
+    private var currentSleepSnapshot: SleepAnalyticsSnapshot {
+        guard lastSleepAnalyticsSignature != nil else {
+            return sleepSnapshot
+        }
+
+        let signature = currentSleepAnalyticsSignature
+        if signature == lastSleepAnalyticsSignature {
+            return sleepSnapshot
+        }
+
+        return sleepSnapshot
+    }
+
+    private var currentCoachSnapshot: CoachIntelligenceSnapshot {
+        guard lastCoachSnapshotSignature != nil else {
+            return coachSnapshot
+        }
+
+        let signature = currentCoachSnapshotSignature
+        if signature == lastCoachSnapshotSignature {
+            return coachSnapshot
+        }
+
+        return coachSnapshot
     }
 
     private var currentCoachSnapshotSignature: String {
@@ -249,8 +285,8 @@ struct CoachContentView: View {
             signature(coachPreferences, limit: 3) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
             signature(splitMetadataRecords, limit: 30) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
             sleepSettingsSignature,
-            "\(hydrationSettingsStore.dailyTargetML())",
-            "\(nutritionGoalStore.loadGoal().updatedAt.timeIntervalSince1970)"
+            "\(hydrationTargetML)",
+            "\(nutritionGoal.updatedAt.timeIntervalSince1970)"
         ].joined(separator: "|")
     }
 
@@ -280,25 +316,27 @@ struct CoachContentView: View {
     }
 
     private func makeCoachSnapshot() -> CoachIntelligenceSnapshot {
-        coachIntelligence.snapshot(
-            activeSplits: activeSplits,
-            exercises: exercises,
-            sleepSessions: sleepSessions,
-            napSessions: napSessions,
-            hydrationEntries: hydrationEntries,
-            completedWorkouts: coachHistorySessions,
-            foodLogs: foodLogEntries,
-            checkIns: coachCheckIns,
-            sleepSettings: sleepSettings,
-            hydrationTargetML: hydrationSettingsStore.dailyTargetML(),
-            nutritionGoal: nutritionGoalStore.loadGoal(),
-            exerciseMetadata: exerciseMetadata,
-            coachActionHistory: coachActionHistory,
-            recommendationFeedback: recommendationFeedback,
-            savedDeloadBlocks: savedDeloadBlocks,
-            coachPreferences: coachPreferencesSnapshot,
-            splitMetadata: splitMetadataRecords
-        )
+        PerformanceTracer.trace(.coachSnapshot) {
+            coachIntelligence.snapshot(
+                activeSplits: activeSplits,
+                exercises: exercises,
+                sleepSessions: sleepSessions,
+                napSessions: napSessions,
+                hydrationEntries: hydrationEntries,
+                completedWorkouts: coachHistorySessions,
+                foodLogs: foodLogEntries,
+                checkIns: coachCheckIns,
+                sleepSettings: sleepSettings,
+                hydrationTargetML: hydrationTargetML,
+                nutritionGoal: nutritionGoal,
+                exerciseMetadata: exerciseMetadata,
+                coachActionHistory: coachActionHistory,
+                recommendationFeedback: recommendationFeedback,
+                savedDeloadBlocks: savedDeloadBlocks,
+                coachPreferences: coachPreferencesSnapshot,
+                splitMetadata: splitMetadataRecords
+            )
+        }
     }
 
     private var coachPreferencesSnapshot: CoachPreferencesSnapshot {
@@ -310,7 +348,7 @@ struct CoachContentView: View {
     }
 
     var body: some View {
-        let intelligence = coachSnapshot
+        let intelligence = currentCoachSnapshot
 
         FitnessScreen(
             title: "Coach",
@@ -669,32 +707,58 @@ struct CoachContentView: View {
         }
         .onAppear {
             sleepSettings = sleepSettingsStore.load()
-            refreshSleepAnalytics(force: true)
-            refreshCoachSnapshot(force: true)
-            refreshCoachDerivedMetrics(force: true)
-            refreshWeeklyReview(force: true)
+            hydrationTargetML = hydrationSettingsStore.dailyTargetML()
+            nutritionGoal = nutritionGoalStore.loadGoal()
+            refreshCoachAfterFirstMount()
         }
         .onDisappear {
-            sleepAnalyticsTask?.cancel()
-            coachSnapshotTask?.cancel()
+            deferredCoachRefreshWorkItem?.cancel()
+            deferredFullCoachSnapshotWorkItem?.cancel()
             coachDerivedTask?.cancel()
             weeklyReviewTask?.cancel()
         }
+        .redacted(reason: hasLoadedCoachSnapshot ? [] : .placeholder)
+        .allowsHitTesting(hasLoadedCoachSnapshot)
+        .animation(AppMotion.gentleFade(reduceMotion: reduceMotion), value: hasLoadedCoachSnapshot)
         .sheet(isPresented: $showingCoachCheckIn) {
             DailyCheckInSheet(existingCheckIn: coachSnapshot.readiness.checkIn)
         }
     }
 
+    private func refreshCoachAfterFirstMount() {
+        deferredCoachRefreshWorkItem?.cancel()
+        let workItem = DispatchWorkItem {
+            refreshSleepAnalytics()
+            if initialSnapshot != nil, hasLoadedCoachSnapshot, lastCoachSnapshotSignature == nil {
+                PerformanceTracer.mark(.coachSnapshot, "warm_start reused_today_snapshot")
+                lastCoachSnapshotSignature = currentCoachSnapshotSignature
+                scheduleFullCoachSnapshotRefresh()
+            } else {
+                refreshCoachSnapshot()
+            }
+            refreshCoachDerivedMetrics()
+            refreshWeeklyReview()
+        }
+        deferredCoachRefreshWorkItem = workItem
+        DispatchQueue.main.async(execute: workItem)
+    }
+
+    private func scheduleFullCoachSnapshotRefresh() {
+        deferredFullCoachSnapshotWorkItem?.cancel()
+        let workItem = DispatchWorkItem {
+            PerformanceTracer.mark(.coachSnapshot, "deferred_full_refresh")
+            refreshCoachSnapshot(force: true)
+        }
+        deferredFullCoachSnapshotWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: workItem)
+    }
+
     private func refreshSleepAnalytics(force: Bool = false) {
-        sleepAnalyticsTask?.cancel()
-        sleepAnalyticsTask = Task { @MainActor in
-            await Task.yield()
-            guard !Task.isCancelled else { return }
+        let signature = currentSleepAnalyticsSignature
+        guard force || signature != lastSleepAnalyticsSignature else { return }
 
-            let signature = currentSleepAnalyticsSignature
-            guard force || signature != lastSleepAnalyticsSignature else { return }
-
-            sleepSnapshot = sleepAnalyticsStore.snapshot(
+        sleepSnapshot = PerformanceTracer.trace(.coachSleepAnalytics) {
+            sleepAnalyticsStore.snapshot(
                 sessions: sleepSessions,
                 naps: napSessions,
                 workouts: recentCompletedSessions,
@@ -702,37 +766,33 @@ struct CoachContentView: View {
                 workoutLimit: 20,
                 force: force
             )
-            lastSleepAnalyticsSignature = signature
         }
+        lastSleepAnalyticsSignature = signature
     }
 
     private func refreshCoachSnapshot(force: Bool = false) {
-        coachSnapshotTask?.cancel()
-        coachSnapshotTask = Task { @MainActor in
-            await Task.yield()
-            guard !Task.isCancelled else { return }
+        let signature = currentCoachSnapshotSignature
+        guard force || signature != lastCoachSnapshotSignature else { return }
 
-            let signature = currentCoachSnapshotSignature
-            guard force || signature != lastCoachSnapshotSignature else { return }
-
-            coachSnapshot = makeCoachSnapshot()
-            lastCoachSnapshotSignature = signature
-        }
+        coachSnapshot = makeCoachSnapshot()
+        lastCoachSnapshotSignature = signature
+        hasLoadedCoachSnapshot = true
     }
 
     private func refreshWeeklyReview(force: Bool = false) {
         weeklyReviewTask?.cancel()
+        let signature = currentWeeklyReviewSignature
+        guard force || signature != lastWeeklyReviewSignature else { return }
+
+        let splitSnapshots = activeSplits.map(TrainingSplitSnapshot.init)
+        let sessionSnapshots = recentCompletedSessions.map(WorkoutAnalyticsSession.init)
         weeklyReviewTask = Task { @MainActor in
-            await Task.yield()
             guard !Task.isCancelled else { return }
 
-            let signature = currentWeeklyReviewSignature
-            guard force || signature != lastWeeklyReviewSignature else { return }
-
-            let splitSnapshots = activeSplits.map(TrainingSplitSnapshot.init)
-            let sessionSnapshots = recentCompletedSessions.map(WorkoutAnalyticsSession.init)
             let result = await Task.detached(priority: .userInitiated) {
-                WeeklyReviewBuilder().build(activeSplits: splitSnapshots, completedSessions: sessionSnapshots)
+                PerformanceTracer.trace(.coachWeeklyReview) {
+                    WeeklyReviewBuilder().build(activeSplits: splitSnapshots, completedSessions: sessionSnapshots)
+                }
             }.value
 
             guard !Task.isCancelled else { return }
@@ -743,20 +803,21 @@ struct CoachContentView: View {
 
     private func refreshCoachDerivedMetrics(force: Bool = false) {
         coachDerivedTask?.cancel()
+        let signature = currentCoachDerivedSignature
+        guard force || signature != lastCoachDerivedSignature else { return }
+
+        let splitSnapshots = activeSplits.map(TrainingSplitSnapshot.init)
+        let sessionSnapshots = recentCompletedSessions.map(WorkoutAnalyticsSession.init)
         coachDerivedTask = Task { @MainActor in
-            await Task.yield()
             guard !Task.isCancelled else { return }
 
-            let signature = currentCoachDerivedSignature
-            guard force || signature != lastCoachDerivedSignature else { return }
-
-            let splitSnapshots = activeSplits.map(TrainingSplitSnapshot.init)
-            let sessionSnapshots = recentCompletedSessions.map(WorkoutAnalyticsSession.init)
             let result = await Task.detached(priority: .userInitiated) {
-                CoachDerivedMetrics.make(
-                    activeSplits: splitSnapshots,
-                    completedSessions: sessionSnapshots
-                )
+                PerformanceTracer.trace(.coachDerivedMetrics) {
+                    CoachDerivedMetrics.make(
+                        activeSplits: splitSnapshots,
+                        completedSessions: sessionSnapshots
+                    )
+                }
             }.value
 
             guard !Task.isCancelled else { return }

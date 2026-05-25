@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum AppMotion {
     static let popupMountDelay: UInt64 = 16_000_000
@@ -7,13 +8,65 @@ enum AppMotion {
     static let popupContentRevealDelay: UInt64 = 70_000_000
     static let popupSecondaryRevealDelay: UInt64 = 80_000_000
     static let celebrationIconPulseDuration: TimeInterval = 0.58
-    static let cardPressScale: CGFloat = 0.985
+    static let cardPressScale: CGFloat = 0.992
     static let selectedControlScale: CGFloat = 1.02
+    static let emphasizedControlScale: CGFloat = 1.035
+    static let cardAppearOffset: CGFloat = 14
+
+    static func instantOr(_ animation: Animation, reduceMotion: Bool) -> Animation {
+        reduceMotion ? .easeOut(duration: 0.01) : animation
+    }
+
+    static func press(reduceMotion: Bool) -> Animation {
+        instantOr(.easeOut(duration: 0.11), reduceMotion: reduceMotion)
+    }
+
+    static func navigation(reduceMotion: Bool) -> Animation {
+        instantOr(.easeInOut(duration: 0.22), reduceMotion: reduceMotion)
+    }
+
+    static func tapConfirm(reduceMotion: Bool) -> Animation {
+        instantOr(.spring(response: 0.22, dampingFraction: 0.78, blendDuration: 0.04), reduceMotion: reduceMotion)
+    }
+
+    static func cardAppear(reduceMotion: Bool) -> Animation {
+        instantOr(.spring(response: 0.42, dampingFraction: 0.9, blendDuration: 0.06), reduceMotion: reduceMotion)
+    }
+
+    static func listChange(reduceMotion: Bool) -> Animation {
+        instantOr(.spring(response: 0.32, dampingFraction: 0.88, blendDuration: 0.05), reduceMotion: reduceMotion)
+    }
+
+    static func selection(reduceMotion: Bool) -> Animation {
+        instantOr(.spring(response: 0.24, dampingFraction: 0.9, blendDuration: 0.04), reduceMotion: reduceMotion)
+    }
+
+    static func progress(reduceMotion: Bool) -> Animation {
+        instantOr(.easeOut(duration: 0.34), reduceMotion: reduceMotion)
+    }
+
+    static func swipeReveal(reduceMotion: Bool) -> Animation {
+        instantOr(.interactiveSpring(response: 0.28, dampingFraction: 0.88, blendDuration: 0.08), reduceMotion: reduceMotion)
+    }
+
+    static func sheet(reduceMotion: Bool) -> Animation {
+        instantOr(.spring(response: 0.36, dampingFraction: 0.88, blendDuration: 0.04), reduceMotion: reduceMotion)
+    }
+
+    static func sheetPopup(reduceMotion: Bool) -> Animation {
+        sheet(reduceMotion: reduceMotion)
+    }
+
+    static func toggle(reduceMotion: Bool) -> Animation {
+        instantOr(.spring(response: 0.25, dampingFraction: 0.82, blendDuration: 0.03), reduceMotion: reduceMotion)
+    }
+
+    static func workoutCompletion(reduceMotion: Bool) -> Animation {
+        instantOr(.spring(response: 0.44, dampingFraction: 0.76, blendDuration: 0.06), reduceMotion: reduceMotion)
+    }
 
     static func popupEntrance(reduceMotion: Bool) -> Animation {
-        reduceMotion
-            ? .easeOut(duration: 0.01)
-            : .spring(response: 0.34, dampingFraction: 0.88, blendDuration: 0.04)
+        sheet(reduceMotion: reduceMotion)
     }
 
     static func popupExit(reduceMotion: Bool) -> Animation {
@@ -23,39 +76,27 @@ enum AppMotion {
     }
 
     static func quickSpring(reduceMotion: Bool) -> Animation {
-        reduceMotion
-            ? .easeOut(duration: 0.01)
-            : .spring(response: 0.28, dampingFraction: 0.84)
+        instantOr(.spring(response: 0.28, dampingFraction: 0.84), reduceMotion: reduceMotion)
     }
 
     static func swipeRevealSnap(reduceMotion: Bool) -> Animation {
-        reduceMotion
-            ? .easeOut(duration: 0.01)
-            : .interactiveSpring(response: 0.28, dampingFraction: 0.88, blendDuration: 0.08)
+        swipeReveal(reduceMotion: reduceMotion)
     }
 
     static func selectionSpring(reduceMotion: Bool) -> Animation {
-        reduceMotion
-            ? .easeOut(duration: 0.01)
-            : .spring(response: 0.24, dampingFraction: 0.9, blendDuration: 0.04)
+        selection(reduceMotion: reduceMotion)
     }
 
     static func reorderSpring(reduceMotion: Bool) -> Animation {
-        reduceMotion
-            ? .easeOut(duration: 0.01)
-            : .interactiveSpring(response: 0.3, dampingFraction: 0.86, blendDuration: 0.06)
+        listChange(reduceMotion: reduceMotion)
     }
 
     static func progressFill(reduceMotion: Bool) -> Animation {
-        reduceMotion
-            ? .easeOut(duration: 0.01)
-            : .easeOut(duration: 0.34)
+        progress(reduceMotion: reduceMotion)
     }
 
     static func transientConfirmation(reduceMotion: Bool) -> Animation {
-        reduceMotion
-            ? .easeOut(duration: 0.01)
-            : .spring(response: 0.32, dampingFraction: 0.88, blendDuration: 0.04)
+        tapConfirm(reduceMotion: reduceMotion)
     }
 
     static func gentleFade(reduceMotion: Bool) -> Animation {
@@ -75,6 +116,86 @@ enum AppMotion {
                     .combined(with: .scale(scale: 0.98, anchor: .center))
                     .combined(with: .offset(y: 12))
             )
+    }
+
+    @MainActor
+    static func smoothNavigate(reduceMotion: Bool, _ action: @escaping @MainActor () -> Void) {
+        withAnimation(navigation(reduceMotion: reduceMotion)) {
+            action()
+        }
+    }
+}
+
+enum AppHaptics {
+    private static var lastSelectionAt = Date.distantPast
+    private static var lastImpactAt = Date.distantPast
+    private static var lastNotificationAt = Date.distantPast
+    private static let selectionInterval: TimeInterval = 0.06
+    private static let impactInterval: TimeInterval = 0.08
+    private static let notificationInterval: TimeInterval = 0.18
+
+    static func selection() {
+        perform {
+            guard shouldPlay(since: &lastSelectionAt, minimumInterval: selectionInterval) else { return }
+            let selectionGenerator = UISelectionFeedbackGenerator()
+            selectionGenerator.prepare()
+            selectionGenerator.selectionChanged()
+        }
+    }
+
+    static func impact(_ style: UIImpactFeedbackGenerator.FeedbackStyle = .light) {
+        perform {
+            guard shouldPlay(since: &lastImpactAt, minimumInterval: impactInterval) else { return }
+            let impactGenerator = UIImpactFeedbackGenerator(style: style)
+            impactGenerator.prepare()
+            impactGenerator.impactOccurred()
+        }
+    }
+
+    static func lightImpact() {
+        impact(.light)
+    }
+
+    static func mediumImpact() {
+        impact(.medium)
+    }
+
+    static func success() {
+        notify(.success)
+    }
+
+    static func warning() {
+        notify(.warning)
+    }
+
+    static func error() {
+        notify(.error)
+    }
+
+    private static func notify(_ type: UINotificationFeedbackGenerator.FeedbackType) {
+        perform {
+            guard shouldPlay(since: &lastNotificationAt, minimumInterval: notificationInterval) else { return }
+            let notificationGenerator = UINotificationFeedbackGenerator()
+            notificationGenerator.prepare()
+            notificationGenerator.notificationOccurred(type)
+        }
+    }
+
+    private static func perform(_ feedback: @escaping () -> Void) {
+        if Thread.isMainThread {
+            feedback()
+        } else {
+            DispatchQueue.main.async {
+                feedback()
+            }
+        }
+    }
+
+    private static func shouldPlay(since lastPlayedAt: inout Date, minimumInterval: TimeInterval) -> Bool {
+        let now = Date.now
+        guard now.timeIntervalSince(lastPlayedAt) >= minimumInterval else { return false }
+        lastPlayedAt = now
+        return true
     }
 }
 
@@ -215,6 +336,7 @@ struct GlassPrimaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .font(AppTypography.button)
             .foregroundStyle(appTheme.colors.accentForeground)
             .padding(.horizontal, 18)
             .frame(minHeight: 54)
@@ -225,6 +347,6 @@ struct GlassPrimaryButtonStyle: ButtonStyle {
                     .allowsHitTesting(false)
             }
             .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? AppMotion.cardPressScale : 1))
-            .animation(AppMotion.selectionSpring(reduceMotion: reduceMotion), value: configuration.isPressed)
+            .animation(AppMotion.press(reduceMotion: reduceMotion), value: configuration.isPressed)
     }
 }

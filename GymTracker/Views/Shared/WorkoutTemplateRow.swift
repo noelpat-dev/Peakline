@@ -32,24 +32,28 @@ struct WorkoutTemplateRow: View {
 
                     Menu {
                         Button(role: .destructive) {
+                            AppHaptics.warning()
                             delete()
                         } label: {
                             Label("Delete Template", systemImage: "trash")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
-                            .font(.title3)
+                            .font(AppTypography.cardTitle)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
                 }
 
                 if let notes = template.notes, !notes.isEmpty {
                     Text(notes)
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textSecondary)
                 }
 
-                Button(action: start) {
+                Button {
+                    AppHaptics.mediumImpact()
+                    start()
+                } label: {
                     Label("Start from Template", systemImage: "play.circle.fill")
                         .frame(maxWidth: .infinity)
                 }
@@ -63,4 +67,3 @@ struct WorkoutTemplateRow: View {
         return "\(source) - \(template.exercises.count) exercises - updated \(template.updatedAt.formatted(date: .abbreviated, time: .omitted))"
     }
 }
-

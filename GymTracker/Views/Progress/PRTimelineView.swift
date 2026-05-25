@@ -121,46 +121,53 @@ struct PRTimelineView: View {
         guard !isLoading else { return }
 
         refreshTask?.cancel()
+
+        let recentSessions: [WorkoutSession]
+        do {
+            recentSessions = try modelContext.fetch(Self.completedSessionsDescriptor)
+        } catch {
+            allRecords = []
+            weeklySummary = nil
+            isLoading = false
+            return
+        }
+
+        let signature = Self.signature(for: recentSessions)
+        guard force || signature != lastSignature else {
+            isLoading = false
+            return
+        }
+
+        let snapshots: [WorkoutAnalyticsSession]
+        do {
+            snapshots = try WorkoutAnalyticsSnapshotBuilder.snapshots(from: recentSessions, in: modelContext)
+        } catch {
+            allRecords = []
+            weeklySummary = nil
+            isLoading = false
+            return
+        }
+
         isLoading = true
-
         refreshTask = Task { @MainActor in
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-
-            let recentSessions: [WorkoutSession]
-            do {
-                recentSessions = try modelContext.fetch(Self.completedSessionsDescriptor)
-            } catch {
-                allRecords = []
-                weeklySummary = nil
-                isLoading = false
-                return
-            }
-
-            let signature = Self.signature(for: recentSessions)
-            guard force || signature != lastSignature else {
-                isLoading = false
-                return
-            }
-
-            let snapshots: [WorkoutAnalyticsSession]
-            do {
-                snapshots = try WorkoutAnalyticsSnapshotBuilder.snapshots(from: recentSessions, in: modelContext)
-            } catch {
-                allRecords = []
-                weeklySummary = nil
+            guard !Task.isCancelled else {
                 isLoading = false
                 return
             }
 
             let result = await Task.detached(priority: .userInitiated) {
-                let analytics = TrainingAnalyticsService()
-                let records = analytics.prTimeline(from: snapshots)
-                let weekly = analytics.weeklySummary(from: snapshots, prRecords: records)
-                return (records, weekly)
+                PerformanceTracer.trace(.prTimelineAnalytics) {
+                    let analytics = TrainingAnalyticsService()
+                    let records = analytics.prTimeline(from: snapshots)
+                    let weekly = analytics.weeklySummary(from: snapshots, prRecords: records)
+                    return (records, weekly)
+                }
             }.value
 
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else {
+                isLoading = false
+                return
+            }
             allRecords = result.0
             weeklySummary = result.1
             lastSignature = signature

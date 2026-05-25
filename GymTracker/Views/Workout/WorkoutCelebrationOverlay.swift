@@ -29,20 +29,20 @@ struct WorkoutCelebrationOverlay: View {
         ZStack {
             backdrop
 
-            LiquidGlassPopupCard(cornerRadius: 34, padding: 24) {
+            LiquidGlassPopupCard(cornerRadius: appTheme.metrics.radius32, padding: appTheme.metrics.spacing24) {
                 VStack(spacing: 18) {
                     celebrationIcon
 
                     VStack(spacing: 8) {
                         Text(title)
-                            .font(.system(size: 34, weight: .bold, design: .rounded))
+                            .font(AppTypography.rounded(size: 34, weight: .bold))
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .multilineTextAlignment(.center)
                             .lineLimit(3)
                             .minimumScaleFactor(0.75)
 
                         Text(message)
-                            .font(.callout.weight(.semibold))
+                            .font(AppTypography.bodyEmphasis)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
@@ -51,7 +51,10 @@ struct WorkoutCelebrationOverlay: View {
                     .opacity(contentRevealed ? 1 : 0)
                     .offset(y: reduceMotion ? 0 : (contentRevealed ? 0 : 6))
 
-                    Button(action: primaryAction) {
+                    Button {
+                        AppHaptics.success()
+                        primaryAction()
+                    } label: {
                         Label {
                             Text(primaryActionTitle)
                         } icon: {
@@ -59,13 +62,14 @@ struct WorkoutCelebrationOverlay: View {
                                 Image(systemName: primaryActionIcon)
                             }
                         }
-                        .font(.headline.weight(.semibold))
+                        .font(AppTypography.button)
                         .frame(maxWidth: .infinity)
                         .contentShape(Capsule())
                     }
                     .buttonStyle(GlassPrimaryButtonStyle())
                     .disabled(isPrimaryActionDisabled)
                     .accessibilityLabel(primaryActionTitle)
+                    .accessibilityIdentifier("workout-celebration-primary")
                     .scaleEffect(reduceMotion ? 1 : (buttonRevealed ? 1 : 0.96))
                     .opacity(buttonRevealed ? 1 : 0)
                     .offset(y: reduceMotion ? 0 : (buttonRevealed ? 0 : 8))
@@ -151,7 +155,7 @@ struct WorkoutCelebrationOverlay: View {
         }
 
         if visible {
-            withAnimation(reduceMotion ? .easeOut(duration: 0.01) : .easeOut(duration: AppMotion.celebrationIconPulseDuration)) {
+            withAnimation(AppMotion.workoutCompletion(reduceMotion: reduceMotion)) {
                 iconPulse = true
             }
 

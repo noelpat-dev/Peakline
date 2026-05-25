@@ -24,10 +24,10 @@ struct SplitCardView: View {
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text(splitName)
-                            .font(.system(.title2, design: .rounded).weight(.bold))
+                            .font(AppTypography.largeMetric)
                             .foregroundStyle(appTheme.colors.textPrimary)
                         Text(lastTrainedText)
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
 
@@ -41,9 +41,11 @@ struct SplitCardView: View {
                 }
 
                 if let actionTitle, let action {
-                    Button(action: action) {
+                    Button {
+                        AppHaptics.selection()
+                        action()
+                    } label: {
                         Label(actionTitle, systemImage: "arrow.right.circle.fill")
-                            .font(.headline)
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(PrimaryFitnessButtonStyle())

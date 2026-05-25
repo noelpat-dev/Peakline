@@ -257,7 +257,7 @@ struct HealthKitSettingsView: View {
 
                     HStack(spacing: 10) {
                         Button {
-                            Task { await syncLogs(days: 1) }
+                            syncLogs(days: 1)
                         } label: {
                             Label("Today", systemImage: "calendar")
                                 .frame(maxWidth: .infinity)
@@ -265,7 +265,7 @@ struct HealthKitSettingsView: View {
                         .buttonStyle(SecondaryFitnessButtonStyle())
 
                         Button {
-                            Task { await syncLogs(days: 7) }
+                            syncLogs(days: 7)
                         } label: {
                             if isSyncing {
                                 SwiftUI.ProgressView()
@@ -414,19 +414,26 @@ struct HealthKitSettingsView: View {
         }
     }
 
-    private func syncLogs(days: Int) async {
+    private func syncLogs(days: Int) {
+        guard !isSyncing else { return }
         isSyncing = true
-        defer { isSyncing = false }
 
         let calendar = Calendar.current
         let start = calendar.date(byAdding: .day, value: -(days - 1), to: calendar.startOfDay(for: .now)) ?? .now
-        let eligibleLogs = foodLogs.filter { $0.loggedAt >= start }
-        let foodsById = Dictionary(uniqueKeysWithValues: foodItems.map { ($0.id, $0) })
+        let eligibleLogs = foodLogs
+            .filter { $0.loggedAt >= start }
+            .map { HealthKitFoodLogSyncSnapshot(entry: $0) }
+        let foodsById = Dictionary(uniqueKeysWithValues: foodItems.map { ($0.id, HealthKitFoodItemSyncSnapshot(food: $0)) })
 
-        let summary = await healthBridge.sync(entries: eligibleLogs, foodItemsById: foodsById, preferences: preferences)
-        lastSummary = summary
-        syncRecords = syncStore.records()
-        permissionState = healthBridge.currentPermissionState(preferences: preferences)
+        Task {
+            let summary = await healthBridge.sync(entries: eligibleLogs, foodItemsById: foodsById, preferences: preferences)
+            await MainActor.run {
+                lastSummary = summary
+                syncRecords = syncStore.records()
+                permissionState = healthBridge.currentPermissionState(preferences: preferences)
+                isSyncing = false
+            }
+        }
     }
 
     private func refreshHealthContext() async {

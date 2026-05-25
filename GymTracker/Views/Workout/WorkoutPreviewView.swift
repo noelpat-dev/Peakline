@@ -16,47 +16,51 @@ struct WorkoutPreviewView: View {
     @State private var activeCoachSheet: CoachWorkoutSheet?
     @State private var appliedWorkoutAdjustment: AppliedCoachWorkoutAdjustment?
     @State private var substitutionNotesByExerciseId: [UUID: String] = [:]
+    @State private var renderSnapshot: WorkoutPreviewRenderSnapshot?
+    @State private var lastRenderSignature: String?
+    @State private var hydrationTargetML = HydrationSettingsStore().dailyTargetML()
+    @State private var nutritionGoal = NutritionGoalService().loadGoal()
 
-    @Query(filter: #Predicate<Exercise> { !$0.isArchived }, sort: \Exercise.name)
+    @Query
     private var exercises: [Exercise]
 
-    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    @Query
     private var completedSessions: [WorkoutSession]
 
-    @Query(sort: \SleepSession.createdAt, order: .reverse)
+    @Query
     private var sleepSessions: [SleepSession]
 
-    @Query(sort: \NapSession.startDate, order: .reverse)
+    @Query
     private var napSessions: [NapSession]
 
-    @Query(sort: \HydrationEntry.loggedAt, order: .reverse)
+    @Query
     private var hydrationEntries: [HydrationEntry]
 
-    @Query(sort: \FoodLogEntry.loggedAt, order: .reverse)
+    @Query
     private var foodLogEntries: [FoodLogEntry]
 
-    @Query(sort: \DailyCoachCheckIn.date, order: .reverse)
+    @Query
     private var coachCheckIns: [DailyCoachCheckIn]
 
-    @Query(filter: #Predicate<TrainingSplit> { $0.isActive }, sort: \TrainingSplit.name)
+    @Query
     private var activeSplits: [TrainingSplit]
 
-    @Query(sort: \CoachActionHistoryEntry.createdAt, order: .reverse)
+    @Query
     private var coachActionHistory: [CoachActionHistoryEntry]
 
-    @Query(sort: \CoachRecommendationFeedback.createdAt, order: .reverse)
+    @Query
     private var recommendationFeedback: [CoachRecommendationFeedback]
 
-    @Query(sort: \SavedCoachDeloadBlock.updatedAt, order: .reverse)
+    @Query
     private var savedDeloadBlocks: [SavedCoachDeloadBlock]
 
-    @Query(sort: \CoachExerciseMetadata.updatedAt, order: .reverse)
+    @Query
     private var exerciseMetadata: [CoachExerciseMetadata]
 
-    @Query(sort: \CoachPreferences.updatedAt, order: .reverse)
+    @Query
     private var coachPreferences: [CoachPreferences]
 
-    @Query(sort: \CoachSplitMetadata.updatedAt, order: .reverse)
+    @Query
     private var splitMetadataRecords: [CoachSplitMetadata]
 
     @State private var sleepSettings = SleepSettingsStore().load()
@@ -78,13 +82,264 @@ struct WorkoutPreviewView: View {
 
     init(split: TrainingSplit) {
         self.split = WorkoutPreviewSplit(split)
+        Self.configureQueries(
+            exercises: &_exercises,
+            completedSessions: &_completedSessions,
+            sleepSessions: &_sleepSessions,
+            napSessions: &_napSessions,
+            hydrationEntries: &_hydrationEntries,
+            foodLogEntries: &_foodLogEntries,
+            coachCheckIns: &_coachCheckIns,
+            activeSplits: &_activeSplits,
+            coachActionHistory: &_coachActionHistory,
+            recommendationFeedback: &_recommendationFeedback,
+            savedDeloadBlocks: &_savedDeloadBlocks,
+            exerciseMetadata: &_exerciseMetadata,
+            coachPreferences: &_coachPreferences,
+            splitMetadataRecords: &_splitMetadataRecords
+        )
     }
 
     init(split: WorkoutPreviewSplit) {
         self.split = split
+        Self.configureQueries(
+            exercises: &_exercises,
+            completedSessions: &_completedSessions,
+            sleepSessions: &_sleepSessions,
+            napSessions: &_napSessions,
+            hydrationEntries: &_hydrationEntries,
+            foodLogEntries: &_foodLogEntries,
+            coachCheckIns: &_coachCheckIns,
+            activeSplits: &_activeSplits,
+            coachActionHistory: &_coachActionHistory,
+            recommendationFeedback: &_recommendationFeedback,
+            savedDeloadBlocks: &_savedDeloadBlocks,
+            exerciseMetadata: &_exerciseMetadata,
+            coachPreferences: &_coachPreferences,
+            splitMetadataRecords: &_splitMetadataRecords
+        )
     }
 
-    private var orderedExercises: [WorkoutSelectableExercise] {
+    private static func configureQueries(
+        exercises: inout Query<Exercise, [Exercise]>,
+        completedSessions: inout Query<WorkoutSession, [WorkoutSession]>,
+        sleepSessions: inout Query<SleepSession, [SleepSession]>,
+        napSessions: inout Query<NapSession, [NapSession]>,
+        hydrationEntries: inout Query<HydrationEntry, [HydrationEntry]>,
+        foodLogEntries: inout Query<FoodLogEntry, [FoodLogEntry]>,
+        coachCheckIns: inout Query<DailyCoachCheckIn, [DailyCoachCheckIn]>,
+        activeSplits: inout Query<TrainingSplit, [TrainingSplit]>,
+        coachActionHistory: inout Query<CoachActionHistoryEntry, [CoachActionHistoryEntry]>,
+        recommendationFeedback: inout Query<CoachRecommendationFeedback, [CoachRecommendationFeedback]>,
+        savedDeloadBlocks: inout Query<SavedCoachDeloadBlock, [SavedCoachDeloadBlock]>,
+        exerciseMetadata: inout Query<CoachExerciseMetadata, [CoachExerciseMetadata]>,
+        coachPreferences: inout Query<CoachPreferences, [CoachPreferences]>,
+        splitMetadataRecords: inout Query<CoachSplitMetadata, [CoachSplitMetadata]>
+    ) {
+        exercises = Query(exercisesDescriptor)
+        completedSessions = Query(completedSessionsDescriptor)
+        sleepSessions = Query(sleepSessionsDescriptor)
+        napSessions = Query(napSessionsDescriptor)
+        hydrationEntries = Query(hydrationEntriesDescriptor)
+        foodLogEntries = Query(foodLogEntriesDescriptor)
+        coachCheckIns = Query(coachCheckInsDescriptor)
+        activeSplits = Query(activeSplitsDescriptor)
+        coachActionHistory = Query(coachActionHistoryDescriptor)
+        recommendationFeedback = Query(recommendationFeedbackDescriptor)
+        savedDeloadBlocks = Query(savedDeloadBlocksDescriptor)
+        exerciseMetadata = Query(exerciseMetadataDescriptor)
+        coachPreferences = Query(coachPreferencesDescriptor)
+        splitMetadataRecords = Query(splitMetadataRecordsDescriptor)
+    }
+
+    private static var exercisesDescriptor: FetchDescriptor<Exercise> {
+        var descriptor = FetchDescriptor<Exercise>(
+            predicate: #Predicate<Exercise> { !$0.isArchived },
+            sortBy: [SortDescriptor(\.name)]
+        )
+        descriptor.fetchLimit = 180
+        return descriptor
+    }
+
+    private static var completedSessionsDescriptor: FetchDescriptor<WorkoutSession> {
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 40
+        return descriptor
+    }
+
+    private static var sleepSessionsDescriptor: FetchDescriptor<SleepSession> {
+        var descriptor = FetchDescriptor<SleepSession>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+        descriptor.fetchLimit = 60
+        return descriptor
+    }
+
+    private static var napSessionsDescriptor: FetchDescriptor<NapSession> {
+        var descriptor = FetchDescriptor<NapSession>(sortBy: [SortDescriptor(\.startDate, order: .reverse)])
+        descriptor.fetchLimit = 30
+        return descriptor
+    }
+
+    private static var hydrationEntriesDescriptor: FetchDescriptor<HydrationEntry> {
+        var descriptor = FetchDescriptor<HydrationEntry>(sortBy: [SortDescriptor(\.loggedAt, order: .reverse)])
+        descriptor.fetchLimit = 120
+        return descriptor
+    }
+
+    private static var foodLogEntriesDescriptor: FetchDescriptor<FoodLogEntry> {
+        var descriptor = FetchDescriptor<FoodLogEntry>(sortBy: [SortDescriptor(\.loggedAt, order: .reverse)])
+        descriptor.fetchLimit = 160
+        return descriptor
+    }
+
+    private static var coachCheckInsDescriptor: FetchDescriptor<DailyCoachCheckIn> {
+        var descriptor = FetchDescriptor<DailyCoachCheckIn>(sortBy: [SortDescriptor(\.date, order: .reverse)])
+        descriptor.fetchLimit = 30
+        return descriptor
+    }
+
+    private static var activeSplitsDescriptor: FetchDescriptor<TrainingSplit> {
+        var descriptor = FetchDescriptor<TrainingSplit>(
+            predicate: #Predicate<TrainingSplit> { $0.isActive },
+            sortBy: [SortDescriptor(\.name)]
+        )
+        descriptor.fetchLimit = 12
+        return descriptor
+    }
+
+    private static var coachActionHistoryDescriptor: FetchDescriptor<CoachActionHistoryEntry> {
+        var descriptor = FetchDescriptor<CoachActionHistoryEntry>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+        descriptor.fetchLimit = 120
+        return descriptor
+    }
+
+    private static var recommendationFeedbackDescriptor: FetchDescriptor<CoachRecommendationFeedback> {
+        var descriptor = FetchDescriptor<CoachRecommendationFeedback>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+        descriptor.fetchLimit = 120
+        return descriptor
+    }
+
+    private static var savedDeloadBlocksDescriptor: FetchDescriptor<SavedCoachDeloadBlock> {
+        var descriptor = FetchDescriptor<SavedCoachDeloadBlock>(sortBy: [SortDescriptor(\.updatedAt, order: .reverse)])
+        descriptor.fetchLimit = 40
+        return descriptor
+    }
+
+    private static var exerciseMetadataDescriptor: FetchDescriptor<CoachExerciseMetadata> {
+        var descriptor = FetchDescriptor<CoachExerciseMetadata>(sortBy: [SortDescriptor(\.updatedAt, order: .reverse)])
+        descriptor.fetchLimit = 180
+        return descriptor
+    }
+
+    private static var coachPreferencesDescriptor: FetchDescriptor<CoachPreferences> {
+        var descriptor = FetchDescriptor<CoachPreferences>(sortBy: [SortDescriptor(\.updatedAt, order: .reverse)])
+        descriptor.fetchLimit = 5
+        return descriptor
+    }
+
+    private static var splitMetadataRecordsDescriptor: FetchDescriptor<CoachSplitMetadata> {
+        var descriptor = FetchDescriptor<CoachSplitMetadata>(sortBy: [SortDescriptor(\.updatedAt, order: .reverse)])
+        descriptor.fetchLimit = 40
+        return descriptor
+    }
+
+    private var currentRenderSnapshot: WorkoutPreviewRenderSnapshot {
+        if let renderSnapshot {
+            return renderSnapshot
+        }
+
+        return PerformanceTracer.trace(.workoutPreviewRenderSnapshot) {
+            makeRenderSnapshot()
+        }
+    }
+
+    private var renderSignature: String {
+        [
+            split.id.uuidString,
+            selectedMode.rawValue,
+            selectedExerciseIds.map(\.uuidString).joined(separator: ","),
+            substitutionNotesByExerciseId
+                .map { "\($0.key.uuidString):\($0.value)" }
+                .sorted()
+                .joined(separator: ","),
+            appliedWorkoutAdjustment?.id.uuidString ?? "none",
+            signature(exercises, limit: 180) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(completedSessions, limit: 40) { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.endedAt?.timeIntervalSince1970 ?? 0)" },
+            signature(sleepSessions, limit: 60) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(napSessions, limit: 30) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(hydrationEntries, limit: 120) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(foodLogEntries, limit: 160) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(coachCheckIns, limit: 30) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(coachActionHistory, limit: 120) { "\($0.id.uuidString):\($0.createdAt.timeIntervalSince1970)" },
+            signature(recommendationFeedback, limit: 120) { "\($0.id.uuidString):\($0.createdAt.timeIntervalSince1970)" },
+            signature(savedDeloadBlocks, limit: 40) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(exerciseMetadata, limit: 180) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(coachPreferences, limit: 5) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(splitMetadataRecords, limit: 40) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            "\(sleepSettings.lastHealthKitSleepSyncAt?.timeIntervalSince1970 ?? 0)",
+            "\(hydrationTargetML)",
+            nutritionGoalSignature
+        ].joined(separator: "|")
+    }
+
+    private var nutritionGoalSignature: String {
+        guard nutritionGoal.hasTargets else { return "nutrition-goal-empty" }
+        return "\(nutritionGoal.updatedAt.timeIntervalSince1970)"
+    }
+
+    private func refreshRenderSnapshot(force: Bool = false) {
+        let signature = renderSignature
+        guard force || signature != lastRenderSignature else { return }
+        renderSnapshot = PerformanceTracer.trace(.workoutPreviewRenderSnapshot) {
+            makeRenderSnapshot()
+        }
+        lastRenderSignature = signature
+    }
+
+    private func signature<Value>(_ values: [Value], limit: Int, transform: (Value) -> String) -> String {
+        values.prefix(limit).map(transform).joined(separator: ",")
+    }
+
+    private func makeRenderSnapshot() -> WorkoutPreviewRenderSnapshot {
+        let orderedExercises = makeOrderedExercises()
+        let selectedBaseExercises = makeSelectedBaseExercises(orderedExercises: orderedExercises)
+        let basePlannedExercises = modePlanner.plannedExercises(from: selectedBaseExercises, mode: selectedMode)
+        let plannedExercises = appliedWorkoutAdjustment?.adjustedExercises ?? basePlannedExercises
+        let estimatedDuration = modePlanner.estimatedDurationMinutes(for: plannedExercises, mode: selectedMode)
+        let suggestions = suggestionsByExerciseId(for: plannedExercises)
+        let alternatives = alternativesByExerciseId(for: plannedExercises)
+        let exerciseByID = Dictionary(uniqueKeysWithValues: exercises.map { ($0.id, $0) })
+        let plannedMuscleGroups = Set(plannedExercises.flatMap { planned in
+            exerciseByID[planned.exerciseId].map { exercise in
+                [exercise.primaryMuscleGroup] + exercise.secondaryMuscleGroups
+            } ?? []
+        })
+        let intelligence = makeCoachSnapshot(plannedExercises: plannedExercises)
+        let plannedFatigueItems = intelligence.muscleFatigue.filter { plannedMuscleGroups.contains($0.muscleGroup) }
+        let actionRecommendations = coachActionRecommendations(
+            snapshot: intelligence,
+            plannedExercises: plannedExercises,
+            plannedFatigueItems: plannedFatigueItems
+        )
+
+        return WorkoutPreviewRenderSnapshot(
+            orderedExercises: orderedExercises,
+            basePlannedExercises: basePlannedExercises,
+            plannedExercises: plannedExercises,
+            estimatedDuration: estimatedDuration,
+            suggestions: suggestions,
+            alternatives: alternatives,
+            intelligence: intelligence,
+            plannedFatigueItems: plannedFatigueItems,
+            actionRecommendations: actionRecommendations,
+            coachSummaryText: coachSummaryText(suggestions: suggestions, mode: selectedMode),
+            coachSummaryBadge: coachSummaryBadge(suggestions: suggestions, mode: selectedMode)
+        )
+    }
+
+    private func makeOrderedExercises() -> [WorkoutSelectableExercise] {
         var items = split.exercises
 
         if
@@ -107,7 +362,7 @@ struct WorkoutPreviewView: View {
         return items
     }
 
-    private var selectedBaseExercises: [WorkoutSelectableExercise] {
+    private func makeSelectedBaseExercises(orderedExercises: [WorkoutSelectableExercise]) -> [WorkoutSelectableExercise] {
         selectedExerciseIds.compactMap { selectedId in
             if let planned = orderedExercises.first(where: { $0.id == selectedId }) {
                 return WorkoutSelectableExercise(
@@ -135,27 +390,15 @@ struct WorkoutPreviewView: View {
         }
     }
 
-    private var basePlannedExercises: [PlannedWorkoutExercise] {
-        modePlanner.plannedExercises(from: selectedBaseExercises, mode: selectedMode)
-    }
-
-    private var plannedExercises: [PlannedWorkoutExercise] {
-        appliedWorkoutAdjustment?.adjustedExercises ?? basePlannedExercises
-    }
-
     private var recentCompletedSessions: [WorkoutSession] {
         Array(completedSessions.prefix(20))
     }
 
-    private var estimatedDuration: ClosedRange<Int> {
-        modePlanner.estimatedDurationMinutes(for: plannedExercises, mode: selectedMode)
-    }
-
     private var readinessScore: ReadinessScore {
-        coachSnapshot.readiness
+        currentRenderSnapshot.intelligence.readiness
     }
 
-    private var coachSnapshot: CoachIntelligenceSnapshot {
+    private func makeCoachSnapshot(plannedExercises: [PlannedWorkoutExercise]) -> CoachIntelligenceSnapshot {
         coachIntelligence.snapshot(
             exercises: exercises,
             plannedExerciseIDs: plannedExercises.map(\.exerciseId),
@@ -166,8 +409,8 @@ struct WorkoutPreviewView: View {
             foodLogs: foodLogEntries,
             checkIns: coachCheckIns,
             sleepSettings: sleepSettings,
-            hydrationTargetML: hydrationSettingsStore.dailyTargetML(),
-            nutritionGoal: nutritionGoalStore.loadGoal(),
+            hydrationTargetML: hydrationTargetML,
+            nutritionGoal: nutritionGoal,
             exerciseMetadata: exerciseMetadata,
             coachActionHistory: coachActionHistory,
             recommendationFeedback: recommendationFeedback,
@@ -194,19 +437,6 @@ struct WorkoutPreviewView: View {
             preferences: coachPreferencesSnapshot,
             splitMetadata: currentSplitMetadataSnapshot
         )
-    }
-
-    private var plannedMuscleGroups: Set<MuscleGroup> {
-        Set(plannedExercises.flatMap { planned in
-            exercises.first { $0.id == planned.exerciseId }.map { exercise in
-                [exercise.primaryMuscleGroup] + exercise.secondaryMuscleGroups
-            } ?? []
-        })
-    }
-
-    private func plannedMuscleFatigueItems(from snapshot: CoachIntelligenceSnapshot) -> [MuscleGroupFatigue] {
-        let groups = plannedMuscleGroups
-        return snapshot.muscleFatigue.filter { groups.contains($0.muscleGroup) }
     }
 
     private func coachActionRecommendations(
@@ -270,20 +500,11 @@ struct WorkoutPreviewView: View {
     }
 
     var body: some View {
-        let plannedList = plannedExercises
-        let suggestions = suggestionsByExerciseId(for: plannedList)
-        let alternatives = alternativesByExerciseId(for: plannedList)
-        let intelligence = coachSnapshot
-        let plannedFatigueItems = plannedMuscleFatigueItems(from: intelligence)
-        let actionRecommendations = coachActionRecommendations(
-            snapshot: intelligence,
-            plannedExercises: plannedList,
-            plannedFatigueItems: plannedFatigueItems
-        )
+        let snapshot = currentRenderSnapshot
 
         FitnessScreen(
             title: "\(split.name) Preview",
-            subtitle: "\(selectedMode.displayName) mode - ~\(estimatedDuration.lowerBound)-\(estimatedDuration.upperBound)m",
+            subtitle: "\(selectedMode.displayName) mode - ~\(snapshot.estimatedDuration.lowerBound)-\(snapshot.estimatedDuration.upperBound)m",
             systemImage: "figure.strengthtraining.traditional"
         ) {
             DashboardSection(title: "Mode") {
@@ -293,35 +514,35 @@ struct WorkoutPreviewView: View {
             }
 
             DashboardSection(title: "Coach Brief") {
-                AdaptiveWorkoutGuidanceCard(guidance: intelligence.adaptiveGuidance)
+                AdaptiveWorkoutGuidanceCard(guidance: snapshot.intelligence.adaptiveGuidance)
 
                 AdaptiveWorkoutActionsCard(
-                    guidance: intelligence.adaptiveGuidance,
-                    recommendations: actionRecommendations,
+                    guidance: snapshot.intelligence.adaptiveGuidance,
+                    recommendations: snapshot.actionRecommendations,
                     appliedAdjustment: appliedWorkoutAdjustment,
                     selectAction: { action in
-                        requestCoachAction(action, snapshot: intelligence, plannedFatigueItems: plannedFatigueItems)
+                        requestCoachAction(action, snapshot: snapshot.intelligence, plannedFatigueItems: snapshot.plannedFatigueItems)
                     },
                     reset: resetCoachAdjustment
                 )
 
-                WorkoutReadinessBriefCard(readiness: intelligence.readiness)
+                WorkoutReadinessBriefCard(readiness: snapshot.intelligence.readiness)
 
-                if plannedFatigueItems.contains(where: { $0.state == .loaded || $0.state == .fatigued }) {
-                    MuscleFatigueMapCard(items: plannedFatigueItems)
+                if snapshot.plannedFatigueItems.contains(where: { $0.state == .loaded || $0.state == .fatigued }) {
+                    MuscleFatigueMapCard(items: snapshot.plannedFatigueItems)
                 }
 
                 FitnessCard {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(alignment: .top, spacing: 12) {
-                            Text(coachSummaryText)
+                            Text(snapshot.coachSummaryText)
                                 .font(.subheadline)
                                 .foregroundStyle(appTheme.mutedText)
                                 .fixedSize(horizontal: false, vertical: true)
 
                             Spacer()
 
-                            CoachBadgeView(state: coachSummaryBadge)
+                            CoachBadgeView(state: snapshot.coachSummaryBadge)
                         }
                     }
                 }
@@ -329,8 +550,8 @@ struct WorkoutPreviewView: View {
 
             DashboardSection(title: "Session Snapshot") {
                 HStack(spacing: 10) {
-                    MetricTile(label: "Exercises", value: "\(plannedList.count)", caption: "\(selectedMode.displayName) mode", systemImage: "list.bullet")
-                    MetricTile(label: "Estimate", value: "\(estimatedDuration.lowerBound)-\(estimatedDuration.upperBound)m", caption: "Session time", systemImage: "clock")
+                    MetricTile(label: "Exercises", value: "\(snapshot.plannedExercises.count)", caption: "\(selectedMode.displayName) mode", systemImage: "list.bullet")
+                    MetricTile(label: "Estimate", value: "\(snapshot.estimatedDuration.lowerBound)-\(snapshot.estimatedDuration.upperBound)m", caption: "Session time", systemImage: "clock")
                 }
             }
 
@@ -338,13 +559,13 @@ struct WorkoutPreviewView: View {
                 HStack {
                     Spacer()
                     Button("Select All") {
-                        selectedExerciseIds = orderedExercises.map(\.id)
+                        selectedExerciseIds = snapshot.orderedExercises.map(\.id)
                     }
                     .font(.subheadline.weight(.semibold))
                     .tint(appTheme.actionColor)
                 }
 
-                if plannedList.isEmpty {
+                if snapshot.plannedExercises.isEmpty {
                     DashboardEmptyStateCard(
                         title: "No exercises selected",
                         message: "Choose at least one exercise before starting.",
@@ -352,13 +573,13 @@ struct WorkoutPreviewView: View {
                     )
                 } else {
                     LazyVStack(spacing: 12) {
-                        ForEach(Array(plannedList.enumerated()), id: \.element.id) { index, exercise in
+                        ForEach(Array(snapshot.plannedExercises.enumerated()), id: \.element.id) { index, exercise in
                             previewExerciseCard(
                                 exercise: exercise,
                                 index: index,
-                                plannedCount: plannedList.count,
-                                suggestions: suggestions,
-                                alternatives: alternatives
+                                plannedCount: snapshot.plannedExercises.count,
+                                suggestions: snapshot.suggestions,
+                                alternatives: snapshot.alternatives
                             )
                         }
                     }
@@ -411,7 +632,7 @@ struct WorkoutPreviewView: View {
                         }
                         .buttonStyle(PrimaryFitnessButtonStyle())
                         .accessibilityIdentifier("workout-preview-start")
-                        .disabled(plannedList.isEmpty)
+                        .disabled(snapshot.plannedExercises.isEmpty)
 
                         if appliedWorkoutAdjustment != nil {
                         Button {
@@ -419,16 +640,16 @@ struct WorkoutPreviewView: View {
                                 recordCoachAction(
                                     preview: appliedWorkoutAdjustment.preview,
                                     outcome: .bypassed,
-                                    snapshot: intelligence
+                                    snapshot: snapshot.intelligence
                                 )
                             }
-                            activeSession = createWorkout(from: split, plannedExercises: basePlannedExercises, modeLabel: "\(selectedMode.displayName) Original")
+                            activeSession = createWorkout(from: split, plannedExercises: snapshot.basePlannedExercises, modeLabel: "\(selectedMode.displayName) Original")
                         } label: {
                             Label("Start Original Plan", systemImage: "arrow.uturn.backward.circle")
                         }
                         .buttonStyle(SecondaryFitnessButtonStyle())
                         .accessibilityIdentifier("workout-preview-start-original")
-                        .disabled(basePlannedExercises.isEmpty)
+                        .disabled(snapshot.basePlannedExercises.isEmpty)
                         }
 
                         Text(startHint)
@@ -469,14 +690,14 @@ struct WorkoutPreviewView: View {
                     preferences: coachPreferencesSnapshot,
                     splitMetadata: currentSplitMetadataSnapshot
                 ) { editedPreview in
-                    applyCoachAdjustment(editedPreview, snapshot: intelligence)
+                    applyCoachAdjustment(editedPreview, snapshot: currentRenderSnapshot.intelligence)
                 } cancel: {
-                    recordCoachAction(preview: preview, outcome: .cancelled, snapshot: intelligence)
+                    recordCoachAction(preview: preview, outcome: .cancelled, snapshot: currentRenderSnapshot.intelligence)
                 }
             case .deloadPlanner:
                 ManualDeloadPlannerSheet(
-                    defaultPlan: workoutAdjustmentService.defaultDeloadPlan(for: intelligence.fatigueRisk),
-                    fatigueRisk: intelligence.fatigueRisk,
+                    defaultPlan: workoutAdjustmentService.defaultDeloadPlan(for: currentRenderSnapshot.intelligence.fatigueRisk),
+                    fatigueRisk: currentRenderSnapshot.intelligence.fatigueRisk,
                     calendarPreview: { plan in
                         deloadReviewService.preview(plan: plan, activeSplits: activeSplits)
                     }
@@ -484,25 +705,31 @@ struct WorkoutPreviewView: View {
                     activeCoachSheet = .actionPreview(
                         workoutAdjustmentPreview(
                             action: .deloadStyleSession,
-                            snapshot: intelligence,
-                            plannedFatigueItems: plannedFatigueItems,
+                            snapshot: currentRenderSnapshot.intelligence,
+                            plannedFatigueItems: currentRenderSnapshot.plannedFatigueItems,
                             deloadPlan: plan
                         )
                     )
                 } savePlan: { plan in
-                    saveDeloadBlock(plan, snapshot: intelligence)
+                    saveDeloadBlock(plan, snapshot: currentRenderSnapshot.intelligence)
                 }
             }
         }
         .onAppear {
             sleepSettings = sleepSettingsStore.load()
+            hydrationTargetML = hydrationSettingsStore.dailyTargetML()
+            nutritionGoal = nutritionGoalStore.loadGoal()
             if selectedExerciseIds.isEmpty {
-                selectedExerciseIds = modePlanner.plannedExercises(from: orderedExercises, mode: selectedMode).map(\.id)
+                selectedExerciseIds = modePlanner.plannedExercises(from: makeOrderedExercises(), mode: selectedMode).map(\.id)
             }
+            refreshRenderSnapshot(force: true)
+        }
+        .onChange(of: renderSignature) { _, _ in
+            refreshRenderSnapshot()
         }
         .onChange(of: selectedMode) { _, newMode in
             resetCoachAdjustment()
-            selectedExerciseIds = modePlanner.plannedExercises(from: orderedExercises, mode: newMode).map(\.id)
+            selectedExerciseIds = modePlanner.plannedExercises(from: makeOrderedExercises(), mode: newMode).map(\.id)
         }
     }
 
@@ -531,8 +758,8 @@ struct WorkoutPreviewView: View {
         }
     }
 
-    private var coachSummaryText: String {
-        let suggestions = suggestionsByExerciseId(for: plannedExercises).values
+    private func coachSummaryText(suggestions: [UUID: TargetSuggestion], mode: WorkoutMode) -> String {
+        let suggestions = suggestions.values
         if suggestions.contains(where: { $0.recommendationType == .fatigueRisk }) {
             return "Performance has dipped on at least one lift. Keep the session controlled and rest properly."
         }
@@ -541,26 +768,26 @@ struct WorkoutPreviewView: View {
             return "Progress opportunity: push \(increase.exerciseName), then keep the rest efficient."
         }
 
-        if selectedMode == .recovery {
+        if mode == .recovery {
             return "Lower stress session. Repeat targets, keep form clean, and avoid forcing PRs."
         }
 
-        if selectedMode == .quick {
+        if mode == .quick {
             return "Short session. Hit the important lifts first and leave accessories optional."
         }
 
         return "Targets are ready. Repeat or add reps where the range allows."
     }
 
-    private var coachSummaryBadge: CoachBadgeState {
-        let suggestions = suggestionsByExerciseId(for: plannedExercises).values
+    private func coachSummaryBadge(suggestions: [UUID: TargetSuggestion], mode: WorkoutMode) -> CoachBadgeState {
+        let suggestions = suggestions.values
         if suggestions.contains(where: { $0.recommendationType == .fatigueRisk }) {
             return .fatigueRisk
         }
         if suggestions.contains(where: { $0.recommendationType == .increaseLoad || $0.recommendationType == .addReps }) {
             return .ready
         }
-        if selectedMode == .recovery {
+        if mode == .recovery {
             return .recovery
         }
         return .repeatTarget
@@ -646,7 +873,7 @@ struct WorkoutPreviewView: View {
         modeLabel: String? = nil
     ) -> WorkoutSession {
         let startDate = Date()
-        let sessionExercises = sessionExercises ?? plannedExercises
+        let sessionExercises = sessionExercises ?? currentRenderSnapshot.plannedExercises
         let label = modeLabel ?? appliedWorkoutAdjustment.map { "\(selectedMode.displayName) - \($0.title)" } ?? selectedMode.displayName
         let session = WorkoutSession(
             date: startDate,
@@ -714,7 +941,7 @@ struct WorkoutPreviewView: View {
     ) -> CoachWorkoutAdjustmentPreview {
         workoutAdjustmentService.makePreview(
             action: action,
-            plannedExercises: basePlannedExercises,
+            plannedExercises: currentRenderSnapshot.basePlannedExercises,
             snapshot: snapshot,
             exercises: exercises,
             plannedMuscleFatigue: plannedFatigueItems,
@@ -739,7 +966,7 @@ struct WorkoutPreviewView: View {
 
     private func resetCoachAdjustment() {
         if let appliedWorkoutAdjustment {
-            recordCoachAction(preview: appliedWorkoutAdjustment.preview, outcome: .reset, snapshot: coachSnapshot)
+            recordCoachAction(preview: appliedWorkoutAdjustment.preview, outcome: .reset, snapshot: currentRenderSnapshot.intelligence)
         }
         appliedWorkoutAdjustment = nil
     }
@@ -768,6 +995,20 @@ struct WorkoutPreviewView: View {
         modelContext.insert(block)
         try? modelContext.save()
     }
+}
+
+private struct WorkoutPreviewRenderSnapshot {
+    let orderedExercises: [WorkoutSelectableExercise]
+    let basePlannedExercises: [PlannedWorkoutExercise]
+    let plannedExercises: [PlannedWorkoutExercise]
+    let estimatedDuration: ClosedRange<Int>
+    let suggestions: [UUID: TargetSuggestion]
+    let alternatives: [UUID: [Exercise]]
+    let intelligence: CoachIntelligenceSnapshot
+    let plannedFatigueItems: [MuscleGroupFatigue]
+    let actionRecommendations: [CoachWorkoutActionRecommendation]
+    let coachSummaryText: String
+    let coachSummaryBadge: CoachBadgeState
 }
 
 private enum CoachWorkoutSheet: Identifiable {

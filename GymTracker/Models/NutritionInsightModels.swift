@@ -19,7 +19,7 @@ struct NutritionGoal: Codable, Equatable {
             trainingDayCaloriesTarget: nil,
             restDayCaloriesTarget: nil,
             isEnabled: false,
-            updatedAt: .now
+            updatedAt: Date(timeIntervalSince1970: 0)
         )
     }
 

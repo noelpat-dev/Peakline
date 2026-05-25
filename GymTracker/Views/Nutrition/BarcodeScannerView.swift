@@ -14,6 +14,11 @@ struct BarcodeScannerView: View {
     @State private var isManualEntryPresented = false
     @State private var manualBarcode = ""
     @State private var editingFood: FoodItem?
+    @State private var scannerErrorMessage: String?
+    @State private var pendingManualBarcode: String?
+    @State private var delayedLookupTask: Task<Void, Never>?
+    @State private var lookupTask: Task<Void, Never>?
+    @State private var selectedRoute: BarcodeScannerRoute?
 
     private let lookupService = BarcodeFoodLookupService()
 
@@ -61,12 +66,32 @@ struct BarcodeScannerView: View {
         .sheet(item: $editingFood) { food in
             ManualFoodEntryView(food: food)
         }
+        .navigationDestination(item: $selectedRoute) { route in
+            barcodeDestination(route)
+        }
+        .onChange(of: isManualEntryPresented) { _, isPresented in
+            guard !isPresented, let barcode = pendingManualBarcode else { return }
+            pendingManualBarcode = nil
+            scheduleLookup(for: barcode, afterNanoseconds: 150_000_000)
+        }
+        .onDisappear {
+            delayedLookupTask?.cancel()
+            lookupTask?.cancel()
+        }
     }
 
     @ViewBuilder
     private var scannerContent: some View {
         if case .idle = lookupState, isScanning {
-            scannerPreviewCard
+            if let scannerErrorMessage {
+                scannerUnavailableCard(
+                    title: "Camera unavailable",
+                    message: scannerErrorMessage,
+                    systemImage: "camera.fill"
+                )
+            } else {
+                scannerPreviewCard
+            }
         }
 
         lookupStateContent
@@ -85,6 +110,9 @@ struct BarcodeScannerView: View {
             ZStack {
                 BarcodeScannerRepresentable { barcode in
                     handleDetectedBarcode(barcode)
+                } onError: { message in
+                    scannerErrorMessage = message
+                    isScanning = false
                 }
                 .frame(height: 360)
                 .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
@@ -209,8 +237,8 @@ struct BarcodeScannerView: View {
                 BarcodeFoodSummary(food: food)
 
                 HStack(spacing: 8) {
-                    NavigationLink {
-                        LogFoodView(food: food)
+                    Button {
+                        selectedRoute = .logFood(food.id)
                     } label: {
                         Label("Log Food", systemImage: "plus")
                             .frame(maxWidth: .infinity)
@@ -229,8 +257,12 @@ struct BarcodeScannerView: View {
                     .accessibilityLabel("Edit \(food.name)")
                 }
 
-                NavigationLink {
-                    NutritionLabelScanView(initialBarcode: food.barcode, localFood: food)
+                Button {
+                    selectedRoute = .labelScan(
+                        barcode: food.barcode,
+                        comparisonDraft: nil,
+                        localFoodID: food.id
+                    )
                 } label: {
                     Label("Review against Label", systemImage: "text.viewfinder")
                         .frame(maxWidth: .infinity)
@@ -256,16 +288,20 @@ struct BarcodeScannerView: View {
 
                 ImportedDraftSummary(draft: draft)
 
-                NavigationLink {
-                    FoodImportReviewView(draft: draft)
+                Button {
+                    selectedRoute = .reviewDraft(draft)
                 } label: {
                     Label(isIncomplete ? "Complete Manually" : "Review & Save", systemImage: "square.and.pencil")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(PrimaryFitnessButtonStyle())
 
-                NavigationLink {
-                    NutritionLabelScanView(initialBarcode: draft.barcode, comparisonDraft: draft)
+                Button {
+                    selectedRoute = .labelScan(
+                        barcode: draft.barcode,
+                        comparisonDraft: draft,
+                        localFoodID: nil
+                    )
                 } label: {
                     Label(isIncomplete ? "Scan Label to Complete" : "Verify with Label Scan", systemImage: "text.viewfinder")
                         .frame(maxWidth: .infinity)
@@ -287,16 +323,20 @@ struct BarcodeScannerView: View {
                     systemImage: "questionmark.circle.fill"
                 )
 
-                NavigationLink {
-                    FoodImportReviewView(draft: emptyDraft(for: barcode))
+                Button {
+                    selectedRoute = .reviewDraft(emptyDraft(for: barcode))
                 } label: {
                     Label("Create Food Manually", systemImage: "plus")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(PrimaryFitnessButtonStyle())
 
-                NavigationLink {
-                    NutritionLabelScanView(initialBarcode: barcode)
+                Button {
+                    selectedRoute = .labelScan(
+                        barcode: barcode,
+                        comparisonDraft: nil,
+                        localFoodID: nil
+                    )
                 } label: {
                     Label("Scan Label Instead", systemImage: "text.viewfinder")
                         .frame(maxWidth: .infinity)
@@ -327,8 +367,12 @@ struct BarcodeScannerView: View {
                     }
                     .buttonStyle(PrimaryFitnessButtonStyle())
 
-                    NavigationLink {
-                        NutritionLabelScanView(initialBarcode: barcode)
+                    Button {
+                        selectedRoute = .labelScan(
+                            barcode: barcode,
+                            comparisonDraft: nil,
+                            localFoodID: nil
+                        )
                     } label: {
                         Label("Scan Label Instead", systemImage: "text.viewfinder")
                             .frame(maxWidth: .infinity)
@@ -343,6 +387,9 @@ struct BarcodeScannerView: View {
 
     private var scanAgainButton: some View {
         Button {
+            delayedLookupTask?.cancel()
+            lookupTask?.cancel()
+            scannerErrorMessage = nil
             lookupState = .idle
             isScanning = true
         } label: {
@@ -372,9 +419,9 @@ struct BarcodeScannerView: View {
 
                         Button {
                             let barcode = manualBarcode
-                            isManualEntryPresented = false
+                            pendingManualBarcode = barcode
                             manualBarcode = ""
-                            lookupBarcode(barcode)
+                            isManualEntryPresented = false
                         } label: {
                             Label("Lookup Barcode", systemImage: "magnifyingglass")
                                 .frame(maxWidth: .infinity)
@@ -397,11 +444,23 @@ struct BarcodeScannerView: View {
 
     private func handleDetectedBarcode(_ barcode: String) {
         guard isScanning else { return }
-        isScanning = false
-        lookupBarcode(barcode)
+        scheduleLookup(for: barcode, afterNanoseconds: 180_000_000)
+    }
+
+    private func scheduleLookup(for barcode: String, afterNanoseconds delay: UInt64) {
+        delayedLookupTask?.cancel()
+        delayedLookupTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled else { return }
+            isScanning = false
+            lookupBarcode(barcode)
+        }
     }
 
     private func lookupBarcode(_ barcode: String) {
+        lookupTask?.cancel()
+        scannerErrorMessage = nil
+
         let normalizedBarcode = BarcodeFoodLookupService.normalizedBarcode(barcode)
         guard !normalizedBarcode.isEmpty else {
             lookupState = .error(message: "Enter a valid barcode.", barcode: nil)
@@ -409,22 +468,16 @@ struct BarcodeScannerView: View {
         }
 
         lookupState = .checkingLocal(normalizedBarcode)
-        Task {
-            if let local = lookupService.findLocalFood(by: normalizedBarcode, in: foodItems) {
-                await MainActor.run {
-                    lookupState = .localFound(local)
-                }
-                return
-            }
+        if let local = lookupService.findLocalFood(by: normalizedBarcode, in: foodItems) {
+            lookupState = .localFound(local)
+            return
+        }
 
-            await MainActor.run {
-                lookupState = .fetchingRemote(normalizedBarcode)
-            }
-
-            let result = await lookupService.lookup(barcode: normalizedBarcode, localFoods: foodItems)
-            await MainActor.run {
-                lookupState = result
-            }
+        lookupTask = Task { @MainActor in
+            lookupState = .fetchingRemote(normalizedBarcode)
+            let result = await lookupService.lookupRemote(barcode: normalizedBarcode)
+            guard !Task.isCancelled else { return }
+            lookupState = result
         }
     }
 
@@ -454,31 +507,89 @@ struct BarcodeScannerView: View {
             source: .manual
         )
     }
+
+    @ViewBuilder
+    private func barcodeDestination(_ route: BarcodeScannerRoute) -> some View {
+        switch route {
+        case .logFood(let foodID):
+            if let food = food(with: foodID) {
+                LogFoodView(food: food)
+            } else {
+                staleFoodRouteCard
+            }
+        case .reviewDraft(let draft):
+            FoodImportReviewView(draft: draft)
+        case .labelScan(let barcode, let comparisonDraft, let localFoodID):
+            NutritionLabelScanView(
+                initialBarcode: barcode,
+                comparisonDraft: comparisonDraft,
+                localFood: localFoodID.flatMap(food(with:))
+            )
+        }
+    }
+
+    private func food(with id: UUID) -> FoodItem? {
+        foodItems.first { $0.id == id }
+    }
+
+    private var staleFoodRouteCard: some View {
+        FitnessScreen(
+            title: "Food unavailable",
+            subtitle: "Go back and try again.",
+            systemImage: "exclamationmark.triangle"
+        ) {
+            scannerUnavailableCard(
+                title: "Food unavailable",
+                message: "The selected food is no longer available.",
+                systemImage: "exclamationmark.triangle"
+            )
+        }
+    }
+}
+
+private enum BarcodeScannerRoute: Hashable, Identifiable {
+    case logFood(UUID)
+    case reviewDraft(FoodImportDraft)
+    case labelScan(barcode: String?, comparisonDraft: FoodImportDraft?, localFoodID: UUID?)
+
+    var id: Self { self }
 }
 
 private struct BarcodeScannerRepresentable: UIViewControllerRepresentable {
     let onDetected: (String) -> Void
+    let onError: (String) -> Void
 
     func makeUIViewController(context: Context) -> BarcodeScannerViewController {
         let controller = BarcodeScannerViewController()
         controller.onDetected = onDetected
+        controller.onError = onError
         return controller
     }
 
-    func updateUIViewController(_ uiViewController: BarcodeScannerViewController, context: Context) {}
+    func updateUIViewController(_ uiViewController: BarcodeScannerViewController, context: Context) {
+        uiViewController.onDetected = onDetected
+        uiViewController.onError = onError
+    }
 }
 
 private final class BarcodeScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
     var onDetected: ((String) -> Void)?
+    var onError: ((String) -> Void)?
 
     private let session = AVCaptureSession()
+    private let sessionQueue = DispatchQueue(label: "com.peakline.barcode-scanner.session", qos: .userInitiated)
     private var previewLayer: AVCaptureVideoPreviewLayer?
     private var didDetectBarcode = false
+    private var isSessionConfigured = false
+    private var isViewVisible = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
-        configureSession()
+        configurePreviewLayer()
+        sessionQueue.async { [weak self] in
+            self?.configureSession()
+        }
     }
 
     override func viewDidLayoutSubviews() {
@@ -489,44 +600,86 @@ private final class BarcodeScannerViewController: UIViewController, AVCaptureMet
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         didDetectBarcode = false
-        if !session.isRunning {
-            DispatchQueue.global(qos: .userInitiated).async { [session] in
-                session.startRunning()
-            }
-        }
+        setSessionVisible(true)
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        if session.isRunning {
-            DispatchQueue.global(qos: .userInitiated).async { [session] in
-                session.stopRunning()
-            }
-        }
+        setSessionVisible(false)
     }
 
-    private func configureSession() {
-        guard
-            let device = AVCaptureDevice.default(for: .video),
-            let input = try? AVCaptureDeviceInput(device: device),
-            session.canAddInput(input)
-        else {
-            return
-        }
-
-        session.addInput(input)
-
-        let metadataOutput = AVCaptureMetadataOutput()
-        guard session.canAddOutput(metadataOutput) else { return }
-        session.addOutput(metadataOutput)
-        metadataOutput.setMetadataObjectsDelegate(self, queue: .main)
-        metadataOutput.metadataObjectTypes = supportedBarcodeTypes.filter { metadataOutput.availableMetadataObjectTypes.contains($0) }
-
+    private func configurePreviewLayer() {
         let previewLayer = AVCaptureVideoPreviewLayer(session: session)
         previewLayer.videoGravity = .resizeAspectFill
         previewLayer.frame = view.bounds
         view.layer.insertSublayer(previewLayer, at: 0)
         self.previewLayer = previewLayer
+    }
+
+    private func configureSession() {
+        guard !isSessionConfigured else { return }
+
+        guard
+            let device = AVCaptureDevice.default(for: .video),
+            let input = try? AVCaptureDeviceInput(device: device),
+            session.canAddInput(input)
+        else {
+            reportError("The camera could not be prepared. Check camera permission and try again, or enter the barcode manually.")
+            return
+        }
+
+        session.beginConfiguration()
+        session.addInput(input)
+
+        let metadataOutput = AVCaptureMetadataOutput()
+        guard session.canAddOutput(metadataOutput) else {
+            session.commitConfiguration()
+            reportError("The barcode scanner could not be prepared. Enter the barcode manually to continue.")
+            return
+        }
+        session.addOutput(metadataOutput)
+        metadataOutput.setMetadataObjectsDelegate(self, queue: .main)
+        metadataOutput.metadataObjectTypes = supportedBarcodeTypes.filter { metadataOutput.availableMetadataObjectTypes.contains($0) }
+        session.commitConfiguration()
+        isSessionConfigured = true
+
+        if isViewVisible {
+            startSessionIfNeeded()
+        }
+    }
+
+    private func setSessionVisible(_ isVisible: Bool) {
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            self.isViewVisible = isVisible
+            if isVisible {
+                self.startSessionIfNeeded()
+            } else {
+                self.stopSessionIfNeeded()
+            }
+        }
+    }
+
+    private func stopSession() {
+        sessionQueue.async { [weak self] in
+            self?.stopSessionIfNeeded()
+        }
+    }
+
+    private func startSessionIfNeeded() {
+        guard isSessionConfigured, !session.isRunning else { return }
+        session.startRunning()
+    }
+
+    private func stopSessionIfNeeded() {
+        guard session.isRunning else { return }
+        session.stopRunning()
+    }
+
+    private func reportError(_ message: String) {
+        DispatchQueue.main.async { [weak self] in
+            self?.onError?(message)
+        }
     }
 
     private var supportedBarcodeTypes: [AVMetadataObject.ObjectType] {
@@ -547,8 +700,10 @@ private final class BarcodeScannerViewController: UIViewController, AVCaptureMet
         }
 
         didDetectBarcode = true
-        session.stopRunning()
-        onDetected?(stringValue)
+        stopSession()
+        DispatchQueue.main.async { [weak self] in
+            self?.onDetected?(stringValue)
+        }
     }
 }
 

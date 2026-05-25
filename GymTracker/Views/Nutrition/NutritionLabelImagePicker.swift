@@ -33,8 +33,6 @@ struct NutritionLabelImagePicker: UIViewControllerRepresentable {
             _ picker: UIImagePickerController,
             didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
         ) {
-            picker.dismiss(animated: true)
-
             guard let image = info[.originalImage] as? UIImage else {
                 onCancel()
                 return
@@ -44,7 +42,6 @@ struct NutritionLabelImagePicker: UIViewControllerRepresentable {
         }
 
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            picker.dismiss(animated: true)
             onCancel()
         }
     }

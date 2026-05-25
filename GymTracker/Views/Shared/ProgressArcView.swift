@@ -19,13 +19,13 @@ struct ProgressArcView: View {
 
             VStack(spacing: 2) {
                 Text("\(Int((min(max(value, 0), 1) * 100).rounded()))%")
-                    .font(.system(.title3, design: .rounded).weight(.bold))
+                    .font(AppTypography.cardTitle)
                 Text(label)
-                    .font(.caption.weight(.semibold))
+                    .font(AppTypography.metadataEmphasis)
                     .foregroundStyle(appTheme.mutedText)
                 if let caption {
                     Text(caption)
-                        .font(.caption2)
+                        .font(AppTypography.badge)
                         .foregroundStyle(appTheme.mutedText)
                 }
             }

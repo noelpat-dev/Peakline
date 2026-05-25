@@ -30,6 +30,7 @@ enum FitnessCardStyle {
 
 struct FitnessCard<Content: View>: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.colorScheme) private var colorScheme
 
     private let style: FitnessCardStyle
     private let customPadding: CGFloat?
@@ -48,17 +49,55 @@ struct FitnessCard<Content: View>: View {
     var body: some View {
         let metrics = appTheme.metrics
         let radius = style.cornerRadius(using: metrics)
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
 
         content
             .padding(customPadding ?? style.padding(using: metrics))
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(appTheme.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .background(appTheme.cardBackground, in: shape)
             .overlay {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .stroke(appTheme.cardBorder, lineWidth: 1)
+                shape
+                    .stroke(appTheme.cardBorder.opacity(borderOpacity), lineWidth: 1)
             }
-            .contentShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .shadow(color: shadowColor, radius: shadowRadius, x: 0, y: shadowYOffset)
+            .contentShape(shape)
+    }
+
+    private var borderOpacity: Double {
+        switch style {
+        case .hero:
+            return 0.72
+        case .standard:
+            return 0.62
+        case .compact:
+            return 0.54
+        }
+    }
+
+    private var shadowColor: Color {
+        Color.black.opacity(colorScheme == .dark ? 0.18 : 0.055)
+    }
+
+    private var shadowRadius: CGFloat {
+        switch style {
+        case .hero:
+            return 18
+        case .standard:
+            return 10
+        case .compact:
+            return 6
+        }
+    }
+
+    private var shadowYOffset: CGFloat {
+        switch style {
+        case .hero:
+            return 10
+        case .standard:
+            return 5
+        case .compact:
+            return 3
+        }
     }
 }
 
@@ -84,7 +123,7 @@ struct FitnessScreen<Content: View>: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: appTheme.metrics.screenContentSpacing) {
+            LazyVStack(alignment: .leading, spacing: appTheme.metrics.screenContentSpacing) {
                 if let title {
                     FitnessScreenHeader(title: title, subtitle: subtitle, systemImage: systemImage)
                 }
@@ -104,14 +143,14 @@ struct PrimaryFitnessButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.headline.weight(.semibold))
+            .font(AppTypography.button)
             .foregroundStyle(appTheme.colors.accentForeground)
             .padding(.horizontal, 16)
             .frame(minHeight: appTheme.metrics.buttonHeight)
             .frame(maxWidth: .infinity)
             .background(appTheme.colors.accent.opacity(configuration.isPressed ? 0.75 : 1), in: Capsule())
             .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? AppMotion.cardPressScale : 1))
-            .animation(AppMotion.selectionSpring(reduceMotion: reduceMotion), value: configuration.isPressed)
+            .animation(AppMotion.press(reduceMotion: reduceMotion), value: configuration.isPressed)
     }
 }
 
@@ -121,14 +160,14 @@ struct SecondaryFitnessButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.headline.weight(.semibold))
+            .font(AppTypography.button)
             .foregroundStyle(appTheme.colors.accent)
             .padding(.horizontal, 16)
             .frame(minHeight: appTheme.metrics.buttonHeight)
             .frame(maxWidth: .infinity)
             .background(appTheme.colors.accentSurface.opacity(configuration.isPressed ? 0.7 : 1), in: Capsule())
             .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? AppMotion.cardPressScale : 1))
-            .animation(AppMotion.selectionSpring(reduceMotion: reduceMotion), value: configuration.isPressed)
+            .animation(AppMotion.press(reduceMotion: reduceMotion), value: configuration.isPressed)
     }
 }
 
@@ -138,14 +177,14 @@ struct NeutralFitnessButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.headline.weight(.semibold))
+            .font(AppTypography.button)
             .foregroundStyle(appTheme.colors.textPrimary)
             .padding(.horizontal, 16)
             .frame(minHeight: appTheme.metrics.buttonHeight)
             .frame(maxWidth: .infinity)
             .background(appTheme.elevatedCardBackground.opacity(configuration.isPressed ? 0.7 : 1), in: Capsule())
             .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? AppMotion.cardPressScale : 1))
-            .animation(AppMotion.selectionSpring(reduceMotion: reduceMotion), value: configuration.isPressed)
+            .animation(AppMotion.press(reduceMotion: reduceMotion), value: configuration.isPressed)
     }
 }
 
@@ -154,9 +193,10 @@ struct PressableCardButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .opacity(configuration.isPressed ? 0.94 : 1)
+            .brightness(configuration.isPressed && !reduceMotion ? -0.018 : 0)
             .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? AppMotion.cardPressScale : 1))
-            .opacity(configuration.isPressed ? 0.92 : 1)
-            .animation(AppMotion.selectionSpring(reduceMotion: reduceMotion), value: configuration.isPressed)
+            .animation(AppMotion.press(reduceMotion: reduceMotion), value: configuration.isPressed)
     }
 }
 
@@ -172,7 +212,7 @@ struct FitnessIconBadge: View {
         let foreground = tint ?? appTheme.colors.accent
 
         Image(systemName: systemImage)
-            .font(.system(size: max(17, size * 0.42), weight: .semibold))
+            .font(AppTypography.rounded(size: max(17, size * 0.42), weight: .semibold))
             .foregroundStyle(foreground)
             .frame(width: size, height: size)
             .background(background ?? badgeBackground(for: foreground), in: Circle())
@@ -243,7 +283,7 @@ struct DashboardActionTile: View {
                 }
             }
 
-            titleBlock(titleFont: .headline.weight(.semibold), subtitleFont: .caption)
+            titleBlock(titleFont: AppTypography.compactCardTitle, subtitleFont: AppTypography.metadata)
         }
         .frame(
             maxWidth: .infinity,
@@ -261,7 +301,7 @@ struct DashboardActionTile: View {
                 background: iconBackground
             )
 
-            titleBlock(titleFont: .headline, subtitleFont: .subheadline)
+            titleBlock(titleFont: AppTypography.sectionTitle, subtitleFont: AppTypography.body)
 
             Spacer(minLength: 8)
 
@@ -285,7 +325,7 @@ struct DashboardActionTile: View {
 
                 if let status {
                     Text(status)
-                        .font(.caption2.weight(.bold))
+                        .font(AppTypography.badge)
                         .foregroundStyle(isEnabled ? appTheme.colors.accent : appTheme.colors.textTertiary)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
@@ -330,7 +370,10 @@ extension View {
         action: @escaping () -> Void
     ) -> some View {
         swipeActions(edge: .trailing, allowsFullSwipe: allowsFullSwipe) {
-            Button(role: .destructive, action: action) {
+            Button(role: .destructive) {
+                AppHaptics.warning()
+                action()
+            } label: {
                 Label(title, systemImage: "trash")
             }
         }
@@ -353,14 +396,17 @@ struct FilterChip: View {
     }
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            AppHaptics.selection()
+            action()
+        } label: {
             HStack(spacing: 6) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.metadataEmphasis)
                 }
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppTypography.bodyEmphasis)
             }
             .padding(.horizontal, appTheme.metrics.chipHorizontalPadding)
             .padding(.vertical, appTheme.metrics.chipVerticalPadding)

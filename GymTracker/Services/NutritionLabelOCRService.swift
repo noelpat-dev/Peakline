@@ -7,13 +7,18 @@ protocol NutritionLabelOCRServicing {
 }
 
 struct NutritionLabelOCRService: NutritionLabelOCRServicing {
+    private static let maxRecognitionDimension: CGFloat = 2_200
+
     func recognizeText(from image: UIImage) async throws -> NutritionOCRResult {
-        guard let cgImage = image.normalizedCGImage else {
-            throw NutritionLabelOCRError.invalidImage
-        }
+        let maxRecognitionDimension = Self.maxRecognitionDimension
 
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
+                guard let cgImage = image.normalizedCGImage(maxDimension: maxRecognitionDimension) else {
+                    continuation.resume(throwing: NutritionLabelOCRError.invalidImage)
+                    return
+                }
+
                 let request = VNRecognizeTextRequest()
                 request.recognitionLevel = .accurate
                 request.usesLanguageCorrection = false
@@ -135,14 +140,30 @@ struct NutritionLabelOCRService: NutritionLabelOCRServicing {
 }
 
 private extension UIImage {
-    var normalizedCGImage: CGImage? {
-        if imageOrientation == .up, let cgImage {
+    func normalizedCGImage(maxDimension: CGFloat) -> CGImage? {
+        let targetSize = scaledSize(maxDimension: maxDimension)
+
+        if imageOrientation == .up, targetSize == size, let cgImage {
             return cgImage
         }
 
-        let renderer = UIGraphicsImageRenderer(size: size)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+
+        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
         return renderer.image { _ in
-            draw(in: CGRect(origin: .zero, size: size))
+            draw(in: CGRect(origin: .zero, size: targetSize))
         }.cgImage
+    }
+
+    private func scaledSize(maxDimension: CGFloat) -> CGSize {
+        let largestSide = max(size.width, size.height)
+        guard largestSide > maxDimension, largestSide > 0 else { return size }
+
+        let scale = maxDimension / largestSide
+        return CGSize(
+            width: max(1, floor(size.width * scale)),
+            height: max(1, floor(size.height * scale))
+        )
     }
 }

@@ -8,24 +8,25 @@ struct WorkoutModePicker: View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
             ForEach(WorkoutMode.allCases) { mode in
                 Button {
+                    AppHaptics.selection()
                     selection = mode
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: mode.systemImage)
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .frame(width: 24)
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text(mode.displayName)
-                                .font(.subheadline.weight(.semibold))
+                                .font(AppTypography.bodyEmphasis)
                             Text(mode.subtitle)
-                                .font(.caption)
+                                .font(AppTypography.metadata)
                                 .foregroundStyle(selection == mode ? appTheme.colors.textPrimary.opacity(0.75) : appTheme.mutedText)
                         }
 
                         Spacer(minLength: 0)
                     }
-                    .padding(12)
+                    .padding(appTheme.metrics.spacing12)
                     .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
                     .foregroundStyle(selection == mode ? appTheme.colors.textPrimary : appTheme.mutedText)
                     .background(selection == mode ? appTheme.colors.accentSurfaceStrong : appTheme.elevatedCardBackground)

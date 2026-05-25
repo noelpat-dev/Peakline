@@ -94,36 +94,38 @@ struct WeeklyReviewView: View {
         guard !isLoading else { return }
 
         refreshTask?.cancel()
+
+        let splits: [TrainingSplit]
+        let sessions: [WorkoutSession]
+        do {
+            splits = try modelContext.fetch(Self.activeSplitsDescriptor)
+            sessions = try modelContext.fetch(Self.completedSessionsDescriptor)
+        } catch {
+            review = nil
+            isLoading = false
+            return
+        }
+
+        let signature = Self.signature(activeSplits: splits, completedSessions: sessions)
+        guard force || signature != lastSignature else {
+            isLoading = false
+            return
+        }
+
+        let splitSnapshots: [TrainingSplitSnapshot]
+        let sessionSnapshots: [WorkoutAnalyticsSession]
+        do {
+            splitSnapshots = try TrainingSplitSnapshotBuilder.snapshots(from: splits, in: modelContext)
+            sessionSnapshots = try WorkoutAnalyticsSnapshotBuilder.snapshots(from: sessions, in: modelContext)
+        } catch {
+            review = nil
+            isLoading = false
+            return
+        }
+
         isLoading = true
-
         refreshTask = Task { @MainActor in
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-
-            let splits: [TrainingSplit]
-            let sessions: [WorkoutSession]
-            do {
-                splits = try modelContext.fetch(Self.activeSplitsDescriptor)
-                sessions = try modelContext.fetch(Self.completedSessionsDescriptor)
-            } catch {
-                review = nil
-                isLoading = false
-                return
-            }
-
-            let signature = Self.signature(activeSplits: splits, completedSessions: sessions)
-            guard force || signature != lastSignature else {
-                isLoading = false
-                return
-            }
-
-            let splitSnapshots: [TrainingSplitSnapshot]
-            let sessionSnapshots: [WorkoutAnalyticsSession]
-            do {
-                splitSnapshots = try TrainingSplitSnapshotBuilder.snapshots(from: splits, in: modelContext)
-                sessionSnapshots = try WorkoutAnalyticsSnapshotBuilder.snapshots(from: sessions, in: modelContext)
-            } catch {
-                review = nil
+            guard !Task.isCancelled else {
                 isLoading = false
                 return
             }
@@ -132,7 +134,10 @@ struct WeeklyReviewView: View {
                 WeeklyReviewBuilder().build(activeSplits: splitSnapshots, completedSessions: sessionSnapshots)
             }.value
 
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else {
+                isLoading = false
+                return
+            }
             review = result
             lastSignature = signature
             isLoading = false

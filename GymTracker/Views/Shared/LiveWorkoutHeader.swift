@@ -22,16 +22,16 @@ struct LiveWorkoutHeader: View {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(title)
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                         Text(totalExercises == 0 ? "No exercises selected" : "Exercise \(min(currentExerciseIndex + 1, totalExercises)) of \(totalExercises)")
-                            .font(.caption)
+                            .font(AppTypography.metadata)
                             .foregroundStyle(appTheme.mutedText)
                     }
 
                     Spacer()
 
                     Text(elapsedText(at: displayDate))
-                        .font(.system(.title2, design: .rounded).monospacedDigit().weight(.bold))
+                        .font(AppTypography.workoutLargeNumber)
                         .foregroundStyle(isPaused ? appTheme.mutedText : appTheme.colors.accent)
                 }
 
@@ -40,6 +40,7 @@ struct LiveWorkoutHeader: View {
 
                 HStack(spacing: 10) {
                     Button {
+                        AppHaptics.selection()
                         togglePause()
                     } label: {
                         Label(isPaused ? "Resume" : "Pause", systemImage: isPaused ? "play.fill" : "pause.fill")
@@ -47,16 +48,19 @@ struct LiveWorkoutHeader: View {
                     }
                     .buttonStyle(NeutralFitnessButtonStyle())
                     .disabled(endedAt != nil)
+                    .accessibilityIdentifier(isPaused ? "workout-logger-resume" : "workout-logger-pause")
 
                     Button {
+                        AppHaptics.success()
                         finish()
                     } label: {
                         Label("Finish", systemImage: "checkmark.circle.fill")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(PrimaryFitnessButtonStyle())
+                    .accessibilityIdentifier("workout-logger-finish")
                 }
-                .font(.subheadline.weight(.semibold))
+                .font(AppTypography.bodyEmphasis)
             }
             .padding(.vertical, 2)
         }

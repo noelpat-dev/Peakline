@@ -39,6 +39,34 @@ struct CoachIntelligenceService {
         hydrationTargetML: Int,
         nutritionGoal: NutritionGoal
     ) -> ReadinessScore {
+        readiness(
+            for: date,
+            sleepSessions: sleepSessions,
+            napSessions: napSessions,
+            hydrationEntries: hydrationEntries,
+            completedWorkouts: completedWorkouts,
+            foodLogs: foodLogs,
+            checkIns: checkIns,
+            sleepSettings: sleepSettings,
+            hydrationTargetML: hydrationTargetML,
+            nutritionGoal: nutritionGoal,
+            sleepSummaries: nil
+        )
+    }
+
+    private func readiness(
+        for date: Date = .now,
+        sleepSessions: [SleepSession],
+        napSessions: [NapSession],
+        hydrationEntries: [HydrationEntry],
+        completedWorkouts: [WorkoutSession],
+        foodLogs: [FoodLogEntry],
+        checkIns: [DailyCoachCheckIn],
+        sleepSettings: SleepSettings,
+        hydrationTargetML: Int,
+        nutritionGoal: NutritionGoal,
+        sleepSummaries: [SleepSummary]?
+    ) -> ReadinessScore {
         let today = calendar.startOfDay(for: date)
         let checkIn = todayCheckIn(from: checkIns, date: today)
         let sleep = sleepSignal(
@@ -46,7 +74,8 @@ struct CoachIntelligenceService {
             sleepSessions: sleepSessions,
             napSessions: napSessions,
             workouts: completedWorkouts,
-            settings: sleepSettings
+            settings: sleepSettings,
+            sleepSummaries: sleepSummaries
         )
         let training = trainingSignal(date: today, workouts: completedWorkouts)
         let hydration = hydrationSignal(date: today, entries: hydrationEntries, targetML: hydrationTargetML)
@@ -143,6 +172,27 @@ struct CoachIntelligenceService {
         coachPreferences: CoachPreferencesSnapshot,
         splitMetadata: [CoachSplitMetadata] = []
     ) -> CoachIntelligenceSnapshot {
+        let sleepSummaries = sleepScoring.summaries(
+            from: sleepSessions,
+            naps: napSessions,
+            workouts: completedWorkouts,
+            settings: sleepSettings,
+            days: 14,
+            calendar: calendar
+        )
+        let readinessSeries = readinessProxySeries(
+            endingOn: date,
+            sleepSessions: sleepSessions,
+            napSessions: napSessions,
+            hydrationEntries: hydrationEntries,
+            completedWorkouts: completedWorkouts,
+            foodLogs: foodLogs,
+            checkIns: checkIns,
+            sleepSettings: sleepSettings,
+            hydrationTargetML: hydrationTargetML,
+            nutritionGoal: nutritionGoal,
+            sleepSummaries: sleepSummaries
+        )
         let readiness = readiness(
             for: date,
             sleepSessions: sleepSessions,
@@ -153,7 +203,8 @@ struct CoachIntelligenceService {
             checkIns: checkIns,
             sleepSettings: sleepSettings,
             hydrationTargetML: hydrationTargetML,
-            nutritionGoal: nutritionGoal
+            nutritionGoal: nutritionGoal,
+            sleepSummaries: sleepSummaries
         )
         let trends = trendSummary(
             date: date,
@@ -165,7 +216,9 @@ struct CoachIntelligenceService {
             checkIns: checkIns,
             sleepSettings: sleepSettings,
             hydrationTargetML: hydrationTargetML,
-            nutritionGoal: nutritionGoal
+            nutritionGoal: nutritionGoal,
+            readinessSeries: readinessSeries,
+            sleepSummaries: sleepSummaries
         )
         let fatigueRisk = fatigueRisk(
             date: date,
@@ -197,7 +250,8 @@ struct CoachIntelligenceService {
             checkIns: checkIns,
             sleepSettings: sleepSettings,
             hydrationTargetML: hydrationTargetML,
-            nutritionGoal: nutritionGoal
+            nutritionGoal: nutritionGoal,
+            readinessSeries: readinessSeries
         )
         let insights = weeklyInsights(
             date: date,
@@ -262,30 +316,12 @@ struct CoachIntelligenceService {
         checkIns: [DailyCoachCheckIn],
         sleepSettings: SleepSettings,
         hydrationTargetML: Int,
-        nutritionGoal: NutritionGoal
+        nutritionGoal: NutritionGoal,
+        readinessSeries: [(date: Date, value: Double)],
+        sleepSummaries: [SleepSummary]
     ) -> CoachTrendSummary {
         let currentDates = dateRange(endingOn: date, days: 7)
         let previousDates = previousDateRange(endingOn: date, days: 7)
-        let readinessSeries = readinessProxySeries(
-            endingOn: date,
-            sleepSessions: sleepSessions,
-            napSessions: napSessions,
-            hydrationEntries: hydrationEntries,
-            completedWorkouts: completedWorkouts,
-            foodLogs: foodLogs,
-            checkIns: checkIns,
-            sleepSettings: sleepSettings,
-            hydrationTargetML: hydrationTargetML,
-            nutritionGoal: nutritionGoal
-        )
-        let sleepSummaries = sleepScoring.summaries(
-            from: sleepSessions,
-            naps: napSessions,
-            workouts: completedWorkouts,
-            settings: sleepSettings,
-            days: 14,
-            calendar: calendar
-        )
         let sleepByDate = Dictionary(uniqueKeysWithValues: sleepSummaries.map { (calendar.startOfDay(for: $0.date), $0) })
         let currentWorkouts = workouts(in: currentDates, from: completedWorkouts)
         let previousWorkouts = workouts(in: previousDates, from: completedWorkouts)
@@ -630,22 +666,12 @@ struct CoachIntelligenceService {
         checkIns: [DailyCoachCheckIn],
         sleepSettings: SleepSettings,
         hydrationTargetML: Int,
-        nutritionGoal: NutritionGoal
+        nutritionGoal: NutritionGoal,
+        readinessSeries: [(date: Date, value: Double)]
     ) -> WeeklyCoachSummary {
         let currentDates = dateRange(endingOn: date, days: 7)
         let readinessValues = values(
-            readinessProxySeries(
-                endingOn: date,
-                sleepSessions: sleepSessions,
-                napSessions: napSessions,
-                hydrationEntries: hydrationEntries,
-                completedWorkouts: completedWorkouts,
-                foodLogs: foodLogs,
-                checkIns: checkIns,
-                sleepSettings: sleepSettings,
-                hydrationTargetML: hydrationTargetML,
-                nutritionGoal: nutritionGoal
-            ),
+            readinessSeries,
             in: currentDates
         )
         let averageReadiness = readinessValues.isEmpty ? nil : Int((readinessValues.reduce(0, +) / Double(readinessValues.count)).rounded())
@@ -1086,7 +1112,8 @@ struct CoachIntelligenceService {
         sleepSessions: [SleepSession],
         napSessions: [NapSession],
         workouts: [WorkoutSession],
-        settings: SleepSettings
+        settings: SleepSettings,
+        sleepSummaries: [SleepSummary]?
     ) -> ReadinessSignal {
         let recentSleepSessions = sleepSessions.filter { session in
             guard session.status == .completed else { return false }
@@ -1094,7 +1121,7 @@ struct CoachIntelligenceService {
         }
         let recentNaps = napSessions.filter { daysBetween($0.startDate, and: date) <= 7 }
         let recentWorkouts = workouts.filter { daysBetween($0.date, and: date) <= 14 }
-        let latest = sleepScoring.latestSummary(
+        let latest = sleepSummaries?.first { $0.primarySession != nil } ?? sleepScoring.latestSummary(
             from: Array(recentSleepSessions.prefix(45)),
             naps: recentNaps,
             workouts: recentWorkouts,
@@ -1635,7 +1662,6 @@ struct CoachIntelligenceService {
         hydrationTargetML: Int,
         nutritionGoal: NutritionGoal
     ) -> [(date: Date, value: Double)] {
-        let dates = dateRange(endingOn: date, days: 14)
         let sleepSummaries = sleepScoring.summaries(
             from: sleepSessions,
             naps: napSessions,
@@ -1644,6 +1670,36 @@ struct CoachIntelligenceService {
             days: 14,
             calendar: calendar
         )
+
+        return readinessProxySeries(
+            endingOn: date,
+            sleepSessions: sleepSessions,
+            napSessions: napSessions,
+            hydrationEntries: hydrationEntries,
+            completedWorkouts: completedWorkouts,
+            foodLogs: foodLogs,
+            checkIns: checkIns,
+            sleepSettings: sleepSettings,
+            hydrationTargetML: hydrationTargetML,
+            nutritionGoal: nutritionGoal,
+            sleepSummaries: sleepSummaries
+        )
+    }
+
+    private func readinessProxySeries(
+        endingOn date: Date,
+        sleepSessions: [SleepSession],
+        napSessions: [NapSession],
+        hydrationEntries: [HydrationEntry],
+        completedWorkouts: [WorkoutSession],
+        foodLogs: [FoodLogEntry],
+        checkIns: [DailyCoachCheckIn],
+        sleepSettings: SleepSettings,
+        hydrationTargetML: Int,
+        nutritionGoal: NutritionGoal,
+        sleepSummaries: [SleepSummary]
+    ) -> [(date: Date, value: Double)] {
+        let dates = dateRange(endingOn: date, days: 14)
         let sleepByDate = Dictionary(uniqueKeysWithValues: sleepSummaries.map { (calendar.startOfDay(for: $0.date), $0) })
 
         return dates.map { day in

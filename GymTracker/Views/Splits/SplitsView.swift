@@ -6,59 +6,79 @@ struct SplitsView: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @Query(sort: \TrainingSplit.name)
+    @Query
     private var splits: [TrainingSplit]
 
-    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    @Query
     private var completedSessions: [WorkoutSession]
 
     @State private var showingAddSplit = false
     @State private var showingOtherSplits = false
     @State private var pendingDeleteSplit: TrainingSplit?
+    @State private var dashboardSnapshot = SplitsDashboardSnapshot.empty
+    @State private var lastDashboardSignature: String?
 
     private let coachEngine = CoachRecommendationEngine()
     private let targetService = TargetSuggestionService()
 
+    init() {
+        _splits = Query(Self.splitsDescriptor)
+        _completedSessions = Query(Self.completedSessionsDescriptor)
+    }
+
+    private static var splitsDescriptor: FetchDescriptor<TrainingSplit> {
+        FetchDescriptor<TrainingSplit>(
+            sortBy: [SortDescriptor(\.name)]
+        )
+    }
+
+    private static var completedSessionsDescriptor: FetchDescriptor<WorkoutSession> {
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 40
+        return descriptor
+    }
+
     private var pplSplits: [TrainingSplit] {
-        PPLRotation.names.compactMap { name in
-            splits.first { $0.name == name && $0.isActive }
-        }
+        currentDashboardSnapshot.pplSplits
     }
 
     private var otherSplits: [TrainingSplit] {
-        splits.filter { !PPLRotation.names.contains($0.name) || !$0.isActive }
+        currentDashboardSnapshot.otherSplits
     }
 
     private var recommendedSplitName: String? {
-        coachEngine.makeSummary(activeSplits: pplSplits, completedSessions: completedSessions).recommendedSplitName
+        currentDashboardSnapshot.recommendedSplitName
     }
 
     private var splitStatuses: [String: SplitStatus] {
-        Dictionary(uniqueKeysWithValues: pplSplits.map { split in
-            (split.name, status(for: split))
-        })
+        currentDashboardSnapshot.statusesBySplitName
     }
 
     var body: some View {
+        let snapshot = currentDashboardSnapshot
+
         NavigationStack {
             FitnessScreen(
                 title: "Splits",
                 subtitle: "Manage your training programme and open each day.",
                 systemImage: "list.bullet.rectangle"
             ) {
-                if !pplSplits.isEmpty {
-                    SplitProgrammeCard(splits: pplSplits, statuses: splitStatuses)
+                if !snapshot.pplSplits.isEmpty {
+                    SplitProgrammeCard(splits: snapshot.pplSplits, statuses: snapshot.statusesBySplitName)
 
                     DashboardSection(title: "Training Days") {
-                        ForEach(pplSplits) { split in
+                        ForEach(snapshot.pplSplits) { split in
                             NavigationLink {
                                 SplitDetailView(split: split)
                             } label: {
                                 SplitTrainingDayCard(
                                     split: split,
-                                    status: status(for: split),
-                                    lastTrainedText: lastTrainedDescription(for: split),
-                                    focusDescription: focusDescription(for: split)
+                                    status: snapshot.statusesBySplitName[split.name] ?? .ready,
+                                    lastTrainedText: snapshot.lastTrainedTextBySplitName[split.name] ?? "No history yet",
+                                    focusDescription: snapshot.focusTextBySplitName[split.name] ?? focusDescription(for: split)
                                 )
                             }
                             .buttonStyle(.plain)
@@ -72,7 +92,7 @@ struct SplitsView: View {
                     )
                 }
 
-                if !otherSplits.isEmpty {
+                if !snapshot.otherSplits.isEmpty {
                     FitnessCard(style: .compact, padding: 0) {
                         VStack(spacing: 0) {
                             Button {
@@ -85,7 +105,7 @@ struct SplitsView: View {
                                         Text("Other Splits")
                                             .font(.headline)
                                             .foregroundStyle(appTheme.colors.textPrimary)
-                                        Text("\(otherSplits.count) inactive or custom templates")
+                                        Text("\(snapshot.otherSplits.count) inactive or custom templates")
                                             .font(.subheadline)
                                             .foregroundStyle(appTheme.colors.textSecondary)
                                     }
@@ -122,7 +142,7 @@ struct SplitsView: View {
                                         .padding(.horizontal, 18)
                                         .padding(.bottom, 8)
 
-                                    ForEach(otherSplits) { split in
+                                    ForEach(snapshot.otherSplits) { split in
                                         Divider()
                                             .padding(.leading, 66)
 
@@ -172,6 +192,15 @@ struct SplitsView: View {
                 Text("This removes the split template and its exercise setup. Workout history stays intact.")
             }
         }
+        .onAppear {
+            Task { @MainActor in
+                await Task.yield()
+                refreshDashboardSnapshot(force: true)
+            }
+        }
+        .onChange(of: dashboardSignature) { _, _ in
+            refreshDashboardSnapshot()
+        }
     }
 
     private var deleteAlertBinding: Binding<Bool> {
@@ -182,6 +211,74 @@ struct SplitsView: View {
                 pendingDeleteSplit = nil
             }
         }
+    }
+
+    private var currentDashboardSnapshot: SplitsDashboardSnapshot {
+        guard lastDashboardSignature != nil else {
+            return dashboardSnapshot
+        }
+
+        let signature = dashboardSignature
+        if signature == lastDashboardSignature {
+            return dashboardSnapshot
+        }
+
+        return dashboardSnapshot
+    }
+
+    private var dashboardSignature: String {
+        [
+            splits.map { split in
+                let exerciseSignature = split.exercises
+                    .map { "\($0.id.uuidString):\($0.exerciseId.uuidString):\($0.orderIndex):\($0.targetSets):\($0.minReps):\($0.maxReps):\($0.notes ?? "")" }
+                    .sorted()
+                    .joined(separator: ";")
+                return "\(split.id.uuidString):\(split.name):\(split.isActive):\(split.updatedAt.timeIntervalSince1970):\(exerciseSignature)"
+            }
+            .joined(separator: "|"),
+            completedSessions.prefix(40).map { session in
+                let logSignature = session.exerciseLogs
+                    .map { "\($0.id.uuidString):\($0.exerciseId.uuidString):\($0.setLogs.count)" }
+                    .joined(separator: ";")
+                return "\(session.id.uuidString):\(session.date.timeIntervalSince1970):\(session.endedAt?.timeIntervalSince1970 ?? 0):\(logSignature)"
+            }
+            .joined(separator: "|")
+        ].joined(separator: "||")
+    }
+
+    private func refreshDashboardSnapshot(force: Bool = false) {
+        let signature = dashboardSignature
+        guard force || signature != lastDashboardSignature else { return }
+        dashboardSnapshot = PerformanceTracer.trace(.splitsDashboard) {
+            makeDashboardSnapshot()
+        }
+        lastDashboardSignature = signature
+    }
+
+    private func makeDashboardSnapshot() -> SplitsDashboardSnapshot {
+        let pplSplits = PPLRotation.names.compactMap { name in
+            splits.first { $0.name == name && $0.isActive }
+        }
+        let otherSplits = splits.filter { !PPLRotation.names.contains($0.name) || !$0.isActive }
+        let recommendedSplitName = coachEngine.makeSummary(activeSplits: pplSplits, completedSessions: completedSessions).recommendedSplitName
+        var statusesBySplitName: [String: SplitStatus] = [:]
+        var lastTrainedTextBySplitName: [String: String] = [:]
+        var focusTextBySplitName: [String: String] = [:]
+
+        for split in pplSplits {
+            statusesBySplitName[split.name] = status(for: split, recommendedSplitName: recommendedSplitName)
+            lastTrainedTextBySplitName[split.name] = lastTrainedDescription(for: split)
+            focusTextBySplitName[split.name] = focusDescription(for: split)
+        }
+
+        return SplitsDashboardSnapshot(
+            pplSplits: pplSplits,
+            otherSplits: otherSplits,
+            recommendedSplitName: recommendedSplitName,
+            statusesBySplitName: statusesBySplitName,
+            lastTrainedTextBySplitName: lastTrainedTextBySplitName,
+            focusTextBySplitName: focusTextBySplitName
+        )
     }
 
     private func inactiveSplitRow(_ split: TrainingSplit) -> some View {
@@ -240,6 +337,10 @@ struct SplitsView: View {
     }
 
     private func status(for split: TrainingSplit) -> SplitStatus {
+        status(for: split, recommendedSplitName: recommendedSplitName)
+    }
+
+    private func status(for split: TrainingSplit, recommendedSplitName: String?) -> SplitStatus {
         guard split.isActive else { return .inactive }
 
         if wasTrainedRecently(split) {
@@ -322,6 +423,24 @@ struct SplitsView: View {
 
 private enum PPLRotation {
     static let names = ["Push", "Pull", "Legs"]
+}
+
+private struct SplitsDashboardSnapshot {
+    let pplSplits: [TrainingSplit]
+    let otherSplits: [TrainingSplit]
+    let recommendedSplitName: String?
+    let statusesBySplitName: [String: SplitStatus]
+    let lastTrainedTextBySplitName: [String: String]
+    let focusTextBySplitName: [String: String]
+
+    static let empty = SplitsDashboardSnapshot(
+        pplSplits: [],
+        otherSplits: [],
+        recommendedSplitName: nil,
+        statusesBySplitName: [:],
+        lastTrainedTextBySplitName: [:],
+        focusTextBySplitName: [:]
+    )
 }
 
 private struct SplitDetailView: View {

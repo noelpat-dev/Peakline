@@ -61,7 +61,7 @@ private struct ExerciseTargetCard: View {
             }
 
             Text(suggestion.reason)
-                .font(.subheadline)
+                .font(AppTypography.body)
                 .foregroundStyle(appTheme.mutedText)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -78,7 +78,7 @@ private struct ExerciseTargetCard: View {
             )
 
             Text(suggestion.exerciseName)
-                .font(.headline.weight(.semibold))
+                .font(AppTypography.compactCardTitle)
                 .foregroundStyle(appTheme.colors.textPrimary)
                 .lineLimit(2)
                 .minimumScaleFactor(0.86)
@@ -104,11 +104,11 @@ private struct ExerciseTargetMetricTile: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: systemImage)
-                    .font(.caption.weight(.bold))
+                    .font(AppTypography.badge)
                     .foregroundStyle(appTheme.colors.accent)
 
                 Text(label)
-                    .font(.caption.weight(.semibold))
+                    .font(AppTypography.metadataEmphasis)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .textCase(.uppercase)
                     .lineLimit(1)
@@ -116,25 +116,24 @@ private struct ExerciseTargetMetricTile: View {
             }
 
             Text(value)
-                .font(.system(.title3, design: .rounded).weight(.bold))
+                .font(AppTypography.cardTitle)
                 .foregroundStyle(appTheme.colors.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.68)
 
             if let caption, !caption.isEmpty {
                 Text(caption)
-                    .font(.caption.weight(.semibold))
+                    .font(AppTypography.metadataEmphasis)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
             }
         }
-        .padding(14)
+        .padding(appTheme.metrics.spacing14)
         .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
-        .background(appTheme.colors.cardBackgroundElevated)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius18, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: appTheme.metrics.radius18, style: .continuous)
                 .stroke(appTheme.colors.cardBorder, lineWidth: 1)
         }
     }

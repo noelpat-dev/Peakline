@@ -53,6 +53,7 @@ struct HealthKitSleepService {
         #endif
     }
 
+    @MainActor
     func importRecentSleep(days: Int, into context: ModelContext) async -> Int {
         guard isAvailable else { return 0 }
 
@@ -125,6 +126,7 @@ struct HealthKitSleepService {
         #endif
     }
 
+    @MainActor
     func writeConfirmedSession(_ session: SleepSession) async throws -> [String] {
         guard isAvailable else { throw HealthKitSyncError.unavailable }
         guard session.status == .completed else { throw HealthKitSyncError.noSupportedValues }

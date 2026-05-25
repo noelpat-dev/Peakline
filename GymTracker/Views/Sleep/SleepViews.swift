@@ -5,22 +5,22 @@ struct SleepDashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
 
-    @Query(sort: \SleepSession.createdAt, order: .reverse)
+    @Query
     private var sessions: [SleepSession]
 
-    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    @Query
     private var workouts: [WorkoutSession]
 
-    @Query(sort: \NapSession.startDate, order: .reverse)
+    @Query
     private var naps: [NapSession]
 
-    @Query(sort: \HydrationEntry.loggedAt, order: .reverse)
+    @Query
     private var hydrationEntries: [HydrationEntry]
 
-    @Query(sort: \FoodLogEntry.loggedAt, order: .reverse)
+    @Query
     private var foodLogEntries: [FoodLogEntry]
 
-    @Query(sort: \DailyCoachCheckIn.date, order: .reverse)
+    @Query
     private var coachCheckIns: [DailyCoachCheckIn]
 
     @State private var settings = SleepSettingsStore().load()
@@ -36,6 +36,10 @@ struct SleepDashboardView: View {
     @State private var latestSummary = SleepScoringService.emptySummary()
     @State private var dashboardSummary = SleepAnalyticsService.emptyDashboardSummary()
     @State private var lastAnalyticsSignature: SleepAnalyticsInputSignature?
+    @State private var readinessScore = CoachIntelligenceService.emptySnapshot().readiness
+    @State private var lastReadinessSignature: String?
+    @State private var hydrationTargetML = HydrationSettingsStore().dailyTargetML()
+    @State private var nutritionGoal = NutritionGoalService().loadGoal()
 
     private let repository = SleepSessionRepository()
     private let scoring = SleepScoringService()
@@ -45,6 +49,64 @@ struct SleepDashboardView: View {
     private let analyticsStore = SleepAnalyticsSnapshotStore.shared
     private let hydrationSettingsStore = HydrationSettingsStore()
     private let nutritionGoalStore = NutritionGoalService()
+
+    init() {
+        _sessions = Query(Self.sessionsDescriptor)
+        _workouts = Query(Self.workoutsDescriptor)
+        _naps = Query(Self.napsDescriptor)
+        _hydrationEntries = Query(Self.hydrationEntriesDescriptor)
+        _foodLogEntries = Query(Self.foodLogEntriesDescriptor)
+        _coachCheckIns = Query(Self.coachCheckInsDescriptor)
+    }
+
+    private static var sessionsDescriptor: FetchDescriptor<SleepSession> {
+        var descriptor = FetchDescriptor<SleepSession>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 90
+        return descriptor
+    }
+
+    private static var workoutsDescriptor: FetchDescriptor<WorkoutSession> {
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 40
+        return descriptor
+    }
+
+    private static var napsDescriptor: FetchDescriptor<NapSession> {
+        var descriptor = FetchDescriptor<NapSession>(
+            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        descriptor.fetchLimit = 90
+        return descriptor
+    }
+
+    private static var hydrationEntriesDescriptor: FetchDescriptor<HydrationEntry> {
+        var descriptor = FetchDescriptor<HydrationEntry>(
+            sortBy: [SortDescriptor(\.loggedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 120
+        return descriptor
+    }
+
+    private static var foodLogEntriesDescriptor: FetchDescriptor<FoodLogEntry> {
+        var descriptor = FetchDescriptor<FoodLogEntry>(
+            sortBy: [SortDescriptor(\.loggedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 200
+        return descriptor
+    }
+
+    private static var coachCheckInsDescriptor: FetchDescriptor<DailyCoachCheckIn> {
+        var descriptor = FetchDescriptor<DailyCoachCheckIn>(
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 30
+        return descriptor
+    }
 
     private var completedSessions: [SleepSession] {
         sessions.filter { $0.status == .completed }
@@ -58,18 +120,24 @@ struct SleepDashboardView: View {
         SleepAnalyticsInputSignature(sessions: sessions, naps: naps, workouts: workouts, settings: settings)
     }
 
-    private var readinessScore: ReadinessScore {
-        coachIntelligence.readiness(
-            sleepSessions: sessions,
-            napSessions: naps,
-            hydrationEntries: hydrationEntries,
-            completedWorkouts: workouts,
-            foodLogs: foodLogEntries,
-            checkIns: coachCheckIns,
-            sleepSettings: settings,
-            hydrationTargetML: hydrationSettingsStore.dailyTargetML(),
-            nutritionGoal: nutritionGoalStore.loadGoal()
-        )
+    private var currentReadinessSignature: String {
+        [
+            signature(sessions, limit: 90) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970):\($0.status.rawValue)" },
+            signature(naps, limit: 90) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(workouts, limit: 40) { session in
+                let setSignature = session.exerciseLogs
+                    .flatMap(\.setLogs)
+                    .map { "\($0.id.uuidString):\($0.completed):\($0.isWarmup):\($0.weight):\($0.reps)" }
+                    .joined(separator: ",")
+                return "\(session.id.uuidString):\(session.date.timeIntervalSince1970):\(session.endedAt?.timeIntervalSince1970 ?? 0):\(setSignature)"
+            },
+            signature(hydrationEntries, limit: 120) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(foodLogEntries, limit: 200) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(coachCheckIns, limit: 30) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            "\(settings.targetSleepMinutes):\(settings.recoveryCoachingEnabled):\(settings.preferredSource.rawValue)",
+            "\(hydrationTargetML)",
+            "\(nutritionGoal.updatedAt.timeIntervalSince1970)"
+        ].joined(separator: "|")
     }
 
     private var discardAlertBinding: Binding<Bool> {
@@ -152,18 +220,30 @@ struct SleepDashboardView: View {
         }
         .onAppear {
             settings = settingsStore.load()
-            refreshSleepAnalytics(force: true)
+            hydrationTargetML = hydrationSettingsStore.dailyTargetML()
+            nutritionGoal = nutritionGoalStore.loadGoal()
             maybePromptForWakeTime()
-            Task { await importSleepIfEnabled() }
+            DispatchQueue.main.async {
+                refreshSleepAnalytics()
+                refreshReadinessScore()
+                Task { @MainActor in await importSleepIfEnabled() }
+            }
         }
         .onChange(of: currentAnalyticsSignature) { _, _ in
             refreshSleepAnalytics()
+            refreshReadinessScore()
+        }
+        .onChange(of: currentReadinessSignature) { _, _ in
+            refreshReadinessScore()
         }
         .onChange(of: settings) { _, newValue in
             settingsStore.save(newValue)
-            refreshSleepAnalytics(force: true)
+            refreshSleepAnalytics()
+            refreshReadinessScore()
+            let sessionSnapshots = SleepNotificationScheduler.sessionSnapshots(from: sessions)
+            let workoutSnapshots = SleepNotificationScheduler.workoutSnapshots(from: workouts)
             Task {
-                await SleepNotificationScheduler().refreshAllSleepNotifications(settings: newValue, sessions: sessions, workouts: workouts)
+                await SleepNotificationScheduler().refreshAllSleepNotifications(settings: newValue, sessions: sessionSnapshots, workouts: workoutSnapshots)
             }
         }
     }
@@ -430,9 +510,11 @@ struct SleepDashboardView: View {
         try? repository.discard(session, in: modelContext)
         pendingDiscardSession = nil
 
+        let sessionSnapshots = SleepNotificationScheduler.sessionSnapshots(from: sessions)
+        let workoutSnapshots = SleepNotificationScheduler.workoutSnapshots(from: workouts)
         Task {
             SleepNotificationScheduler().cancelNotifications(for: discardedSessionID)
-            await SleepNotificationScheduler().refreshAllSleepNotifications(settings: settings, sessions: sessions, workouts: workouts)
+            await SleepNotificationScheduler().refreshAllSleepNotifications(settings: settings, sessions: sessionSnapshots, workouts: workoutSnapshots)
         }
     }
 
@@ -659,6 +741,29 @@ struct SleepDashboardView: View {
         lastAnalyticsSignature = signature
     }
 
+    private func refreshReadinessScore(force: Bool = false) {
+        let signature = currentReadinessSignature
+        guard force || signature != lastReadinessSignature else { return }
+
+        readinessScore = coachIntelligence.readiness(
+            sleepSessions: sessions,
+            napSessions: naps,
+            hydrationEntries: hydrationEntries,
+            completedWorkouts: workouts,
+            foodLogs: foodLogEntries,
+            checkIns: coachCheckIns,
+            sleepSettings: settings,
+            hydrationTargetML: hydrationTargetML,
+            nutritionGoal: nutritionGoal
+        )
+        lastReadinessSignature = signature
+    }
+
+    private func signature<Value>(_ values: [Value], limit: Int, transform: (Value) -> String) -> String {
+        values.prefix(limit).map(transform).joined(separator: ",")
+    }
+
+    @MainActor
     private func importSleepIfEnabled() async {
         guard settings.enableAppleHealthImport else { return }
         if let lastSync = settings.lastHealthKitSleepSyncAt, Date.now.timeIntervalSince(lastSync) < 30 * 60 {
@@ -671,7 +776,11 @@ struct SleepDashboardView: View {
         if count > 0 {
             importedCount = count
         }
-        await SleepNotificationScheduler().refreshAllSleepNotifications(settings: settings, sessions: sessions, workouts: workouts)
+        await SleepNotificationScheduler().refreshAllSleepNotifications(
+            settings: settings,
+            sessions: SleepNotificationScheduler.sessionSnapshots(from: sessions),
+            workouts: SleepNotificationScheduler.workoutSnapshots(from: workouts)
+        )
     }
 }
 
@@ -1047,8 +1156,10 @@ struct SleepModeView: View {
         do {
             _ = try repository.startSleepMode(windDownMinutes: minutes, in: modelContext)
             settings.defaultWindDownMinutes = minutes == 0 ? settings.defaultWindDownMinutes : minutes
+            let sessionSnapshots = SleepNotificationScheduler.sessionSnapshots(from: sessions)
+            let workoutSnapshots = SleepNotificationScheduler.workoutSnapshots(from: workouts)
             Task {
-                await SleepNotificationScheduler().refreshAllSleepNotifications(settings: settings, sessions: sessions, workouts: workouts)
+                await SleepNotificationScheduler().refreshAllSleepNotifications(settings: settings, sessions: sessionSnapshots, workouts: workoutSnapshots)
             }
             dismiss()
         } catch {
@@ -1160,7 +1271,7 @@ struct SleepMorningConfirmationView: View {
 
             let settings = SleepSettingsStore().load()
             if settings.enableAppleHealthExport, session.source == .inAppTimer {
-                Task {
+                Task { @MainActor in
                     if let ids = try? await HealthKitSleepService().writeConfirmedSession(session) {
                         session.healthKitSampleIds = ids
                         try? modelContext.save()
@@ -1168,9 +1279,11 @@ struct SleepMorningConfirmationView: View {
                 }
             }
 
+            let sessionSnapshots = SleepNotificationScheduler.sessionSnapshots(from: sessions)
+            let workoutSnapshots = SleepNotificationScheduler.workoutSnapshots(from: workouts)
             Task {
                 SleepNotificationScheduler().cancelNotifications(for: session.id)
-                await SleepNotificationScheduler().refreshAllSleepNotifications(settings: settings, sessions: sessions, workouts: workouts)
+                await SleepNotificationScheduler().refreshAllSleepNotifications(settings: settings, sessions: sessionSnapshots, workouts: workoutSnapshots)
             }
             dismiss()
         } catch {
@@ -1307,8 +1420,11 @@ struct SleepSessionEditorView: View {
                     in: modelContext
                 )
             }
+            let refreshedSettings = SleepSettingsStore().load()
+            let sessionSnapshots = SleepNotificationScheduler.sessionSnapshots(from: sessions)
+            let workoutSnapshots = SleepNotificationScheduler.workoutSnapshots(from: workouts)
             Task {
-                await SleepNotificationScheduler().refreshAllSleepNotifications(settings: SleepSettingsStore().load(), sessions: sessions, workouts: workouts)
+                await SleepNotificationScheduler().refreshAllSleepNotifications(settings: refreshedSettings, sessions: sessionSnapshots, workouts: workoutSnapshots)
             }
             dismiss()
         } catch {

@@ -21,7 +21,7 @@ struct QuickSetControlsView: View {
             }
 
             Text(suggestion)
-                .font(.caption)
+                .font(AppTypography.metadata)
                 .foregroundStyle(appTheme.colors.textSecondary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -29,9 +29,12 @@ struct QuickSetControlsView: View {
     }
 
     private func quickButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button {
+            AppHaptics.selection()
+            action()
+        } label: {
             Label(title, systemImage: systemImage)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.metadataEmphasis)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
                 .frame(maxWidth: .infinity)
@@ -45,5 +48,14 @@ struct QuickSetControlsView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(appTheme.colors.textPrimary)
+        .accessibilityIdentifier("quick-set-\(identifier(for: title))")
+    }
+
+    private func identifier(for title: String) -> String {
+        let filtered = title.lowercased().map { character -> Character in
+            character.isLetter || character.isNumber ? character : "-"
+        }
+        let raw = String(filtered).split(separator: "-").joined(separator: "-")
+        return raw.isEmpty ? "action" : raw
     }
 }

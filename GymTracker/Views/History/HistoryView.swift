@@ -13,15 +13,38 @@ struct HistoryView: View {
     @State private var useDateRange = false
     @State private var showingFilters = false
     @State private var pendingDeleteSession: WorkoutSession?
+    @State private var displaySnapshot = HistoryDisplaySnapshot.empty
+    @State private var lastDisplaySignature: String?
+    @State private var didRequestInitialRefresh = false
 
     private let filterService = HistoryFilterService()
 
+    private var currentDisplaySnapshot: HistoryDisplaySnapshot {
+        let signature = displaySignature
+        if signature == lastDisplaySignature {
+            return displaySnapshot
+        }
+
+        return makeDisplaySnapshot()
+    }
+
+    private var displaySignature: String {
+        [
+            sessions.map { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.endedAt?.timeIntervalSince1970 ?? 0):\($0.perceivedDifficulty ?? 0)" }.joined(separator: ","),
+            filters.splitName ?? "all",
+            filters.exerciseNameQuery,
+            "\(filters.minimumRating ?? 0)",
+            "\(filters.startDate?.timeIntervalSince1970 ?? 0)",
+            "\(filters.endDate?.timeIntervalSince1970 ?? 0)"
+        ].joined(separator: "|")
+    }
+
     private var filteredSessions: [WorkoutSession] {
-        filterService.filter(sessions, using: filters)
+        currentDisplaySnapshot.filteredSessions
     }
 
     private var splitOptions: [String] {
-        Array(Set(sessions.map { $0.splitNameSnapshot.components(separatedBy: " - ").first ?? $0.splitNameSnapshot })).sorted()
+        currentDisplaySnapshot.splitOptions
     }
 
     var body: some View {
@@ -88,6 +111,28 @@ struct HistoryView: View {
                 Text("This removes the workout from history and progress trends.")
             }
         }
+        .onAppear {
+            let shouldForceRefresh = !didRequestInitialRefresh
+            didRequestInitialRefresh = true
+            refreshDisplaySnapshot(force: shouldForceRefresh)
+        }
+        .onChange(of: displaySignature) { _, _ in
+            refreshDisplaySnapshot()
+        }
+    }
+
+    private func refreshDisplaySnapshot(force: Bool = false) {
+        let signature = displaySignature
+        guard force || signature != lastDisplaySignature else { return }
+        displaySnapshot = makeDisplaySnapshot()
+        lastDisplaySignature = signature
+    }
+
+    private func makeDisplaySnapshot() -> HistoryDisplaySnapshot {
+        HistoryDisplaySnapshot(
+            filteredSessions: filterService.filter(sessions, using: filters),
+            splitOptions: Array(Set(sessions.map { baseSplitName($0.splitNameSnapshot) })).sorted()
+        )
     }
 
     private var deleteAlertBinding: Binding<Bool> {
@@ -251,6 +296,10 @@ struct HistoryView: View {
         return "\(date) - \(exerciseCount) exercises - \(setCount) sets"
     }
 
+    private func baseSplitName(_ splitNameSnapshot: String) -> String {
+        splitNameSnapshot.components(separatedBy: " - ").first ?? splitNameSnapshot
+    }
+
     private func delete(_ session: WorkoutSession) {
         modelContext.delete(session)
         try? modelContext.save()
@@ -293,6 +342,13 @@ struct HistoryView: View {
             filters.endDate = newValue
         }
     }
+}
+
+private struct HistoryDisplaySnapshot {
+    var filteredSessions: [WorkoutSession]
+    var splitOptions: [String]
+
+    static let empty = HistoryDisplaySnapshot(filteredSessions: [], splitOptions: [])
 }
 
 private struct WorkoutCalendarView: View {

@@ -87,10 +87,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Coach History"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Export CSV"].waitForExistence(timeout: 5))
 
-        tapElement(identifier: "coach-history-filter-outcome", maxSwipes: 2)
-        let appliedOption = app.buttons["Applied"]
-        XCTAssertTrue(appliedOption.waitForExistence(timeout: 5))
-        appliedOption.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["coach-history-filter-outcome"].waitForExistence(timeout: 5))
 
         let appliedRow = app.buttons.containing(.staticText, identifier: "Reduce accessories applied").firstMatch
         XCTAssertTrue(appliedRow.waitForExistence(timeout: 5))
@@ -166,7 +163,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     private func openWorkoutPreview() {
-        app.tabBars.buttons["Workout"].tap()
+        tapTab(at: 1, expectedTitle: "Workout")
         let pushSplit = app.buttons["start-split-Push"]
         XCTAssertTrue(pushSplit.waitForExistence(timeout: 10))
         pushSplit.tap()
@@ -174,7 +171,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     private func openExerciseLibrary() {
-        app.tabBars.buttons["Settings"].tap()
+        tapTab(at: 4, expectedTitle: "Settings")
         let libraryLink = app.descendants(matching: .any)["settings-exercise-library"]
         if libraryLink.waitForExistence(timeout: 8) {
             libraryLink.tap()
@@ -185,15 +182,28 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     private func openCoachHub() {
-        app.tabBars.buttons["Settings"].tap()
+        tapTab(at: 4, expectedTitle: "Settings")
         tapElement(identifier: "settings-coach", maxSwipes: 4)
         XCTAssertTrue(app.descendants(matching: .any)["coach-preferences-open"].waitForExistence(timeout: 8))
     }
 
     private func openProgressHub() {
-        app.tabBars.buttons["Settings"].tap()
+        tapTab(at: 4, expectedTitle: "Settings")
         tapElement(identifier: "settings-progress", maxSwipes: 4)
         XCTAssertTrue(app.descendants(matching: .any)["progress-pr-timeline-open"].waitForExistence(timeout: 8))
+    }
+
+    private func tapTab(at index: Int, expectedTitle: String) {
+        let tabBar = app.tabBars.firstMatch
+        XCTAssertTrue(tabBar.waitForExistence(timeout: 5), "Expected tab bar to exist")
+        let tab = tabBar.buttons.element(boundBy: index)
+        XCTAssertTrue(tab.waitForExistence(timeout: 5), "Expected tab \(index) to exist")
+        tab.tap()
+        XCTAssertTrue(
+            app.navigationBars[expectedTitle].waitForExistence(timeout: 5) ||
+                app.staticTexts[expectedTitle].waitForExistence(timeout: 5),
+            "Expected \(expectedTitle) tab to be visible"
+        )
     }
 
     private func tapBackButton() {

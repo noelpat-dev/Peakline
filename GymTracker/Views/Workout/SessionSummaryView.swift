@@ -53,11 +53,11 @@ struct SessionSummaryView: View {
 
                         VStack(alignment: .leading, spacing: 5) {
                             Text("Completed")
-                                .font(.caption.weight(.semibold))
+                                .font(AppTypography.metadataEmphasis)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .textCase(.uppercase)
                             Text(summary.splitName)
-                                .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                                .font(AppTypography.screenTitle)
                                 .foregroundStyle(appTheme.colors.textPrimary)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.68)
@@ -129,11 +129,11 @@ struct SessionSummaryView: View {
 
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Suggested split")
-                                    .font(.caption.weight(.semibold))
+                                    .font(AppTypography.metadataEmphasis)
                                     .foregroundStyle(appTheme.colors.textSecondary)
                                     .textCase(.uppercase)
                                 Text(suggestedNextSplit)
-                                    .font(.title2.bold())
+                                    .font(AppTypography.largeMetric)
                             }
 
                             Spacer()

@@ -3,7 +3,7 @@ import SwiftData
 
 @MainActor
 enum SeedDataService {
-    static func seedIfNeeded(in context: ModelContext) async {
+    static func seedIfNeeded(in context: ModelContext) {
         do {
             var existingExercises = try context.fetch(FetchDescriptor<Exercise>())
             let existingExerciseNames = Set(existingExercises.map(\.name))

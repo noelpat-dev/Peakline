@@ -126,8 +126,14 @@
 		001000000000000000000094 /* CoachWorkoutAdjustmentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000094 /* CoachWorkoutAdjustmentModels.swift */; };
 		001000000000000000000095 /* CoachWorkoutAdjustmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000095 /* CoachWorkoutAdjustmentService.swift */; };
 		001000000000000000000096 /* CoachWorkoutAdjustmentViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000096 /* CoachWorkoutAdjustmentViews.swift */; };
+		001000000000000000000097 /* PerformanceTracer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000097 /* PerformanceTracer.swift */; };
 		0010000000000000000000A1 /* CoachIntelligenceServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000A1 /* CoachIntelligenceServiceTests.swift */; };
+		0010000000000000000000A2 /* WorkoutReliabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000A2 /* WorkoutReliabilityTests.swift */; };
+		0010000000000000000000A3 /* SleepRecoveryReliabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000A3 /* SleepRecoveryReliabilityTests.swift */; };
+		0010000000000000000000A4 /* NutritionExportReliabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000A4 /* NutritionExportReliabilityTests.swift */; };
 		0010000000000000000000B1 /* CoachWorkoutPreviewUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B1 /* CoachWorkoutPreviewUITests.swift */; };
+		0010000000000000000000B2 /* WorkoutLoggingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B2 /* WorkoutLoggingUITests.swift */; };
+		0010000000000000000000B3 /* NutritionScannerNavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B3 /* NutritionScannerNavigationUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -269,10 +275,16 @@
 		002000000000000000000094 /* CoachWorkoutAdjustmentModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkoutAdjustmentModels.swift; sourceTree = "<group>"; };
 		002000000000000000000095 /* CoachWorkoutAdjustmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkoutAdjustmentService.swift; sourceTree = "<group>"; };
 		002000000000000000000096 /* CoachWorkoutAdjustmentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkoutAdjustmentViews.swift; sourceTree = "<group>"; };
+		002000000000000000000097 /* PerformanceTracer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceTracer.swift; sourceTree = "<group>"; };
 		0020000000000000000000A0 /* GymTrackerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GymTrackerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0020000000000000000000A1 /* CoachIntelligenceServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachIntelligenceServiceTests.swift; sourceTree = "<group>"; };
+		0020000000000000000000A2 /* WorkoutReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutReliabilityTests.swift; sourceTree = "<group>"; };
+		0020000000000000000000A3 /* SleepRecoveryReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepRecoveryReliabilityTests.swift; sourceTree = "<group>"; };
+		0020000000000000000000A4 /* NutritionExportReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionExportReliabilityTests.swift; sourceTree = "<group>"; };
 		0020000000000000000000B0 /* GymTrackerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GymTrackerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0020000000000000000000B1 /* CoachWorkoutPreviewUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkoutPreviewUITests.swift; sourceTree = "<group>"; };
+		0020000000000000000000B2 /* WorkoutLoggingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutLoggingUITests.swift; sourceTree = "<group>"; };
+		0020000000000000000000B3 /* NutritionScannerNavigationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionScannerNavigationUITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -511,6 +523,7 @@
 		004000000000000000000013 /* Utilities */ = {
 			isa = PBXGroup;
 			children = (
+				002000000000000000000097 /* PerformanceTracer.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -579,6 +592,9 @@
 			isa = PBXGroup;
 			children = (
 				0020000000000000000000A1 /* CoachIntelligenceServiceTests.swift */,
+				0020000000000000000000A2 /* WorkoutReliabilityTests.swift */,
+				0020000000000000000000A3 /* SleepRecoveryReliabilityTests.swift */,
+				0020000000000000000000A4 /* NutritionExportReliabilityTests.swift */,
 			);
 			path = GymTrackerTests;
 			sourceTree = "<group>";
@@ -587,6 +603,8 @@
 			isa = PBXGroup;
 			children = (
 				0020000000000000000000B1 /* CoachWorkoutPreviewUITests.swift */,
+				0020000000000000000000B2 /* WorkoutLoggingUITests.swift */,
+				0020000000000000000000B3 /* NutritionScannerNavigationUITests.swift */,
 			);
 			path = GymTrackerUITests;
 			sourceTree = "<group>";
@@ -843,6 +861,7 @@
 				001000000000000000000094 /* CoachWorkoutAdjustmentModels.swift in Sources */,
 				001000000000000000000095 /* CoachWorkoutAdjustmentService.swift in Sources */,
 				001000000000000000000096 /* CoachWorkoutAdjustmentViews.swift in Sources */,
+				001000000000000000000097 /* PerformanceTracer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -851,6 +870,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				0010000000000000000000A1 /* CoachIntelligenceServiceTests.swift in Sources */,
+				0010000000000000000000A2 /* WorkoutReliabilityTests.swift in Sources */,
+				0010000000000000000000A3 /* SleepRecoveryReliabilityTests.swift in Sources */,
+				0010000000000000000000A4 /* NutritionExportReliabilityTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -859,6 +881,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				0010000000000000000000B1 /* CoachWorkoutPreviewUITests.swift in Sources */,
+				0010000000000000000000B2 /* WorkoutLoggingUITests.swift in Sources */,
+				0010000000000000000000B3 /* NutritionScannerNavigationUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1010,6 +1034,7 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "GymTracker uses the camera to scan food barcodes and read nutrition labels for local food logging.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "GymTracker reads selected Apple Health data, such as sleep, body weight, activity, and workouts, to improve training-aware recovery and nutrition insights when you enable this integration.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "GymTracker saves confirmed nutrition logs and estimated Sleep Mode sessions to Apple Health when you enable each sync option.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "GymTracker lets you choose nutrition label photos so OCR can prefill food details for local food logging.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -1047,6 +1072,7 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "GymTracker uses the camera to scan food barcodes and read nutrition labels for local food logging.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "GymTracker reads selected Apple Health data, such as sleep, body weight, activity, and workouts, to improve training-aware recovery and nutrition insights when you enable this integration.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "GymTracker saves confirmed nutrition logs and estimated Sleep Mode sessions to Apple Health when you enable each sync option.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "GymTracker lets you choose nutrition label photos so OCR can prefill food details for local food logging.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

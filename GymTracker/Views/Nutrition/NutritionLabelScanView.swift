@@ -9,6 +9,8 @@ struct NutritionLabelScanView: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var isCameraPresented = false
     @State private var isManualEntryPresented = false
+    @State private var pendingCameraImage: UIImage?
+    @State private var deferredImageProcessingTask: Task<Void, Never>?
 
     let initialBarcode: String?
     let comparisonDraft: FoodImportDraft?
@@ -55,8 +57,11 @@ struct NutritionLabelScanView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $isCameraPresented) {
             NutritionLabelImagePicker(sourceType: .camera) { image in
-                viewModel.process(image: image)
-            } onCancel: {}
+                pendingCameraImage = image
+                isCameraPresented = false
+            } onCancel: {
+                isCameraPresented = false
+            }
                 .ignoresSafeArea()
         }
         .sheet(isPresented: $isManualEntryPresented) {
@@ -65,6 +70,14 @@ struct NutritionLabelScanView: View {
         .onChange(of: selectedPhoto) { _, item in
             guard let item else { return }
             Task { await loadPhoto(item) }
+        }
+        .onChange(of: isCameraPresented) { _, isPresented in
+            guard !isPresented, let image = pendingCameraImage else { return }
+            pendingCameraImage = nil
+            processImageAfterPickerDismissal(image)
+        }
+        .onDisappear {
+            deferredImageProcessingTask?.cancel()
         }
     }
 
@@ -368,10 +381,19 @@ struct NutritionLabelScanView: View {
                 return
             }
 
-            viewModel.process(image: image)
             selectedPhoto = nil
+            processImageAfterPickerDismissal(image)
         } catch {
             viewModel.imageSelectionFailed()
+        }
+    }
+
+    private func processImageAfterPickerDismissal(_ image: UIImage) {
+        deferredImageProcessingTask?.cancel()
+        deferredImageProcessingTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            guard !Task.isCancelled else { return }
+            viewModel.process(image: image)
         }
     }
 

@@ -25,32 +25,35 @@ struct MetricTile: View {
             HStack(spacing: 6) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.metadataEmphasis)
                         .foregroundStyle(appTheme.colors.accent)
                 }
 
                 Text(label)
-                    .font(.caption.weight(.semibold))
+                    .font(AppTypography.metadataEmphasis)
                     .foregroundStyle(appTheme.mutedText)
                     .textCase(.uppercase)
             }
 
             Text(value)
-                .font(.system(.title2, design: .rounded).weight(.bold))
+                .font(AppTypography.largeMetric)
                 .foregroundStyle(appTheme.colors.textPrimary)
                 .minimumScaleFactor(0.75)
                 .lineLimit(1)
 
             if let caption, !caption.isEmpty {
                 Text(caption)
-                    .font(.caption)
+                    .font(AppTypography.metadata)
                     .foregroundStyle(appTheme.mutedText)
                     .lineLimit(2)
             }
         }
         .padding(appTheme.metrics.compactCardPadding)
-        .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
-        .background(appTheme.elevatedCardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: appTheme.metrics.compactCardRadius, style: .continuous))
+        .frame(maxWidth: .infinity, minHeight: appTheme.metrics.metricTileMinHeight, alignment: .topLeading)
+        .background(appTheme.elevatedCardBackground, in: RoundedRectangle(cornerRadius: appTheme.metrics.compactCardRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: appTheme.metrics.compactCardRadius, style: .continuous)
+                .stroke(appTheme.cardBorder.opacity(0.55), lineWidth: 1)
+        }
     }
 }
