@@ -1,6 +1,6 @@
 import Foundation
 
-enum HealthKitPermissionState: String, Codable, Equatable {
+enum HealthKitPermissionState: String, Codable, Equatable, Sendable {
     case unavailable
     case notRequested
     case sharingAuthorized
@@ -26,7 +26,7 @@ enum HealthKitPermissionState: String, Codable, Equatable {
     }
 }
 
-enum HealthKitSyncStatus: String, Codable, Equatable {
+enum HealthKitSyncStatus: String, Codable, Equatable, Sendable {
     case notEnabled
     case pending
     case synced
@@ -92,7 +92,7 @@ extension HealthKitSyncError: LocalizedError {
     }
 }
 
-struct HealthKitSyncPreferences: Codable, Equatable {
+struct HealthKitSyncPreferences: Codable, Equatable, Sendable {
     var isHealthKitEnabled: Bool
     var writeNutritionToHealthKit: Bool
     var readBodyWeight: Bool

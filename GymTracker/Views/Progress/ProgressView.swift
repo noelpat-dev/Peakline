@@ -159,7 +159,6 @@ struct ProgressContentView: View {
         }
         .navigationTitle("Progress")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
         .navigationDestination(isPresented: $isExerciseChartsPresented) {
             ExerciseProgressChartsIndexView(exercises: exercises, selectedExercise: $selectedExercise)
         }
@@ -421,7 +420,6 @@ private struct ExerciseProgressChartsIndexView: View {
         }
         .navigationTitle("Progress Charts")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
     }
 }
 

@@ -1778,9 +1778,23 @@ struct SleepAnalyticsInputSignature: Equatable {
         let updatedAt: Date
     }
 
+    private struct SettingsFingerprint: Equatable {
+        let targetSleepMinutes: Int
+        let recoveryCoachingEnabled: Bool
+        let preferredSource: PreferredSleepSource
+        let coachingPreferences: SleepCoachingPreferences
+
+        init(settings: SleepSettings) {
+            targetSleepMinutes = settings.targetSleepMinutes
+            recoveryCoachingEnabled = settings.recoveryCoachingEnabled
+            preferredSource = settings.preferredSource
+            coachingPreferences = settings.coachingPreferences
+        }
+    }
+
     let sessionLimit: Int
     let workoutLimit: Int
-    let settings: SleepSettings
+    private let settings: SettingsFingerprint
     private let sessions: [SessionFingerprint]
     private let workouts: [WorkoutFingerprint]
     private let naps: [NapFingerprint]
@@ -1788,7 +1802,7 @@ struct SleepAnalyticsInputSignature: Equatable {
     init(sessions: [SleepSession], naps: [NapSession] = [], workouts: [WorkoutSession], settings: SleepSettings, sessionLimit: Int = 90, workoutLimit: Int = 28) {
         self.sessionLimit = sessionLimit
         self.workoutLimit = workoutLimit
-        self.settings = settings
+        self.settings = SettingsFingerprint(settings: settings)
         self.sessions = sessions.prefix(sessionLimit).map {
             SessionFingerprint(
                 id: $0.id,
@@ -1856,11 +1870,14 @@ final class SleepAnalyticsSnapshotStore {
     private init() {}
 
     func snapshot(sessions: [SleepSession], naps: [NapSession] = [], workouts: [WorkoutSession], settings: SleepSettings, sessionLimit: Int = 90, workoutLimit: Int = 28, force: Bool = false) -> SleepAnalyticsSnapshot {
+        PerformanceTracer.mark(.unsafeBreadcrumb, "sleep.analytics.cache before_signature sessions=\(min(sessions.count, sessionLimit)) workouts=\(min(workouts.count, workoutLimit))")
         let signature = SleepAnalyticsInputSignature(sessions: sessions, naps: naps, workouts: workouts, settings: settings, sessionLimit: sessionLimit, workoutLimit: workoutLimit)
 
         if !force, signature == cachedSignature, let cachedSnapshot {
             PerformanceTracer.mark(.sleepAnalyticsCache, "hit sessions=\(min(sessions.count, sessionLimit)) workouts=\(min(workouts.count, workoutLimit))")
-            return cachedSnapshot
+            let refreshedSnapshot = snapshotForCacheHit(cachedSnapshot, settings: settings)
+            self.cachedSnapshot = refreshedSnapshot
+            return refreshedSnapshot
         }
 
         PerformanceTracer.mark(.sleepAnalyticsCache, force ? "miss force=true" : "miss signature_changed")
@@ -1870,6 +1887,12 @@ final class SleepAnalyticsSnapshotStore {
         let snapshot = service.snapshot(sessions: limitedSessions, naps: limitedNaps, workouts: limitedWorkouts, settings: settings)
         cachedSignature = signature
         cachedSnapshot = snapshot
+        return snapshot
+    }
+
+    private func snapshotForCacheHit(_ snapshot: SleepAnalyticsSnapshot, settings: SleepSettings) -> SleepAnalyticsSnapshot {
+        var snapshot = snapshot
+        snapshot.dashboardSummary.lastHealthKitSleepSyncAt = settings.lastHealthKitSleepSyncAt
         return snapshot
     }
 }
@@ -1884,6 +1907,7 @@ final class SleepWorkoutReadinessSnapshotStore {
     private init() {}
 
     func snapshot(sessions: [SleepSession], naps: [NapSession] = [], workouts: [WorkoutSession], settings: SleepSettings, sessionLimit: Int = 45, workoutLimit: Int = 12, force: Bool = false) -> SleepWorkoutReadinessSnapshot {
+        PerformanceTracer.mark(.unsafeBreadcrumb, "sleep.readiness.cache before_signature sessions=\(min(sessions.count, sessionLimit)) workouts=\(min(workouts.count, workoutLimit))")
         let signature = SleepAnalyticsInputSignature(sessions: sessions, naps: naps, workouts: workouts, settings: settings, sessionLimit: sessionLimit, workoutLimit: workoutLimit)
 
         if !force, signature == cachedSignature, let cachedSnapshot {
@@ -2202,8 +2226,10 @@ struct SleepNotificationService {
     private let center = UNUserNotificationCenter.current()
 
     func authorizationStatus() async -> UNAuthorizationStatus {
-        await withCheckedContinuation { continuation in
+        PerformanceTracer.mark(.unsafeBreadcrumb, "notification.authorizationStatus before_continuation")
+        return await withCheckedContinuation { continuation in
             center.getNotificationSettings { settings in
+                PerformanceTracer.mark(.unsafeBreadcrumb, "notification.authorizationStatus callback")
                 continuation.resume(returning: settings.authorizationStatus)
             }
         }
@@ -2228,25 +2254,37 @@ struct SleepNotificationScheduler {
         workouts: [SleepNotificationWorkoutSnapshot],
         calendar: Calendar = .current
     ) async {
+        PerformanceTracer.mark(.unsafeBreadcrumb, "root.notification.scheduler begin enabled=\(settings.notificationPreferences.isEnabled)")
         guard settings.notificationPreferences.isEnabled else {
-            cancelSleepNotifications()
+            await cancelSleepNotificationsAsync(sessions: sessions, workouts: workouts, calendar: calendar)
+            PerformanceTracer.mark(.unsafeBreadcrumb, "root.notification.scheduler end disabled")
             return
         }
 
-        let status = await SleepNotificationService().authorizationStatus()
-        guard status == .authorized || status == .provisional || status == .ephemeral else { return }
-
-        cancelSleepNotifications()
-        scheduleBedtimeReminder(settings: settings, sessions: sessions, calendar: calendar)
-        scheduleWindDownReminder(settings: settings, sessions: sessions, calendar: calendar)
-
-        if let session = sessions.first(where: { $0.status == .active }) {
-            scheduleMorningConfirmationReminder(for: session, settings: settings, calendar: calendar)
-            scheduleUnfinishedSessionReminder(for: session)
+        let status = await PerformanceTracer.traceAsync(.rootNotificationPermissionStatus) {
+            await SleepNotificationService().authorizationStatus()
+        }
+        guard status == .authorized || status == .provisional || status == .ephemeral else {
+            PerformanceTracer.mark(.unsafeBreadcrumb, "root.notification.scheduler end unauthorized status=\(status.rawValue)")
+            return
         }
 
-        scheduleMissedSleepReminder(settings: settings, sessions: sessions, calendar: calendar)
-        scheduleTrainingAwareReminder(settings: settings, sessions: sessions, workouts: workouts, calendar: calendar)
+        await cancelSleepNotificationsAsync(sessions: sessions, workouts: workouts, calendar: calendar)
+
+        PerformanceTracer.mark(.unsafeBreadcrumb, "root.notification.scheduler before_schedule")
+        PerformanceTracer.trace(.rootNotificationScheduling) {
+            scheduleBedtimeReminder(settings: settings, sessions: sessions, calendar: calendar)
+            scheduleWindDownReminder(settings: settings, sessions: sessions, calendar: calendar)
+
+            if let session = sessions.first(where: { $0.status == .active }) {
+                scheduleMorningConfirmationReminder(for: session, settings: settings, calendar: calendar)
+                scheduleUnfinishedSessionReminder(for: session)
+            }
+
+            scheduleMissedSleepReminder(settings: settings, sessions: sessions, calendar: calendar)
+            scheduleTrainingAwareReminder(settings: settings, sessions: sessions, workouts: workouts, calendar: calendar)
+        }
+        PerformanceTracer.mark(.unsafeBreadcrumb, "root.notification.scheduler end")
     }
 
     func scheduleBedtimeReminder(settings: SleepSettings, sessions: [SleepNotificationSessionSnapshot], calendar: Calendar = .current) {
@@ -2366,6 +2404,20 @@ struct SleepNotificationScheduler {
         }
     }
 
+    func cancelSleepNotificationsAsync(
+        sessions: [SleepNotificationSessionSnapshot] = [],
+        workouts: [SleepNotificationWorkoutSnapshot] = [],
+        calendar: Calendar = .current
+    ) async {
+        await PerformanceTracer.traceAsync(.rootNotificationCancellation) {
+            var ids = Set(SleepNotificationID.allStable)
+            ids.formUnion(dynamicNotificationIDs(sessions: sessions, workouts: workouts, calendar: calendar))
+            let pendingSleepIds = await pendingSleepNotificationIDs()
+            ids.formUnion(pendingSleepIds)
+            center.removePendingNotificationRequests(withIdentifiers: Array(ids))
+        }
+    }
+
     func cancelNotifications(for sessionID: UUID) {
         center.removePendingNotificationRequests(withIdentifiers: [
             SleepNotificationID.morningConfirmation(sessionID: sessionID),
@@ -2399,6 +2451,38 @@ struct SleepNotificationScheduler {
         content.userInfo = destination.userInfo
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
         center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+    }
+
+    private func pendingSleepNotificationIDs() async -> [String] {
+        await PerformanceTracer.traceAsync(.rootNotificationPendingFetch) {
+            PerformanceTracer.mark(.unsafeBreadcrumb, "notification.pending_fetch before_continuation")
+            return await withCheckedContinuation { continuation in
+                center.getPendingNotificationRequests { requests in
+                    PerformanceTracer.mark(.unsafeBreadcrumb, "notification.pending_fetch callback count=\(requests.count)")
+                    continuation.resume(returning: requests.map(\.identifier).filter { $0.hasPrefix("sleep.") })
+                }
+            }
+        }
+    }
+
+    private func dynamicNotificationIDs(
+        sessions: [SleepNotificationSessionSnapshot],
+        workouts: [SleepNotificationWorkoutSnapshot],
+        calendar: Calendar
+    ) -> [String] {
+        var ids = sessions.flatMap { session in
+            [
+                SleepNotificationID.morningConfirmation(sessionID: session.id),
+                SleepNotificationID.unfinishedSession(sessionID: session.id)
+            ]
+        }
+
+        if likelyWorkoutTomorrow(workouts: workouts, calendar: calendar) {
+            let tomorrow = calendar.date(byAdding: .day, value: 1, to: .now) ?? .now
+            ids.append(SleepNotificationID.trainingAware(date: tomorrow))
+        }
+
+        return ids
     }
 
     private func hasSessionForUpcomingNight(sessions: [SleepNotificationSessionSnapshot], calendar: Calendar) -> Bool {

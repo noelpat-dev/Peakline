@@ -53,38 +53,34 @@ struct HealthKitSleepService {
         #endif
     }
 
-    @MainActor
-    func importRecentSleep(days: Int, into context: ModelContext) async -> Int {
-        guard isAvailable else { return 0 }
+    func importRecentSleepCandidates(days: Int, existing: HealthKitSleepImportExistingSnapshot) async -> [HealthKitSleepImportCandidate] {
+        PerformanceTracer.mark(.healthKitSleepBridge, "importRecentSleepCandidates begin days=\(days)")
+        guard isAvailable else { return [] }
 
         #if canImport(HealthKit)
         do {
             let start = Calendar.current.date(byAdding: .day, value: -days, to: .now) ?? .now.addingTimeInterval(-Double(days) * 86_400)
             let samples = try await rawSleepSamples(from: start, to: .now)
-            let existingIdentifiers = existingHealthSampleIdentifiers(in: context)
+            PerformanceTracer.mark(.healthKitSleepBridge, "importRecentSleepCandidates samples=\(samples.count)")
             let grouped = groupedAsleepSamples(samples)
-            var imported = 0
+            var candidates: [HealthKitSleepImportCandidate] = []
 
             for group in grouped {
                 let identifiers = group.samples.map { $0.uuid.uuidString }
-                if identifiers.contains(where: { existingIdentifiers.contains($0) }) {
+                if identifiers.contains(where: { existing.healthSampleIds.contains($0) }) {
                     continue
                 }
 
                 if isLikelyNap(start: group.start, end: group.end, calendar: .current) {
-                    if hasOverlappingAppleHealthNap(start: group.start, end: group.end, in: context) {
+                    if existing.hasOverlappingAppleHealthNap(start: group.start, end: group.end) {
                         continue
                     }
 
-                    let nap = NapSession(
+                    candidates.append(.nap(
                         startDate: group.start,
                         endDate: group.end,
-                        source: .appleHealth,
-                        timingCategory: NapSession.timingCategory(for: group.start),
                         healthKitSampleIds: identifiers
-                    )
-                    context.insert(nap)
-                    imported += 1
+                    ))
                     continue
                 }
 
@@ -92,42 +88,31 @@ struct HealthKitSleepService {
                     continue
                 }
 
-                if hasOverlappingAppleHealthSession(start: group.start, end: group.end, in: context) {
+                if existing.hasOverlappingAppleHealthSession(start: group.start, end: group.end) {
                     continue
                 }
 
-                let session = SleepSession(
-                    confirmedSleepStartAt: group.start,
-                    wakeAt: group.end,
-                    durationMinutes: Int(group.end.timeIntervalSince(group.start) / 60),
-                    source: .appleHealth,
+                candidates.append(.session(
+                    startDate: group.start,
+                    endDate: group.end,
                     confidence: group.hasStages ? .high : .medium,
-                    status: .completed,
                     healthKitSampleIds: identifiers
-                )
-                context.insert(session)
-                imported += 1
+                ))
             }
 
-            if imported > 0 {
-                try? context.save()
-            }
-
-            var settings = SleepSettingsStore().load()
-            settings.lastHealthKitSleepSyncAt = .now
-            SleepSettingsStore().save(settings)
-
-            return imported
+            PerformanceTracer.mark(.healthKitSleepBridge, "importRecentSleepCandidates end candidates=\(candidates.count)")
+            return candidates
         } catch {
-            return 0
+            PerformanceTracer.mark(.healthKitSleepBridge, "importRecentSleepCandidates error=\(error.localizedDescription)")
+            return []
         }
         #else
-        return 0
+        return []
         #endif
     }
 
-    @MainActor
-    func writeConfirmedSession(_ session: SleepSession) async throws -> [String] {
+    func writeConfirmedSession(_ session: HealthKitSleepWriteSnapshot) async throws -> [String] {
+        PerformanceTracer.mark(.healthKitSleepBridge, "writeConfirmedSession begin session=\(session.id.uuidString)")
         guard isAvailable else { throw HealthKitSyncError.unavailable }
         guard session.status == .completed else { throw HealthKitSyncError.noSupportedValues }
         guard session.source == .inAppTimer || session.source == .manual else { throw HealthKitSyncError.noSupportedValues }
@@ -168,7 +153,9 @@ struct HealthKitSleepService {
         )
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            PerformanceTracer.mark(.healthKitSleepBridge, "writeConfirmedSession before_save samples=\(samples.count)")
             healthStore.save(samples) { success, error in
+                PerformanceTracer.mark(.healthKitSleepBridge, "writeConfirmedSession save_callback success=\(success)")
                 if success {
                     continuation.resume()
                 } else if let error {
@@ -179,7 +166,9 @@ struct HealthKitSleepService {
             }
         }
 
-        return samples.map { $0.uuid.uuidString }
+        let identifiers = samples.map { $0.uuid.uuidString }
+        PerformanceTracer.mark(.healthKitSleepBridge, "writeConfirmedSession end samples=\(identifiers.count)")
+        return identifiers
         #else
         throw HealthKitSyncError.unavailable
         #endif
@@ -375,39 +364,68 @@ struct HealthKitSleepService {
         return .low
     }
 
-    private func existingHealthSampleIdentifiers(in context: ModelContext) -> Set<String> {
-        let descriptor = FetchDescriptor<SleepSession>()
-        let sessions = (try? context.fetch(descriptor)) ?? []
-        let napDescriptor = FetchDescriptor<NapSession>()
-        let naps = (try? context.fetch(napDescriptor)) ?? []
-        return Set(sessions.filter { $0.source == .appleHealth }.flatMap(\.healthKitSampleIds) + naps.filter { $0.source == .appleHealth }.flatMap(\.healthKitSampleIds))
-    }
-
-    private func hasOverlappingAppleHealthSession(start: Date, end: Date, in context: ModelContext) -> Bool {
-        let descriptor = FetchDescriptor<SleepSession>()
-        let sessions = (try? context.fetch(descriptor)) ?? []
-        return sessions.contains { session in
-            session.source == .appleHealth
-                && session.wakeAt > start
-                && session.confirmedSleepStartAt < end
-        }
-    }
-
-    private func hasOverlappingAppleHealthNap(start: Date, end: Date, in context: ModelContext) -> Bool {
-        let descriptor = FetchDescriptor<NapSession>()
-        let naps = (try? context.fetch(descriptor)) ?? []
-        return naps.contains { nap in
-            nap.source == .appleHealth
-                && nap.endDate > start
-                && nap.startDate < end
-        }
-    }
-
     private func isLikelyNap(start: Date, end: Date, calendar: Calendar) -> Bool {
         let duration = end.timeIntervalSince(start)
         guard duration >= 10 * 60, duration <= 3 * 60 * 60 else { return false }
         let startHour = calendar.component(.hour, from: start)
         let endHour = calendar.component(.hour, from: end)
         return startHour >= 8 && endHour < 20
+    }
+}
+
+struct HealthKitSleepImportExistingSnapshot: Sendable {
+    struct Session: Sendable {
+        let startDate: Date
+        let endDate: Date
+    }
+
+    let healthSampleIds: Set<String>
+    private let appleHealthSessions: [Session]
+    private let appleHealthNaps: [Session]
+
+    init(sessions: [SleepSession], naps: [NapSession]) {
+        self.healthSampleIds = Set(
+            sessions.filter { $0.source == .appleHealth }.flatMap(\.healthKitSampleIds)
+            + naps.filter { $0.source == .appleHealth }.flatMap(\.healthKitSampleIds)
+        )
+        self.appleHealthSessions = sessions
+            .filter { $0.source == .appleHealth }
+            .map { Session(startDate: $0.confirmedSleepStartAt, endDate: $0.wakeAt) }
+        self.appleHealthNaps = naps
+            .filter { $0.source == .appleHealth }
+            .map { Session(startDate: $0.startDate, endDate: $0.endDate) }
+    }
+
+    func hasOverlappingAppleHealthSession(start: Date, end: Date) -> Bool {
+        appleHealthSessions.contains { $0.endDate > start && $0.startDate < end }
+    }
+
+    func hasOverlappingAppleHealthNap(start: Date, end: Date) -> Bool {
+        appleHealthNaps.contains { $0.endDate > start && $0.startDate < end }
+    }
+}
+
+enum HealthKitSleepImportCandidate: Sendable {
+    case session(startDate: Date, endDate: Date, confidence: SleepConfidence, healthKitSampleIds: [String])
+    case nap(startDate: Date, endDate: Date, healthKitSampleIds: [String])
+}
+
+struct HealthKitSleepWriteSnapshot: Sendable {
+    let id: UUID
+    let sleepModeStartedAt: Date?
+    let confirmedSleepStartAt: Date
+    let wakeAt: Date
+    let source: SleepSource
+    let status: SleepSessionStatus
+    let healthKitSampleIds: [String]
+
+    init(session: SleepSession) {
+        self.id = session.id
+        self.sleepModeStartedAt = session.sleepModeStartedAt
+        self.confirmedSleepStartAt = session.confirmedSleepStartAt
+        self.wakeAt = session.wakeAt
+        self.source = session.source
+        self.status = session.status
+        self.healthKitSampleIds = session.healthKitSampleIds
     }
 }

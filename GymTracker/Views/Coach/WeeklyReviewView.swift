@@ -77,7 +77,6 @@ struct WeeklyReviewView: View {
         }
         .navigationTitle("Weekly Review")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
         .accessibilityIdentifier("weekly-review-screen")
         .onAppear {
             guard !didRequestInitialRefresh else { return }

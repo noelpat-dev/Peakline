@@ -8,7 +8,7 @@ protocol HealthKitProviding {
     var isAvailable: Bool { get }
     func requestAuthorization(preferences: HealthKitSyncPreferences) async throws -> HealthKitPermissionState
     func currentPermissionState(preferences: HealthKitSyncPreferences) -> HealthKitPermissionState
-    func sync(entries: [FoodLogEntry], foodItemsById: [UUID: FoodItem], preferences: HealthKitSyncPreferences) async -> HealthKitSyncSummary
+    func sync(entries: [HealthKitFoodLogSyncSnapshot], foodItemsById: [UUID: HealthKitFoodItemSyncSnapshot], preferences: HealthKitSyncPreferences) async -> HealthKitSyncSummary
     func dailyContext(for date: Date, preferences: HealthKitSyncPreferences) async -> HealthKitDailyContext?
 }
 
@@ -98,7 +98,7 @@ struct HealthKitAvailabilityService {
     }
 }
 
-struct HealthKitFoodLogSyncSnapshot {
+struct HealthKitFoodLogSyncSnapshot: Sendable {
     let id: UUID
     let foodItemId: UUID
     let foodNameSnapshot: String
@@ -130,7 +130,7 @@ struct HealthKitFoodLogSyncSnapshot {
     }
 }
 
-struct HealthKitFoodItemSyncSnapshot {
+struct HealthKitFoodItemSyncSnapshot: Sendable {
     let id: UUID
     let verificationStatus: FoodVerificationStatus
 
@@ -273,23 +273,12 @@ final class NutritionHealthKitBridge: HealthKitProviding {
     }
 
     func sync(
-        entries: [FoodLogEntry],
-        foodItemsById: [UUID: FoodItem] = [:],
-        preferences: HealthKitSyncPreferences
-    ) async -> HealthKitSyncSummary {
-        let entrySnapshots = entries.map { HealthKitFoodLogSyncSnapshot(entry: $0) }
-        let foodSnapshots = Dictionary(uniqueKeysWithValues: foodItemsById.map { key, value in
-            (key, HealthKitFoodItemSyncSnapshot(food: value))
-        })
-        return await sync(entries: entrySnapshots, foodItemsById: foodSnapshots, preferences: preferences)
-    }
-
-    func sync(
         entries: [HealthKitFoodLogSyncSnapshot],
         foodItemsById: [UUID: HealthKitFoodItemSyncSnapshot] = [:],
         preferences: HealthKitSyncPreferences
     ) async -> HealthKitSyncSummary {
-        await PerformanceTracer.traceAsync(.nutritionHealthKitSync) {
+        PerformanceTracer.mark(.healthKitNutritionBridge, "sync begin entries=\(entries.count) foods=\(foodItemsById.count)")
+        return await PerformanceTracer.traceAsync(.nutritionHealthKitSync) {
             await syncUntraced(entries: entries, foodItemsById: foodItemsById, preferences: preferences)
         }
     }
@@ -302,6 +291,7 @@ final class NutritionHealthKitBridge: HealthKitProviding {
         var summary = HealthKitSyncSummary()
 
         guard preferences.isHealthKitEnabled, preferences.writeNutritionToHealthKit else {
+            PerformanceTracer.mark(.healthKitNutritionBridge, "sync skipped not_enabled entries=\(entries.count)")
             entries.forEach { entry in
                 syncStore.save(record(for: entry, status: .notEnabled, errorMessage: nil))
             }
@@ -310,6 +300,7 @@ final class NutritionHealthKitBridge: HealthKitProviding {
         }
 
         guard isAvailable else {
+            PerformanceTracer.mark(.healthKitNutritionBridge, "sync unavailable entries=\(entries.count)")
             entries.forEach { entry in
                 syncStore.save(record(for: entry, status: .unavailable, errorMessage: HealthKitSyncError.unavailable.localizedDescription))
             }
@@ -320,6 +311,7 @@ final class NutritionHealthKitBridge: HealthKitProviding {
         #if canImport(HealthKit)
         let permissionState = currentPermissionState(preferences: preferences)
         guard permissionState == .sharingAuthorized || permissionState == .partiallyAuthorized else {
+            PerformanceTracer.mark(.healthKitNutritionBridge, "sync denied state=\(permissionState.rawValue) entries=\(entries.count)")
             entries.forEach { entry in
                 syncStore.save(record(for: entry, status: .failed, errorMessage: HealthKitSyncError.authorizationDenied.localizedDescription))
             }
@@ -363,15 +355,19 @@ final class NutritionHealthKitBridge: HealthKitProviding {
                 let identifiers = build.samples.map { $0.uuid.uuidString }
                 syncStore.save(record(for: entry, status: .synced, sampleIdentifiers: identifiers, syncedAt: syncedAt, errorMessage: nil))
                 summary.synced += 1
+                PerformanceTracer.mark(.healthKitNutritionBridge, "sync entry_synced id=\(entry.id.uuidString)")
             } catch {
                 syncStore.save(record(for: entry, status: .failed, errorMessage: userFacingMessage(from: error)))
                 summary.failed += 1
+                PerformanceTracer.mark(.healthKitNutritionBridge, "sync entry_failed id=\(entry.id.uuidString)")
             }
         }
 
         summary.finishedAt = .now
+        PerformanceTracer.mark(.healthKitNutritionBridge, "sync end attempted=\(summary.attempted) synced=\(summary.synced) failed=\(summary.failed)")
         return summary
         #else
+        PerformanceTracer.mark(.healthKitNutritionBridge, "sync unavailable no_healthkit entries=\(entries.count)")
         entries.forEach { entry in
             syncStore.save(record(for: entry, status: .unavailable, errorMessage: HealthKitSyncError.unavailable.localizedDescription))
         }

@@ -4,6 +4,7 @@ import SwiftUI
 struct TodayView: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     @Query
     private var activeSplits: [TrainingSplit]
@@ -348,14 +349,14 @@ struct TodayView: View {
                     DashboardSection(title: "Daily Coach Brief") {
                         CoachBriefCard(
                             readiness: intelligence.readiness,
-                            viewBrief: { openRoute(.coach) },
+                            viewBrief: openCoachRoute,
                             checkIn: { showingCoachCheckIn = true }
                         )
                     }
 
                     DashboardSection(title: "Weekly Insight") {
                         WeeklyInsightPreviewCard(snapshot: intelligence) {
-                            openRoute(.coach)
+                            openCoachRoute()
                         }
                     }
 
@@ -438,7 +439,6 @@ struct TodayView: View {
             .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
             .navigationTitle("Today")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(item: $selectedRoute) { route in
                 destination(for: route)
             }
@@ -460,10 +460,8 @@ struct TodayView: View {
                 let shouldForceRefresh = !didRequestInitialRefresh
                 didRequestInitialRefresh = true
                 refreshTodaySnapshot(force: shouldForceRefresh)
-                DispatchQueue.main.async {
-                    refreshSleepReadiness()
-                    refreshCoachSnapshot()
-                }
+                refreshSleepReadiness()
+                refreshCoachSnapshot()
             }
             .onChange(of: todaySnapshotSignature) { _, _ in
                 refreshTodaySnapshot()
@@ -509,7 +507,7 @@ struct TodayView: View {
                 subtitle: readinessQuickActionSubtitle,
                 systemImage: "sparkles",
                 style: .neutral,
-                action: { openRoute(.coach) }
+                action: openCoachRoute
             ),
             QuickAction(
                 identifier: "quick-action-nutrition",
@@ -531,23 +529,43 @@ struct TodayView: View {
     }
 
     private func openRoute(_ route: TodayRoute) {
+        let activeRoute = selectedRoute?.analyticsName ?? "none"
+        let pendingRoute = pendingRouteNavigation?.route.analyticsName ?? "none"
+        PerformanceTracer.mark(.todayRouteSelectionState, "request route=\(route.analyticsName) active=\(activeRoute) pending=\(pendingRoute)")
+        guard selectedRoute != route else {
+            PerformanceTracer.mark(.todayRouteSelectionState, "skip selectedRoute=\(route.analyticsName) already_active")
+            return
+        }
+        guard pendingRouteNavigation?.route != route else {
+            PerformanceTracer.mark(.todayRouteSelectionState, "skip selectedRoute=\(route.analyticsName) transition_in_flight")
+            return
+        }
+
         pendingRouteNavigation = TodayRouteNavigationStart(route: route, startedAt: ContinuousClock.now)
         PerformanceTracer.mark(.todayRouteSelection, "\(route.analyticsName) requested")
-        AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
-            PerformanceTracer.trace(.todayRouteSelection) {
-                selectedRoute = route
-            }
+        PerformanceTracer.mark(.todayRouteSelectionState, "before selectedRoute=\(route.analyticsName)")
+        PerformanceTracer.trace(.todayRouteSelection) {
+            selectedRoute = route
         }
+        PerformanceTracer.mark(.todayRouteSelectionState, "after selectedRoute=\(route.analyticsName)")
+    }
+
+    private func openCoachRoute() {
+        PerformanceTracer.mark(.todayRouteSelectionState, "prepare_coach_snapshot before_route signature_ready=\(lastCoachSnapshotSignature != nil)")
+        refreshCoachSnapshot()
+        PerformanceTracer.mark(.todayRouteSelectionState, "prepare_coach_snapshot after_route signature_ready=\(lastCoachSnapshotSignature != nil)")
+        openRoute(.coach)
     }
 
     @ViewBuilder
     private func destination(for route: TodayRoute) -> some View {
+        let _ = PerformanceTracer.mark(.todayRouteDestination, "build_start route=\(route.analyticsName) scenePhase=\(String(describing: scenePhase))")
         Group {
             switch route {
             case .workout:
                 StartWorkoutContentView()
             case .coach:
-                DeferredCoachDestinationView(initialSnapshot: coachNavigationSnapshot)
+                CoachRouteDestinationView(initialSnapshot: coachNavigationSnapshot)
             case .progress:
                 ProgressContentView()
             case .nutrition:
@@ -558,7 +576,13 @@ struct TodayView: View {
                 HydrationView()
             }
         }
+        .background {
+            if route == .coach, scenePhase == .active {
+                CoachRouteFrameProbe(label: "navigationDestination.background")
+            }
+        }
         .onAppear {
+            PerformanceTracer.mark(.todayRouteDestination, "onAppear route=\(route.analyticsName)")
             markRouteAppeared(route)
         }
     }
@@ -734,6 +758,22 @@ struct TodayView: View {
 
         coachSnapshot = makeCoachSnapshot()
         lastCoachSnapshotSignature = signature
+        PerformanceTracer.mark(
+            .coachSnapshot,
+            "route_snapshot_store before_update source=today scenePhase=\(String(describing: scenePhase)) main=\(Thread.isMainThread)"
+        )
+        guard scenePhase == .active else {
+            PerformanceTracer.mark(
+                .coachSnapshot,
+                "route_snapshot_store skip source=today scenePhase=\(String(describing: scenePhase))"
+            )
+            return
+        }
+        CoachRouteSnapshotStore.shared.update(snapshot: coachSnapshot, signature: signature, source: "today")
+        PerformanceTracer.mark(
+            .coachSnapshot,
+            "route_snapshot_store after_update source=today scenePhase=\(String(describing: scenePhase)) main=\(Thread.isMainThread)"
+        )
     }
 
     private func signature<Value>(_ values: [Value], limit: Int, transform: (Value) -> String) -> String {
@@ -926,6 +966,12 @@ struct TodayView: View {
     }
 
     private func openPreview(_ split: WorkoutPreviewSplit) {
+        PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "navigation request source=today split=\(split.id.uuidString) active=\(previewSplit?.id.uuidString ?? "none")")
+        guard previewSplit?.id != split.id else {
+            PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "navigation skip source=today already_active split=\(split.id.uuidString)")
+            return
+        }
+
         AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
             previewSplit = split
         }
@@ -1011,84 +1057,6 @@ private enum TodayRoute: Hashable, Identifiable {
 private struct TodayRouteNavigationStart {
     let route: TodayRoute
     let startedAt: ContinuousClock.Instant
-}
-
-private struct DeferredCoachDestinationView: View {
-    @Environment(\.appTheme) private var appTheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    let initialSnapshot: CoachIntelligenceSnapshot?
-
-    @State private var showFullContent = false
-
-    var body: some View {
-        ZStack {
-            if showFullContent {
-                CoachContentView(initialSnapshot: initialSnapshot)
-                    .transition(.opacity)
-            } else {
-                coachWarmStartView
-                    .transition(.opacity)
-            }
-        }
-        .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
-        .navigationTitle("Coach")
-        .navigationBarTitleDisplayMode(.inline)
-        .task {
-            guard !showFullContent else { return }
-            if !reduceMotion {
-                try? await Task.sleep(nanoseconds: 260_000_000)
-            } else {
-                await Task.yield()
-            }
-            guard !Task.isCancelled else { return }
-            PerformanceTracer.trace(.todayCoachContentMount) {
-                showFullContent = true
-            }
-        }
-        .animation(AppMotion.gentleFade(reduceMotion: reduceMotion), value: showFullContent)
-    }
-
-    @ViewBuilder
-    private var coachWarmStartView: some View {
-        if let initialSnapshot {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: appTheme.metrics.screenContentSpacing) {
-                    FitnessScreenHeader(
-                        title: "Coach",
-                        subtitle: "Readiness, targets, and recovery.",
-                        systemImage: "sparkles"
-                    )
-
-                    ReadinessDetailHeaderCard(readiness: initialSnapshot.readiness)
-
-                    DashboardSection(title: "Recommendation") {
-                        ReadinessRecommendationCard(readiness: initialSnapshot.readiness)
-                    }
-
-                    DashboardSection(title: "Weekly Summary") {
-                        WeeklyCoachSummaryCard(summary: initialSnapshot.weeklySummary)
-                    }
-                }
-                .padding(appTheme.metrics.screenPadding)
-                .padding(.bottom, appTheme.metrics.screenBottomPadding)
-            }
-        } else {
-            FitnessScreen(
-                title: "Coach",
-                subtitle: "Readiness, targets, and recovery.",
-                systemImage: "sparkles"
-            ) {
-                ReadinessDetailHeaderCard(readiness: CoachIntelligenceService.emptySnapshot().readiness)
-
-                DashboardSection(title: "Recommendation") {
-                    ReadinessRecommendationCard(readiness: CoachIntelligenceService.emptySnapshot().readiness)
-                }
-            }
-            .redacted(reason: .placeholder)
-            .allowsHitTesting(false)
-        }
-    }
 }
 
 private struct TodaySleepRecoveryCard: View {
@@ -1194,6 +1162,10 @@ struct HydrationView: View {
     @State private var errorText: String?
     @State private var confirmation: HydrationEntry?
     @State private var sleepSettings = SleepSettingsStore().load()
+    @State private var hydrationTargetML = HydrationSettingsStore().dailyTargetML()
+    @State private var nutritionGoal = NutritionGoalService().loadGoal()
+    @State private var readinessScore = CoachIntelligenceService.emptySnapshot().readiness
+    @State private var lastReadinessSignature: String?
 
     private let coachIntelligence = CoachIntelligenceService()
     private let service = HydrationService()
@@ -1207,21 +1179,21 @@ struct HydrationView: View {
     }
 
     private var summary: DailyHydrationSummary {
-        service.summary(entries: entries, targetML: settingsStore.dailyTargetML())
+        service.summary(entries: entries, targetML: hydrationTargetML)
     }
 
-    private var readinessScore: ReadinessScore {
-        coachIntelligence.readiness(
-            sleepSessions: sleepSessions,
-            napSessions: napSessions,
-            hydrationEntries: entries,
-            completedWorkouts: completedSessions,
-            foodLogs: foodLogEntries,
-            checkIns: coachCheckIns,
-            sleepSettings: sleepSettings,
-            hydrationTargetML: settingsStore.dailyTargetML(),
-            nutritionGoal: nutritionGoalStore.loadGoal()
-        )
+    private var currentReadinessSignature: String {
+        [
+            signature(sleepSessions, limit: 60) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(napSessions, limit: 30) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(entries, limit: 120) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(completedSessions, limit: 40) { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.endedAt?.timeIntervalSince1970 ?? 0)" },
+            signature(foodLogEntries, limit: 160) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(coachCheckIns, limit: 30) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            "\(sleepSettings.targetSleepMinutes):\(sleepSettings.recoveryCoachingEnabled):\(sleepSettings.preferredSource.rawValue)",
+            "\(hydrationTargetML)",
+            "\(nutritionGoal.updatedAt.timeIntervalSince1970)"
+        ].joined(separator: "|")
     }
 
     var body: some View {
@@ -1310,7 +1282,37 @@ struct HydrationView: View {
         }
         .onAppear {
             sleepSettings = sleepSettingsStore.load()
+            hydrationTargetML = settingsStore.dailyTargetML()
+            nutritionGoal = nutritionGoalStore.loadGoal()
+            DispatchQueue.main.async {
+                refreshReadinessScore()
+            }
         }
+        .onChange(of: currentReadinessSignature) { _, _ in
+            refreshReadinessScore()
+        }
+    }
+
+    private func refreshReadinessScore(force: Bool = false) {
+        let signature = currentReadinessSignature
+        guard force || signature != lastReadinessSignature else { return }
+
+        readinessScore = coachIntelligence.readiness(
+            sleepSessions: sleepSessions,
+            napSessions: napSessions,
+            hydrationEntries: entries,
+            completedWorkouts: completedSessions,
+            foodLogs: foodLogEntries,
+            checkIns: coachCheckIns,
+            sleepSettings: sleepSettings,
+            hydrationTargetML: hydrationTargetML,
+            nutritionGoal: nutritionGoal
+        )
+        lastReadinessSignature = signature
+    }
+
+    private func signature<Value>(_ values: [Value], limit: Int, transform: (Value) -> String) -> String {
+        values.prefix(limit).map(transform).joined(separator: ",")
     }
 
     private var hydrationProgressCard: some View {

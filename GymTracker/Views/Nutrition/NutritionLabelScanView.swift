@@ -181,7 +181,7 @@ struct NutritionLabelScanView: View {
     private var processingCard: some View {
         FitnessCard {
             HStack(spacing: 14) {
-                ProgressView()
+                SwiftUI.ProgressView()
                     .tint(appTheme.colors.accent)
 
                 VStack(alignment: .leading, spacing: 4) {

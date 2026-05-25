@@ -2,22 +2,65 @@ import SwiftData
 import SwiftUI
 
 struct StartWorkoutView: View {
-    @State private var navigationPath = NavigationPath()
+    @State private var navigationPath: [StartWorkoutRoute] = []
+    @State private var pendingNavigationRoute: StartWorkoutRoute?
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
             StartWorkoutContentView { route in
-                navigationPath.append(route)
+                push(route)
             }
             .navigationDestination(for: StartWorkoutRoute.self) { route in
-                switch route {
-                case .coach:
-                    CoachContentView()
-                case .templates:
-                    WorkoutTemplateLibraryView()
-                }
+                destination(for: route)
+                    .onAppear {
+                        PerformanceTracer.mark(.workoutRouteNavigation, "destination_onAppear route=\(route.analyticsName) path_depth=\(navigationPath.count)")
+                        if pendingNavigationRoute == route {
+                            pendingNavigationRoute = nil
+                            PerformanceTracer.mark(.workoutRouteNavigation, "transition_cleared route=\(route.analyticsName)")
+                        }
+                    }
             }
         }
+        .onChange(of: navigationPath) { _, newPath in
+            let topRoute = newPath.last?.analyticsName ?? "none"
+            PerformanceTracer.mark(.workoutRouteNavigation, "path_changed depth=\(newPath.count) top=\(topRoute)")
+            if let pendingNavigationRoute, !newPath.contains(pendingNavigationRoute) {
+                PerformanceTracer.mark(.workoutRouteNavigation, "transition_cleared_missing route=\(pendingNavigationRoute.analyticsName)")
+                self.pendingNavigationRoute = nil
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func destination(for route: StartWorkoutRoute) -> some View {
+        switch route {
+        case .coach:
+            CoachRouteDestinationView()
+        case .templates:
+            WorkoutTemplateLibraryView()
+        }
+    }
+
+    private func push(_ route: StartWorkoutRoute) {
+        let topRoute = navigationPath.last?.analyticsName ?? "none"
+        let pendingRoute = pendingNavigationRoute?.analyticsName ?? "none"
+        PerformanceTracer.mark(.workoutRouteNavigation, "request route=\(route.analyticsName) path_depth=\(navigationPath.count) top=\(topRoute) pending=\(pendingRoute)")
+
+        guard navigationPath.last != route else {
+            PerformanceTracer.mark(.workoutRouteNavigation, "skip route=\(route.analyticsName) already_active")
+            return
+        }
+
+        guard pendingNavigationRoute != route else {
+            PerformanceTracer.mark(.workoutRouteNavigation, "skip route=\(route.analyticsName) transition_in_flight")
+            return
+        }
+
+        pendingNavigationRoute = route
+        PerformanceTracer.trace(.workoutRouteNavigation) {
+            navigationPath.append(route)
+        }
+        PerformanceTracer.mark(.workoutRouteNavigation, "appended route=\(route.analyticsName) path_depth=\(navigationPath.count)")
     }
 }
 
@@ -185,7 +228,7 @@ struct StartWorkoutContentView: View {
         .navigationDestination(item: $fallbackRoute) { route in
             switch route {
             case .coach:
-                CoachContentView()
+                CoachRouteDestinationView()
             case .templates:
                 WorkoutTemplateLibraryView()
             }
@@ -628,11 +671,18 @@ struct StartWorkoutContentView: View {
 
     private func navigate(to route: StartWorkoutRoute) {
         if let openRoute {
+            PerformanceTracer.mark(.workoutRouteNavigation, "delegate_request route=\(route.analyticsName)")
             openRoute(route)
         } else {
-            AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
-                fallbackRoute = route
+            let activeRoute = fallbackRoute?.analyticsName ?? "none"
+            PerformanceTracer.mark(.workoutRouteNavigation, "fallback_request route=\(route.analyticsName) active=\(activeRoute)")
+            guard fallbackRoute != route else {
+                PerformanceTracer.mark(.workoutRouteNavigation, "skip fallback route=\(route.analyticsName) already_active")
+                return
             }
+
+            fallbackRoute = route
+            PerformanceTracer.mark(.workoutRouteNavigation, "fallback_set route=\(route.analyticsName)")
         }
     }
 
@@ -643,9 +693,13 @@ struct StartWorkoutContentView: View {
     }
 
     private func openPreview(_ preview: WorkoutPreviewSplit) {
-        AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
-            previewSplit = preview
+        PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "navigation request source=workout split=\(preview.id.uuidString) active=\(previewSplit?.id.uuidString ?? "none")")
+        guard previewSplit?.id != preview.id else {
+            PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "navigation skip source=workout already_active split=\(preview.id.uuidString)")
+            return
         }
+
+        previewSplit = preview
     }
 }
 
@@ -654,4 +708,13 @@ enum StartWorkoutRoute: Hashable, Identifiable {
     case templates
 
     var id: Self { self }
+
+    var analyticsName: String {
+        switch self {
+        case .coach:
+            return "coach"
+        case .templates:
+            return "templates"
+        }
+    }
 }

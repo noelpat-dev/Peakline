@@ -6,6 +6,7 @@ struct WorkoutPreviewView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var activeSession: WorkoutSession?
     @State private var selectedExerciseIds: [UUID] = []
@@ -18,6 +19,13 @@ struct WorkoutPreviewView: View {
     @State private var substitutionNotesByExerciseId: [UUID: String] = [:]
     @State private var renderSnapshot: WorkoutPreviewRenderSnapshot?
     @State private var lastRenderSignature: String?
+    @State private var lastRenderSignatureParts: [String: String] = [:]
+    @State private var queuedRenderSignature: String?
+    @State private var queuedRenderSignatureParts: [String: String] = [:]
+    @State private var renderRefreshWorkItem: DispatchWorkItem?
+    @State private var renderLoadingIndicatorWorkItem: DispatchWorkItem?
+    @State private var showRenderLoadingIndicator = false
+    @State private var didRequestInitialRenderSnapshot = false
     @State private var hydrationTargetML = HydrationSettingsStore().dailyTargetML()
     @State private var nutritionGoal = NutritionGoalService().loadGoal()
 
@@ -256,50 +264,217 @@ struct WorkoutPreviewView: View {
     }
 
     private var renderSignature: String {
+        renderSignature(from: renderSignatureParts)
+    }
+
+    private var renderSignatureParts: [String: String] {
         [
-            split.id.uuidString,
-            selectedMode.rawValue,
-            selectedExerciseIds.map(\.uuidString).joined(separator: ","),
-            substitutionNotesByExerciseId
+            "split": "\(split.id.uuidString):\(signature(split.exercises, limit: split.exercises.count, sortedBy: { $0.id.uuidString < $1.id.uuidString }) { "\($0.id.uuidString):\($0.exerciseId.uuidString):\($0.name):\($0.targetSets):\($0.minReps):\($0.maxReps):\($0.notes ?? "")" })",
+            "mode": selectedMode.rawValue,
+            "selected_exercises": selectedExerciseIds.map(\.uuidString).joined(separator: ","),
+            "substitutions": substitutionNotesByExerciseId
                 .map { "\($0.key.uuidString):\($0.value)" }
                 .sorted()
                 .joined(separator: ","),
-            appliedWorkoutAdjustment?.id.uuidString ?? "none",
-            signature(exercises, limit: 180) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
-            signature(completedSessions, limit: 40) { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.endedAt?.timeIntervalSince1970 ?? 0)" },
-            signature(sleepSessions, limit: 60) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
-            signature(napSessions, limit: 30) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
-            signature(hydrationEntries, limit: 120) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
-            signature(foodLogEntries, limit: 160) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
-            signature(coachCheckIns, limit: 30) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
-            signature(coachActionHistory, limit: 120) { "\($0.id.uuidString):\($0.createdAt.timeIntervalSince1970)" },
-            signature(recommendationFeedback, limit: 120) { "\($0.id.uuidString):\($0.createdAt.timeIntervalSince1970)" },
-            signature(savedDeloadBlocks, limit: 40) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
-            signature(exerciseMetadata, limit: 180) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
-            signature(coachPreferences, limit: 5) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
-            signature(splitMetadataRecords, limit: 40) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
-            "\(sleepSettings.lastHealthKitSleepSyncAt?.timeIntervalSince1970 ?? 0)",
-            "\(hydrationTargetML)",
-            nutritionGoalSignature
-        ].joined(separator: "|")
+            "applied_adjustment": appliedWorkoutAdjustment?.id.uuidString ?? "none",
+            "exercises": signature(exercises, limit: 180, sortedBy: { $0.id.uuidString < $1.id.uuidString }) { exercise in
+                [
+                    exercise.id.uuidString,
+                    exercise.name,
+                    exercise.primaryMuscleGroup.rawValue,
+                    exercise.secondaryMuscleGroups.map(\.rawValue).sorted().joined(separator: "+"),
+                    exercise.movementPattern.rawValue,
+                    exercise.equipment.rawValue,
+                    "\(exercise.isCompound)",
+                    "\(exercise.updatedAt.timeIntervalSince1970)"
+                ].joined(separator: ":")
+            },
+            "completed_sessions": signature(completedSessions, limit: 40, sortedBy: workoutSessionSort) { workoutSessionSignature($0) },
+            "sleep_sessions": signature(sleepSessions, limit: 60, sortedBy: { stableDateIDSort($0.updatedAt, $0.id, $1.updatedAt, $1.id) }) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            "nap_sessions": signature(napSessions, limit: 30, sortedBy: { stableDateIDSort($0.updatedAt, $0.id, $1.updatedAt, $1.id) }) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            "hydration": signature(hydrationEntries, limit: 120, sortedBy: { stableDateIDSort($0.loggedAt, $0.id, $1.loggedAt, $1.id) }) { "\($0.id.uuidString):\($0.loggedAt.timeIntervalSince1970):\($0.amountML):\($0.source.rawValue):\($0.context.rawValue):\($0.updatedAt.timeIntervalSince1970)" },
+            "food_logs": signature(foodLogEntries, limit: 160, sortedBy: { stableDateIDSort($0.loggedAt, $0.id, $1.loggedAt, $1.id) }) { "\($0.id.uuidString):\($0.loggedAt.timeIntervalSince1970):\($0.foodItemId.uuidString):\($0.consumedAmount):\($0.amountUnit.rawValue):\($0.mealType.rawValue):\($0.caloriesSnapshot):\($0.proteinSnapshot):\($0.carbsSnapshot):\($0.fatSnapshot):\($0.updatedAt.timeIntervalSince1970)" },
+            "coach_checkins": signature(coachCheckIns, limit: 30, sortedBy: { stableDateIDSort($0.date, $0.id, $1.date, $1.id) }) { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.energy):\($0.soreness):\($0.stress):\($0.motivation):\($0.updatedAt.timeIntervalSince1970)" },
+            "coach_action_history": signature(coachActionHistory, limit: 120, sortedBy: { stableDateIDSort($0.createdAt, $0.id, $1.createdAt, $1.id) }) { "\($0.id.uuidString):\($0.createdAt.timeIntervalSince1970)" },
+            "recommendation_feedback": signature(recommendationFeedback, limit: 120, sortedBy: { stableDateIDSort($0.createdAt, $0.id, $1.createdAt, $1.id) }) { "\($0.id.uuidString):\($0.createdAt.timeIntervalSince1970)" },
+            "saved_deload_blocks": signature(savedDeloadBlocks, limit: 40, sortedBy: { stableDateIDSort($0.updatedAt, $0.id, $1.updatedAt, $1.id) }) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            "exercise_metadata": signature(exerciseMetadata, limit: 180, sortedBy: { $0.exerciseId.uuidString < $1.exerciseId.uuidString }) { "\($0.id.uuidString):\($0.exerciseId.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            "coach_preferences": signature(coachPreferences, limit: 5, sortedBy: { stableDateIDSort($0.updatedAt, $0.id, $1.updatedAt, $1.id) }) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            "split_metadata": signature(splitMetadataRecords, limit: 40, sortedBy: { $0.splitId.uuidString < $1.splitId.uuidString }) { "\($0.id.uuidString):\($0.splitId.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            "sleep_settings": sleepSettingsRenderSignature,
+            "hydration_target": "\(hydrationTargetML)",
+            "nutrition_goal": nutritionGoalSignature
+        ]
     }
 
     private var nutritionGoalSignature: String {
         guard nutritionGoal.hasTargets else { return "nutrition-goal-empty" }
-        return "\(nutritionGoal.updatedAt.timeIntervalSince1970)"
+        return [
+            "\(nutritionGoal.isEnabled)",
+            "\(nutritionGoal.dailyCaloriesTarget ?? 0)",
+            "\(nutritionGoal.dailyProteinTarget ?? 0)",
+            "\(nutritionGoal.dailyCarbsTarget ?? 0)",
+            "\(nutritionGoal.dailyFatTarget ?? 0)",
+            "\(nutritionGoal.trainingDayCaloriesTarget ?? 0)",
+            "\(nutritionGoal.restDayCaloriesTarget ?? 0)"
+        ].joined(separator: ":")
     }
 
-    private func refreshRenderSnapshot(force: Bool = false) {
-        let signature = renderSignature
-        guard force || signature != lastRenderSignature else { return }
+    private func scheduleRenderSnapshotRefresh(reason: String, force: Bool = false) {
+        let signatureParts = renderSignatureParts
+        let signature = renderSignature(from: signatureParts)
+
+        if !force, renderSnapshot != nil, signature == lastRenderSignature {
+            PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "skip \(reason) same_signature")
+            return
+        }
+
+        if signature == queuedRenderSignature {
+            PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "skip \(reason) already_queued changes=\(renderSignatureChangeDescription(from: queuedRenderSignatureParts, to: signatureParts))")
+            return
+        }
+
+        let comparisonParts = queuedRenderSignature == nil ? lastRenderSignatureParts : queuedRenderSignatureParts
+        renderRefreshWorkItem?.cancel()
+        queuedRenderSignature = signature
+        queuedRenderSignatureParts = signatureParts
+        PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "queue \(reason) changes=\(renderSignatureChangeDescription(from: comparisonParts, to: signatureParts))")
+
+        if renderSnapshot == nil {
+            scheduleRenderLoadingIndicator()
+        }
+
+        let delay: TimeInterval = 0.04
+        let workItem = DispatchWorkItem {
+            guard queuedRenderSignature == signature else { return }
+            PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "refresh \(reason)")
+            refreshRenderSnapshot(signature: signature, signatureParts: signatureParts)
+            queuedRenderSignature = nil
+            queuedRenderSignatureParts = [:]
+        }
+
+        renderRefreshWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func refreshRenderSnapshot(signature: String, signatureParts: [String: String]) {
+        guard renderSnapshot == nil || signature != lastRenderSignature else {
+            PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "skip refresh same_signature")
+            return
+        }
+
         renderSnapshot = PerformanceTracer.trace(.workoutPreviewRenderSnapshot) {
             makeRenderSnapshot()
         }
+        cancelRenderLoadingIndicator()
         lastRenderSignature = signature
+        lastRenderSignatureParts = signatureParts
     }
 
-    private func signature<Value>(_ values: [Value], limit: Int, transform: (Value) -> String) -> String {
-        values.prefix(limit).map(transform).joined(separator: ",")
+    private func scheduleRenderLoadingIndicator() {
+        guard renderLoadingIndicatorWorkItem == nil else { return }
+
+        let workItem = DispatchWorkItem {
+            guard renderSnapshot == nil else { return }
+            showRenderLoadingIndicator = true
+            PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "loading_indicator show delayed")
+        }
+
+        renderLoadingIndicatorWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: workItem)
+    }
+
+    private func cancelRenderLoadingIndicator() {
+        renderLoadingIndicatorWorkItem?.cancel()
+        renderLoadingIndicatorWorkItem = nil
+        showRenderLoadingIndicator = false
+    }
+
+    private func renderSignature(from parts: [String: String]) -> String {
+        parts.keys.sorted().map { "\($0)=\(parts[$0] ?? "")" }.joined(separator: "|")
+    }
+
+    private func renderSignatureChangeDescription(from oldParts: [String: String], to newParts: [String: String]) -> String {
+        let keys = Set(oldParts.keys).union(newParts.keys).sorted()
+        let changedKeys = keys.filter { oldParts[$0] != newParts[$0] }
+        guard !changedKeys.isEmpty else { return "none" }
+
+        return changedKeys.prefix(6).map { key in
+            "\(key):\(shortSignatureValue(oldParts[key]))->\(shortSignatureValue(newParts[key]))"
+        }.joined(separator: ",")
+    }
+
+    private func shortSignatureValue(_ value: String?) -> String {
+        guard let value else { return "nil" }
+        guard value.count > 28 else { return value }
+        return "\(value.prefix(12))...\(value.suffix(12))"
+    }
+
+    private func signature<Value>(
+        _ values: [Value],
+        limit: Int,
+        sortedBy areInIncreasingOrder: (Value, Value) -> Bool,
+        transform: (Value) -> String
+    ) -> String {
+        values.sorted(by: areInIncreasingOrder).prefix(limit).map(transform).joined(separator: ",")
+    }
+
+    private func stableDateIDSort(_ lhsDate: Date, _ lhsID: UUID, _ rhsDate: Date, _ rhsID: UUID) -> Bool {
+        if lhsDate != rhsDate {
+            return lhsDate > rhsDate
+        }
+        return lhsID.uuidString < rhsID.uuidString
+    }
+
+    private func workoutSessionSort(_ lhs: WorkoutSession, _ rhs: WorkoutSession) -> Bool {
+        stableDateIDSort(lhs.date, lhs.id, rhs.date, rhs.id)
+    }
+
+    private func workoutSessionSignature(_ session: WorkoutSession) -> String {
+        let exerciseLogSignature = session.exerciseLogs
+            .sorted {
+                if $0.orderIndex != $1.orderIndex {
+                    return $0.orderIndex < $1.orderIndex
+                }
+                return $0.id.uuidString < $1.id.uuidString
+            }
+            .map { log in
+                let setSignature = log.setLogs
+                    .sorted {
+                        if $0.setNumber != $1.setNumber {
+                            return $0.setNumber < $1.setNumber
+                        }
+                        return $0.id.uuidString < $1.id.uuidString
+                    }
+                    .map { set in
+                        "\(set.id.uuidString):\(set.setNumber):\(set.weight):\(set.reps):\(set.rpe ?? 0):\(set.isWarmup):\(set.completed)"
+                    }
+                    .joined(separator: "+")
+                return "\(log.id.uuidString):\(log.exerciseId.uuidString):\(log.orderIndex):\(log.targetSets):\(log.minReps):\(log.maxReps):\(setSignature)"
+            }
+            .joined(separator: ";")
+
+        return [
+            session.id.uuidString,
+            "\(session.date.timeIntervalSince1970)",
+            "\(session.endedAt?.timeIntervalSince1970 ?? 0)",
+            "\(session.perceivedDifficulty ?? 0)",
+            "\(session.energyLevel ?? 0)",
+            "\(session.sorenessLevel ?? 0)",
+            exerciseLogSignature
+        ].joined(separator: ":")
+    }
+
+    private var sleepSettingsRenderSignature: String {
+        [
+            "\(sleepSettings.targetSleepMinutes)",
+            "\(sleepSettings.recoveryCoachingEnabled)",
+            sleepSettings.preferredSource.rawValue,
+            "\(sleepSettings.coachingPreferences.sleepCoachingInsightsEnabled)",
+            "\(sleepSettings.coachingPreferences.adaptiveWorkoutRecommendationsEnabled)",
+            "\(sleepSettings.coachingPreferences.deloadSuggestionsEnabled)",
+            "\(sleepSettings.coachingPreferences.sleepPerformanceInsightsEnabled)"
+        ].joined(separator: ":")
     }
 
     private func makeRenderSnapshot() -> WorkoutPreviewRenderSnapshot {
@@ -500,8 +675,115 @@ struct WorkoutPreviewView: View {
     }
 
     var body: some View {
-        let snapshot = currentRenderSnapshot
+        ZStack {
+            if let renderSnapshot {
+                previewContent(snapshot: renderSnapshot)
+            } else {
+                loadingPreviewContent
+            }
+        }
+        .navigationTitle("Preview")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(item: $activeSession) { session in
+            WorkoutLoggerView(session: session)
+        }
+        .sheet(item: $pendingSubstitutionExercise) { exercise in
+            SubstitutionPickerSheet(
+                title: "Substitute \(exercise.exerciseNameSnapshot)",
+                candidatesProvider: { reason in
+                    substitutionService.candidates(
+                        for: exercise.exerciseId,
+                        in: exercises,
+                        completedSessions: recentCompletedSessions,
+                        reason: reason
+                    )
+                },
+                select: { candidate, reason in
+                    if let replacement = exercises.first(where: { $0.id == candidate.exerciseId }) {
+                        substitute(exercise, with: replacement, reason: reason)
+                    }
+                }
+            )
+        }
+        .sheet(item: $activeCoachSheet) { sheet in
+            switch sheet {
+            case let .actionPreview(preview):
+                WorkoutAdjustmentPreviewSheet(
+                    preview: preview,
+                    preferences: coachPreferencesSnapshot,
+                    splitMetadata: currentSplitMetadataSnapshot
+                ) { editedPreview in
+                    applyCoachAdjustment(editedPreview, snapshot: currentRenderSnapshot.intelligence)
+                } cancel: {
+                    recordCoachAction(preview: preview, outcome: .cancelled, snapshot: currentRenderSnapshot.intelligence)
+                }
+            case .deloadPlanner:
+                ManualDeloadPlannerSheet(
+                    defaultPlan: workoutAdjustmentService.defaultDeloadPlan(for: currentRenderSnapshot.intelligence.fatigueRisk),
+                    fatigueRisk: currentRenderSnapshot.intelligence.fatigueRisk,
+                    calendarPreview: { plan in
+                        deloadReviewService.preview(plan: plan, activeSplits: activeSplits)
+                    }
+                ) { plan in
+                    activeCoachSheet = .actionPreview(
+                        workoutAdjustmentPreview(
+                            action: .deloadStyleSession,
+                            snapshot: currentRenderSnapshot.intelligence,
+                            plannedFatigueItems: currentRenderSnapshot.plannedFatigueItems,
+                            deloadPlan: plan
+                        )
+                    )
+                } savePlan: { plan in
+                    saveDeloadBlock(plan, snapshot: currentRenderSnapshot.intelligence)
+                }
+            }
+        }
+        .onAppear {
+            sleepSettings = sleepSettingsStore.load()
+            hydrationTargetML = hydrationSettingsStore.dailyTargetML()
+            nutritionGoal = nutritionGoalStore.loadGoal()
+            if selectedExerciseIds.isEmpty {
+                selectedExerciseIds = modePlanner.plannedExercises(from: makeOrderedExercises(), mode: selectedMode).map(\.id)
+            }
+            guard !didRequestInitialRenderSnapshot else {
+                PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "skip onAppear already_requested")
+                return
+            }
+            didRequestInitialRenderSnapshot = true
+            scheduleRenderSnapshotRefresh(reason: "onAppear", force: renderSnapshot == nil)
+        }
+        .onChange(of: renderSignature) { _, _ in
+            scheduleRenderSnapshotRefresh(reason: "signature_changed")
+        }
+        .onChange(of: selectedMode) { _, newMode in
+            resetCoachAdjustment()
+            selectedExerciseIds = modePlanner.plannedExercises(from: makeOrderedExercises(), mode: newMode).map(\.id)
+        }
+        .onDisappear {
+            renderRefreshWorkItem?.cancel()
+            queuedRenderSignature = nil
+            queuedRenderSignatureParts = [:]
+            cancelRenderLoadingIndicator()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase != .active else { return }
+            renderRefreshWorkItem?.cancel()
+            queuedRenderSignature = nil
+            queuedRenderSignatureParts = [:]
+            cancelRenderLoadingIndicator()
+            PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "cancel scenePhase=\(String(describing: newPhase))")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .appWillResignActiveForCleanup)) { _ in
+            renderRefreshWorkItem?.cancel()
+            queuedRenderSignature = nil
+            queuedRenderSignatureParts = [:]
+            cancelRenderLoadingIndicator()
+            PerformanceTracer.mark(.unsafeBreadcrumb, "workout_preview.willResignActive no_async_task")
+        }
+    }
 
+    @ViewBuilder
+    private func previewContent(snapshot: WorkoutPreviewRenderSnapshot) -> some View {
         FitnessScreen(
             title: "\(split.name) Preview",
             subtitle: "\(selectedMode.displayName) mode - ~\(snapshot.estimatedDuration.lowerBound)-\(snapshot.estimatedDuration.upperBound)m",
@@ -659,78 +941,21 @@ struct WorkoutPreviewView: View {
                 }
             }
         }
-        .navigationTitle("Preview")
-        .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(item: $activeSession) { session in
-            WorkoutLoggerView(session: session)
-        }
-        .sheet(item: $pendingSubstitutionExercise) { exercise in
-            SubstitutionPickerSheet(
-                title: "Substitute \(exercise.exerciseNameSnapshot)",
-                candidatesProvider: { reason in
-                    substitutionService.candidates(
-                        for: exercise.exerciseId,
-                        in: exercises,
-                        completedSessions: recentCompletedSessions,
-                        reason: reason
-                    )
-                },
-                select: { candidate, reason in
-                    if let replacement = exercises.first(where: { $0.id == candidate.exerciseId }) {
-                        substitute(exercise, with: replacement, reason: reason)
-                    }
-                }
-            )
-        }
-        .sheet(item: $activeCoachSheet) { sheet in
-            switch sheet {
-            case let .actionPreview(preview):
-                WorkoutAdjustmentPreviewSheet(
-                    preview: preview,
-                    preferences: coachPreferencesSnapshot,
-                    splitMetadata: currentSplitMetadataSnapshot
-                ) { editedPreview in
-                    applyCoachAdjustment(editedPreview, snapshot: currentRenderSnapshot.intelligence)
-                } cancel: {
-                    recordCoachAction(preview: preview, outcome: .cancelled, snapshot: currentRenderSnapshot.intelligence)
-                }
-            case .deloadPlanner:
-                ManualDeloadPlannerSheet(
-                    defaultPlan: workoutAdjustmentService.defaultDeloadPlan(for: currentRenderSnapshot.intelligence.fatigueRisk),
-                    fatigueRisk: currentRenderSnapshot.intelligence.fatigueRisk,
-                    calendarPreview: { plan in
-                        deloadReviewService.preview(plan: plan, activeSplits: activeSplits)
-                    }
-                ) { plan in
-                    activeCoachSheet = .actionPreview(
-                        workoutAdjustmentPreview(
-                            action: .deloadStyleSession,
-                            snapshot: currentRenderSnapshot.intelligence,
-                            plannedFatigueItems: currentRenderSnapshot.plannedFatigueItems,
-                            deloadPlan: plan
-                        )
-                    )
-                } savePlan: { plan in
-                    saveDeloadBlock(plan, snapshot: currentRenderSnapshot.intelligence)
-                }
+    }
+
+    private var loadingPreviewContent: some View {
+        ZStack {
+            appTheme.colors.backgroundPrimary
+                .ignoresSafeArea()
+
+            if showRenderLoadingIndicator {
+                SwiftUI.ProgressView()
+                    .tint(appTheme.colors.accent)
+                    .accessibilityLabel("Preparing preview")
+                    .transition(.opacity)
             }
         }
-        .onAppear {
-            sleepSettings = sleepSettingsStore.load()
-            hydrationTargetML = hydrationSettingsStore.dailyTargetML()
-            nutritionGoal = nutritionGoalStore.loadGoal()
-            if selectedExerciseIds.isEmpty {
-                selectedExerciseIds = modePlanner.plannedExercises(from: makeOrderedExercises(), mode: selectedMode).map(\.id)
-            }
-            refreshRenderSnapshot(force: true)
-        }
-        .onChange(of: renderSignature) { _, _ in
-            refreshRenderSnapshot()
-        }
-        .onChange(of: selectedMode) { _, newMode in
-            resetCoachAdjustment()
-            selectedExerciseIds = modePlanner.plannedExercises(from: makeOrderedExercises(), mode: newMode).map(\.id)
-        }
+        .animation(AppMotion.gentleFade(reduceMotion: reduceMotion), value: showRenderLoadingIndicator)
     }
 
     private var startButtonTitle: String {

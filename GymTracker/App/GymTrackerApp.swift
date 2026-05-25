@@ -21,6 +21,16 @@ final class AppNotificationDelegate: NSObject, UIApplicationDelegate, UNUserNoti
             NotificationCenter.default.post(name: .sleepNotificationTapped, object: destination)
         }
     }
+
+    func applicationWillResignActive(_ application: UIApplication) {
+        PerformanceTracer.mark(.appLifecycle, "UIApplication willResignActive")
+        NotificationCenter.default.post(name: .appWillResignActiveForCleanup, object: nil)
+    }
+
+    func applicationDidEnterBackground(_ application: UIApplication) {
+        PerformanceTracer.mark(.appLifecycle, "UIApplication didEnterBackground")
+        NotificationCenter.default.post(name: .appDidEnterBackgroundForCleanup, object: nil)
+    }
 }
 
 @main

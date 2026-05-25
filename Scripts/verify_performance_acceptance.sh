@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOG_DIR="${TMPDIR:-/tmp}/gymtracker_performance_acceptance_$(date +%Y%m%d_%H%M%S)"
+DESTINATION="${DESTINATION:-platform=iOS Simulator,name=iPhone 17}"
+SIMULATOR_NAME="${SIMULATOR_NAME:-iPhone 17}"
+
+mkdir -p "$LOG_DIR"
+cd "$ROOT_DIR"
+
+echo "Performance acceptance logs: $LOG_DIR"
+
+run_and_log() {
+    local name="$1"
+    shift
+
+    echo "== $name =="
+    "$@" 2>&1 | tee "$LOG_DIR/${name}.log"
+}
+
+run_and_log git_diff_check bash -c '
+    set -euo pipefail
+    git ls-files -m -d | sort -u | while IFS= read -r file; do
+        [ -e "$file" ] || continue
+        git diff --check -- "$file"
+    done
+'
+
+run_and_log build \
+    xcodebuild \
+    -project GymTracker.xcodeproj \
+    -scheme GymTracker \
+    -configuration Debug \
+    -destination "$DESTINATION" \
+    build
+
+run_and_log unit_tests \
+    xcodebuild \
+    -project GymTracker.xcodeproj \
+    -scheme GymTracker \
+    -configuration Debug \
+    -destination "$DESTINATION" \
+    -parallel-testing-enabled NO \
+    test -only-testing:GymTrackerTests
+
+xcrun simctl shutdown all >/dev/null 2>&1 || true
+xcrun simctl boot "$SIMULATOR_NAME" >/dev/null 2>&1 || true
+xcrun simctl bootstatus "$SIMULATOR_NAME" -b
+
+run_and_log performance_ui_test \
+    xcodebuild \
+    -project GymTracker.xcodeproj \
+    -scheme GymTracker \
+    -configuration Debug \
+    -destination "$DESTINATION" \
+    -parallel-testing-enabled NO \
+    test -only-testing:GymTrackerUITests/CoachWorkoutPreviewUITests/testPerformanceAcceptanceRoutes
+
+cat "$LOG_DIR"/*.log > "$LOG_DIR/combined.log"
+
+python3 - "$LOG_DIR/combined.log" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+log_path = Path(sys.argv[1])
+lines = log_path.read_text(errors="replace").splitlines()
+text = "\n".join(lines)
+failures = []
+
+def fail(message):
+    if message not in failures:
+        failures.append(message)
+
+for needle in [
+    "Potential Structural Swift Concurrency Issue: unsafeForcedSync",
+    "Gesture: System gesture gate timed out",
+    "Unable to simultaneously satisfy constraints",
+    "_UIButtonBarButton",
+    "_UIModernBarButton",
+    "ButtonWrapper.width",
+    "UIView-Encapsulated-Layout-Width == 0",
+]:
+    if needle in text:
+        fail(f"found forbidden log string: {needle}")
+
+for match in re.finditer(r"today\.route\.appear coach appeared in (\d+)ms", text):
+    value = int(match.group(1))
+    if value > 500:
+        fail(f"today.route.appear coach exceeded 500ms: {value}ms")
+
+for match in re.finditer(r"root\.notification\.refresh completed in (\d+)ms", text):
+    value = int(match.group(1))
+    if value > 50:
+        fail(f"root.notification.refresh exceeded 50ms: {value}ms")
+
+preview_on_appear = sum(
+    1
+    for line in lines
+    if "PERF_ACCEPTANCE workout_preview.render_snapshot refresh onAppear" in line
+)
+if preview_on_appear > 1:
+    fail(f"WorkoutPreview refreshed onAppear more than once: {preview_on_appear}")
+
+pending_workout_coach_append = False
+for line in lines:
+    if "workout.route.navigation path_changed depth=0" in line:
+        pending_workout_coach_append = False
+    if "workout.route.navigation appended route=coach" in line:
+        if pending_workout_coach_append:
+            fail("Workout -> Coach appended route=coach twice without path_changed depth=0")
+        pending_workout_coach_append = True
+
+for line in lines:
+    if "PERF_ACCEPTANCE_UI_SUMMARY" in line and "performance_acceptance=FAIL" in line:
+        fail(f"in-app performance acceptance failed: {line}")
+
+if failures:
+    print("Performance acceptance verifier failed:")
+    for failure in failures:
+        print(f" - {failure}")
+    print(f"Full combined log: {log_path}")
+    sys.exit(1)
+
+print("Performance acceptance verifier passed.")
+print(f"Full combined log: {log_path}")
+PY

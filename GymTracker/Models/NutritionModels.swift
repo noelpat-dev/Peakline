@@ -18,7 +18,7 @@ enum FoodAmountUnit: String, Codable, DisplayableEnum {
     }
 }
 
-enum MealType: String, Codable, DisplayableEnum {
+enum MealType: String, Codable, DisplayableEnum, Sendable {
     case breakfast
     case lunch
     case dinner
@@ -52,7 +52,7 @@ enum FoodDataSource: String, Codable, DisplayableEnum {
     case editedLabelScan
 }
 
-enum FoodVerificationStatus: String, Codable, DisplayableEnum {
+enum FoodVerificationStatus: String, Codable, DisplayableEnum, Sendable {
     case unverified
     case userVerified
     case imported

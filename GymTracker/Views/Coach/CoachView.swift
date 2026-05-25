@@ -9,6 +9,221 @@ struct CoachView: View {
     }
 }
 
+@MainActor
+final class CoachRouteSnapshotStore {
+    static let shared = CoachRouteSnapshotStore()
+
+    private(set) var snapshot: CoachIntelligenceSnapshot?
+    private(set) var signature: String?
+
+    private init() {}
+
+    func update(snapshot: CoachIntelligenceSnapshot, signature: String, source: String) {
+        PerformanceTracer.mark(
+            .coachSnapshot,
+            "route_snapshot_store update_begin source=\(source) main=\(Thread.isMainThread) contains_model_checkIn=\(snapshot.readiness.checkIn != nil)"
+        )
+        self.snapshot = snapshot.routeCacheValueSnapshot
+        self.signature = signature
+        PerformanceTracer.mark(.coachSnapshot, "route_snapshot_store update source=\(source)")
+        PerformanceTracer.mark(
+            .coachSnapshot,
+            "route_snapshot_store update_end source=\(source) stored_model_checkIn=\(self.snapshot?.readiness.checkIn != nil)"
+        )
+    }
+}
+
+private extension CoachIntelligenceSnapshot {
+    var routeCacheValueSnapshot: CoachIntelligenceSnapshot {
+        CoachIntelligenceSnapshot(
+            readiness: readiness.routeCacheValueScore,
+            weeklySummary: weeklySummary,
+            trends: trends,
+            insights: insights,
+            fatigueRisk: fatigueRisk,
+            muscleFatigue: muscleFatigue,
+            liftInsights: liftInsights,
+            adaptiveGuidance: adaptiveGuidance,
+            diagnostics: diagnostics
+        )
+    }
+}
+
+private extension ReadinessScore {
+    var routeCacheValueScore: ReadinessScore {
+        ReadinessScore(
+            value: value,
+            category: category,
+            confidence: confidence,
+            recommendation: recommendation,
+            factors: factors,
+            generatedAt: generatedAt,
+            checkIn: nil,
+            workoutAdjustment: workoutAdjustment,
+            recoveryNote: recoveryNote
+        )
+    }
+}
+
+struct CoachRouteDestinationView: View {
+    @Environment(\.scenePhase) private var scenePhase
+
+    let initialSnapshot: CoachIntelligenceSnapshot?
+
+    init(initialSnapshot: CoachIntelligenceSnapshot? = nil) {
+        self.initialSnapshot = initialSnapshot
+    }
+
+    var body: some View {
+        let cachedSnapshot = CoachRouteSnapshotStore.shared.snapshot
+        let routeSnapshot = initialSnapshot ?? cachedSnapshot
+
+        if scenePhase == .active {
+            DeferredCoachDestinationView(initialSnapshot: routeSnapshot)
+        } else {
+            CoachInactiveDestinationPlaceholder(scenePhaseDescription: String(describing: scenePhase))
+        }
+    }
+}
+
+struct CoachInactiveDestinationPlaceholder: View {
+    let scenePhaseDescription: String
+
+    var body: some View {
+        let _ = PerformanceTracer.mark(.todayCoachDestinationBody, "inactive_placeholder scenePhase=\(scenePhaseDescription)")
+        Color.clear
+            .accessibilityHidden(true)
+    }
+}
+
+struct DeferredCoachDestinationView: View {
+    @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+
+    let initialSnapshot: CoachIntelligenceSnapshot?
+
+    @State private var showFullContent = false
+
+    var body: some View {
+        let _ = PerformanceTracer.mark(.todayCoachDestinationBody, "body showFullContent=\(showFullContent) initialSnapshot=\(initialSnapshot != nil)")
+        ZStack {
+            if scenePhase != .active {
+                inactivePlaceholder
+            } else if showFullContent {
+                CoachContentView(initialSnapshot: initialSnapshot)
+                    .transition(.opacity)
+            } else {
+                coachWarmStartView
+                    .transition(.opacity)
+            }
+        }
+        .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
+        .background {
+            if scenePhase == .active {
+                CoachRouteFrameProbe(label: "deferredCoach.root")
+            }
+        }
+        .navigationTitle("Coach")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            PerformanceTracer.mark(.todayCoachDestinationAppear, "root_onAppear showFullContent=\(showFullContent) initialSnapshot=\(initialSnapshot != nil)")
+        }
+        .task(id: scenePhase) {
+            guard scenePhase == .active else {
+                PerformanceTracer.mark(.todayCoachContentMount, "task_skip scenePhase=\(String(describing: scenePhase))")
+                return
+            }
+            guard !showFullContent else { return }
+            PerformanceTracer.mark(.todayCoachContentMount, "task_start reduceMotion=\(reduceMotion)")
+            if !reduceMotion {
+                try? await Task.sleep(nanoseconds: 260_000_000)
+            } else {
+                await Task.yield()
+            }
+            guard !Task.isCancelled, scenePhase == .active else {
+                PerformanceTracer.mark(.todayCoachContentMount, "task_cancelled_or_inactive scenePhase=\(String(describing: scenePhase))")
+                return
+            }
+            PerformanceTracer.mark(.todayCoachContentMount, "before_showFullContent")
+            PerformanceTracer.trace(.todayCoachContentMount) {
+                showFullContent = true
+            }
+            PerformanceTracer.mark(.todayCoachContentMount, "after_showFullContent")
+        }
+        .animation(AppMotion.gentleFade(reduceMotion: reduceMotion), value: showFullContent)
+    }
+
+    @ViewBuilder
+    private var inactivePlaceholder: some View {
+        let _ = PerformanceTracer.mark(.todayCoachDestinationBody, "inactive_placeholder scenePhase=\(String(describing: scenePhase))")
+        Color.clear
+            .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
+            .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var coachWarmStartView: some View {
+        let _ = PerformanceTracer.mark(.todayCoachDestinationBody, "warm_start_body initialSnapshot=\(initialSnapshot != nil)")
+        if let initialSnapshot {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: appTheme.metrics.screenContentSpacing) {
+                    FitnessScreenHeader(
+                        title: "Coach",
+                        subtitle: "Readiness, targets, and recovery.",
+                        systemImage: "sparkles"
+                    )
+
+                    ReadinessDetailHeaderCard(readiness: initialSnapshot.readiness)
+
+                    DashboardSection(title: "Recommendation") {
+                        ReadinessRecommendationCard(readiness: initialSnapshot.readiness)
+                    }
+
+                    DashboardSection(title: "Weekly Summary") {
+                        WeeklyCoachSummaryCard(summary: initialSnapshot.weeklySummary)
+                    }
+                }
+                .padding(appTheme.metrics.screenPadding)
+                .padding(.bottom, appTheme.metrics.screenBottomPadding)
+            }
+        } else {
+            FitnessScreen(
+                title: "Coach",
+                subtitle: "Readiness, targets, and recovery.",
+                systemImage: "sparkles"
+            ) {
+                ReadinessDetailHeaderCard(readiness: CoachIntelligenceService.emptySnapshot().readiness)
+
+                DashboardSection(title: "Recommendation") {
+                    ReadinessRecommendationCard(readiness: CoachIntelligenceService.emptySnapshot().readiness)
+                }
+            }
+            .redacted(reason: .placeholder)
+            .allowsHitTesting(false)
+        }
+    }
+}
+
+struct CoachRouteFrameProbe: View {
+    let label: String
+
+    var body: some View {
+        Color.clear
+            .frame(width: 1, height: 1)
+            .accessibilityHidden(true)
+            .onAppear {
+                PerformanceTracer.mark(.todayCoachFirstFrame, "\(label) onAppear")
+                DispatchQueue.main.async {
+                    PerformanceTracer.mark(.todayCoachFirstFrame, "\(label) after_main_async")
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    PerformanceTracer.mark(.todayCoachFirstFrame, "\(label) after_50ms")
+                }
+            }
+    }
+}
+
 struct CoachContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
@@ -348,6 +563,7 @@ struct CoachContentView: View {
     }
 
     var body: some View {
+        let _ = PerformanceTracer.mark(.todayCoachDestinationBody, "CoachContentView body hasLoaded=\(hasLoadedCoachSnapshot) initialSnapshot=\(initialSnapshot != nil)")
         let intelligence = currentCoachSnapshot
 
         FitnessScreen(
@@ -694,7 +910,6 @@ struct CoachContentView: View {
             #endif
         }
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
         .accessibilityIdentifier("coach-screen")
         .navigationDestination(item: $route) { route in
             switch route {
@@ -706,16 +921,28 @@ struct CoachContentView: View {
             }
         }
         .onAppear {
+            PerformanceTracer.mark(.todayCoachDestinationAppear, "CoachContentView onAppear begin hasLoaded=\(hasLoadedCoachSnapshot) initialSnapshot=\(initialSnapshot != nil)")
             sleepSettings = sleepSettingsStore.load()
             hydrationTargetML = hydrationSettingsStore.dailyTargetML()
             nutritionGoal = nutritionGoalStore.loadGoal()
             refreshCoachAfterFirstMount()
+            PerformanceTracer.mark(.todayCoachDestinationAppear, "CoachContentView onAppear end")
         }
         .onDisappear {
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.onDisappear cancel_tasks begin")
             deferredCoachRefreshWorkItem?.cancel()
             deferredFullCoachSnapshotWorkItem?.cancel()
             coachDerivedTask?.cancel()
             weeklyReviewTask?.cancel()
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.onDisappear cancel_tasks end")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .appWillResignActiveForCleanup)) { _ in
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.willResignActive cancel_tasks begin")
+            deferredCoachRefreshWorkItem?.cancel()
+            deferredFullCoachSnapshotWorkItem?.cancel()
+            coachDerivedTask?.cancel()
+            weeklyReviewTask?.cancel()
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.willResignActive cancel_tasks end")
         }
         .redacted(reason: hasLoadedCoachSnapshot ? [] : .placeholder)
         .allowsHitTesting(hasLoadedCoachSnapshot)
@@ -727,17 +954,25 @@ struct CoachContentView: View {
 
     private func refreshCoachAfterFirstMount() {
         deferredCoachRefreshWorkItem?.cancel()
+        PerformanceTracer.mark(.unsafeBreadcrumb, "coach.deferred_refresh schedule")
         let workItem = DispatchWorkItem {
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.deferred_refresh begin")
             refreshSleepAnalytics()
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.deferred_refresh after_sleep_analytics")
             if initialSnapshot != nil, hasLoadedCoachSnapshot, lastCoachSnapshotSignature == nil {
                 PerformanceTracer.mark(.coachSnapshot, "warm_start reused_today_snapshot")
-                lastCoachSnapshotSignature = currentCoachSnapshotSignature
+                let signature = currentCoachSnapshotSignature
+                lastCoachSnapshotSignature = signature
+                CoachRouteSnapshotStore.shared.update(snapshot: coachSnapshot, signature: signature, source: "coach_warm_start")
                 scheduleFullCoachSnapshotRefresh()
             } else {
                 refreshCoachSnapshot()
             }
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.deferred_refresh after_coach_snapshot")
             refreshCoachDerivedMetrics()
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.deferred_refresh after_derived_schedule")
             refreshWeeklyReview()
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.deferred_refresh end")
         }
         deferredCoachRefreshWorkItem = workItem
         DispatchQueue.main.async(execute: workItem)
@@ -747,16 +982,23 @@ struct CoachContentView: View {
         deferredFullCoachSnapshotWorkItem?.cancel()
         let workItem = DispatchWorkItem {
             PerformanceTracer.mark(.coachSnapshot, "deferred_full_refresh")
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.deferred_full_snapshot begin")
             refreshCoachSnapshot(force: true)
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.deferred_full_snapshot end")
         }
         deferredFullCoachSnapshotWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: workItem)
     }
 
     private func refreshSleepAnalytics(force: Bool = false) {
+        PerformanceTracer.mark(.unsafeBreadcrumb, "coach.sleep_analytics before_signature force=\(force)")
         let signature = currentSleepAnalyticsSignature
-        guard force || signature != lastSleepAnalyticsSignature else { return }
+        guard force || signature != lastSleepAnalyticsSignature else {
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.sleep_analytics skip same_signature")
+            return
+        }
 
+        PerformanceTracer.mark(.unsafeBreadcrumb, "coach.sleep_analytics before_snapshot")
         sleepSnapshot = PerformanceTracer.trace(.coachSleepAnalytics) {
             sleepAnalyticsStore.snapshot(
                 sessions: sleepSessions,
@@ -768,29 +1010,43 @@ struct CoachContentView: View {
             )
         }
         lastSleepAnalyticsSignature = signature
+        PerformanceTracer.mark(.unsafeBreadcrumb, "coach.sleep_analytics after_snapshot")
     }
 
     private func refreshCoachSnapshot(force: Bool = false) {
+        PerformanceTracer.mark(.unsafeBreadcrumb, "coach.snapshot before_signature force=\(force)")
         let signature = currentCoachSnapshotSignature
-        guard force || signature != lastCoachSnapshotSignature else { return }
+        guard force || signature != lastCoachSnapshotSignature else {
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.snapshot skip same_signature")
+            return
+        }
 
+        PerformanceTracer.mark(.unsafeBreadcrumb, "coach.snapshot before_make")
         coachSnapshot = makeCoachSnapshot()
         lastCoachSnapshotSignature = signature
         hasLoadedCoachSnapshot = true
+        CoachRouteSnapshotStore.shared.update(snapshot: coachSnapshot, signature: signature, source: "coach")
+        PerformanceTracer.mark(.unsafeBreadcrumb, "coach.snapshot after_make")
     }
 
     private func refreshWeeklyReview(force: Bool = false) {
         weeklyReviewTask?.cancel()
         let signature = currentWeeklyReviewSignature
-        guard force || signature != lastWeeklyReviewSignature else { return }
+        guard force || signature != lastWeeklyReviewSignature else {
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.weekly_review skip same_signature")
+            return
+        }
 
         let splitSnapshots = activeSplits.map(TrainingSplitSnapshot.init)
         let sessionSnapshots = recentCompletedSessions.map(WorkoutAnalyticsSession.init)
+        PerformanceTracer.mark(.unsafeBreadcrumb, "coach.weekly_review snapshots_ready splits=\(splitSnapshots.count) sessions=\(sessionSnapshots.count)")
         weeklyReviewTask = Task { @MainActor in
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.weekly_review task_begin")
             guard !Task.isCancelled else { return }
 
             let result = await Task.detached(priority: .userInitiated) {
-                PerformanceTracer.trace(.coachWeeklyReview) {
+                PerformanceTracer.mark(.unsafeBreadcrumb, "coach.weekly_review detached_begin")
+                return PerformanceTracer.trace(.coachWeeklyReview) {
                     WeeklyReviewBuilder().build(activeSplits: splitSnapshots, completedSessions: sessionSnapshots)
                 }
             }.value
@@ -798,21 +1054,28 @@ struct CoachContentView: View {
             guard !Task.isCancelled else { return }
             weeklyReview = result
             lastWeeklyReviewSignature = signature
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.weekly_review task_end")
         }
     }
 
     private func refreshCoachDerivedMetrics(force: Bool = false) {
         coachDerivedTask?.cancel()
         let signature = currentCoachDerivedSignature
-        guard force || signature != lastCoachDerivedSignature else { return }
+        guard force || signature != lastCoachDerivedSignature else {
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.derived_metrics skip same_signature")
+            return
+        }
 
         let splitSnapshots = activeSplits.map(TrainingSplitSnapshot.init)
         let sessionSnapshots = recentCompletedSessions.map(WorkoutAnalyticsSession.init)
+        PerformanceTracer.mark(.unsafeBreadcrumb, "coach.derived_metrics snapshots_ready splits=\(splitSnapshots.count) sessions=\(sessionSnapshots.count)")
         coachDerivedTask = Task { @MainActor in
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.derived_metrics task_begin")
             guard !Task.isCancelled else { return }
 
             let result = await Task.detached(priority: .userInitiated) {
-                PerformanceTracer.trace(.coachDerivedMetrics) {
+                PerformanceTracer.mark(.unsafeBreadcrumb, "coach.derived_metrics detached_begin")
+                return PerformanceTracer.trace(.coachDerivedMetrics) {
                     CoachDerivedMetrics.make(
                         activeSplits: splitSnapshots,
                         completedSessions: sessionSnapshots
@@ -828,6 +1091,7 @@ struct CoachContentView: View {
             weeklyWorkingSetCount = result.weeklyWorkingSetCount
             progressOpportunityInsights = result.progressOpportunityInsights
             lastCoachDerivedSignature = signature
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.derived_metrics task_end")
         }
     }
 

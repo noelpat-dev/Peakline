@@ -40,6 +40,7 @@ struct SleepDashboardView: View {
     @State private var lastReadinessSignature: String?
     @State private var hydrationTargetML = HydrationSettingsStore().dailyTargetML()
     @State private var nutritionGoal = NutritionGoalService().loadGoal()
+    @State private var healthKitSleepImportTask: Task<Void, Never>?
 
     private let repository = SleepSessionRepository()
     private let scoring = SleepScoringService()
@@ -183,9 +184,10 @@ struct SleepDashboardView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
+                    PerformanceTracer.mark(.toolbarBreadcrumb, "sleep.settings tapped")
                     showingSettings = true
                 } label: {
-                    Image(systemName: "slider.horizontal.3")
+                    Label("Sleep settings", systemImage: "slider.horizontal.3")
                 }
                 .accessibilityLabel("Sleep settings")
             }
@@ -226,8 +228,18 @@ struct SleepDashboardView: View {
             DispatchQueue.main.async {
                 refreshSleepAnalytics()
                 refreshReadinessScore()
-                Task { @MainActor in await importSleepIfEnabled() }
+                scheduleSleepImportIfEnabled()
             }
+        }
+        .onDisappear {
+            PerformanceTracer.mark(.healthKitSleepBridge, "dashboard onDisappear cancel_import begin")
+            healthKitSleepImportTask?.cancel()
+            PerformanceTracer.mark(.healthKitSleepBridge, "dashboard onDisappear cancel_import end")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .appWillResignActiveForCleanup)) { _ in
+            PerformanceTracer.mark(.healthKitSleepBridge, "dashboard willResignActive cancel_import begin")
+            healthKitSleepImportTask?.cancel()
+            PerformanceTracer.mark(.healthKitSleepBridge, "dashboard willResignActive cancel_import end")
         }
         .onChange(of: currentAnalyticsSignature) { _, _ in
             refreshSleepAnalytics()
@@ -242,8 +254,9 @@ struct SleepDashboardView: View {
             refreshReadinessScore()
             let sessionSnapshots = SleepNotificationScheduler.sessionSnapshots(from: sessions)
             let workoutSnapshots = SleepNotificationScheduler.workoutSnapshots(from: workouts)
+            let notificationSettings = newValue
             Task {
-                await SleepNotificationScheduler().refreshAllSleepNotifications(settings: newValue, sessions: sessionSnapshots, workouts: workoutSnapshots)
+                await SleepNotificationScheduler().refreshAllSleepNotifications(settings: notificationSettings, sessions: sessionSnapshots, workouts: workoutSnapshots)
             }
         }
     }
@@ -512,9 +525,10 @@ struct SleepDashboardView: View {
 
         let sessionSnapshots = SleepNotificationScheduler.sessionSnapshots(from: sessions)
         let workoutSnapshots = SleepNotificationScheduler.workoutSnapshots(from: workouts)
+        let notificationSettings = settings
         Task {
             SleepNotificationScheduler().cancelNotifications(for: discardedSessionID)
-            await SleepNotificationScheduler().refreshAllSleepNotifications(settings: settings, sessions: sessionSnapshots, workouts: workoutSnapshots)
+            await SleepNotificationScheduler().refreshAllSleepNotifications(settings: notificationSettings, sessions: sessionSnapshots, workouts: workoutSnapshots)
         }
     }
 
@@ -763,24 +777,88 @@ struct SleepDashboardView: View {
         values.prefix(limit).map(transform).joined(separator: ",")
     }
 
-    @MainActor
-    private func importSleepIfEnabled() async {
+    private func scheduleSleepImportIfEnabled() {
         guard settings.enableAppleHealthImport else { return }
         if let lastSync = settings.lastHealthKitSleepSyncAt, Date.now.timeIntervalSince(lastSync) < 30 * 60 {
             return
         }
 
-        let count = await HealthKitSleepService().importRecentSleep(days: 14, into: modelContext)
+        let existing = HealthKitSleepImportExistingSnapshot(sessions: sessions, naps: naps)
+        healthKitSleepImportTask?.cancel()
+        healthKitSleepImportTask = Task(priority: .utility) {
+            PerformanceTracer.mark(.healthKitSleepBridge, "import task begin")
+            let candidates = await HealthKitSleepService().importRecentSleepCandidates(days: 14, existing: existing)
+            PerformanceTracer.mark(.healthKitSleepBridge, "import candidates_ready count=\(candidates.count)")
+            guard !Task.isCancelled else { return }
+
+            applyHealthKitSleepImport(candidates)
+        }
+    }
+
+    @MainActor
+    private func applyHealthKitSleepImport(_ candidates: [HealthKitSleepImportCandidate]) {
+        PerformanceTracer.mark(.healthKitSleepBridge, "import main_apply begin")
+        let count = persistHealthKitSleepImport(candidates)
         settings = settingsStore.load()
         refreshSleepAnalytics(force: true)
         if count > 0 {
             importedCount = count
         }
-        await SleepNotificationScheduler().refreshAllSleepNotifications(
-            settings: settings,
-            sessions: SleepNotificationScheduler.sessionSnapshots(from: sessions),
-            workouts: SleepNotificationScheduler.workoutSnapshots(from: workouts)
-        )
+
+        let notificationSettings = settings
+        let sessionSnapshots = SleepNotificationScheduler.sessionSnapshots(from: sessions)
+        let workoutSnapshots = SleepNotificationScheduler.workoutSnapshots(from: workouts)
+        Task {
+            PerformanceTracer.mark(.unsafeBreadcrumb, "sleep.import notification_refresh begin")
+            await SleepNotificationScheduler().refreshAllSleepNotifications(
+                settings: notificationSettings,
+                sessions: sessionSnapshots,
+                workouts: workoutSnapshots
+            )
+            PerformanceTracer.mark(.unsafeBreadcrumb, "sleep.import notification_refresh end")
+        }
+        PerformanceTracer.mark(.healthKitSleepBridge, "import main_apply end")
+    }
+
+    private func persistHealthKitSleepImport(_ candidates: [HealthKitSleepImportCandidate]) -> Int {
+        var imported = 0
+
+        for candidate in candidates {
+            switch candidate {
+            case let .session(startDate, endDate, confidence, healthKitSampleIds):
+                let session = SleepSession(
+                    confirmedSleepStartAt: startDate,
+                    wakeAt: endDate,
+                    durationMinutes: Int(endDate.timeIntervalSince(startDate) / 60),
+                    source: .appleHealth,
+                    confidence: confidence,
+                    status: .completed,
+                    healthKitSampleIds: healthKitSampleIds
+                )
+                modelContext.insert(session)
+                imported += 1
+            case let .nap(startDate, endDate, healthKitSampleIds):
+                let nap = NapSession(
+                    startDate: startDate,
+                    endDate: endDate,
+                    source: .appleHealth,
+                    timingCategory: NapSession.timingCategory(for: startDate),
+                    healthKitSampleIds: healthKitSampleIds
+                )
+                modelContext.insert(nap)
+                imported += 1
+            }
+        }
+
+        if imported > 0 {
+            try? modelContext.save()
+        }
+
+        var refreshedSettings = settingsStore.load()
+        refreshedSettings.lastHealthKitSleepSyncAt = .now
+        settingsStore.save(refreshedSettings)
+
+        return imported
     }
 }
 
@@ -1108,7 +1186,6 @@ struct SleepModeView: View {
             }
             .navigationTitle("Sleep Mode")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar(.hidden, for: .navigationBar)
             .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { value in
                 now = value
             }
@@ -1158,8 +1235,9 @@ struct SleepModeView: View {
             settings.defaultWindDownMinutes = minutes == 0 ? settings.defaultWindDownMinutes : minutes
             let sessionSnapshots = SleepNotificationScheduler.sessionSnapshots(from: sessions)
             let workoutSnapshots = SleepNotificationScheduler.workoutSnapshots(from: workouts)
+            let notificationSettings = settings
             Task {
-                await SleepNotificationScheduler().refreshAllSleepNotifications(settings: settings, sessions: sessionSnapshots, workouts: workoutSnapshots)
+                await SleepNotificationScheduler().refreshAllSleepNotifications(settings: notificationSettings, sessions: sessionSnapshots, workouts: workoutSnapshots)
             }
             dismiss()
         } catch {
@@ -1260,6 +1338,7 @@ struct SleepMorningConfirmationView: View {
 
     private func confirm() {
         do {
+            PerformanceTracer.mark(.sleepMorningConfirmation, "confirm begin")
             try repository.confirmActiveSession(
                 session,
                 sleepStart: sleepStart,
@@ -1271,24 +1350,43 @@ struct SleepMorningConfirmationView: View {
 
             let settings = SleepSettingsStore().load()
             if settings.enableAppleHealthExport, session.source == .inAppTimer {
-                Task { @MainActor in
-                    if let ids = try? await HealthKitSleepService().writeConfirmedSession(session) {
-                        session.healthKitSampleIds = ids
-                        try? modelContext.save()
+                let writeSnapshot = HealthKitSleepWriteSnapshot(session: session)
+                PerformanceTracer.mark(.sleepMorningConfirmation, "healthkit export snapshot_ready session=\(writeSnapshot.id.uuidString)")
+                Task(priority: .utility) {
+                    PerformanceTracer.mark(.healthKitSleepBridge, "export task begin session=\(writeSnapshot.id.uuidString)")
+                    if let ids = try? await HealthKitSleepService().writeConfirmedSession(writeSnapshot) {
+                        PerformanceTracer.mark(.healthKitSleepBridge, "export ids_ready count=\(ids.count)")
+                        applyHealthKitSleepExport(ids, to: writeSnapshot.id)
                     }
                 }
             }
 
             let sessionSnapshots = SleepNotificationScheduler.sessionSnapshots(from: sessions)
             let workoutSnapshots = SleepNotificationScheduler.workoutSnapshots(from: workouts)
+            let sessionID = session.id
             Task {
-                SleepNotificationScheduler().cancelNotifications(for: session.id)
+                PerformanceTracer.mark(.sleepMorningConfirmation, "notification_refresh begin")
+                SleepNotificationScheduler().cancelNotifications(for: sessionID)
                 await SleepNotificationScheduler().refreshAllSleepNotifications(settings: settings, sessions: sessionSnapshots, workouts: workoutSnapshots)
+                PerformanceTracer.mark(.sleepMorningConfirmation, "notification_refresh end")
             }
+            PerformanceTracer.mark(.sleepMorningConfirmation, "confirm end")
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    @MainActor
+    private func applyHealthKitSleepExport(_ ids: [String], to sessionID: UUID) {
+        PerformanceTracer.mark(.healthKitSleepBridge, "export main_apply begin")
+        let descriptor = FetchDescriptor<SleepSession>(
+            predicate: #Predicate<SleepSession> { $0.id == sessionID }
+        )
+        guard let refreshedSession = try? modelContext.fetch(descriptor).first else { return }
+        refreshedSession.healthKitSampleIds = ids
+        try? modelContext.save()
+        PerformanceTracer.mark(.healthKitSleepBridge, "export main_apply end")
     }
 }
 
@@ -1869,7 +1967,7 @@ struct SleepSettingsView: View {
     private func toggleSleepNotifications() async {
         if settings.notificationPreferences.isEnabled {
             settings.notificationPreferences.isEnabled = false
-            SleepNotificationScheduler().cancelSleepNotifications()
+            await SleepNotificationScheduler().cancelSleepNotificationsAsync()
             notificationStatus = "Sleep reminders are off."
             return
         }

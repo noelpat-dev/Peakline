@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-enum SleepSource: String, Codable, CaseIterable, Identifiable {
+enum SleepSource: String, Codable, CaseIterable, Identifiable, Sendable {
     case inAppTimer
     case appleHealth
     case manual
@@ -26,7 +26,7 @@ enum SleepSource: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-enum PreferredSleepSource: String, Codable, CaseIterable, Identifiable {
+enum PreferredSleepSource: String, Codable, CaseIterable, Identifiable, Sendable {
     case automatic
     case appleHealth
     case sleepMode
@@ -48,7 +48,7 @@ enum PreferredSleepSource: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-enum SleepConfidence: String, Codable, CaseIterable {
+enum SleepConfidence: String, Codable, CaseIterable, Sendable {
     case high
     case medium
     case low
@@ -68,7 +68,7 @@ enum SleepConfidence: String, Codable, CaseIterable {
     }
 }
 
-enum SleepSessionStatus: String, Codable, CaseIterable {
+enum SleepSessionStatus: String, Codable, CaseIterable, Sendable {
     case active
     case completed
     case discarded
@@ -958,7 +958,7 @@ enum SleepConsistencyStatus: String, Codable {
     }
 }
 
-struct SleepSettings: Codable, Equatable {
+struct SleepSettings: Codable, Equatable, Sendable {
     var defaultWindDownMinutes: Int
     var targetSleepMinutes: Int
     var enableAppleHealthImport: Bool
@@ -1045,7 +1045,7 @@ struct SleepSettings: Codable, Equatable {
     }
 }
 
-struct SleepCoachingPreferences: Codable, Equatable {
+struct SleepCoachingPreferences: Codable, Equatable, Sendable {
     var sleepCoachingInsightsEnabled: Bool
     var adaptiveWorkoutRecommendationsEnabled: Bool
     var deloadSuggestionsEnabled: Bool
@@ -1059,7 +1059,7 @@ struct SleepCoachingPreferences: Codable, Equatable {
     )
 }
 
-struct SleepNotificationPreferences: Codable, Equatable {
+struct SleepNotificationPreferences: Codable, Equatable, Sendable {
     var isEnabled: Bool
     var bedtimeReminderEnabled: Bool
     var bedtimeReminderTime: DateComponents
@@ -1154,6 +1154,8 @@ enum SleepNotificationDestination: Identifiable, Equatable {
 
 extension Notification.Name {
     static let sleepNotificationTapped = Notification.Name("sleepNotificationTapped")
+    static let appWillResignActiveForCleanup = Notification.Name("appWillResignActiveForCleanup")
+    static let appDidEnterBackgroundForCleanup = Notification.Name("appDidEnterBackgroundForCleanup")
 }
 
 enum SleepCalendar {

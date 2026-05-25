@@ -1459,7 +1459,6 @@ struct CoachPreferencesView: View {
         }
         .navigationTitle("Coach Preferences")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
         .accessibilityIdentifier("coach-preferences-screen")
         .onAppear(perform: loadIfNeeded)
         .onDisappear(perform: savePreferences)

@@ -104,7 +104,6 @@ struct PRTimelineView: View {
         }
         .navigationTitle("PR Timeline")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
         .accessibilityIdentifier("pr-timeline-screen")
         .onAppear {
             guard !didRequestInitialRefresh else { return }

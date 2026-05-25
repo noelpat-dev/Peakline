@@ -601,7 +601,7 @@ private struct WorkoutHistoryDetailView: View {
                         Label("Delete", systemImage: "trash")
                     }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    Label("Workout actions", systemImage: "ellipsis.circle")
                 }
                 .accessibilityLabel("Workout actions")
             }

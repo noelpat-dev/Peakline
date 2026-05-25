@@ -741,7 +741,7 @@ private struct NutritionLoadingCard: View {
     var body: some View {
         FitnessCard {
             HStack(spacing: 12) {
-                ProgressView()
+                SwiftUI.ProgressView()
                     .tint(appTheme.colors.accent)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)

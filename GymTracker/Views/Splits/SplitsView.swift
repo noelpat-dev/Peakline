@@ -170,13 +170,13 @@ struct SplitsView: View {
             .navigationTitle("Splits")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                Button {
-                    showingAddSplit = true
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .foregroundStyle(appTheme.colors.accent)
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Add split", systemImage: "plus.circle.fill") {
+                        PerformanceTracer.mark(.toolbarBreadcrumb, "splits.add_split tapped")
+                        showingAddSplit = true
+                    }
+                    .accessibilityLabel("Add split")
                 }
-                .accessibilityLabel("Add split")
             }
             .sheet(isPresented: $showingAddSplit) {
                 AddSplitView()
@@ -193,8 +193,8 @@ struct SplitsView: View {
             }
         }
         .onAppear {
-            Task { @MainActor in
-                await Task.yield()
+            DispatchQueue.main.async {
+                PerformanceTracer.mark(.unsafeBreadcrumb, "splits.dashboard deferred_refresh")
                 refreshDashboardSnapshot(force: true)
             }
         }

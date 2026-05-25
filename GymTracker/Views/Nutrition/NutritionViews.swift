@@ -41,6 +41,7 @@ struct NutritionDashboardView: View {
     @State private var lastDashboardSignature: String?
     @State private var selectedRoute: NutritionRoute?
     @State private var didRequestInitialRefresh = false
+    @State private var deferredDashboardRefreshWorkItem: DispatchWorkItem?
 
     init() {
         _logEntries = Query(Self.logEntriesDescriptor)
@@ -101,12 +102,16 @@ struct NutritionDashboardView: View {
     }
 
     private var currentDashboardSnapshot: NutritionDashboardSnapshot {
+        guard lastDashboardSignature != nil else {
+            return dashboardSnapshot
+        }
+
         let signature = dashboardSignature
         if signature == lastDashboardSignature {
             return dashboardSnapshot
         }
 
-        return makeDashboardSnapshot()
+        return dashboardSnapshot
     }
 
     private var dashboardSignature: String {
@@ -410,7 +415,15 @@ struct NutritionDashboardView: View {
             nutritionGoal = nutritionGoalStore.loadGoal()
             let shouldForceRefresh = !didRequestInitialRefresh
             didRequestInitialRefresh = true
-            refreshDashboardSnapshot(force: shouldForceRefresh)
+            deferredDashboardRefreshWorkItem?.cancel()
+            let workItem = DispatchWorkItem {
+                refreshDashboardSnapshot(force: shouldForceRefresh)
+            }
+            deferredDashboardRefreshWorkItem = workItem
+            DispatchQueue.main.async(execute: workItem)
+        }
+        .onDisappear {
+            deferredDashboardRefreshWorkItem?.cancel()
         }
         .onChange(of: dashboardSignature) { _, _ in
             refreshDashboardSnapshot()
@@ -1107,8 +1120,11 @@ struct LogFoodView: View {
            healthPreferences.autoSyncNewFoodLogs {
             let entrySnapshot = HealthKitFoodLogSyncSnapshot(entry: entry)
             let foodSnapshot = HealthKitFoodItemSyncSnapshot(food: food)
+            PerformanceTracer.mark(.healthKitNutritionBridge, "auto_sync snapshots_ready entries=1")
             Task {
+                PerformanceTracer.mark(.healthKitNutritionBridge, "auto_sync task_begin")
                 _ = await NutritionHealthKitBridge().sync(entries: [entrySnapshot], foodItemsById: [food.id: foodSnapshot], preferences: healthPreferences)
+                PerformanceTracer.mark(.healthKitNutritionBridge, "auto_sync task_end")
             }
         }
 

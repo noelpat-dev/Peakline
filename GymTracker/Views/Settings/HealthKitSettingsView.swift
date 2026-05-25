@@ -424,15 +424,19 @@ struct HealthKitSettingsView: View {
             .filter { $0.loggedAt >= start }
             .map { HealthKitFoodLogSyncSnapshot(entry: $0) }
         let foodsById = Dictionary(uniqueKeysWithValues: foodItems.map { ($0.id, HealthKitFoodItemSyncSnapshot(food: $0)) })
+        PerformanceTracer.mark(.healthKitNutritionBridge, "settings_sync snapshots_ready entries=\(eligibleLogs.count) foods=\(foodsById.count)")
 
         Task {
+            PerformanceTracer.mark(.healthKitNutritionBridge, "settings_sync task_begin")
             let summary = await healthBridge.sync(entries: eligibleLogs, foodItemsById: foodsById, preferences: preferences)
+            PerformanceTracer.mark(.healthKitNutritionBridge, "settings_sync before_main_state")
             await MainActor.run {
                 lastSummary = summary
                 syncRecords = syncStore.records()
                 permissionState = healthBridge.currentPermissionState(preferences: preferences)
                 isSyncing = false
             }
+            PerformanceTracer.mark(.healthKitNutritionBridge, "settings_sync task_end")
         }
     }
 
@@ -442,9 +446,11 @@ struct HealthKitSettingsView: View {
             return
         }
 
+        PerformanceTracer.mark(.healthKitNutritionBridge, "daily_context begin")
         isReadingContext = true
         healthContext = await healthBridge.dailyContext(for: .now, preferences: preferences)
         isReadingContext = false
+        PerformanceTracer.mark(.healthKitNutritionBridge, "daily_context end hasContext=\(healthContext != nil)")
     }
 
     private func refreshState() {
