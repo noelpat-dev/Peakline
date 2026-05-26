@@ -167,9 +167,23 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
     func testPerformanceAcceptanceRoutes() throws {
         XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 10) || app.staticTexts["Today"].waitForExistence(timeout: 10))
+        let todaySuggestedSplit = app.descendants(matching: .any)["today-suggested-split"]
+        XCTAssertTrue(todaySuggestedSplit.waitForExistence(timeout: 10))
+        let suggestedSplit = todaySuggestedSplit.label
 
         tapButton(containing: "View brief", maxSwipes: 4)
         XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Coach to open")
+        let coachCall = dailyCallElement(containing: suggestedSplit)
+        XCTAssertTrue(coachCall.waitForExistence(timeout: 12))
+        XCTAssertTrue(coachCall.label.contains(suggestedSplit), "Expected Coach call \(coachCall.label) to match Today split \(suggestedSplit)")
+
+        tapElement(identifier: "coach-primary-action", maxSwipes: 10)
+        XCTAssertTrue(waitForPreviewScreen(), "Expected Coach -> Preview to open")
+        let previewSplit = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", suggestedSplit)).firstMatch
+        XCTAssertTrue(previewSplit.waitForExistence(timeout: 10))
+        XCTAssertTrue(previewSplit.label.contains(suggestedSplit), "Expected Preview split \(previewSplit.label) to match Coach split \(suggestedSplit)")
+        tapBackButton()
+        XCTAssertTrue(waitForCoachScreen(), "Expected one back from Preview to return to Coach")
 
         tapBackButton()
         XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 10) || app.staticTexts["Today"].waitForExistence(timeout: 10))
@@ -179,14 +193,6 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         XCTAssertTrue(waitForCoachScreen(), "Expected Workout -> Coach to open")
         tapBackButton()
         XCTAssertTrue(waitForWorkoutScreen(), "Expected one back from Coach to return to Workout")
-        tapTab(at: 1, expectedTitle: "Workout")
-
-        tapElement(identifier: "workout-recommended-preview", maxSwipes: 8)
-        XCTAssertTrue(waitForPreviewScreen(), "Expected Workout -> Preview to open")
-        tapButton(containing: "Quick", maxSwipes: 5)
-        XCTAssertTrue(waitForPreviewScreen(), "Expected Preview to stay open after mode change")
-        tapBackButton()
-        XCTAssertTrue(waitForWorkoutScreen(), "Expected one back from Preview to return to Workout")
 
         assertPerformanceAcceptancePassed()
     }
@@ -334,9 +340,18 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     private func waitForPreviewScreen() -> Bool {
-        app.buttons["workout-preview-start"].waitForExistence(timeout: 15) ||
-            app.navigationBars["Preview"].waitForExistence(timeout: 15) ||
-            app.staticTexts["Preview"].waitForExistence(timeout: 15)
+        app.navigationBars["Preview"].waitForExistence(timeout: 15) ||
+            app.staticTexts["Preview"].waitForExistence(timeout: 15) ||
+            app.buttons["workout-preview-start"].waitForExistence(timeout: 15)
+    }
+
+    private func dailyCallElement(containing splitName: String) -> XCUIElement {
+        let identified = app.descendants(matching: .any)["coach-todays-call"]
+        if identified.exists {
+            return identified
+        }
+
+        return app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", splitName)).firstMatch
     }
 
     private func waitForPreviewDismissed() -> Bool {

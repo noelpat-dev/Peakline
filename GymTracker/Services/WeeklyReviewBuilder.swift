@@ -276,17 +276,6 @@ struct TrainingDecisionService {
             )
         }
 
-        let consistency = analytics.splitConsistency(from: completedSessions)
-        if let missed = consistency.missedSplitName, let split = activeSplits.first(where: { $0.name == missed }) {
-            return TrainingDecision(
-                recommendedSplitName: split.name,
-                recommendedMode: .full,
-                action: .rebalance,
-                title: "Rebalance with \(split.name)",
-                reason: "\(split.name) has not been trained this week."
-            )
-        }
-
         let split = recommendedSplit(from: activeSplits, completedSessions: completedSessions)
         let suggestions = split?.exercises.map {
             targetService.suggestion(
@@ -325,6 +314,18 @@ struct TrainingDecisionService {
             title: "Repeat targets",
             reason: "Aim for cleaner reps or one extra rep where possible."
         )
+    }
+
+    func weeklyBalanceContext(activeSplits: [TrainingSplitSnapshot], completedSessions: [WorkoutAnalyticsSession]) -> String? {
+        let consistency = analytics.splitConsistency(from: completedSessions)
+        guard
+            let missed = consistency.missedSplitName,
+            activeSplits.contains(where: { $0.name == missed })
+        else {
+            return nil
+        }
+
+        return "\(missed) is lowest in this week's balance, but the daily call is following the Push/Pull/Legs rotation."
     }
 
     private func recommendedSplit(from activeSplits: [TrainingSplitSnapshot], completedSessions: [WorkoutAnalyticsSession]) -> TrainingSplitSnapshot? {

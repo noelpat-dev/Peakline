@@ -151,18 +151,24 @@ struct DeferredCoachDestinationView: View {
                     Button {
                         handleBackNavigation()
                     } label: {
-                        Label(backButtonTitle, systemImage: "chevron.backward")
+                        Image(systemName: "chevron.backward")
+                            .font(.body.weight(.semibold))
+                            .frame(width: 44, height: 44)
                     }
                     .accessibilityIdentifier("coach-route-back")
+                    .accessibilityLabel(backButtonTitle)
                 }
             }
         }
         .onAppear {
             PerformanceTracer.mark(.todayCoachDestinationAppear, "root_onAppear showFullContent=\(showFullContent) initialSnapshot=\(initialSnapshot != nil)")
-            guard !showWarmStartContent else { return }
+            guard !showWarmStartContent && !showFullContent else { return }
             DispatchQueue.main.async {
                 PerformanceTracer.mark(.todayCoachContentMount, "show_warm_start_content")
                 showWarmStartContent = true
+                PerformanceTracer.trace(.todayCoachContentMount) {
+                    showFullContent = true
+                }
             }
         }
         .task(id: scenePhase) {
@@ -172,11 +178,7 @@ struct DeferredCoachDestinationView: View {
             }
             guard !showFullContent else { return }
             PerformanceTracer.mark(.todayCoachContentMount, "task_start reduceMotion=\(reduceMotion)")
-            if !reduceMotion {
-                try? await Task.sleep(nanoseconds: 260_000_000)
-            } else {
-                await Task.yield()
-            }
+            await Task.yield()
             guard !Task.isCancelled, scenePhase == .active else {
                 PerformanceTracer.mark(.todayCoachContentMount, "task_cancelled_or_inactive scenePhase=\(String(describing: scenePhase))")
                 return
@@ -651,6 +653,7 @@ struct CoachContentView: View {
                                 .font(.system(.largeTitle, design: .rounded).weight(.bold))
                                 .foregroundStyle(appTheme.colors.textPrimary)
                                 .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("coach-todays-call")
                         }
 
                         Spacer(minLength: 10)
@@ -661,6 +664,17 @@ struct CoachContentView: View {
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(appTheme.colors.textTertiary)
                         }
+                    }
+
+                    if dailyDecision.recommendedSplitName != nil {
+                        Button {
+                            openRecommendedPreview()
+                        } label: {
+                            Label(dailyDecision.primaryActionTitle, systemImage: "play.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(PrimaryFitnessButtonStyle())
+                        .accessibilityIdentifier("coach-primary-action")
                     }
 
                     if let targetLine = dailyDecision.targetLine {
@@ -686,19 +700,9 @@ struct CoachContentView: View {
                         .font(.footnote)
                         .foregroundStyle(appTheme.colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
-
-                    if dailyDecision.canOpenPreview {
-                        Button {
-                            openRecommendedPreview()
-                        } label: {
-                            Label(dailyDecision.primaryActionTitle, systemImage: "play.fill")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(PrimaryFitnessButtonStyle())
-                        .accessibilityIdentifier("coach-primary-action")
-                    }
                 }
             }
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("coach-hero-card")
 
             DashboardSection(title: "Why this?") {
@@ -1246,8 +1250,10 @@ struct CoachContentView: View {
         weeklyReview: WeeklyReview?,
         targetSuggestions: [TargetSuggestion]
     ) -> CoachDailyDecision {
-        let splitName = weeklyReview?.nextDecision.recommendedSplitName ?? summary.recommendedSplitName
+        let canonicalDecision = summary.trainingDecision
+        let splitName = canonicalDecision.recommendedSplitName
         let recommendedMode = recommendedPreviewMode(
+            canonicalDecision: canonicalDecision,
             intelligence: intelligence,
             weeklyReview: weeklyReview,
             targetSuggestions: targetSuggestions
@@ -1268,7 +1274,7 @@ struct CoachContentView: View {
             recommendedMode: recommendedMode,
             headline: decisionHeadline(splitName: splitName, mode: recommendedMode),
             targetLine: primaryTarget.map(targetLine(for:)),
-            shortReason: summaryText(from: whySignals, fallback: weeklyReview?.nextDecision.reason ?? summary.reason),
+            shortReason: summaryText(from: whySignals, fallback: canonicalDecision.reason),
             confidenceLabel: intelligence.readiness.confidence.displayName,
             badgeState: decisionBadgeState(weeklyReview: weeklyReview, mode: recommendedMode, primaryTarget: primaryTarget),
             canOpenPreview: canOpenPreview,
@@ -1306,11 +1312,12 @@ struct CoachContentView: View {
     }
 
     private func recommendedPreviewMode(
+        canonicalDecision: TrainingDecision,
         intelligence: CoachIntelligenceSnapshot,
         weeklyReview: WeeklyReview?,
         targetSuggestions: [TargetSuggestion]
     ) -> WorkoutMode {
-        if weeklyReview?.nextDecision.recommendedMode == .recovery {
+        if canonicalDecision.recommendedMode == .recovery || weeklyReview?.nextDecision.recommendedMode == .recovery {
             return .recovery
         }
 
@@ -1612,7 +1619,10 @@ struct CoachContentView: View {
     }
 
     private func openRecommendedPreview() {
-        guard let split = recommendedSplit(named: dailyDecision.recommendedSplitName) else { return }
+        guard
+            let split = recommendedSplit(named: dailyDecision.recommendedSplitName)
+                ?? activeSplits.first(where: { $0.name == dailyDecision.recommendedSplitName })
+        else { return }
 
         let route = CoachWorkoutPreviewRoute(
             split: WorkoutPreviewSplit(split),
@@ -1779,13 +1789,17 @@ private struct CoachDerivedMetrics: Sendable {
         activeSplits: [TrainingSplitSnapshot],
         completedSessions: [WorkoutAnalyticsSession]
     ) -> CoachDerivedMetrics {
+        let canonicalDecision = TrainingDecisionService().decision(
+            activeSplits: activeSplits,
+            completedSessions: completedSessions
+        )
         let summary = CoachRecommendationEngine().makeSummary(
             activeSplits: activeSplits,
             completedSessions: completedSessions
         )
         let prRecords = TrainingAnalyticsService().prTimeline(from: completedSessions)
         let targetSuggestions = makeTargetSuggestions(
-            summary: summary,
+            splitName: canonicalDecision.recommendedSplitName,
             activeSplits: activeSplits,
             completedSessions: completedSessions
         )
@@ -1807,7 +1821,7 @@ private struct CoachDerivedMetrics: Sendable {
                     message: suggestion.reason,
                     severity: .positive,
                     relatedExerciseName: suggestion.exerciseName,
-                    relatedSplitName: summary.recommendedSplitName
+                    relatedSplitName: canonicalDecision.recommendedSplitName
                 )
             }
 
@@ -1822,11 +1836,11 @@ private struct CoachDerivedMetrics: Sendable {
     }
 
     private static func makeTargetSuggestions(
-        summary: CoachRecommendationSummary,
+        splitName: String?,
         activeSplits: [TrainingSplitSnapshot],
         completedSessions: [WorkoutAnalyticsSession]
     ) -> [TargetSuggestion] {
-        guard let recommendedSplit = activeSplits.first(where: { $0.name == summary.recommendedSplitName }) else {
+        guard let recommendedSplit = activeSplits.first(where: { $0.name == splitName }) else {
             return []
         }
 
@@ -1852,7 +1866,14 @@ private extension CoachRecommendationSummary {
             reason: "Preparing recommendation.",
             exerciseRecommendations: [],
             recoveryWarnings: [],
-            weeklyInsights: []
+            weeklyInsights: [],
+            trainingDecision: TrainingDecision(
+                recommendedSplitName: nil,
+                recommendedMode: .full,
+                action: .buildBaseline,
+                title: "Preparing recommendation",
+                reason: "Preparing recommendation."
+            )
         )
     }
 }

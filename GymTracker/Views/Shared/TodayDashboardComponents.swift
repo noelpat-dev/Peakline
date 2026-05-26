@@ -87,6 +87,7 @@ struct HeroRecommendationCard: View {
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.68)
+                            .accessibilityIdentifier("today-suggested-split")
                     }
 
                     Spacer(minLength: 12)

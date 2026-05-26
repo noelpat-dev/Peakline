@@ -90,6 +90,63 @@ final class WorkoutReliabilityTests: XCTestCase {
         XCTAssertLessThanOrEqual(adjusted.confidence, 0.7)
     }
 
+    func testCanonicalDailyRecommendationKeepsCoachAndTargetsOnSameSplit() throws {
+        let pushExerciseId = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!
+        let pullExerciseId = UUID(uuidString: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC")!
+        let legsExerciseId = UUID(uuidString: "DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD")!
+        let splits = [
+            splitSnapshot(name: "Push", exerciseId: pushExerciseId, exerciseName: "Bench Press"),
+            splitSnapshot(name: "Pull", exerciseId: pullExerciseId, exerciseName: "Lat Pulldown"),
+            splitSnapshot(name: "Legs", exerciseId: legsExerciseId, exerciseName: "Quad Extension")
+        ]
+        let sessions = [
+            analyticsSession(day: 25, splitName: "Pull", exerciseId: pullExerciseId, exerciseName: "Lat Pulldown", weight: 95, reps: 9),
+            analyticsSession(day: 24, splitName: "Legs", exerciseId: legsExerciseId, exerciseName: "Quad Extension", weight: 113, reps: 12),
+            analyticsSession(day: 10, splitName: "Push", exerciseId: pushExerciseId, exerciseName: "Bench Press", weight: 100, reps: 8)
+        ]
+
+        let decision = TrainingDecisionService().decision(activeSplits: splits, completedSessions: sessions)
+        let summary = CoachRecommendationEngine().makeSummary(activeSplits: splits, completedSessions: sessions, now: date(day: 26, hour: 12))
+        let targetSplit = try XCTUnwrap(splits.first { $0.name == decision.recommendedSplitName })
+        let target = try XCTUnwrap(targetSplit.exercises.first)
+        let suggestion = TargetSuggestionService().suggestion(
+            exerciseId: target.exerciseId,
+            exerciseName: target.exerciseNameSnapshot,
+            minReps: target.minReps,
+            maxReps: target.maxReps,
+            completedSessions: sessions
+        )
+
+        XCTAssertEqual(decision.recommendedSplitName, "Legs")
+        XCTAssertEqual(summary.recommendedSplitName, "Legs")
+        XCTAssertEqual(summary.trainingDecision.recommendedSplitName, "Legs")
+        XCTAssertEqual(suggestion.exerciseName, "Quad Extension")
+        XCTAssertFalse(summary.exerciseRecommendations.contains { $0.exerciseName == "Bench Press" })
+    }
+
+    func testWeeklyBalanceDoesNotSilentlyOverridePPLRotation() {
+        let pushExerciseId = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!
+        let pullExerciseId = UUID(uuidString: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC")!
+        let legsExerciseId = UUID(uuidString: "DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD")!
+        let splits = [
+            splitSnapshot(name: "Push", exerciseId: pushExerciseId, exerciseName: "Bench Press"),
+            splitSnapshot(name: "Pull", exerciseId: pullExerciseId, exerciseName: "Lat Pulldown"),
+            splitSnapshot(name: "Legs", exerciseId: legsExerciseId, exerciseName: "Quad Extension")
+        ]
+        let sessions = [
+            analyticsSession(day: 25, splitName: "Pull", exerciseId: pullExerciseId, exerciseName: "Lat Pulldown", weight: 95, reps: 9),
+            analyticsSession(day: 24, splitName: "Legs", exerciseId: legsExerciseId, exerciseName: "Quad Extension", weight: 113, reps: 12),
+            analyticsSession(day: 10, splitName: "Push", exerciseId: pushExerciseId, exerciseName: "Bench Press", weight: 100, reps: 8)
+        ]
+
+        let decision = TrainingDecisionService().decision(activeSplits: splits, completedSessions: sessions)
+        let weeklyReview = WeeklyReviewBuilder().build(activeSplits: splits, completedSessions: sessions)
+
+        XCTAssertEqual(decision.recommendedSplitName, "Legs")
+        XCTAssertEqual(weeklyReview.splitConsistency.missedSplitName, "Push")
+        XCTAssertEqual(weeklyReview.nextDecision.recommendedSplitName, "Legs")
+    }
+
     func testSessionSummaryCapturesDurationImprovementsAndNextSplit() throws {
         let previous = workout(
             date: date(day: 1, hour: 12),
@@ -155,10 +212,30 @@ final class WorkoutReliabilityTests: XCTestCase {
     }
 
     private func analyticsSession(day: Int, weight: Double, reps: Int, setCount: Int = 1) -> WorkoutAnalyticsSession {
+        analyticsSession(
+            day: day,
+            splitName: "Push",
+            exerciseId: exerciseId,
+            exerciseName: "Bench Press",
+            weight: weight,
+            reps: reps,
+            setCount: setCount
+        )
+    }
+
+    private func analyticsSession(
+        day: Int,
+        splitName: String,
+        exerciseId: UUID,
+        exerciseName: String,
+        weight: Double,
+        reps: Int,
+        setCount: Int = 1
+    ) -> WorkoutAnalyticsSession {
         let log = ExerciseAnalyticsLog(
             id: UUID(),
             exerciseId: exerciseId,
-            exerciseNameSnapshot: "Bench Press",
+            exerciseNameSnapshot: exerciseName,
             orderIndex: 0,
             notes: nil,
             setLogs: (1...setCount).map { setNumber in
@@ -176,9 +253,27 @@ final class WorkoutReliabilityTests: XCTestCase {
         return WorkoutAnalyticsSession(
             id: UUID(),
             date: date(day: day, hour: 12),
-            splitNameSnapshot: "Push",
+            splitNameSnapshot: splitName,
             completed: true,
             exerciseLogs: [log]
+        )
+    }
+
+    private func splitSnapshot(name: String, exerciseId: UUID, exerciseName: String) -> TrainingSplitSnapshot {
+        TrainingSplitSnapshot(
+            id: UUID(),
+            name: name,
+            updatedAt: date(day: 1, hour: 12),
+            exercises: [
+                SplitExerciseSnapshot(
+                    id: UUID(),
+                    exerciseId: exerciseId,
+                    exerciseNameSnapshot: exerciseName,
+                    orderIndex: 0,
+                    minReps: 8,
+                    maxReps: 12
+                )
+            ]
         )
     }
 

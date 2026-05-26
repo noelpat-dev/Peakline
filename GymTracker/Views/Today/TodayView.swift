@@ -288,7 +288,7 @@ struct TodayView: View {
             completedSessions: Array(completedSessions.prefix(40))
         )
         let recentCycleNames = makeRecentPPLCycleNames(from: completedSessions)
-        let suggested = makeSuggestedSplit(recentPPLCycleNames: recentCycleNames)
+        let suggested = activeSplits.first { $0.name == decision.recommendedSplitName } ?? makeSuggestedSplit(recentPPLCycleNames: recentCycleNames)
         let weekSessions = makeWeeklySessions(from: completedSessions)
         let workingSets = weekSessions.reduce(0) { total, session in
             total + workingSetCount(in: session)
@@ -551,9 +551,7 @@ struct TodayView: View {
     }
 
     private func openCoachRoute() {
-        PerformanceTracer.mark(.todayRouteSelectionState, "prepare_coach_snapshot before_route signature_ready=\(lastCoachSnapshotSignature != nil)")
-        refreshCoachSnapshot()
-        PerformanceTracer.mark(.todayRouteSelectionState, "prepare_coach_snapshot after_route signature_ready=\(lastCoachSnapshotSignature != nil)")
+        PerformanceTracer.mark(.todayRouteSelectionState, "open_coach_route signature_ready=\(lastCoachSnapshotSignature != nil)")
         openRoute(.coach)
     }
 

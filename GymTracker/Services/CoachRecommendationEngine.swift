@@ -6,6 +6,7 @@ struct CoachRecommendationSummary: Sendable {
     let exerciseRecommendations: [ExerciseRecommendation]
     let recoveryWarnings: [CoachWarning]
     let weeklyInsights: [String]
+    let trainingDecision: TrainingDecision
 }
 
 struct ExerciseRecommendation: Identifiable, Hashable, Sendable {
@@ -46,7 +47,8 @@ struct CoachRecommendationEngine {
         completedSessions: [WorkoutSession],
         now: Date = .now
     ) -> CoachRecommendationSummary {
-        let recommendedSplit = recommendedSplit(from: activeSplits, completedSessions: completedSessions)
+        let decision = TrainingDecisionService().decision(activeSplits: activeSplits, completedSessions: completedSessions)
+        let recommendedSplit = activeSplits.first { $0.name == decision.recommendedSplitName }
         let warnings = recoveryWarnings(from: completedSessions, now: now)
         let missedWarnings = missedSplitWarnings(activeSplits: activeSplits, completedSessions: completedSessions, now: now)
 
@@ -62,7 +64,8 @@ struct CoachRecommendationEngine {
                 completedSessions: completedSessions
             ),
             recoveryWarnings: warnings + missedWarnings,
-            weeklyInsights: weeklyInsights(from: completedSessions, now: now)
+            weeklyInsights: weeklyInsights(from: completedSessions, now: now),
+            trainingDecision: decision
         )
     }
 
@@ -71,7 +74,8 @@ struct CoachRecommendationEngine {
         completedSessions: [WorkoutAnalyticsSession],
         now: Date = .now
     ) -> CoachRecommendationSummary {
-        let recommendedSplit = recommendedSplit(from: activeSplits, completedSessions: completedSessions)
+        let decision = TrainingDecisionService().decision(activeSplits: activeSplits, completedSessions: completedSessions)
+        let recommendedSplit = activeSplits.first { $0.name == decision.recommendedSplitName }
         let warnings = recoveryWarnings(from: completedSessions, now: now)
         let missedWarnings = missedSplitWarnings(activeSplits: activeSplits, completedSessions: completedSessions, now: now)
 
@@ -87,7 +91,8 @@ struct CoachRecommendationEngine {
                 completedSessions: completedSessions
             ),
             recoveryWarnings: warnings + missedWarnings,
-            weeklyInsights: weeklyInsights(from: completedSessions, now: now)
+            weeklyInsights: weeklyInsights(from: completedSessions, now: now),
+            trainingDecision: decision
         )
     }
 
