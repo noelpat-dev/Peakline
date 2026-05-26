@@ -565,7 +565,13 @@ struct TodayView: View {
             case .workout:
                 StartWorkoutContentView()
             case .coach:
-                CoachRouteDestinationView(initialSnapshot: coachNavigationSnapshot)
+                CoachRouteDestinationView(
+                    initialSnapshot: coachNavigationSnapshot,
+                    backButtonTitle: "Today",
+                    onBack: {
+                        selectedRoute = nil
+                    }
+                )
             case .progress:
                 ProgressContentView()
             case .nutrition:

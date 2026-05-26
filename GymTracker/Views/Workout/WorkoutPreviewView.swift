@@ -87,8 +87,9 @@ struct WorkoutPreviewView: View {
     private let hydrationSettingsStore = HydrationSettingsStore()
     private let nutritionGoalStore = NutritionGoalService()
 
-    init(split: TrainingSplit) {
+    init(split: TrainingSplit, initialMode: WorkoutMode = .full) {
         self.split = WorkoutPreviewSplit(split)
+        _selectedMode = State(initialValue: initialMode)
         Self.configureQueries(
             exercises: &_exercises,
             completedSessions: &_completedSessions,
@@ -107,8 +108,9 @@ struct WorkoutPreviewView: View {
         )
     }
 
-    init(split: WorkoutPreviewSplit) {
+    init(split: WorkoutPreviewSplit, initialMode: WorkoutMode = .full) {
         self.split = split
+        _selectedMode = State(initialValue: initialMode)
         Self.configureQueries(
             exercises: &_exercises,
             completedSessions: &_completedSessions,

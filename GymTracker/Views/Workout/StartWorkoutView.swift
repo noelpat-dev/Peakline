@@ -35,7 +35,12 @@ struct StartWorkoutView: View {
     private func destination(for route: StartWorkoutRoute) -> some View {
         switch route {
         case .coach:
-            CoachRouteDestinationView()
+            CoachRouteDestinationView(
+                backButtonTitle: "Workout",
+                onBack: {
+                    pop(route)
+                }
+            )
         case .templates:
             WorkoutTemplateLibraryView()
         }
@@ -61,6 +66,20 @@ struct StartWorkoutView: View {
             navigationPath.append(route)
         }
         PerformanceTracer.mark(.workoutRouteNavigation, "appended route=\(route.analyticsName) path_depth=\(navigationPath.count)")
+    }
+
+    private func pop(_ route: StartWorkoutRoute) {
+        let topRoute = navigationPath.last?.analyticsName ?? "none"
+        PerformanceTracer.mark(.workoutRouteNavigation, "pop_request route=\(route.analyticsName) path_depth=\(navigationPath.count) top=\(topRoute)")
+
+        guard navigationPath.last == route else {
+            PerformanceTracer.mark(.workoutRouteNavigation, "pop_skip route=\(route.analyticsName) top=\(topRoute)")
+            return
+        }
+
+        navigationPath.removeLast()
+        pendingNavigationRoute = nil
+        PerformanceTracer.mark(.workoutRouteNavigation, "pop_complete route=\(route.analyticsName) path_depth=\(navigationPath.count)")
     }
 }
 
@@ -229,7 +248,12 @@ struct StartWorkoutContentView: View {
         .navigationDestination(item: $fallbackRoute) { route in
             switch route {
             case .coach:
-                CoachRouteDestinationView()
+                CoachRouteDestinationView(
+                    backButtonTitle: "Workout",
+                    onBack: {
+                        fallbackRoute = nil
+                    }
+                )
             case .templates:
                 WorkoutTemplateLibraryView()
             }

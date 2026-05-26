@@ -3,6 +3,8 @@ import Foundation
 struct TargetSuggestion: Hashable, Sendable {
     let exerciseName: String
     let lastBestSetDescription: String?
+    let lastBestWeight: Double?
+    let lastBestReps: Int?
     let suggestedWeight: Double?
     let suggestedReps: Int?
     let recommendationType: TargetRecommendationType
@@ -64,6 +66,8 @@ struct TargetSuggestionService {
             return TargetSuggestion(
                 exerciseName: exerciseName,
                 lastBestSetDescription: nil,
+                lastBestWeight: nil,
+                lastBestReps: nil,
                 suggestedWeight: nil,
                 suggestedReps: minReps,
                 recommendationType: .baseline,
@@ -77,6 +81,8 @@ struct TargetSuggestionService {
             return TargetSuggestion(
                 exerciseName: exerciseName,
                 lastBestSetDescription: nil,
+                lastBestWeight: nil,
+                lastBestReps: nil,
                 suggestedWeight: nil,
                 suggestedReps: minReps,
                 recommendationType: .baseline,
@@ -98,6 +104,8 @@ struct TargetSuggestionService {
             return TargetSuggestion(
                 exerciseName: exerciseName,
                 lastBestSetDescription: bestDescription,
+                lastBestWeight: bestSet.weight,
+                lastBestReps: bestSet.reps,
                 suggestedWeight: bestSet.weight,
                 suggestedReps: max(minReps, bestSet.reps),
                 recommendationType: .fatigueRisk,
@@ -110,6 +118,8 @@ struct TargetSuggestionService {
             return TargetSuggestion(
                 exerciseName: exerciseName,
                 lastBestSetDescription: bestDescription,
+                lastBestWeight: bestSet.weight,
+                lastBestReps: bestSet.reps,
                 suggestedWeight: bestSet.weight,
                 suggestedReps: min(maxReps, bestSet.reps + 1),
                 recommendationType: .possiblePlateau,
@@ -125,6 +135,8 @@ struct TargetSuggestionService {
             return TargetSuggestion(
                 exerciseName: exerciseName,
                 lastBestSetDescription: bestDescription,
+                lastBestWeight: bestSet.weight,
+                lastBestReps: bestSet.reps,
                 suggestedWeight: bestSet.weight + 2.5,
                 suggestedReps: minReps,
                 recommendationType: .increaseLoad,
@@ -143,6 +155,8 @@ struct TargetSuggestionService {
             return TargetSuggestion(
                 exerciseName: exerciseName,
                 lastBestSetDescription: bestDescription,
+                lastBestWeight: bestSet.weight,
+                lastBestReps: bestSet.reps,
                 suggestedWeight: suggestedWeight,
                 suggestedReps: minReps,
                 recommendationType: type,
@@ -154,6 +168,8 @@ struct TargetSuggestionService {
         return TargetSuggestion(
             exerciseName: exerciseName,
             lastBestSetDescription: bestDescription,
+            lastBestWeight: bestSet.weight,
+            lastBestReps: bestSet.reps,
             suggestedWeight: bestSet.weight,
             suggestedReps: min(maxReps, bestSet.reps + 1),
             recommendationType: .addReps,

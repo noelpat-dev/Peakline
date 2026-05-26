@@ -104,8 +104,10 @@ struct WorkoutModePlanner {
             return TargetSuggestion(
                 exerciseName: suggestion.exerciseName,
                 lastBestSetDescription: suggestion.lastBestSetDescription,
-                suggestedWeight: suggestion.suggestedWeight,
-                suggestedReps: suggestion.suggestedReps,
+                lastBestWeight: suggestion.lastBestWeight,
+                lastBestReps: suggestion.lastBestReps,
+                suggestedWeight: suggestion.lastBestWeight ?? suggestion.suggestedWeight,
+                suggestedReps: suggestion.lastBestReps ?? suggestion.suggestedReps,
                 recommendationType: .repeatTarget,
                 reason: "Recovery mode: keep this lighter and repeat the target with clean reps.",
                 confidence: min(suggestion.confidence, 0.7)

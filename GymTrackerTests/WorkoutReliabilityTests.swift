@@ -74,6 +74,8 @@ final class WorkoutReliabilityTests: XCTestCase {
             TargetSuggestion(
                 exerciseName: "Bench Press",
                 lastBestSetDescription: "100kg x 10",
+                lastBestWeight: 100,
+                lastBestReps: 10,
                 suggestedWeight: 102.5,
                 suggestedReps: 6,
                 recommendationType: .increaseLoad,
@@ -82,7 +84,9 @@ final class WorkoutReliabilityTests: XCTestCase {
             ),
             mode: .recovery
         )
-        XCTAssertEqual(adjusted.recommendationType, .repeatTarget)
+        XCTAssertEqual(adjusted.recommendationType, TargetRecommendationType.repeatTarget)
+        XCTAssertEqual(adjusted.suggestedWeight, 100)
+        XCTAssertEqual(adjusted.suggestedReps, 10)
         XCTAssertLessThanOrEqual(adjusted.confidence, 0.7)
     }
 
