@@ -1762,10 +1762,6 @@ struct SleepAnalyticsInputSignature: Equatable {
         let perceivedDifficulty: Int?
         let energyLevel: Int?
         let sorenessLevel: Int?
-        let exerciseLogCount: Int
-        let setLogCount: Int
-        let completedSetCount: Int
-        let completedVolume: Double
     }
 
     private struct NapFingerprint: Equatable {
@@ -1817,8 +1813,6 @@ struct SleepAnalyticsInputSignature: Equatable {
             )
         }
         self.workouts = workouts.prefix(workoutLimit).map {
-            let setLogs = $0.exerciseLogs.flatMap(\.setLogs)
-            let completedSets = setLogs.filter { $0.completed && !$0.isWarmup }
             return WorkoutFingerprint(
                 id: $0.id,
                 date: $0.date,
@@ -1826,11 +1820,7 @@ struct SleepAnalyticsInputSignature: Equatable {
                 durationMinutes: $0.durationMinutes,
                 perceivedDifficulty: $0.perceivedDifficulty,
                 energyLevel: $0.energyLevel,
-                sorenessLevel: $0.sorenessLevel,
-                exerciseLogCount: $0.exerciseLogs.count,
-                setLogCount: setLogs.count,
-                completedSetCount: completedSets.count,
-                completedVolume: completedSets.reduce(0) { $0 + ($1.weight * Double($1.reps)) }
+                sorenessLevel: $0.sorenessLevel
             )
         }
         self.naps = naps.prefix(sessionLimit).map {

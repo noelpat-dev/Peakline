@@ -71,12 +71,11 @@ struct CoachRouteDestinationView: View {
     let initialSnapshot: CoachIntelligenceSnapshot?
 
     init(initialSnapshot: CoachIntelligenceSnapshot? = nil) {
-        self.initialSnapshot = initialSnapshot
+        self.initialSnapshot = initialSnapshot?.routeCacheValueSnapshot
     }
 
     var body: some View {
-        let cachedSnapshot = CoachRouteSnapshotStore.shared.snapshot
-        let routeSnapshot = initialSnapshot ?? cachedSnapshot
+        let routeSnapshot = initialSnapshot ?? CoachRouteSnapshotStore.shared.snapshot
 
         if scenePhase == .active {
             DeferredCoachDestinationView(initialSnapshot: routeSnapshot)
@@ -104,18 +103,21 @@ struct DeferredCoachDestinationView: View {
     let initialSnapshot: CoachIntelligenceSnapshot?
 
     @State private var showFullContent = false
+    @State private var showWarmStartContent = false
 
     var body: some View {
-        let _ = PerformanceTracer.mark(.todayCoachDestinationBody, "body showFullContent=\(showFullContent) initialSnapshot=\(initialSnapshot != nil)")
+        let _ = PerformanceTracer.mark(.todayCoachDestinationBody, "body showFullContent=\(showFullContent) showWarmStartContent=\(showWarmStartContent) initialSnapshot=\(initialSnapshot != nil)")
         ZStack {
             if scenePhase != .active {
                 inactivePlaceholder
             } else if showFullContent {
                 CoachContentView(initialSnapshot: initialSnapshot)
                     .transition(.opacity)
-            } else {
+            } else if showWarmStartContent {
                 coachWarmStartView
                     .transition(.opacity)
+            } else {
+                firstFrameShell
             }
         }
         .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
@@ -126,8 +128,14 @@ struct DeferredCoachDestinationView: View {
         }
         .navigationTitle("Coach")
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("coach-route-screen")
         .onAppear {
             PerformanceTracer.mark(.todayCoachDestinationAppear, "root_onAppear showFullContent=\(showFullContent) initialSnapshot=\(initialSnapshot != nil)")
+            guard !showWarmStartContent else { return }
+            DispatchQueue.main.async {
+                PerformanceTracer.mark(.todayCoachContentMount, "show_warm_start_content")
+                showWarmStartContent = true
+            }
         }
         .task(id: scenePhase) {
             guard scenePhase == .active else {
@@ -159,6 +167,12 @@ struct DeferredCoachDestinationView: View {
         let _ = PerformanceTracer.mark(.todayCoachDestinationBody, "inactive_placeholder scenePhase=\(String(describing: scenePhase))")
         Color.clear
             .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
+            .accessibilityHidden(true)
+    }
+
+    private var firstFrameShell: some View {
+        Color.clear
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityHidden(true)
     }
 
@@ -305,7 +319,7 @@ struct CoachContentView: View {
     private let initialSnapshot: CoachIntelligenceSnapshot?
 
     init(initialSnapshot: CoachIntelligenceSnapshot? = nil) {
-        self.initialSnapshot = initialSnapshot
+        self.initialSnapshot = initialSnapshot?.routeCacheValueSnapshot
         _activeSplits = Query(Self.activeSplitsDescriptor)
         _completedSessions = Query(Self.completedSessionsDescriptor)
         _exercises = Query(Self.exercisesDescriptor)
@@ -321,7 +335,8 @@ struct CoachContentView: View {
         _coachPreferences = Query(Self.coachPreferencesDescriptor)
         _splitMetadataRecords = Query(Self.splitMetadataDescriptor)
         if let initialSnapshot {
-            _coachSnapshot = State(initialValue: initialSnapshot)
+            let routeSafeSnapshot = initialSnapshot.routeCacheValueSnapshot
+            _coachSnapshot = State(initialValue: routeSafeSnapshot)
             _hasLoadedCoachSnapshot = State(initialValue: true)
         }
     }
@@ -1037,8 +1052,15 @@ struct CoachContentView: View {
             return
         }
 
-        let splitSnapshots = activeSplits.map(TrainingSplitSnapshot.init)
-        let sessionSnapshots = recentCompletedSessions.map(WorkoutAnalyticsSession.init)
+        let splitSnapshots: [TrainingSplitSnapshot]
+        let sessionSnapshots: [WorkoutAnalyticsSession]
+        do {
+            splitSnapshots = try TrainingSplitSnapshotBuilder.snapshots(from: activeSplits, in: modelContext)
+            sessionSnapshots = try WorkoutAnalyticsSnapshotBuilder.snapshots(from: recentCompletedSessions, in: modelContext)
+        } catch {
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.weekly_review snapshot_error")
+            return
+        }
         PerformanceTracer.mark(.unsafeBreadcrumb, "coach.weekly_review snapshots_ready splits=\(splitSnapshots.count) sessions=\(sessionSnapshots.count)")
         weeklyReviewTask = Task { @MainActor in
             PerformanceTracer.mark(.unsafeBreadcrumb, "coach.weekly_review task_begin")
@@ -1066,8 +1088,15 @@ struct CoachContentView: View {
             return
         }
 
-        let splitSnapshots = activeSplits.map(TrainingSplitSnapshot.init)
-        let sessionSnapshots = recentCompletedSessions.map(WorkoutAnalyticsSession.init)
+        let splitSnapshots: [TrainingSplitSnapshot]
+        let sessionSnapshots: [WorkoutAnalyticsSession]
+        do {
+            splitSnapshots = try TrainingSplitSnapshotBuilder.snapshots(from: activeSplits, in: modelContext)
+            sessionSnapshots = try WorkoutAnalyticsSnapshotBuilder.snapshots(from: recentCompletedSessions, in: modelContext)
+        } catch {
+            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.derived_metrics snapshot_error")
+            return
+        }
         PerformanceTracer.mark(.unsafeBreadcrumb, "coach.derived_metrics snapshots_ready splits=\(splitSnapshots.count) sessions=\(sessionSnapshots.count)")
         coachDerivedTask = Task { @MainActor in
             PerformanceTracer.mark(.unsafeBreadcrumb, "coach.derived_metrics task_begin")

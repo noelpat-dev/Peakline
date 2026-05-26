@@ -1118,12 +1118,14 @@ struct LogFoodView: View {
         if healthPreferences.isHealthKitEnabled,
            healthPreferences.writeNutritionToHealthKit,
            healthPreferences.autoSyncNewFoodLogs {
+            let foodID = food.id
             let entrySnapshot = HealthKitFoodLogSyncSnapshot(entry: entry)
             let foodSnapshot = HealthKitFoodItemSyncSnapshot(food: food)
+            let syncPreferences = healthPreferences
             PerformanceTracer.mark(.healthKitNutritionBridge, "auto_sync snapshots_ready entries=1")
             Task {
                 PerformanceTracer.mark(.healthKitNutritionBridge, "auto_sync task_begin")
-                _ = await NutritionHealthKitBridge().sync(entries: [entrySnapshot], foodItemsById: [food.id: foodSnapshot], preferences: healthPreferences)
+                _ = await NutritionHealthKitBridge().sync(entries: [entrySnapshot], foodItemsById: [foodID: foodSnapshot], preferences: syncPreferences)
                 PerformanceTracer.mark(.healthKitNutritionBridge, "auto_sync task_end")
             }
         }

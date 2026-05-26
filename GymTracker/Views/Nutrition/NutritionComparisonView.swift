@@ -148,7 +148,7 @@ struct NutritionComparisonView: View {
                                 .font(.headline)
                                 .foregroundStyle(appTheme.colors.textPrimary)
 
-                            Text("\(comparison.matchingCount) match")
+                            Text(matchCountLabel)
                                 .font(.caption2.weight(.bold))
                                 .foregroundStyle(appTheme.colors.accent)
                                 .padding(.horizontal, 8)
@@ -163,7 +163,7 @@ struct NutritionComparisonView: View {
                     }
                 }
 
-                HStack(spacing: 8) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], alignment: .leading, spacing: 8) {
                     ForEach(comparison.sources) { source in
                         NutritionSourceBadge(source: source.source)
                     }
@@ -171,6 +171,10 @@ struct NutritionComparisonView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+    }
+
+    private var matchCountLabel: String {
+        comparison.matchingCount == 1 ? "1 match" : "\(comparison.matchingCount) matches"
     }
 
     @ViewBuilder

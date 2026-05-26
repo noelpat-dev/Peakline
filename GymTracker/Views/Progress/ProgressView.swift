@@ -124,7 +124,7 @@ struct ProgressContentView: View {
                                 selectedExercise = exercise
                             } label: {
                                 FitnessCard(padding: 16) {
-                                    HStack(spacing: 12) {
+                                    HStack(alignment: .top, spacing: 12) {
                                         ExerciseIconView(
                                             iconKey: ExerciseIconMapper.iconKey(for: exercise),
                                             size: 40,
@@ -136,8 +136,9 @@ struct ProgressContentView: View {
                                             Text(exercise.name)
                                                 .font(.headline)
                                                 .foregroundStyle(appTheme.colors.textPrimary)
-                                                .lineLimit(1)
-                                                .minimumScaleFactor(0.8)
+                                                .lineLimit(2)
+                                                .minimumScaleFactor(0.85)
+                                                .fixedSize(horizontal: false, vertical: true)
                                             Text(exercise.primaryMuscleGroup.displayName)
                                                 .font(.subheadline)
                                                 .foregroundStyle(appTheme.colors.textSecondary)

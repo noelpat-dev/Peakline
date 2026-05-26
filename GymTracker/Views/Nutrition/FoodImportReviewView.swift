@@ -291,11 +291,12 @@ struct FoodImportReviewView: View {
                     ].compactMap { $0 }
 
                     if !optionalValues.isEmpty {
-                        HStack(spacing: 8) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], alignment: .leading, spacing: 8) {
                             ForEach(optionalValues) { value in
                                 ParsedNutrientPill(value: value)
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             }
@@ -385,41 +386,74 @@ struct FoodImportReviewView: View {
                         .lineLimit(isDetectedTextExpanded ? nil : 10)
                         .textSelection(.enabled)
 
-                    HStack(spacing: 10) {
-                        Button {
-                            isDetectedTextExpanded.toggle()
-                        } label: {
-                            Label(isDetectedTextExpanded ? "Show Less" : "Show More", systemImage: isDetectedTextExpanded ? "chevron.up" : "chevron.down")
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(appTheme.colors.accent)
-
-                        Button {
-                            UIPasteboard.general.string = detectedRawText
-                            didCopyDetectedText = true
-                        } label: {
-                            Label(didCopyDetectedText ? "Copied" : "Copy Text", systemImage: didCopyDetectedText ? "checkmark" : "doc.on.doc")
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(appTheme.colors.accent)
-                        .accessibilityLabel("Copy detected label text")
-
-                        if let onRetakeLabelScan {
-                            Button {
-                                dismiss()
-                                onRetakeLabelScan()
-                            } label: {
-                                Label("Retake", systemImage: "camera")
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(appTheme.colors.accent)
-                            .accessibilityLabel("Retake label photo")
-                        }
+                    ViewThatFits(in: .horizontal) {
+                        detectedTextActionRow
+                        detectedTextActionColumn
                     }
                     .font(.subheadline.weight(.semibold))
                 }
             }
         }
+    }
+
+    private var detectedTextActionRow: some View {
+        HStack(spacing: 10) {
+            detectedTextToggleButton
+            copyDetectedTextButton
+
+            if let onRetakeLabelScan {
+                retakeLabelButton(onRetakeLabelScan)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var detectedTextActionColumn: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            detectedTextToggleButton
+            copyDetectedTextButton
+
+            if let onRetakeLabelScan {
+                retakeLabelButton(onRetakeLabelScan)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var detectedTextToggleButton: some View {
+        Button {
+            isDetectedTextExpanded.toggle()
+        } label: {
+            Label(isDetectedTextExpanded ? "Show Less" : "Show More", systemImage: isDetectedTextExpanded ? "chevron.up" : "chevron.down")
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(appTheme.colors.accent)
+    }
+
+    private var copyDetectedTextButton: some View {
+        Button {
+            UIPasteboard.general.string = detectedRawText
+            didCopyDetectedText = true
+        } label: {
+            Label(didCopyDetectedText ? "Copied" : "Copy Text", systemImage: didCopyDetectedText ? "checkmark" : "doc.on.doc")
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(appTheme.colors.accent)
+        .accessibilityLabel("Copy detected label text")
+    }
+
+    private func retakeLabelButton(_ action: @escaping () -> Void) -> some View {
+        Button {
+            dismiss()
+            action()
+        } label: {
+            Label("Retake", systemImage: "camera")
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(appTheme.colors.accent)
+        .accessibilityLabel("Retake label photo")
     }
 
     private var sourceSystemImage: String {

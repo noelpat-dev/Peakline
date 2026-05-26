@@ -53,6 +53,7 @@ enum ExerciseIconMapper {
         if name.contains("overhead triceps") { return .overheadTricepsExtension }
         if name.contains("triceps pushdown") || name.contains("tricep pushdown") || name.contains("tricep push down") { return .tricepsPushdown }
         if name.contains("seated leg curl") { return .seatedLegCurl }
+        if name.contains("hamstring curl") { return .legCurl }
         if name.contains("quad extension") { return .quadExtension }
         if name.contains("bicep preacher curl") && name.contains("machine") { return .bicepPreacherCurlMachine }
         if name.contains("bicep preacher curl") || name.contains("preacher curl") { return .bicepPreacherCurl }

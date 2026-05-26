@@ -219,6 +219,7 @@ struct StartWorkoutContentView: View {
         }
         .navigationTitle("Workout")
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("workout-screen")
         .navigationDestination(item: $activeSession) { session in
             WorkoutLoggerView(session: session)
         }

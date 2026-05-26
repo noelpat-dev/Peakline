@@ -129,11 +129,15 @@ struct BarcodeScannerView: View {
                     Spacer()
 
                     Text("Hold the barcode inside the frame")
-                        .font(.headline)
-                        .foregroundStyle(.white)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(appTheme.colors.textPrimary)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
-                        .background(.black.opacity(0.52), in: Capsule())
+                        .background(appTheme.colors.cardBackground.opacity(0.92), in: Capsule())
+                        .overlay {
+                            Capsule()
+                                .stroke(appTheme.colors.cardBorder.opacity(0.9), lineWidth: 1)
+                        }
                         .padding(.bottom, 18)
                 }
                 .accessibilityHidden(true)

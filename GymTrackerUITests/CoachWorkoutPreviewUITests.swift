@@ -191,6 +191,34 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         assertPerformanceAcceptancePassed()
     }
 
+    func testPerformanceAcceptanceManualBlockerFlow() throws {
+        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 10) || app.staticTexts["Today"].waitForExistence(timeout: 10))
+
+        tapElement(identifier: "quick-action-sleep", maxSwipes: 5)
+        XCTAssertTrue(app.navigationBars["Sleep"].waitForExistence(timeout: 8) || app.staticTexts["Sleep"].waitForExistence(timeout: 8))
+        tapBackButton()
+        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 10) || app.staticTexts["Today"].waitForExistence(timeout: 10))
+
+        tapTab(at: 1, expectedTitle: "Workout")
+        tapElement(identifier: "workout-recommended-preview", maxSwipes: 8)
+        XCTAssertTrue(waitForPreviewScreen(), "Expected Workout Preview to open")
+        tapBackButton()
+        XCTAssertTrue(waitForWorkoutScreen(), "Expected one back from Preview to return to Workout")
+
+        tapTab(at: 0, expectedTitle: "Today")
+        tapElement(identifier: "quick-action-readiness", maxSwipes: 8)
+        XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Coach to open")
+        tapBackButton()
+        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 10) || app.staticTexts["Today"].waitForExistence(timeout: 10))
+
+        XCUIDevice.shared.press(.home)
+        RunLoop.current.run(until: Date().addingTimeInterval(1.0))
+        app.activate()
+        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 10) || app.staticTexts["Today"].waitForExistence(timeout: 10))
+
+        assertPerformanceAcceptancePassed()
+    }
+
     private func openWorkoutPreview() {
         tapTab(at: 1, expectedTitle: "Workout")
         let pushSplit = app.buttons["start-split-Push"]
@@ -284,7 +312,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     private func waitForCoachScreen() -> Bool {
-        app.descendants(matching: .any)["coach-screen"].waitForExistence(timeout: 12) ||
+        app.descendants(matching: .any)["coach-route-screen"].waitForExistence(timeout: 12) ||
+            app.descendants(matching: .any)["coach-screen"].waitForExistence(timeout: 12) ||
             app.navigationBars["Coach"].waitForExistence(timeout: 12) ||
             app.staticTexts["Coach"].waitForExistence(timeout: 12)
     }
@@ -297,7 +326,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     private func waitForWorkoutScreen() -> Bool {
-        app.buttons["workout-recommended-preview"].waitForExistence(timeout: 12) ||
+        app.descendants(matching: .any)["workout-screen"].waitForExistence(timeout: 12) ||
+            app.buttons["workout-recommended-preview"].waitForExistence(timeout: 12) ||
             app.buttons["start-split-Push"].waitForExistence(timeout: 12) ||
             app.navigationBars["Workout"].waitForExistence(timeout: 12) ||
             app.staticTexts["Workout"].waitForExistence(timeout: 12)

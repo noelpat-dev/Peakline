@@ -479,9 +479,11 @@ private struct AppearanceOptionButton: View {
                     .font(.headline.weight(.semibold))
                 Text(appearance.displayName)
                     .font(.subheadline.weight(.semibold))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 76)
+            .frame(minHeight: 76)
             .foregroundStyle(isSelected ? appTheme.colors.textPrimary : appTheme.colors.textSecondary)
             .background(
                 isSelected ? appTheme.colors.accentSurfaceStrong : appTheme.colors.cardBackgroundElevated,

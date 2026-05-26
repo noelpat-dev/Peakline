@@ -20,8 +20,7 @@ struct WorkoutPreviewView: View {
     @State private var renderSnapshot: WorkoutPreviewRenderSnapshot?
     @State private var lastRenderSignature: String?
     @State private var lastRenderSignatureParts: [String: String] = [:]
-    @State private var queuedRenderSignature: String?
-    @State private var queuedRenderSignatureParts: [String: String] = [:]
+    @State private var queuedRenderRequestID: UUID?
     @State private var renderRefreshWorkItem: DispatchWorkItem?
     @State private var renderLoadingIndicatorWorkItem: DispatchWorkItem?
     @State private var showRenderLoadingIndicator = false
@@ -263,10 +262,6 @@ struct WorkoutPreviewView: View {
         }
     }
 
-    private var renderSignature: String {
-        renderSignature(from: renderSignatureParts)
-    }
-
     private var renderSignatureParts: [String: String] {
         [
             "split": "\(split.id.uuidString):\(signature(split.exercises, limit: split.exercises.count, sortedBy: { $0.id.uuidString < $1.id.uuidString }) { "\($0.id.uuidString):\($0.exerciseId.uuidString):\($0.name):\($0.targetSets):\($0.minReps):\($0.maxReps):\($0.notes ?? "")" })",
@@ -321,36 +316,30 @@ struct WorkoutPreviewView: View {
     }
 
     private func scheduleRenderSnapshotRefresh(reason: String, force: Bool = false) {
-        let signatureParts = renderSignatureParts
-        let signature = renderSignature(from: signatureParts)
-
-        if !force, renderSnapshot != nil, signature == lastRenderSignature {
-            PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "skip \(reason) same_signature")
-            return
-        }
-
-        if signature == queuedRenderSignature {
-            PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "skip \(reason) already_queued changes=\(renderSignatureChangeDescription(from: queuedRenderSignatureParts, to: signatureParts))")
-            return
-        }
-
-        let comparisonParts = queuedRenderSignature == nil ? lastRenderSignatureParts : queuedRenderSignatureParts
         renderRefreshWorkItem?.cancel()
-        queuedRenderSignature = signature
-        queuedRenderSignatureParts = signatureParts
-        PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "queue \(reason) changes=\(renderSignatureChangeDescription(from: comparisonParts, to: signatureParts))")
+        let requestID = UUID()
+        queuedRenderRequestID = requestID
+        PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "queue \(reason)")
 
         if renderSnapshot == nil {
             scheduleRenderLoadingIndicator()
         }
 
-        let delay: TimeInterval = 0.04
+        let delay: TimeInterval = renderSnapshot == nil ? 0.16 : 0.04
         let workItem = DispatchWorkItem {
-            guard queuedRenderSignature == signature else { return }
-            PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "refresh \(reason)")
+            guard queuedRenderRequestID == requestID else { return }
+            let signatureParts = renderSignatureParts
+            let signature = renderSignature(from: signatureParts)
+
+            if !force, renderSnapshot != nil, signature == lastRenderSignature {
+                PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "skip \(reason) same_signature")
+                queuedRenderRequestID = nil
+                return
+            }
+
+            PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "refresh \(reason) changes=\(renderSignatureChangeDescription(from: lastRenderSignatureParts, to: signatureParts))")
             refreshRenderSnapshot(signature: signature, signatureParts: signatureParts)
-            queuedRenderSignature = nil
-            queuedRenderSignatureParts = [:]
+            queuedRenderRequestID = nil
         }
 
         renderRefreshWorkItem = workItem
@@ -752,31 +741,39 @@ struct WorkoutPreviewView: View {
             didRequestInitialRenderSnapshot = true
             scheduleRenderSnapshotRefresh(reason: "onAppear", force: renderSnapshot == nil)
         }
-        .onChange(of: renderSignature) { _, _ in
-            scheduleRenderSnapshotRefresh(reason: "signature_changed")
-        }
         .onChange(of: selectedMode) { _, newMode in
             resetCoachAdjustment()
             selectedExerciseIds = modePlanner.plannedExercises(from: makeOrderedExercises(), mode: newMode).map(\.id)
+            guard renderSnapshot != nil else { return }
+            scheduleRenderSnapshotRefresh(reason: "mode_changed")
+        }
+        .onChange(of: selectedExerciseIds) { _, _ in
+            guard renderSnapshot != nil else { return }
+            scheduleRenderSnapshotRefresh(reason: "selected_exercises_changed")
+        }
+        .onChange(of: substitutionNotesByExerciseId) { _, _ in
+            guard renderSnapshot != nil else { return }
+            scheduleRenderSnapshotRefresh(reason: "substitution_changed")
+        }
+        .onChange(of: appliedWorkoutAdjustment?.id) { _, _ in
+            guard renderSnapshot != nil else { return }
+            scheduleRenderSnapshotRefresh(reason: "coach_adjustment_changed")
         }
         .onDisappear {
             renderRefreshWorkItem?.cancel()
-            queuedRenderSignature = nil
-            queuedRenderSignatureParts = [:]
+            queuedRenderRequestID = nil
             cancelRenderLoadingIndicator()
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase != .active else { return }
             renderRefreshWorkItem?.cancel()
-            queuedRenderSignature = nil
-            queuedRenderSignatureParts = [:]
+            queuedRenderRequestID = nil
             cancelRenderLoadingIndicator()
             PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "cancel scenePhase=\(String(describing: newPhase))")
         }
         .onReceive(NotificationCenter.default.publisher(for: .appWillResignActiveForCleanup)) { _ in
             renderRefreshWorkItem?.cancel()
-            queuedRenderSignature = nil
-            queuedRenderSignatureParts = [:]
+            queuedRenderRequestID = nil
             cancelRenderLoadingIndicator()
             PerformanceTracer.mark(.unsafeBreadcrumb, "workout_preview.willResignActive no_async_task")
         }
