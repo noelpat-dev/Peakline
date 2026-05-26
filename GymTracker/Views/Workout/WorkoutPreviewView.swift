@@ -673,6 +673,7 @@ struct WorkoutPreviewView: View {
         }
         .navigationTitle("Preview")
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("workout-preview-screen")
         .navigationDestination(item: $activeSession) { session in
             WorkoutLoggerView(session: session)
         }

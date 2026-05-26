@@ -1268,6 +1268,7 @@ struct HydrationView: View {
         }
         .navigationTitle("Hydration")
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("hydration-screen")
         .alert("Custom amount", isPresented: $showingCustomAmount) {
             TextField("350", text: $customAmount)
                 .keyboardType(.numberPad)

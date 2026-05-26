@@ -160,6 +160,7 @@ struct ProgressContentView: View {
         }
         .navigationTitle("Progress")
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("progress-screen")
         .navigationDestination(isPresented: $isExerciseChartsPresented) {
             ExerciseProgressChartsIndexView(exercises: exercises, selectedExercise: $selectedExercise)
         }

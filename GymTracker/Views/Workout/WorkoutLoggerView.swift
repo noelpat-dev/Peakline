@@ -100,6 +100,7 @@ struct WorkoutLoggerView: View {
         .animation(AppMotion.popupEntrance(reduceMotion: reduceMotion), value: ratingPopupVisible)
         .navigationTitle(session.splitNameSnapshot)
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("workout-logger-screen")
         .navigationDestination(item: $summarySession) { session in
             SessionSummaryView(session: session)
         }

@@ -111,6 +111,7 @@ struct HistoryView: View {
                 Text("This removes the workout from history and progress trends.")
             }
         }
+        .accessibilityIdentifier("history-screen")
         .onAppear {
             let shouldForceRefresh = !didRequestInitialRefresh
             didRequestInitialRefresh = true

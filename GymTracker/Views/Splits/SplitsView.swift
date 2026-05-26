@@ -192,6 +192,7 @@ struct SplitsView: View {
                 Text("This removes the split template and its exercise setup. Workout history stays intact.")
             }
         }
+        .accessibilityIdentifier("splits-screen")
         .onAppear {
             DispatchQueue.main.async {
                 PerformanceTracer.mark(.unsafeBreadcrumb, "splits.dashboard deferred_refresh")

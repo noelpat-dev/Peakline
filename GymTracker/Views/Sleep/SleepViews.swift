@@ -181,6 +181,7 @@ struct SleepDashboardView: View {
         }
         .navigationTitle("Sleep")
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("sleep-screen")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -483,7 +484,7 @@ struct SleepDashboardView: View {
         SleepActionButton(
             title: "Discard",
             systemImage: "xmark.circle",
-            style: .neutral
+            style: .danger
         ) {
             pendingDiscardSession = session
         }
@@ -1326,7 +1327,7 @@ struct SleepMorningConfirmationView: View {
                     confirm()
                 }
 
-                SleepGlassActionButton(title: "Discard Session", systemImage: "trash", style: .neutral) {
+                SleepGlassActionButton(title: "Discard Session", systemImage: "trash", style: .danger) {
                     try? repository.discard(session, in: modelContext)
                     dismiss()
                 }
@@ -2182,6 +2183,7 @@ private struct SleepGlassActionButton: View {
         case primary
         case secondary
         case neutral
+        case danger
     }
 
     @Environment(\.appTheme) private var appTheme
@@ -2215,7 +2217,7 @@ private struct SleepGlassActionButton: View {
         switch style {
         case .primary:
             return .headline.weight(.semibold)
-        case .secondary, .neutral:
+        case .secondary, .neutral, .danger:
             return .subheadline.weight(.semibold)
         }
     }
@@ -2232,6 +2234,8 @@ private struct SleepGlassActionButton: View {
             return appTheme.colors.textPrimary
         case .neutral:
             return appTheme.colors.textSecondary
+        case .danger:
+            return .white
         }
     }
 
@@ -2241,6 +2245,8 @@ private struct SleepGlassActionButton: View {
             return appTheme.colors.accent
         case .secondary, .neutral:
             return appTheme.colors.cardBackgroundElevated
+        case .danger:
+            return appTheme.colors.danger
         }
     }
 
@@ -2250,6 +2256,8 @@ private struct SleepGlassActionButton: View {
             return appTheme.colors.accent.opacity(0.45)
         case .secondary, .neutral:
             return appTheme.colors.cardBorder
+        case .danger:
+            return appTheme.colors.danger.opacity(0.45)
         }
     }
 }

@@ -38,6 +38,7 @@ struct HealthKitSettingsView: View {
         }
         .navigationTitle("Apple Health")
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("healthkit-settings-screen")
         .onAppear {
             refreshState()
             Task { await refreshHealthContext() }

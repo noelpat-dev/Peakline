@@ -196,6 +196,7 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
+            .accessibilityIdentifier("settings-screen")
             .navigationDestination(for: SettingsRoute.self) { route in
                 switch route {
                 case .coach:
@@ -404,6 +405,7 @@ private struct ThemeSettingsView: View {
         .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
         .navigationTitle("Themes")
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("theme-settings-screen")
     }
 }
 

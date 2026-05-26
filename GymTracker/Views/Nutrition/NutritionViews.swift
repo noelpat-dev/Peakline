@@ -382,6 +382,7 @@ struct NutritionDashboardView: View {
         }
         .navigationTitle("Nutrition")
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("nutrition-screen")
         .navigationDestination(item: $selectedRoute) { route in
             switch route {
             case .addFood:
