@@ -1,6 +1,6 @@
 # Peakline
 
-Peakline is a local-first SwiftUI and SwiftData lifting coach for Noel's Push/Pull/Legs training. It focuses on fast workout logging, practical progression targets, useful history, and deterministic coaching that stays on device.
+Peakline is a local-first SwiftUI and SwiftData lifting coach built around Noel's Push/Pull/Legs training. The app focuses on fast workout logging, practical progression targets, explainable coaching, useful history, and recovery context that stays on device.
 
 ## Product Goal
 
@@ -10,21 +10,33 @@ Peakline should answer three questions quickly:
 2. What did I do last time?
 3. What target should I aim for next?
 
-The app should feel polished and gym-ready: quick to open, easy to log in the middle of a session, and clear about why it suggests a target or recovery adjustment.
+The app should feel gym-ready: quick to open, easy to use mid-session, and clear about why it suggests a target, mode change, or recovery adjustment.
 
 ## Canonical Docs
 
 Use these root docs as the active source of truth:
 
-- [FEATURE_SUMMARY.md](FEATURE_SUMMARY.md) - current product and feature state.
-- [ARCHITECTURE.md](ARCHITECTURE.md) - implementation map and guardrails.
-- [ROADMAP.md](ROADMAP.md) - current priorities and later backlog.
-- [UI_STYLE_GUIDE.md](UI_STYLE_GUIDE.md) - active visual design direction.
-- [KNOWN_ISSUES.md](KNOWN_ISSUES.md) - current risks and validation notes.
-- [NEXT_TASK.md](NEXT_TASK.md) - immediate implementation task.
-- [NEXT_CODEX_CHAT.md](NEXT_CODEX_CHAT.md) - ready-to-paste Codex handoff prompt.
+- [FEATURE_SUMMARY.md](FEATURE_SUMMARY.md) for current product and feature state.
+- [ARCHITECTURE.md](ARCHITECTURE.md) for implementation map and guardrails.
+- [ROADMAP.md](ROADMAP.md) for current priorities and later backlog.
+- [UI_STYLE_GUIDE.md](UI_STYLE_GUIDE.md) for the active visual direction.
+- [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for current risks and regression checks.
+- [PERFORMANCE_ACCEPTANCE_GOAL.md](PERFORMANCE_ACCEPTANCE_GOAL.md) for the performance acceptance workflow and verifier.
+- [NEXT_TASK.md](NEXT_TASK.md) for the immediate task.
+- [NEXT_CODEX_CHAT.md](NEXT_CODEX_CHAT.md) for the ready-to-paste Codex handoff prompt.
 
-Historical prompts, phase reports, QA reports, and old planning briefs are indexed in [Docs/AUDIT_INDEX.md](Docs/AUDIT_INDEX.md). Archived files are for context only and should not be used as active Codex instructions unless a task specifically asks for them.
+Historical prompts, phase reports, QA reports, and older planning docs are indexed in [Docs/AUDIT_INDEX.md](Docs/AUDIT_INDEX.md). Archived files are for reference only and should not be treated as active instructions unless a task explicitly calls for them.
+
+## Current App Surface
+
+The current app includes:
+
+- Today dashboard with quick actions into Coach, Workout, Nutrition, Progress, Sleep, and Hydration.
+- Workout start flow, Workout Preview, live workout logging, templates, substitutions, skipped reasons, and session summary.
+- Coach dashboard with warm-start snapshot behavior, weekly review, action history, and deterministic recommendations.
+- Splits, History, and Progress surfaces.
+- Nutrition logging, barcode import, OCR label scan, parser review, source comparison, and HealthKit bridge work.
+- Sleep and nap tracking, hydration tracking, themes, export utilities, and exact exercise icon support.
 
 ## Codex Workflow
 
@@ -37,17 +49,18 @@ For a new Codex session, start with:
 - [ROADMAP.md](ROADMAP.md)
 - [UI_STYLE_GUIDE.md](UI_STYLE_GUIDE.md)
 - [KNOWN_ISSUES.md](KNOWN_ISSUES.md)
+- [PERFORMANCE_ACCEPTANCE_GOAL.md](PERFORMANCE_ACCEPTANCE_GOAL.md) when the work touches performance-sensitive flows
 
-Default session rule:
+Default rule:
 
 ```text
-Only implement the task described in NEXT_TASK.md. Do not refactor unrelated files.
+Only implement the task described in NEXT_TASK.md unless the user explicitly redirects scope.
 ```
 
 ## Requirements
 
 - macOS with Xcode installed.
-- iOS 17+ simulator or real iPhone.
+- iOS 17+ simulator or a real iPhone.
 - SwiftUI.
 - SwiftData.
 - Swift Charts.
@@ -74,9 +87,30 @@ Command-line build:
 xcodebuild -project GymTracker.xcodeproj \
   -scheme GymTracker \
   -configuration Debug \
-  -destination 'platform=iOS Simulator,id=B4892393-2EDB-4816-A09B-A18C3161823C' \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
   build
 ```
+
+## Validation
+
+General validation:
+
+```bash
+git diff --check
+xcodebuild -project GymTracker.xcodeproj \
+  -scheme GymTracker \
+  -configuration Debug \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
+  build
+```
+
+Performance-sensitive validation:
+
+```bash
+Scripts/verify_performance_acceptance.sh
+```
+
+That verifier runs a build, unit tests, the focused UI acceptance test, and log scanning for the recent performance and navigation regressions.
 
 ## Exercise Icons
 

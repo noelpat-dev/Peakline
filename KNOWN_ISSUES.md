@@ -8,24 +8,24 @@
 
 ## SwiftData Migration And Async Safety
 
-- There is no formal migration strategy yet for future schema changes.
-- Add stored model fields carefully; prefer optional fields with defaults, sample fixtures, and migration tests before shipping.
-- Do not pass live SwiftData `@Model`, `@Query`, or `ModelContext` values into async work that can suspend. Build value snapshots synchronously first.
-- Regression check after startup, notification, HealthKit, nutrition sync, or navigation changes: watch Xcode logs for `unsafeForcedSync`.
-- Historical workout display should tolerate missing or changed exercises, splits, templates, and UUID snapshots.
+- There is still no formal migration strategy for future schema changes.
+- Add stored model fields carefully. Prefer optional fields with defaults, fixtures, and migration coverage before shipping.
+- Do not pass live SwiftData `@Model`, `@Query`, or `ModelContext` values into async work that can suspend. Build value snapshots first.
+- Use the performance acceptance verifier after changing Today, Coach, Workout Preview, root lifecycle, notifications, or HealthKit bridge code to catch `unsafeForcedSync` regressions early.
+- Historical workout display should continue to tolerate changed or missing exercises, splits, templates, and UUID snapshots.
 
 ## Nutrition Scanner And Imports
 
 - Protect the Today-to-Nutrition scanner route: Today quick actions to Nutrition, Add Food, Scan Label, Scan Barcode, review, save, and return-to-log.
-- If Xcode logs a missing `navigationDestination` for `TodayRoute`, treat it as navigation state drift, not a scanner/OCR bug.
 - Barcode, Open Food Facts, OCR, parser, and source-comparison values must remain editable and explicitly saved before becoming local truth.
-- Navigate to saved/imported foods by stable IDs rather than live SwiftData model objects.
-- HealthKit sample write/read verification requires a physical iPhone.
-- Open Food Facts is read-only; Peakline should not upload corrections.
+- Navigate to saved or imported foods by stable IDs rather than live SwiftData model objects.
+- HealthKit sample write and read verification still requires a physical iPhone.
+- Open Food Facts remains read-only from Peakline's side.
 
 ## HealthKit And iCloud
 
-- iCloud/CloudKit sync is not enabled in code. Future work needs signing, iCloud capability, a selected container, and migration testing.
+- iCloud and CloudKit sync are not enabled in code.
+- Future cloud work still needs signing, iCloud capability, a selected container, and migration testing.
 - HealthKit should remain optional and degrade gracefully when unavailable, denied, or revoked.
 - Edited synced nutrition logs may need review rather than automatic overwrite or duplicate sync.
 
@@ -34,42 +34,48 @@
 - Coaching is deterministic and still evolving.
 - Fatigue, plateau, deload, and recovery recommendations should not overstate certainty.
 - Every recommendation needs a short reason.
-- Do not reintroduce a multi-question readiness form. Use the single workout mode choice: Full, Quick, Recovery, or Heavy.
+- Do not reintroduce a multi-question readiness form. The workout mode choice remains the main lightweight user control.
 
 ## UI And Design System
 
-- Continue checking light/dark mode across Today, Workout, Workout Preview, Logger, Splits, History, Settings, Themes, Nutrition, Sleep, and Hydration.
-- Exact exercise icon mappings can drift when broad mapper rules run before exact-name rules.
-- Destructive actions should remain semantic danger/system red, not the active accent.
+- Continue checking light and dark mode across Today, Workout, Workout Preview, Logger, Splits, History, Settings, Themes, Nutrition, Sleep, and Hydration.
+- Exact exercise icon mappings can drift if broad mapper rules run before exact-name rules.
+- Destructive actions should remain semantic danger or system red, not the accent color.
 - Nutrition and hydration delete swipe patterns should stay visually consistent.
-- Shared metric/text components should use `AppTheme` semantic text tokens instead of raw `.primary` or `.secondary` where possible.
-- Some native editor surfaces may still use plain `Form` or `List`; this is acceptable unless readability or theme contrast breaks.
+- Some native editor surfaces may still use plain `Form` or `List`; that is acceptable unless readability or contrast breaks.
 
 ## Performance And Charts
 
-- Keep live workout logging fast; avoid heavy animation or expensive recomputation in hot logging views.
-- Large views such as workout logger, sleep, nutrition, and progress remain performance-sensitive as history grows.
+- Keep live workout logging fast and avoid heavy recomputation in hot logging views.
+- Today, Coach, Workout Preview, Nutrition, Sleep, and Progress remain performance-sensitive as history grows.
 - Keep charts lazy-loaded.
-- Exercise charts need at least two completed sessions for a useful trend; one-session states should show explanatory text.
-- Progress chart axes and grid labels should stay readable in dark mode and custom appearances.
+- Exercise charts still need at least two completed sessions for a useful trend; one-session states should explain that clearly.
+- Protect the current acceptance thresholds:
+  `today.route.appear coach` under 500ms in the verifier path, `root.notification.refresh` under 50ms in the interactive path, and one Preview `refresh onAppear` per open.
 
 ## Data And Analytics
 
 - The app currently emphasizes best-set volume because it is easier to read than raw total tonnage.
-- Future analytics can add total tonnage, PR lists, split consistency, and weekly volume summaries, but should not replace existing volume meaning without a product reason.
-- Local backup/export should be kept healthy before risky persistence changes.
+- Future analytics can add total tonnage, PR lists, split consistency, and weekly volume summaries, but should not replace current meaning without a strong product reason.
+- Local backup and export should stay healthy before risky persistence changes.
 
 ## Validation
 
-After implementation tasks, run:
+General:
 
 ```bash
 git diff --check
 xcodebuild -project GymTracker.xcodeproj \
   -scheme GymTracker \
   -configuration Debug \
-  -destination 'platform=iOS Simulator,id=B4892393-2EDB-4816-A09B-A18C3161823C' \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
   build
+```
+
+Performance-sensitive work:
+
+```bash
+Scripts/verify_performance_acceptance.sh
 ```
 
 For documentation-only tasks, `git diff --check` is sufficient unless app or project files were accidentally changed.

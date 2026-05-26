@@ -4,56 +4,48 @@
 
 Peakline should be the local-first training coach that tells Noel what to train, what target to aim for, whether to push or recover, and how training is progressing over time.
 
-The first serious version should stay focused on lifting: fast logging, Push/Pull/Legs structure, clear target suggestions, history, progress, and practical recovery guidance. Cloud sync, AI, Apple Watch, and deeper external integrations should wait until the local app is excellent.
+The app should stay centered on lifting: fast logging, Push/Pull/Legs structure, clear target suggestions, history, progress, nutrition and recovery context, and practical coaching. Cloud sync, AI, Apple Watch, and deeper external integrations stay behind local product quality.
 
 ## Current Status
 
 - Personal Push/Pull/Legs flow is in place.
 - Workout Preview supports Full, Quick, Recovery, and Heavy modes.
-- Live workout logging includes timer, pause/resume, set entry, rest timer, completion rating, celebration, and session summary.
+- Live workout logging includes timer, pause and resume, set entry, rest timer, completion rating, celebration, and session summary.
 - `TargetSuggestionService` aligns targets across Coach, Workout Preview, and Splits.
-- History, filters, progress charts, themes, exercise icons, sleep, hydration, nutrition, HealthKit bridge work, local export, templates, notes, and coach intelligence foundations exist.
-- Current risk is not missing features so much as keeping the app stable, readable, fast, and visually consistent as the feature surface grows.
+- History, filters, progress charts, themes, exercise icons, sleep, hydration, nutrition, HealthKit bridge work, local export, templates, notes, and coach intelligence are all present.
+- The focused performance acceptance verifier is in place and should stay green as navigation and feature work continues.
 
-## Current Near-Term Task
+## Current Near-Term Priority
 
-Run a focused visual QA and cleanup pass after the recent UI, icon, nutrition, sleep, HealthKit, reliability, and coach work.
+Keep the current app stable, readable, and coherent while the feature surface is already broad.
 
-Check light and dark mode across:
+That means:
 
-- Today.
-- Workout.
-- Workout Preview.
-- Live Workout Logger.
-- Splits.
-- History.
-- Settings.
-- Themes.
-- Nutrition, Sleep, Hydration, and HealthKit settings where touched.
-
-Fix only obvious polish or reliability issues: unreadable text, wrong surfaces, clipped rows, destructive controls using accent color, missing exact icons, scanner/navigation regressions, or excessive visual weight.
+- protect the workout, coach, and preview flows from regressions
+- keep nutrition scanner and import flows reviewable and navigation-safe
+- maintain readable UI across light and dark mode
+- keep performance-sensitive routes within the current acceptance thresholds
 
 ## Next Practical Priorities
 
-- Keep current build compile-ready and `git diff --check` clean.
-- Finish visual QA for the primary workout and dashboard flows.
-- Confirm exact PNG icon coverage for seeded exercises and add mappings when source assets already exist.
-- Keep nutrition scanner/import paths stable: barcode, OCR label scan, review, save, and return-to-log flows.
-- Keep SwiftData async work snapshot-based so live models do not cross `await` boundaries.
-- Add or preserve focused reliability tests around workout logging, nutrition import/export, sleep recovery, HealthKit boundaries, and navigation.
-- Add local backup/export coverage before risky persistence changes.
-- Continue improving history and analytics only where it stays readable and lazy-loaded.
+- Run focused visual QA across the core surfaces in light and dark mode.
+- Preserve the `Scripts/verify_performance_acceptance.sh` workflow for any changes that touch Today, Workout, Coach, Preview, or root lifecycle behavior.
+- Keep notification refresh, route warm-starts, and SwiftData async safety intact.
+- Confirm exact PNG icon coverage for seeded exercises and add mappings where source assets already exist.
+- Keep nutrition scanner and import paths stable: barcode, OCR, review, save, and return-to-log.
+- Add or preserve focused reliability tests around workout logging, nutrition import and export, sleep recovery, HealthKit boundaries, and navigation.
+- Keep backup and export healthy before risky persistence changes.
 
 ## Later Backlog
 
 - More exact exercise icon mappings.
-- Exercise notes/templates and workout template polish.
+- Workout template and exercise note polish.
 - Optional total tonnage alongside best-set volume.
 - PR list, split consistency, and weekly volume summaries.
-- Deeper coach copy/layout polish without overstating certainty.
+- Further coach copy and layout polish without overstating certainty.
 - Safer SwiftData migration strategy and sample fixtures.
-- iCloud/CloudKit sync after signing, entitlements, and container setup.
-- HealthKit expansion after local nutrition and sleep behavior remains stable.
+- iCloud or CloudKit sync after signing, entitlements, container setup, and migration coverage.
+- HealthKit expansion after local nutrition and sleep behavior stays stable.
 - Apple Watch companion app.
 - AI-generated weekly review or natural-language training questions.
 - Advanced periodisation blocks.
@@ -68,8 +60,14 @@ git diff --check
 xcodebuild -project GymTracker.xcodeproj \
   -scheme GymTracker \
   -configuration Debug \
-  -destination 'platform=iOS Simulator,id=B4892393-2EDB-4816-A09B-A18C3161823C' \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
   build
+```
+
+For performance-sensitive changes:
+
+```bash
+Scripts/verify_performance_acceptance.sh
 ```
 
 For documentation-only tasks, `git diff --check` is enough unless app or project files were accidentally changed.

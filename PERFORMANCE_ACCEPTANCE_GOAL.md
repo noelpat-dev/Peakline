@@ -1,42 +1,41 @@
-You are working in the Peakline / GymTracker SwiftUI + SwiftData iOS repo.
+# Performance Acceptance
 
-Goal:
-Create and use a repeatable performance/regression acceptance loop so Codex can keep fixing the current runtime issues until they are actually resolved.
+## Purpose
 
-Do not rely only on manual Xcode observation.
-Create a script and/or UI test that can run repeatedly and fail when the known regressions are still present.
+Peakline now has a repeatable performance and navigation regression check. Use it whenever work touches the interactive paths that were recently stabilized:
 
-Current known failures from latest trace:
-- Today → Coach first route can appear in 2371ms.
-- `Gesture: System gesture gate timed out` still appears.
-- `Potential Structural Swift Concurrency Issue: unsafeForcedSync called from Swift Concurrent context` still appears around app backgrounding.
-- WorkoutPreview previously showed repeated render snapshot / loading issues.
-- Workout → Coach duplicate route issue should stay fixed.
+- Today to Coach
+- Workout to Coach
+- Workout to Preview
+- Preview mode change
+- one-back route dismissal
+- root notification refresh
+- scene phase and background handling
 
-Create an acceptance validator.
+## Canonical Command
 
-Preferred implementation:
-1. Add or update a UI test that exercises:
-   - cold launch
-   - Today → Coach
-   - Workout → Coach
-   - Workout → Preview
-   - change Workout Preview mode once
-   - back navigation from Coach
-   - app background/reopen if feasible in UI tests
+Run:
 
-2. Add a shell script:
-   Scripts/verify_performance_acceptance.sh
+```bash
+Scripts/verify_performance_acceptance.sh
+```
 
-The script should:
-- run `git diff --check`
-- run the Debug build
-- run the relevant UI/unit tests
-- capture app/test logs if possible
-- scan logs for known failure strings
-- exit non-zero if any failure remains
+That script is the current acceptance gate for performance-sensitive work. Do not rely only on manual Xcode observation when a change touches those paths.
 
-Failure strings:
+## What The Verifier Runs
+
+The verifier currently:
+
+1. runs `git diff --check`
+2. builds the app in Debug
+3. runs `GymTrackerTests`
+4. runs the focused UI acceptance test
+5. scans the combined logs for timing and regression failures
+
+## Current Failure Checks
+
+The verifier fails on these strings:
+
 - `Potential Structural Swift Concurrency Issue: unsafeForcedSync`
 - `Gesture: System gesture gate timed out`
 - `Unable to simultaneously satisfy constraints`
@@ -45,47 +44,65 @@ Failure strings:
 - `ButtonWrapper.width`
 - `UIView-Encapsulated-Layout-Width == 0`
 
-Timing failures:
-- fail if `today.route.appear coach appeared in` is above 500ms
-- fail if `root.notification.refresh completed in` is above 50ms, unless explicitly marked deferred work
-- fail if WorkoutPreview logs multiple `refresh onAppear` completions for a single open
-- fail if Workout → Coach logs multiple adjacent `appended route=coach` without a `path_changed depth=0` between them
+It also fails if:
 
-If xcodebuild log capture cannot reliably catch app console logs:
-- add DEBUG-only in-app validation counters to PerformanceTracer
-- expose enough logs during UI tests to make the script fail reliably
-- do not ship user-facing changes
+- `today.route.appear coach appeared in` is above 500ms
+- `root.notification.refresh completed in` is above 50ms in the interactive path
+- Workout Preview logs more than one `refresh onAppear` for a single open
+- Workout to Coach logs multiple adjacent `appended route=coach` events without `path_changed depth=0` between them
 
-Loop rules:
-After creating the verifier:
-1. Run `Scripts/verify_performance_acceptance.sh`.
-2. If it fails, inspect the exact failed condition.
-3. Apply the smallest fix for that failed condition only.
-4. Run the verifier again.
-5. Repeat until the verifier passes, or stop after 3 consecutive attempts on the same failing condition and report the blocker.
+## Supporting Test And Instrumentation
 
-Do not:
-- do broad performance rewrites
-- change SwiftData schemas
-- redesign UI
-- edit archived docs
-- remove working performance fixes
-- silence warnings without fixing causes
+Current support for the verifier lives in:
 
-Final acceptance:
-The task is done only when:
-- `Scripts/verify_performance_acceptance.sh` exits 0
-- build passes
-- tests pass
-- no unsafeForcedSync appears in captured logs
-- no gesture gate timeout appears in captured logs
-- no toolbar constraint warning appears in captured logs
-- Today → Coach and Workout → Coach use one route push and one back swipe
-- WorkoutPreview does not repeatedly refresh on initial open
+- `Scripts/verify_performance_acceptance.sh`
+- `GymTrackerUITests/CoachWorkoutPreviewUITests.swift`
+- DEBUG-only acceptance state in `GymTracker/Utilities/PerformanceTracer.swift`
+- DEBUG-only acceptance summary exposure in `GymTracker/App/RootTabView.swift`
 
-Final report:
-- verifier created
-- exact command to run it
-- final pass/fail result
-- failures found and fixed
-- remaining limitations if log capture is imperfect
+The UI acceptance flow covers:
+
+- cold launch
+- Today to Coach
+- Workout to Coach
+- Workout to Preview
+- one Preview mode change
+- one-back dismissal from Coach
+- one-back dismissal from Preview
+
+## Current Baseline
+
+The latest passing verifier run reported:
+
+- `performance_acceptance=PASS`
+- `todayCoachMax=228`
+- `rootNotificationMax=12`
+- `previewOnAppearRefreshes=1`
+- `failures=none`
+
+Treat that as the current healthy baseline rather than a hard promise for every machine. The enforced thresholds remain the source of truth.
+
+## When To Run It
+
+Run the verifier when changing:
+
+- Today route selection or destination building
+- Coach route warm-start behavior
+- Workout route navigation
+- Workout Preview loading, snapshot, or mode handling
+- Root scene phase handling
+- Notification refresh behavior
+- SwiftData async paths near these surfaces
+
+For documentation-only tasks or clearly unrelated code, the full verifier is optional.
+
+## Debugging Loop
+
+If the verifier fails:
+
+1. inspect the exact failed condition
+2. apply the smallest fix for that failed condition
+3. rerun the verifier
+4. repeat until it passes or the same failure repeats enough times to justify escalating the blocker
+
+Do not silence warnings without fixing their cause.
