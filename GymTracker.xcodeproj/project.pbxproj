@@ -134,6 +134,7 @@
 		0010000000000000000000B1 /* CoachWorkoutPreviewUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B1 /* CoachWorkoutPreviewUITests.swift */; };
 		0010000000000000000000B2 /* WorkoutLoggingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B2 /* WorkoutLoggingUITests.swift */; };
 		0010000000000000000000B3 /* NutritionScannerNavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B3 /* NutritionScannerNavigationUITests.swift */; };
+		0010000000000000000000B4 /* AppLifecycleSwipeAwayUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B4 /* AppLifecycleSwipeAwayUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -285,6 +286,7 @@
 		0020000000000000000000B1 /* CoachWorkoutPreviewUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkoutPreviewUITests.swift; sourceTree = "<group>"; };
 		0020000000000000000000B2 /* WorkoutLoggingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutLoggingUITests.swift; sourceTree = "<group>"; };
 		0020000000000000000000B3 /* NutritionScannerNavigationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionScannerNavigationUITests.swift; sourceTree = "<group>"; };
+		0020000000000000000000B4 /* AppLifecycleSwipeAwayUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLifecycleSwipeAwayUITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -605,6 +607,7 @@
 				0020000000000000000000B1 /* CoachWorkoutPreviewUITests.swift */,
 				0020000000000000000000B2 /* WorkoutLoggingUITests.swift */,
 				0020000000000000000000B3 /* NutritionScannerNavigationUITests.swift */,
+				0020000000000000000000B4 /* AppLifecycleSwipeAwayUITests.swift */,
 			);
 			path = GymTrackerUITests;
 			sourceTree = "<group>";
@@ -883,6 +886,7 @@
 				0010000000000000000000B1 /* CoachWorkoutPreviewUITests.swift in Sources */,
 				0010000000000000000000B2 /* WorkoutLoggingUITests.swift in Sources */,
 				0010000000000000000000B3 /* NutritionScannerNavigationUITests.swift in Sources */,
+				0010000000000000000000B4 /* AppLifecycleSwipeAwayUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

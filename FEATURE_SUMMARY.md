@@ -1,5 +1,7 @@
 # Feature Summary
 
+Current file: `FEATURE_SUMMARY.md`
+
 ## Product Direction
 
 Peakline is a personal, local-first lifting coach for Noel's Push/Pull/Legs training. It should make workout decisions easier, keep logging fast, show realistic targets, and explain coaching decisions without drifting into a generic social fitness app or AI chatbot.

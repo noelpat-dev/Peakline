@@ -12,20 +12,17 @@ struct HistoryView: View {
     @State private var filters = HistoryFilters()
     @State private var useDateRange = false
     @State private var showingFilters = false
-    @State private var pendingDeleteSession: WorkoutSession?
+    @State private var pendingDeleteSessionID: UUID?
+    @State private var selectedWorkoutDetailRoute: HistoryWorkoutDetailRoute?
     @State private var displaySnapshot = HistoryDisplaySnapshot.empty
     @State private var lastDisplaySignature: String?
     @State private var didRequestInitialRefresh = false
+    @State private var displaySnapshotReady = false
 
     private let filterService = HistoryFilterService()
 
     private var currentDisplaySnapshot: HistoryDisplaySnapshot {
-        let signature = displaySignature
-        if signature == lastDisplaySignature {
-            return displaySnapshot
-        }
-
-        return makeDisplaySnapshot()
+        displaySnapshot
     }
 
     private var displaySignature: String {
@@ -39,8 +36,12 @@ struct HistoryView: View {
         ].joined(separator: "|")
     }
 
-    private var filteredSessions: [WorkoutSession] {
-        currentDisplaySnapshot.filteredSessions
+    private var sessionRows: [HistorySessionRowSnapshot] {
+        currentDisplaySnapshot.sessionRows
+    }
+
+    private var calendarLoggedDates: [Date] {
+        currentDisplaySnapshot.loggedDates
     }
 
     private var splitOptions: [String] {
@@ -51,29 +52,30 @@ struct HistoryView: View {
         NavigationStack {
             FitnessScreen(title: "History", subtitle: "Review training trends and recent sessions.", systemImage: "clock.arrow.circlepath") {
                 FitnessCard(style: .compact) {
-                    WorkoutCalendarView(displayedMonth: $displayedMonth, sessions: filteredSessions)
+                    WorkoutCalendarView(displayedMonth: $displayedMonth, loggedDates: calendarLoggedDates)
                 }
 
                 filterChips
 
-                if filteredSessions.isEmpty {
+                if sessionRows.isEmpty {
                     DashboardEmptyStateCard(
-                        title: sessions.isEmpty ? "No workouts logged yet" : "No matching workouts",
-                        message: sessions.isEmpty ? "Start Push, Pull, or Legs to build your first training history." : "Adjust filters to see more sessions.",
-                        systemImage: "clock"
+                        title: displaySnapshotReady ? (sessions.isEmpty ? "No workouts logged yet" : "No matching workouts") : "Loading history",
+                        message: displaySnapshotReady ? (sessions.isEmpty ? "Start Push, Pull, or Legs to build your first training history." : "Adjust filters to see more sessions.") : "Preparing recent sessions and filters.",
+                        systemImage: displaySnapshotReady ? "clock" : "hourglass"
                     )
                 } else {
-                    ForEach(filteredSessions) { session in
-                        NavigationLink {
-                            WorkoutHistoryDetailView(session: session)
+                    ForEach(sessionRows) { row in
+                        Button {
+                            AppHaptics.selection()
+                            selectedWorkoutDetailRoute = HistoryWorkoutDetailRoute(sessionID: row.id)
                         } label: {
                             FitnessCard(style: .compact) {
                                 HStack(alignment: .center, spacing: 12) {
                                     VStack(alignment: .leading, spacing: 5) {
-                                        Text(session.splitNameSnapshot)
+                                        Text(row.splitName)
                                             .font(.headline)
                                             .foregroundStyle(appTheme.colors.textPrimary)
-                                        Text(summary(for: session))
+                                        Text(row.summary)
                                             .font(.subheadline)
                                             .foregroundStyle(appTheme.mutedText)
                                     }
@@ -89,7 +91,7 @@ struct HistoryView: View {
                         }
                         .buttonStyle(.plain)
                         .destructiveSwipeAction {
-                            pendingDeleteSession = session
+                            pendingDeleteSessionID = row.id
                         }
                     }
                 }
@@ -102,7 +104,7 @@ struct HistoryView: View {
             }
             .alert("Delete workout?", isPresented: deleteAlertBinding) {
                 Button("Cancel", role: .cancel) {
-                    pendingDeleteSession = nil
+                    pendingDeleteSessionID = nil
                 }
                 Button("Delete", role: .destructive) {
                     deletePendingSession()
@@ -110,12 +112,17 @@ struct HistoryView: View {
             } message: {
                 Text("This removes the workout from history and progress trends.")
             }
+            .navigationDestination(item: $selectedWorkoutDetailRoute) { route in
+                WorkoutHistoryDetailRouteView(sessionID: route.sessionID)
+            }
         }
         .accessibilityIdentifier("history-screen")
         .onAppear {
             let shouldForceRefresh = !didRequestInitialRefresh
             didRequestInitialRefresh = true
-            refreshDisplaySnapshot(force: shouldForceRefresh)
+            DispatchQueue.main.async {
+                refreshDisplaySnapshot(force: shouldForceRefresh)
+            }
         }
         .onChange(of: displaySignature) { _, _ in
             refreshDisplaySnapshot()
@@ -125,23 +132,38 @@ struct HistoryView: View {
     private func refreshDisplaySnapshot(force: Bool = false) {
         let signature = displaySignature
         guard force || signature != lastDisplaySignature else { return }
-        displaySnapshot = makeDisplaySnapshot()
-        lastDisplaySignature = signature
+        let nextSnapshot = PerformanceTracer.trace(.historyDisplaySnapshot) {
+            makeDisplaySnapshot()
+        }
+        AppMotion.withoutAnimation {
+            displaySnapshot = nextSnapshot
+            lastDisplaySignature = signature
+            displaySnapshotReady = true
+        }
     }
 
     private func makeDisplaySnapshot() -> HistoryDisplaySnapshot {
-        HistoryDisplaySnapshot(
-            filteredSessions: filterService.filter(sessions, using: filters),
+        let filteredSessions = filterService.filter(sessions, using: filters)
+        return HistoryDisplaySnapshot(
+            sessionRows: filteredSessions.map { session in
+                HistorySessionRowSnapshot(
+                    id: session.id,
+                    splitName: session.splitNameSnapshot,
+                    date: session.date,
+                    summary: summary(for: session)
+                )
+            },
+            loggedDates: filteredSessions.map(\.date),
             splitOptions: Array(Set(sessions.map { baseSplitName($0.splitNameSnapshot) })).sorted()
         )
     }
 
     private var deleteAlertBinding: Binding<Bool> {
         Binding {
-            pendingDeleteSession != nil
+            pendingDeleteSessionID != nil
         } set: { showing in
             if !showing {
-                pendingDeleteSession = nil
+                pendingDeleteSessionID = nil
             }
         }
     }
@@ -307,9 +329,11 @@ struct HistoryView: View {
     }
 
     private func deletePendingSession() {
-        guard let pendingDeleteSession else { return }
+        guard let pendingDeleteSessionID else { return }
+        defer { self.pendingDeleteSessionID = nil }
+
+        guard let pendingDeleteSession = sessions.first(where: { $0.id == pendingDeleteSessionID }) else { return }
         delete(pendingDeleteSession)
-        self.pendingDeleteSession = nil
     }
 
     private var splitFilterBinding: Binding<String?> {
@@ -346,24 +370,40 @@ struct HistoryView: View {
 }
 
 private struct HistoryDisplaySnapshot {
-    var filteredSessions: [WorkoutSession]
+    var sessionRows: [HistorySessionRowSnapshot]
+    var loggedDates: [Date]
     var splitOptions: [String]
 
-    static let empty = HistoryDisplaySnapshot(filteredSessions: [], splitOptions: [])
+    static let empty = HistoryDisplaySnapshot(sessionRows: [], loggedDates: [], splitOptions: [])
+}
+
+private struct HistorySessionRowSnapshot: Identifiable, Hashable {
+    let id: UUID
+    let splitName: String
+    let date: Date
+    let summary: String
+}
+
+private struct HistoryWorkoutDetailRoute: Identifiable, Hashable {
+    let sessionID: UUID
+
+    var id: UUID {
+        sessionID
+    }
 }
 
 private struct WorkoutCalendarView: View {
     @Environment(\.appTheme) private var appTheme
 
     @Binding var displayedMonth: Date
-    let sessions: [WorkoutSession]
+    let loggedDates: [Date]
 
     private let calendar = Calendar.current
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
     private let weekdays = ["M", "T", "W", "T", "F", "S", "S"]
 
     private var loggedDays: Set<Date> {
-        Set(sessions.map { calendar.startOfDay(for: $0.date) })
+        Set(loggedDates.map { calendar.startOfDay(for: $0) })
     }
 
     private var monthTitle: String {
@@ -463,6 +503,43 @@ private struct CalendarDayCell: View {
                     Circle().stroke(appTheme.colors.textTertiary, lineWidth: 1)
                 }
             }
+    }
+}
+
+private struct WorkoutHistoryDetailRouteView: View {
+    let sessionID: UUID
+
+    @Query private var sessions: [WorkoutSession]
+
+    init(sessionID: UUID) {
+        self.sessionID = sessionID
+
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { session in
+                session.id == sessionID
+            },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 1
+        _sessions = Query(descriptor)
+    }
+
+    var body: some View {
+        if let session = sessions.first {
+            WorkoutHistoryDetailView(session: session)
+        } else {
+            FitnessScreen(
+                title: "Workout",
+                subtitle: "This workout is no longer available.",
+                systemImage: "clock.badge.questionmark"
+            ) {
+                DashboardEmptyStateCard(
+                    title: "Workout unavailable",
+                    message: "It may have been deleted from history.",
+                    systemImage: "exclamationmark.triangle"
+                )
+            }
+        }
     }
 }
 

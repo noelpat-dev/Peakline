@@ -41,6 +41,7 @@ struct SleepDashboardView: View {
     @State private var hydrationTargetML = HydrationSettingsStore().dailyTargetML()
     @State private var nutritionGoal = NutritionGoalService().loadGoal()
     @State private var healthKitSleepImportTask: Task<Void, Never>?
+    @State private var didRequestInitialDashboardRefresh = false
 
     private let repository = SleepSessionRepository()
     private let scoring = SleepScoringService()
@@ -226,9 +227,11 @@ struct SleepDashboardView: View {
             hydrationTargetML = hydrationSettingsStore.dailyTargetML()
             nutritionGoal = nutritionGoalStore.loadGoal()
             maybePromptForWakeTime()
+            let shouldForceRefresh = !didRequestInitialDashboardRefresh
+            didRequestInitialDashboardRefresh = true
             DispatchQueue.main.async {
-                refreshSleepAnalytics()
-                refreshReadinessScore()
+                refreshSleepAnalytics(force: shouldForceRefresh)
+                refreshReadinessScore(force: shouldForceRefresh)
                 scheduleSleepImportIfEnabled()
             }
         }
@@ -750,17 +753,19 @@ struct SleepDashboardView: View {
         guard force || signature != lastAnalyticsSignature else { return }
 
         let snapshot = analyticsStore.snapshot(sessions: sessions, naps: naps, workouts: workouts, settings: settings, force: force)
-        summaries = snapshot.summaries
-        latestSummary = snapshot.latestSummary
-        dashboardSummary = snapshot.dashboardSummary
-        lastAnalyticsSignature = signature
+        AppMotion.withoutAnimation {
+            summaries = snapshot.summaries
+            latestSummary = snapshot.latestSummary
+            dashboardSummary = snapshot.dashboardSummary
+            lastAnalyticsSignature = signature
+        }
     }
 
     private func refreshReadinessScore(force: Bool = false) {
         let signature = currentReadinessSignature
         guard force || signature != lastReadinessSignature else { return }
 
-        readinessScore = coachIntelligence.readiness(
+        let nextReadinessScore = coachIntelligence.readiness(
             sleepSessions: sessions,
             napSessions: naps,
             hydrationEntries: hydrationEntries,
@@ -771,7 +776,10 @@ struct SleepDashboardView: View {
             hydrationTargetML: hydrationTargetML,
             nutritionGoal: nutritionGoal
         )
-        lastReadinessSignature = signature
+        AppMotion.withoutAnimation {
+            readinessScore = nextReadinessScore
+            lastReadinessSignature = signature
+        }
     }
 
     private func signature<Value>(_ values: [Value], limit: Int, transform: (Value) -> String) -> String {
@@ -1540,9 +1548,21 @@ struct SleepSessionDetailView: View {
     let session: SleepSession
     @State private var showingEditor = false
     @State private var showingDeleteConfirmation = false
+    @State private var qualityScore: Int
 
     private let repository = SleepSessionRepository()
-    private let scoring = SleepScoringService()
+
+    init(session: SleepSession) {
+        self.session = session
+        let score = PerformanceTracer.trace(.sleepSessionQuality) {
+            SleepScoringService().score(
+                for: session,
+                recentSessions: [session],
+                settings: SleepSettingsStore().load()
+            )
+        }
+        _qualityScore = State(initialValue: score)
+    }
 
     var body: some View {
         FitnessScreen(
@@ -1585,8 +1605,6 @@ struct SleepSessionDetailView: View {
             }
 
             SleepGlassCard {
-                let qualityScore = scoring.score(for: session, recentSessions: [session], settings: SleepSettingsStore().load())
-
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Session quality: \(qualityScore)")
                         .font(.headline)
@@ -2394,7 +2412,7 @@ private struct SleepHistoryRow: View {
                         .foregroundStyle(appTheme.colors.accent)
                 }
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("Sleep quality \(qualityScore) out of 100")
+                .accessibilityLabel("Session quality \(qualityScore) out of 100")
             }
         }
     }

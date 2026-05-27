@@ -1,5 +1,7 @@
 # Architecture
 
+Current file: `ARCHITECTURE.md`
+
 ## Overview
 
 Peakline is a SwiftUI and SwiftData iOS app built around local workout logging, Push/Pull/Legs planning, deterministic coaching, progress history, sleep/recovery context, hydration, nutrition, and optional HealthKit bridges.

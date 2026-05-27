@@ -190,10 +190,13 @@ struct NutritionDashboardView: View {
     private func refreshDashboardSnapshot(force: Bool = false) {
         let signature = dashboardSignature
         guard force || signature != lastDashboardSignature else { return }
-        dashboardSnapshot = PerformanceTracer.trace(.nutritionDashboardSnapshot) {
+        let nextSnapshot = PerformanceTracer.trace(.nutritionDashboardSnapshot) {
             makeDashboardSnapshot()
         }
-        lastDashboardSignature = signature
+        AppMotion.withoutAnimation {
+            dashboardSnapshot = nextSnapshot
+            lastDashboardSignature = signature
+        }
     }
 
     private func makeDashboardSnapshot() -> NutritionDashboardSnapshot {

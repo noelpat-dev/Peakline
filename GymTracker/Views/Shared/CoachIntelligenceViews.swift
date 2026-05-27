@@ -93,6 +93,7 @@ struct CoachBriefCard: View {
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(SecondaryFitnessButtonStyle())
+        .accessibilityIdentifier("today-coach-brief-open")
     }
 
     @ViewBuilder
@@ -907,7 +908,8 @@ struct AdaptiveWorkoutGuidanceCard: View {
                     }
                     .padding(.vertical, 1)
                 }
-                .scrollClipDisabled()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .clipped()
 
                 Label("Advisory only. Workout plan stays unchanged.", systemImage: "hand.raised.fill")
                     .font(.caption.weight(.semibold))
@@ -1139,30 +1141,37 @@ private struct CheckInRatingRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            HStack {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text(title)
-                    .font(.headline)
+                    .font(.headline.weight(.semibold))
                     .foregroundStyle(appTheme.colors.textPrimary)
 
-                Spacer()
+                Spacer(minLength: 12)
 
                 Text("\(value)/5")
                     .font(.caption.weight(.bold))
+                    .monospacedDigit()
                     .foregroundStyle(appTheme.colors.accent)
+                    .frame(minWidth: 34, alignment: .trailing)
             }
+            .frame(maxWidth: .infinity)
 
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
+                HStack(spacing: 14) {
                     Text(lowLabel)
                         .font(.caption)
                         .foregroundStyle(appTheme.colors.textTertiary)
+                        .frame(width: 42, alignment: .leading)
 
                     ratingButtons
+                        .frame(maxWidth: .infinity)
 
                     Text(highLabel)
                         .font(.caption)
                         .foregroundStyle(appTheme.colors.textTertiary)
+                        .frame(width: 42, alignment: .trailing)
                 }
+                .frame(maxWidth: .infinity)
 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {

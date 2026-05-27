@@ -198,13 +198,20 @@ struct ProgressContentView: View {
         guard force || !exercisesLoaded else { return }
 
         do {
-            exercises = try PerformanceTracer.trace(.progressFetchExercises) {
+            let nextExercises = try PerformanceTracer.trace(.progressFetchExercises) {
                 try modelContext.fetch(Self.exercisesDescriptor)
             }
+            AppMotion.withoutAnimation {
+                exercises = nextExercises
+            }
         } catch {
-            exercises = []
+            AppMotion.withoutAnimation {
+                exercises = []
+            }
         }
-        exercisesLoaded = true
+        AppMotion.withoutAnimation {
+            exercisesLoaded = true
+        }
     }
 
     private func refreshSummary(force: Bool = false) {
@@ -244,9 +251,11 @@ struct ProgressContentView: View {
             }.value
 
             guard !Task.isCancelled else { return }
-            weeklySummary = result.0
-            splitConsistency = result.1
-            lastSummarySignature = signature
+            AppMotion.withoutAnimation {
+                weeklySummary = result.0
+                splitConsistency = result.1
+                lastSummarySignature = signature
+            }
         }
     }
 
@@ -278,6 +287,9 @@ private struct ExerciseProgressDetailView: View {
 
     @Query
     private var sessions: [WorkoutSession]
+    @State private var entries: [ExerciseProgressEntry] = []
+    @State private var lastEntriesSignature: String?
+    @State private var entriesLoaded = false
 
     init(exercise: Exercise) {
         self.exercise = exercise
@@ -293,7 +305,14 @@ private struct ExerciseProgressDetailView: View {
         return descriptor
     }
 
-    private var entries: [ExerciseProgressEntry] {
+    private var entriesSignature: String {
+        [
+            exercise.id.uuidString,
+            sessions.prefix(160).map { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.endedAt?.timeIntervalSince1970 ?? 0):\($0.exerciseLogs.count)" }.joined(separator: ",")
+        ].joined(separator: "|")
+    }
+
+    private func makeEntries() -> [ExerciseProgressEntry] {
         sessions.compactMap { session in
             guard let exerciseLog = session.exerciseLogs.first(where: { $0.exerciseId == exercise.id }) else {
                 return nil
@@ -314,7 +333,9 @@ private struct ExerciseProgressDetailView: View {
             subtitle: exercise.primaryMuscleGroup.displayName,
             systemImage: "chart.xyaxis.line"
         ) {
-            if let latest = entries.first {
+            if !entriesLoaded {
+                progressDetailLoadingCard
+            } else if let latest = entries.first {
                 DashboardSection(title: "Latest") {
                     HStack(spacing: 10) {
                         MetricTile(label: "Best set", value: latest.bestSetText, caption: nil, systemImage: "dumbbell")
@@ -328,7 +349,9 @@ private struct ExerciseProgressDetailView: View {
             }
 
             DashboardSection(title: "Chart") {
-                if entries.count < 2 {
+                if !entriesLoaded {
+                    progressDetailLoadingCard
+                } else if entries.count < 2 {
                     DashboardEmptyStateCard(
                         title: "More data needed",
                         message: "Log this exercise in at least two sessions to show a trend.",
@@ -343,7 +366,9 @@ private struct ExerciseProgressDetailView: View {
             }
 
             DashboardSection(title: "History") {
-                if entries.isEmpty {
+                if !entriesLoaded {
+                    progressDetailLoadingCard
+                } else if entries.isEmpty {
                     DashboardEmptyStateCard(
                         title: "No completed working sets yet",
                         message: "Finish a set for this exercise to start its progress history.",
@@ -371,6 +396,39 @@ private struct ExerciseProgressDetailView: View {
             }
         }
         .navigationTitle(exercise.name)
+        .onAppear {
+            refreshEntries(force: true)
+        }
+        .onChange(of: entriesSignature) { _, _ in
+            refreshEntries()
+        }
+    }
+
+    private var progressDetailLoadingCard: some View {
+        FitnessCard(style: .compact) {
+            HStack(spacing: 10) {
+                Image(systemName: "hourglass")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(appTheme.colors.accent)
+                Text("Loading exercise data")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(appTheme.colors.textSecondary)
+            }
+        }
+    }
+
+    private func refreshEntries(force: Bool = false) {
+        let signature = entriesSignature
+        guard force || signature != lastEntriesSignature else { return }
+
+        let nextEntries = PerformanceTracer.trace(.exerciseProgressEntries) {
+            makeEntries()
+        }
+        AppMotion.withoutAnimation {
+            entries = nextEntries
+            lastEntriesSignature = signature
+            entriesLoaded = true
+        }
     }
 }
 

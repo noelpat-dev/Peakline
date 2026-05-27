@@ -1,5 +1,7 @@
 # UI Style Guide
 
+Current file: `UI_STYLE_GUIDE.md`
+
 ## Direction
 
 Peakline should feel dark-first, metric-led, compact, and motivating. It can be inspired by the broad feel of Apple Fitness and Workout apps, but it must not copy Apple's exact Activity Rings, screen layouts, icons, colors, or branded identity.

@@ -1,4 +1,6 @@
-# Performance Acceptance
+# Performance Acceptance Goal
+
+Current file: `PERFORMANCE_ACCEPTANCE_GOAL.md`
 
 ## Purpose
 

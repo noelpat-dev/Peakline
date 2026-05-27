@@ -1,5 +1,7 @@
 # Roadmap
 
+Current file: `ROADMAP.md`
+
 ## Product North Star
 
 Peakline should be the local-first training coach that tells Noel what to train, what target to aim for, whether to push or recover, and how training is progressing over time.

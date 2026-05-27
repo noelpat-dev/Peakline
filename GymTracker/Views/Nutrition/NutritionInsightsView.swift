@@ -16,6 +16,10 @@ struct NutritionInsightsDashboardView: View {
     @State private var healthPreferences = HealthKitSyncPreferences.default
     @State private var appleHealthContext: HealthKitDailyContext?
     @State private var selectedRoute: NutritionInsightsRoute?
+    @State private var insightsSnapshot = NutritionInsightsSnapshot.empty
+    @State private var lastInsightsSignature: String?
+    @State private var didRequestInitialSnapshot = false
+    @State private var healthContextTask: Task<Void, Never>?
 
     private let goalService = NutritionGoalService()
     private let summaryService = NutritionSummaryService()
@@ -47,23 +51,45 @@ struct NutritionInsightsDashboardView: View {
         return descriptor
     }
 
+    private var currentInsightsSnapshot: NutritionInsightsSnapshot {
+        insightsSnapshot
+    }
+
     private var todaySummary: DailyNutritionSummary {
-        summaryService.dailySummary(for: .now, foodLogs: foodLogs, workouts: completedSessions)
+        currentInsightsSnapshot.todaySummary
     }
 
     private var weeklySummary: WeeklyNutritionSummary {
-        trendService.weeklySummary(
-            dailySummaries: summaryService.dailySummaries(endingOn: .now, days: 7, foodLogs: foodLogs, workouts: completedSessions),
-            goal: goal
-        )
+        currentInsightsSnapshot.weeklySummary
     }
 
     private var trainingContext: TrainingNutritionContext {
-        contextService.context(for: .now, foodLogs: foodLogs, workouts: completedSessions)
+        currentInsightsSnapshot.trainingContext
     }
 
     private var insights: [NutritionInsight] {
-        insightService.insights(today: todaySummary, weekly: weeklySummary, goal: goal, context: trainingContext)
+        currentInsightsSnapshot.insights
+    }
+
+    private var insightsSignature: String {
+        [
+            foodLogs.prefix(200).map { "\($0.id.uuidString):\($0.loggedAt.timeIntervalSince1970):\($0.updatedAt.timeIntervalSince1970)" }.joined(separator: ","),
+            completedSessions.prefix(40).map { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.endedAt?.timeIntervalSince1970 ?? 0)" }.joined(separator: ","),
+            goalSignature
+        ].joined(separator: "|")
+    }
+
+    private var goalSignature: String {
+        [
+            "\(goal.isEnabled)",
+            "\(goal.dailyCaloriesTarget ?? 0)",
+            "\(goal.dailyProteinTarget ?? 0)",
+            "\(goal.dailyCarbsTarget ?? 0)",
+            "\(goal.dailyFatTarget ?? 0)",
+            "\(goal.trainingDayCaloriesTarget ?? 0)",
+            "\(goal.restDayCaloriesTarget ?? 0)",
+            "\(goal.updatedAt.timeIntervalSince1970)"
+        ].joined(separator: ":")
     }
 
     var body: some View {
@@ -160,9 +186,63 @@ struct NutritionInsightsDashboardView: View {
         .onAppear {
             goal = goalService.loadGoal()
             healthPreferences = healthPreferenceStore.load()
-            Task {
-                appleHealthContext = await healthBridge.dailyContext(for: .now, preferences: healthPreferences)
+            let shouldForceRefresh = !didRequestInitialSnapshot
+            didRequestInitialSnapshot = true
+            DispatchQueue.main.async {
+                refreshInsightsSnapshot(force: shouldForceRefresh)
             }
+            refreshAppleHealthContext()
+        }
+        .onDisappear {
+            healthContextTask?.cancel()
+        }
+        .onChange(of: insightsSignature) { _, _ in
+            refreshInsightsSnapshot()
+        }
+    }
+
+    private func refreshInsightsSnapshot(force: Bool = false) {
+        let signature = insightsSignature
+        guard force || signature != lastInsightsSignature else { return }
+
+        let nextSnapshot = PerformanceTracer.trace(.nutritionInsightsSnapshot) {
+            makeInsightsSnapshot()
+        }
+        AppMotion.withoutAnimation {
+            insightsSnapshot = nextSnapshot
+            lastInsightsSignature = signature
+        }
+    }
+
+    private func makeInsightsSnapshot() -> NutritionInsightsSnapshot {
+        let today = summaryService.dailySummary(for: .now, foodLogs: foodLogs, workouts: completedSessions)
+        let weekly = trendService.weeklySummary(
+            dailySummaries: summaryService.dailySummaries(
+                endingOn: .now,
+                days: 7,
+                foodLogs: foodLogs,
+                workouts: completedSessions
+            ),
+            goal: goal
+        )
+        let context = contextService.context(for: .now, foodLogs: foodLogs, workouts: completedSessions)
+        let generatedInsights = insightService.insights(today: today, weekly: weekly, goal: goal, context: context)
+
+        return NutritionInsightsSnapshot(
+            todaySummary: today,
+            weeklySummary: weekly,
+            trainingContext: context,
+            insights: generatedInsights
+        )
+    }
+
+    private func refreshAppleHealthContext() {
+        healthContextTask?.cancel()
+        let preferences = healthPreferences
+        healthContextTask = Task { @MainActor in
+            let context = await healthBridge.dailyContext(for: .now, preferences: preferences)
+            guard !Task.isCancelled else { return }
+            appleHealthContext = context
         }
     }
 
@@ -318,6 +398,66 @@ private enum NutritionInsightsRoute: Hashable, Identifiable {
     case foodLog
 
     var id: Self { self }
+}
+
+private struct NutritionInsightsSnapshot {
+    let todaySummary: DailyNutritionSummary
+    let weeklySummary: WeeklyNutritionSummary
+    let trainingContext: TrainingNutritionContext
+    let insights: [NutritionInsight]
+
+    static let empty: NutritionInsightsSnapshot = {
+        let date = Date(timeIntervalSince1970: 0)
+        let daily = DailyNutritionSummary(
+            id: "empty",
+            date: date,
+            calories: 0,
+            protein: 0,
+            carbs: 0,
+            fat: 0,
+            sugar: nil,
+            fibre: nil,
+            salt: nil,
+            loggedFoodCount: 0,
+            mealBreakdown: [:],
+            isTrainingDay: false,
+            workoutCount: 0
+        )
+        let weekly = WeeklyNutritionSummary(
+            startDate: date,
+            endDate: date,
+            dailySummaries: [],
+            averageCalories: 0,
+            averageProtein: 0,
+            averageCarbs: 0,
+            averageFat: 0,
+            proteinTargetHitDays: 0,
+            calorieTargetHitDays: 0,
+            loggedDays: 0,
+            trainingDays: 0,
+            trainingDayAverageCalories: nil,
+            restDayAverageCalories: nil
+        )
+        let context = TrainingNutritionContext(
+            date: date,
+            isTrainingDay: false,
+            workoutCount: 0,
+            workoutStartTimes: [],
+            workoutEndTimes: [],
+            preWorkoutCalories: nil,
+            postWorkoutProtein: nil,
+            hasFoodLoggedBeforeWorkout: nil,
+            hasFoodLoggedAfterWorkout: nil,
+            latestWorkoutName: nil
+        )
+
+        return NutritionInsightsSnapshot(
+            todaySummary: daily,
+            weeklySummary: weekly,
+            trainingContext: context,
+            insights: []
+        )
+    }()
 }
 
 struct NutritionTargetsView: View {

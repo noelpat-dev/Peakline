@@ -276,25 +276,34 @@ struct TodayView: View {
     private func refreshTodaySnapshot(force: Bool = false) {
         let signature = todaySnapshotSignature
         guard force || signature != lastTodaySnapshotSignature else { return }
-        todaySnapshot = PerformanceTracer.trace(.todaySnapshot) {
+        let nextSnapshot = PerformanceTracer.trace(.todaySnapshot) {
             makeTodaySnapshot()
         }
-        lastTodaySnapshotSignature = signature
+        AppMotion.withoutAnimation {
+            todaySnapshot = nextSnapshot
+            lastTodaySnapshotSignature = signature
+        }
     }
 
     private func makeTodaySnapshot() -> TodayDashboardSnapshot {
+        let sessionSnapshots = completedSessions.prefix(40).map(makeWorkoutSessionSnapshot)
         let decision = decisionService.decision(
             activeSplits: activeSplits,
             completedSessions: Array(completedSessions.prefix(40))
         )
-        let recentCycleNames = makeRecentPPLCycleNames(from: completedSessions)
-        let suggested = activeSplits.first { $0.name == decision.recommendedSplitName } ?? makeSuggestedSplit(recentPPLCycleNames: recentCycleNames)
-        let weekSessions = makeWeeklySessions(from: completedSessions)
-        let workingSets = weekSessions.reduce(0) { total, session in
-            total + workingSetCount(in: session)
-        }
+        let recentCycleNames = makeRecentPPLCycleNames(from: sessionSnapshots)
+        let suggested = activeSplits.first { $0.name == decision.recommendedSplitName } ?? makeSuggestedSplit(
+            recentPPLCycleNames: recentCycleNames,
+            sessionSnapshots: sessionSnapshots
+        )
+        let weekSessionSnapshots = makeWeeklySessionSnapshots(from: sessionSnapshots)
+        let workingSets = weekSessionSnapshots.reduce(0) { $0 + $1.workingSetCount }
+        let volume = weekSessionSnapshots.reduce(0) { $0 + $1.workingSetVolume }
+        let latestWorkoutSummaryText = sessionSnapshots.first.map {
+            "\($0.exerciseCount) exercises - \($0.workingSetCount) working sets"
+        } ?? ""
         let coverageNames = makeSplitCoverageNames(from: activeSplits)
-        let trainedNames = Set(weekSessions.map { baseSplitName($0.splitNameSnapshot) })
+        let trainedNames = Set(weekSessionSnapshots.map(\.baseSplitName))
         let coverageItems = coverageNames.map { name in
             SplitCoverageItem(name: name, isComplete: trainedNames.contains(name))
         }
@@ -307,10 +316,11 @@ struct TodayView: View {
             ),
             suggestedSplit: suggested,
             recentPPLCycleNames: recentCycleNames,
-            weeklySessions: weekSessions,
-            workoutsThisWeek: weekSessions.count,
+            weeklySessions: weekSessionSnapshots.map(\.session),
+            latestWorkoutSummaryText: latestWorkoutSummaryText,
+            workoutsThisWeek: weekSessionSnapshots.count,
             workingSetsThisWeek: workingSets,
-            volumeThisWeekText: makeVolumeThisWeekText(from: weekSessions),
+            volumeThisWeekText: makeVolumeText(volume),
             splitCoverageItems: coverageItems,
             splitCoverageNames: coverageNames,
             splitBalanceText: makeSplitBalanceText(from: coverageItems),
@@ -459,9 +469,11 @@ struct TodayView: View {
                 nutritionGoal = nutritionGoalStore.loadGoal()
                 let shouldForceRefresh = !didRequestInitialRefresh
                 didRequestInitialRefresh = true
-                refreshTodaySnapshot(force: shouldForceRefresh)
-                refreshSleepReadiness()
-                refreshCoachSnapshot()
+                DispatchQueue.main.async {
+                    refreshTodaySnapshot(force: shouldForceRefresh)
+                    refreshSleepReadiness(force: shouldForceRefresh)
+                    refreshCoachSnapshot(force: shouldForceRefresh)
+                }
             }
             .onChange(of: todaySnapshotSignature) { _, _ in
                 refreshTodaySnapshot()
@@ -544,8 +556,10 @@ struct TodayView: View {
         pendingRouteNavigation = TodayRouteNavigationStart(route: route, startedAt: ContinuousClock.now)
         PerformanceTracer.mark(.todayRouteSelection, "\(route.analyticsName) requested")
         PerformanceTracer.mark(.todayRouteSelectionState, "before selectedRoute=\(route.analyticsName)")
-        PerformanceTracer.trace(.todayRouteSelection) {
-            selectedRoute = route
+        AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
+            PerformanceTracer.trace(.todayRouteSelection) {
+                selectedRoute = route
+            }
         }
         PerformanceTracer.mark(.todayRouteSelectionState, "after selectedRoute=\(route.analyticsName)")
     }
@@ -624,7 +638,7 @@ struct TodayView: View {
                             .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
 
-                        Text("\(last.exerciseLogs.count) exercises - \(workingSetCount(in: last)) working sets")
+                        Text(currentTodaySnapshot.latestWorkoutSummaryText)
                             .font(AppTypography.metadataEmphasis)
                             .foregroundStyle(appTheme.colors.textTertiary)
                             .lineLimit(1)
@@ -744,7 +758,7 @@ struct TodayView: View {
         let signature = currentSleepReadinessSignature
         guard force || signature != lastSleepReadinessSignature else { return }
 
-        sleepReadinessSnapshot = PerformanceTracer.trace(.todaySleepReadiness) {
+        let nextSnapshot = PerformanceTracer.trace(.todaySleepReadiness) {
             sleepReadinessStore.snapshot(
                 sessions: sleepSessions,
                 naps: napSessions,
@@ -753,15 +767,21 @@ struct TodayView: View {
                 force: force
             )
         }
-        lastSleepReadinessSignature = signature
+        AppMotion.withoutAnimation {
+            sleepReadinessSnapshot = nextSnapshot
+            lastSleepReadinessSignature = signature
+        }
     }
 
     private func refreshCoachSnapshot(force: Bool = false) {
         let signature = currentCoachSnapshotSignature
         guard force || signature != lastCoachSnapshotSignature else { return }
 
-        coachSnapshot = makeCoachSnapshot()
-        lastCoachSnapshotSignature = signature
+        let nextSnapshot = makeCoachSnapshot()
+        AppMotion.withoutAnimation {
+            coachSnapshot = nextSnapshot
+            lastCoachSnapshotSignature = signature
+        }
         PerformanceTracer.mark(
             .coachSnapshot,
             "route_snapshot_store before_update source=today scenePhase=\(String(describing: scenePhase)) main=\(Thread.isMainThread)"
@@ -809,11 +829,33 @@ struct TodayView: View {
         currentTodaySnapshot.recentPPLCycleNames
     }
 
-    private func makeRecentPPLCycleNames(from sessions: [WorkoutSession]) -> [String] {
+    private func makeWorkoutSessionSnapshot(_ session: WorkoutSession) -> TodayWorkoutSessionSnapshot {
+        var workingSetCount = 0
+        var workingSetVolume = 0.0
+        let exerciseLogs = session.exerciseLogs
+
+        for log in exerciseLogs {
+            for set in log.setLogs where set.completed && !set.isWarmup {
+                workingSetCount += 1
+                workingSetVolume += set.weight * Double(set.reps)
+            }
+        }
+
+        return TodayWorkoutSessionSnapshot(
+            session: session,
+            baseSplitName: baseSplitName(session.splitNameSnapshot),
+            pplName: pplName(for: session.splitNameSnapshot),
+            exerciseCount: exerciseLogs.count,
+            workingSetCount: workingSetCount,
+            workingSetVolume: workingSetVolume
+        )
+    }
+
+    private func makeRecentPPLCycleNames(from sessionSnapshots: [TodayWorkoutSessionSnapshot]) -> [String] {
         var names: [String] = []
 
-        for session in sessions {
-            guard let name = pplName(for: session.splitNameSnapshot) else { continue }
+        for sessionSnapshot in sessionSnapshots {
+            guard let name = sessionSnapshot.pplName else { continue }
 
             if names.contains(name) {
                 break
@@ -829,7 +871,10 @@ struct TodayView: View {
         return names
     }
 
-    private func makeSuggestedSplit(recentPPLCycleNames: [String]) -> TrainingSplit? {
+    private func makeSuggestedSplit(
+        recentPPLCycleNames: [String],
+        sessionSnapshots: [TodayWorkoutSessionSnapshot]
+    ) -> TrainingSplit? {
         let orderedSplits = pplOrderedSplits
         guard !orderedSplits.isEmpty else { return activeSplits.first }
 
@@ -839,7 +884,7 @@ struct TodayView: View {
         }
 
         guard
-            let mostRecentName = completedSessions.compactMap({ pplName(for: $0.splitNameSnapshot) }).first,
+            let mostRecentName = sessionSnapshots.compactMap(\.pplName).first,
             let mostRecentIndex = PPLRotation.names.firstIndex(of: mostRecentName)
         else {
             return orderedSplits.first
@@ -859,8 +904,8 @@ struct TodayView: View {
         currentTodaySnapshot.weeklySessions
     }
 
-    private func makeWeeklySessions(from sessions: [WorkoutSession]) -> [WorkoutSession] {
-        sessions.filter { Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .weekOfYear) }
+    private func makeWeeklySessionSnapshots(from sessionSnapshots: [TodayWorkoutSessionSnapshot]) -> [TodayWorkoutSessionSnapshot] {
+        sessionSnapshots.filter { Calendar.current.isDate($0.session.date, equalTo: .now, toGranularity: .weekOfYear) }
     }
 
     private var workoutsThisWeek: Int {
@@ -875,16 +920,7 @@ struct TodayView: View {
         currentTodaySnapshot.volumeThisWeekText
     }
 
-    private func makeVolumeThisWeekText(from sessions: [WorkoutSession]) -> String {
-        let volume = sessions.reduce(0) { total, session in
-            total + session.exerciseLogs
-                .flatMap(\.setLogs)
-                .filter { $0.completed && !$0.isWarmup }
-                .reduce(0) { setTotal, set in
-                    setTotal + (set.weight * Double(set.reps))
-                }
-        }
-
+    private func makeVolumeText(_ volume: Double) -> String {
         guard volume > 0 else { return "0" }
         if volume >= 100_000 {
             return "\(Int(volume / 1_000))k"
@@ -947,10 +983,6 @@ struct TodayView: View {
         return "~\(duration.lowerBound)-\(duration.upperBound)m"
     }
 
-    private func workingSetCount(in session: WorkoutSession) -> Int {
-        session.exerciseLogs.flatMap(\.setLogs).filter { $0.completed && !$0.isWarmup }.count
-    }
-
     private func baseSplitName(_ splitNameSnapshot: String) -> String {
         splitNameSnapshot.components(separatedBy: " - ").first ?? splitNameSnapshot
     }
@@ -988,6 +1020,7 @@ private struct TodayDashboardSnapshot {
     let suggestedSplit: TrainingSplit?
     let recentPPLCycleNames: [String]
     let weeklySessions: [WorkoutSession]
+    let latestWorkoutSummaryText: String
     let workoutsThisWeek: Int
     let workingSetsThisWeek: Int
     let volumeThisWeekText: String
@@ -1016,6 +1049,7 @@ private struct TodayDashboardSnapshot {
         suggestedSplit: nil,
         recentPPLCycleNames: [],
         weeklySessions: [],
+        latestWorkoutSummaryText: "",
         workoutsThisWeek: 0,
         workingSetsThisWeek: 0,
         volumeThisWeekText: "0",
@@ -1024,6 +1058,15 @@ private struct TodayDashboardSnapshot {
         splitBalanceText: "0/0",
         splitCoverageSubtitle: "Create active splits to track weekly coverage."
     )
+}
+
+private struct TodayWorkoutSessionSnapshot {
+    let session: WorkoutSession
+    let baseSplitName: String
+    let pplName: String?
+    let exerciseCount: Int
+    let workingSetCount: Int
+    let workingSetVolume: Double
 }
 
 private enum PPLRotation {
@@ -1302,7 +1345,7 @@ struct HydrationView: View {
         let signature = currentReadinessSignature
         guard force || signature != lastReadinessSignature else { return }
 
-        readinessScore = coachIntelligence.readiness(
+        let nextReadinessScore = coachIntelligence.readiness(
             sleepSessions: sleepSessions,
             napSessions: napSessions,
             hydrationEntries: entries,
@@ -1313,7 +1356,10 @@ struct HydrationView: View {
             hydrationTargetML: hydrationTargetML,
             nutritionGoal: nutritionGoal
         )
-        lastReadinessSignature = signature
+        AppMotion.withoutAnimation {
+            readinessScore = nextReadinessScore
+            lastReadinessSignature = signature
+        }
     }
 
     private func signature<Value>(_ values: [Value], limit: Int, transform: (Value) -> String) -> String {

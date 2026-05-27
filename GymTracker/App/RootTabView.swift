@@ -17,6 +17,7 @@ struct RootTabView: View {
     @State private var sleepDestination: SleepNotificationDestination?
     @State private var didPrepareRootData = false
     @State private var sleepNotificationRefreshTask: Task<Void, Never>?
+    @State private var cachedSleepNotificationRefreshInputs: SleepNotificationRefreshInputs?
     @State private var lastSleepNotificationRefreshSignature: String?
     @State private var queuedSleepNotificationRefreshSignature: String?
     @State private var lastSleepNotificationRefreshAt: Date?
@@ -103,6 +104,13 @@ struct RootTabView: View {
         .onReceive(NotificationCenter.default.publisher(for: .appDidEnterBackgroundForCleanup)) { _ in
             PerformanceTracer.mark(.appLifecycle, "didEnterBackground cleanup observed")
         }
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).receive(on: RunLoop.main)) { _ in
+            let refreshedSettings = sleepSettingsStore.load()
+            if refreshedSettings != sleepSettings {
+                sleepSettings = refreshedSettings
+            }
+            refreshCachedSleepNotificationInputs(reason: "user_defaults_changed")
+        }
         .onChange(of: scenePhase) { _, newPhase in
             PerformanceTracer.mark(.appLifecycle, "scenePhase changed \(String(describing: newPhase))")
             switch newPhase {
@@ -111,9 +119,11 @@ struct RootTabView: View {
                 refreshSleepNotifications(source: .sceneBackground, updateMainStateAfterAwait: false)
                 PerformanceTracer.mark(.appLifecycle, "background after notification refresh request")
             case .inactive:
-                PerformanceTracer.mark(.appLifecycle, "inactive no-op")
+                PerformanceTracer.mark(.appLifecycle, "inactive cancel pending notification refresh")
+                cancelSleepNotificationRefreshTask(reason: "scene_inactive")
             case .active:
-                PerformanceTracer.mark(.appLifecycle, "active no-op")
+                PerformanceTracer.mark(.appLifecycle, "active refresh notification input cache")
+                refreshCachedSleepNotificationInputs(reason: "scene_active")
             @unknown default:
                 PerformanceTracer.mark(.appLifecycle, "unknown scenePhase no-op")
             }
@@ -122,6 +132,10 @@ struct RootTabView: View {
             PerformanceTracer.mark(.appLifecycle, "sleepSettings changed save begin")
             sleepSettingsStore.save(newValue)
             PerformanceTracer.mark(.appLifecycle, "sleepSettings changed save end")
+            refreshCachedSleepNotificationInputs(reason: "sleep_settings_changed")
+        }
+        .onChange(of: sleepNotificationRefreshSourceSignature) { _, _ in
+            refreshCachedSleepNotificationInputs(reason: "source_inputs_changed")
         }
         .onAppear {
             guard !didPrepareRootData else { return }
@@ -132,6 +146,7 @@ struct RootTabView: View {
                 WorkoutSessionDateService.repairCompletedSessionDates(in: modelContext)
             }
             sleepSettings = sleepSettingsStore.load()
+            refreshCachedSleepNotificationInputs(reason: "root_on_appear")
             refreshSleepNotifications(deferred: true, source: .launchDeferred)
             PerformanceTracer.mark(.appLifecycle, "root onAppear end")
         }
@@ -169,33 +184,29 @@ struct RootTabView: View {
     ) {
         PerformanceTracer.mark(.appLifecycle, "notification refresh request source=\(source.rawValue) deferred=\(deferred) updateMainStateAfterAwait=\(updateMainStateAfterAwait)")
         PerformanceTracer.trace(.rootNotificationRefresh) {
-            let sessionSnapshots = PerformanceTracer.trace(.rootNotificationSnapshot) {
-                SleepNotificationScheduler.sessionSnapshots(from: sleepSessions)
-            }
-            let workoutSnapshots = PerformanceTracer.trace(.rootNotificationSnapshot) {
-                SleepNotificationScheduler.workoutSnapshots(from: workouts)
-            }
-            let settings = PerformanceTracer.trace(.rootNotificationSettingsLoad) {
-                sleepSettingsStore.load()
-            }
-            let signature = PerformanceTracer.trace(.rootNotificationInputSignature) {
-                sleepNotificationRefreshSignature(
-                    settings: settings,
-                    sessions: sessionSnapshots,
-                    workouts: workoutSnapshots
-                )
+            let inputs: SleepNotificationRefreshInputs
+            if source == .sceneBackground {
+                guard let cachedSleepNotificationRefreshInputs else {
+                    PerformanceTracer.mark(.rootNotificationRefresh, "skip missing_cached_inputs")
+                    return
+                }
+                inputs = cachedSleepNotificationRefreshInputs
+                PerformanceTracer.mark(.appLifecycle, "notification refresh source=\(source.rawValue) using_cached_inputs")
+            } else {
+                inputs = makeSleepNotificationRefreshInputs()
+                cachedSleepNotificationRefreshInputs = inputs
             }
 
-            if signature == lastSleepNotificationRefreshSignature {
+            if inputs.signature == lastSleepNotificationRefreshSignature {
                 PerformanceTracer.mark(.rootNotificationRefresh, "skip unchanged_inputs")
                 return
             }
 
-            if signature == queuedSleepNotificationRefreshSignature, source != .sceneBackground {
+            if inputs.signature == queuedSleepNotificationRefreshSignature, source != .sceneBackground {
                 PerformanceTracer.mark(.rootNotificationRefresh, "skip already_queued")
                 return
             }
-            if signature == queuedSleepNotificationRefreshSignature, source == .sceneBackground {
+            if inputs.signature == queuedSleepNotificationRefreshSignature, source == .sceneBackground {
                 PerformanceTracer.mark(.appLifecycle, "background replacing already_queued notification task")
             }
 
@@ -206,50 +217,99 @@ struct RootTabView: View {
                 return
             }
 
-            queuedSleepNotificationRefreshSignature = signature
-            if !updateMainStateAfterAwait {
-                lastSleepNotificationRefreshSignature = signature
-                lastSleepNotificationRefreshAt = .now
-                queuedSleepNotificationRefreshSignature = nil
-                PerformanceTracer.mark(.appLifecycle, "notification refresh source=\(source.rawValue) main_state_preapplied")
-            }
-            sleepNotificationRefreshTask?.cancel()
-            PerformanceTracer.mark(.appLifecycle, "notification refresh source=\(source.rawValue) previous_task_cancelled")
-            sleepNotificationRefreshTask = Task(priority: .utility) {
-                PerformanceTracer.mark(.unsafeBreadcrumb, "root.notification.deferred_task begin source=\(source.rawValue) deferred=\(deferred)")
-                if deferred {
-                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+            cancelSleepNotificationRefreshTask(reason: "replacement_\(source.rawValue)")
+            queuedSleepNotificationRefreshSignature = inputs.signature
+
+            let job = SleepNotificationRefreshJob(
+                source: source,
+                deferred: deferred,
+                inputs: inputs
+            )
+
+            if updateMainStateAfterAwait {
+                sleepNotificationRefreshTask = Task(priority: .utility) {
+                    await job.run()
                     guard !Task.isCancelled else { return }
-                }
-
-                PerformanceTracer.mark(.unsafeBreadcrumb, "root.notification.deferred_task before_refresh")
-                await PerformanceTracer.traceAsync(.rootNotificationDeferredWork) {
-                    await SleepNotificationScheduler().refreshAllSleepNotifications(
-                        settings: settings,
-                        sessions: sessionSnapshots,
-                        workouts: workoutSnapshots
-                    )
-                }
-
-                guard updateMainStateAfterAwait else {
-                    PerformanceTracer.mark(.unsafeBreadcrumb, "root.notification.deferred_task skip_main_state source=\(source.rawValue)")
-                    return
-                }
-
-                PerformanceTracer.mark(.unsafeBreadcrumb, "root.notification.deferred_task before_main_state")
-                await PerformanceTracer.traceAsync(.rootNotificationMainState) {
                     await MainActor.run {
-                        lastSleepNotificationRefreshSignature = signature
-                        queuedSleepNotificationRefreshSignature = nil
-                        lastSleepNotificationRefreshAt = .now
+                        applySleepNotificationRefreshCompletion(signature: inputs.signature)
                     }
                 }
-                PerformanceTracer.mark(.unsafeBreadcrumb, "root.notification.deferred_task end")
+            } else {
+                sleepNotificationRefreshTask = Task(priority: .utility) {
+                    await job.run()
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run {
+                        applySleepNotificationRefreshCompletion(signature: inputs.signature)
+                    }
+                }
             }
         }
     }
 
-    private func sleepNotificationRefreshSignature(
+    private var sleepNotificationRefreshSourceSignature: String {
+        Self.sleepNotificationRefreshSignature(
+            settings: sleepSettings,
+            sessions: SleepNotificationScheduler.sessionSnapshots(from: sleepSessions),
+            workouts: SleepNotificationScheduler.workoutSnapshots(from: workouts)
+        )
+    }
+
+    private func refreshCachedSleepNotificationInputs(reason: String) {
+        let previousSignature = cachedSleepNotificationRefreshInputs?.signature
+        let inputs = makeSleepNotificationRefreshInputs()
+        cachedSleepNotificationRefreshInputs = inputs
+        if previousSignature == inputs.signature {
+            PerformanceTracer.mark(.appLifecycle, "notification input cache refreshed reason=\(reason) unchanged")
+        } else {
+            PerformanceTracer.mark(.appLifecycle, "notification input cache refreshed reason=\(reason) changed")
+        }
+    }
+
+    private func makeSleepNotificationRefreshInputs() -> SleepNotificationRefreshInputs {
+        let sessionSnapshots = PerformanceTracer.trace(.rootNotificationSnapshot) {
+            SleepNotificationScheduler.sessionSnapshots(from: sleepSessions)
+        }
+        let workoutSnapshots = PerformanceTracer.trace(.rootNotificationSnapshot) {
+            SleepNotificationScheduler.workoutSnapshots(from: workouts)
+        }
+        let settings = PerformanceTracer.trace(.rootNotificationSettingsLoad) {
+            sleepSettingsStore.load()
+        }
+        let signature = PerformanceTracer.trace(.rootNotificationInputSignature) {
+            Self.sleepNotificationRefreshSignature(
+                settings: settings,
+                sessions: sessionSnapshots,
+                workouts: workoutSnapshots
+            )
+        }
+
+        return SleepNotificationRefreshInputs(
+            settings: settings,
+            sessions: sessionSnapshots,
+            workouts: workoutSnapshots,
+            signature: signature
+        )
+    }
+
+    private func applySleepNotificationRefreshCompletion(signature: String) {
+        PerformanceTracer.mark(.unsafeBreadcrumb, "root.notification.deferred_task before_main_state")
+        PerformanceTracer.trace(.rootNotificationMainState) {
+            lastSleepNotificationRefreshSignature = signature
+            queuedSleepNotificationRefreshSignature = nil
+            lastSleepNotificationRefreshAt = .now
+        }
+        PerformanceTracer.mark(.unsafeBreadcrumb, "root.notification.deferred_task end")
+    }
+
+    private func cancelSleepNotificationRefreshTask(reason: String) {
+        guard sleepNotificationRefreshTask != nil else { return }
+        sleepNotificationRefreshTask?.cancel()
+        sleepNotificationRefreshTask = nil
+        queuedSleepNotificationRefreshSignature = nil
+        PerformanceTracer.mark(.appLifecycle, "notification refresh task cancelled reason=\(reason)")
+    }
+
+    private static func sleepNotificationRefreshSignature(
         settings: SleepSettings,
         sessions: [SleepNotificationSessionSnapshot],
         workouts: [SleepNotificationWorkoutSnapshot],
@@ -258,7 +318,7 @@ struct RootTabView: View {
         let preferences = settings.notificationPreferences
         let dayKey = calendar.startOfDay(for: .now).timeIntervalSince1970
         let sessionSignature = sessions.map {
-            "\($0.id.uuidString):\($0.status.rawValue):\($0.nightDate.timeIntervalSince1970):\($0.morningReminderSentAt?.timeIntervalSince1970 ?? 0):\($0.unfinishedReminderSentAt?.timeIntervalSince1970 ?? 0)"
+            "\($0.id.uuidString):\($0.status.rawValue):\($0.nightDate.timeIntervalSince1970):\($0.confirmedSleepStartAt.timeIntervalSince1970):\($0.sleepModeStartedAt?.timeIntervalSince1970 ?? 0):\($0.morningReminderSentAt?.timeIntervalSince1970 ?? 0):\($0.unfinishedReminderSentAt?.timeIntervalSince1970 ?? 0)"
         }.joined(separator: ",")
         let workoutSignature = workouts.map { "\($0.date.timeIntervalSince1970)" }.joined(separator: ",")
         let preferenceSignature = [
@@ -283,6 +343,36 @@ private enum SleepNotificationRefreshSource: String, Sendable {
     case launchDeferred
     case sceneBackground
     case manual
+}
+
+private struct SleepNotificationRefreshInputs: Sendable {
+    let settings: SleepSettings
+    let sessions: [SleepNotificationSessionSnapshot]
+    let workouts: [SleepNotificationWorkoutSnapshot]
+    let signature: String
+}
+
+private struct SleepNotificationRefreshJob: Sendable {
+    let source: SleepNotificationRefreshSource
+    let deferred: Bool
+    let inputs: SleepNotificationRefreshInputs
+
+    func run() async {
+        PerformanceTracer.mark(.unsafeBreadcrumb, "root.notification.deferred_task begin source=\(source.rawValue) deferred=\(deferred)")
+        if deferred {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+        }
+
+        PerformanceTracer.mark(.unsafeBreadcrumb, "root.notification.deferred_task before_refresh")
+        await PerformanceTracer.traceAsync(.rootNotificationDeferredWork) {
+            await SleepNotificationScheduler().refreshAllSleepNotifications(
+                settings: inputs.settings,
+                sessions: inputs.sessions,
+                workouts: inputs.workouts
+            )
+        }
+    }
 }
 
 private enum RootTab: Hashable {

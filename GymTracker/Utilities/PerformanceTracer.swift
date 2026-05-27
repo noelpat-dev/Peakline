@@ -44,6 +44,7 @@ enum PerformanceMetric: String {
     case coachDerivedMetrics = "coach.derived_metrics"
     case coachWeeklyReview = "coach.weekly_review"
     case nutritionDashboardSnapshot = "nutrition.dashboard_snapshot"
+    case nutritionInsightsSnapshot = "nutrition.insights_snapshot"
     case nutritionHealthKitRowStatus = "nutrition.healthkit_row_status"
     case nutritionHealthKitSync = "nutrition.healthkit_sync"
     case barcodeLookup = "barcode.lookup"
@@ -52,7 +53,10 @@ enum PerformanceMetric: String {
     case nutritionOCRParse = "nutrition.ocr_parse"
     case progressFetchExercises = "progress.fetch_exercises"
     case progressAnalytics = "progress.analytics"
+    case exerciseProgressEntries = "progress.exercise_entries"
     case prTimelineAnalytics = "pr_timeline.analytics"
+    case historyDisplaySnapshot = "history.display_snapshot"
+    case sleepSessionQuality = "sleep.session_quality"
 }
 
 enum PerformanceTracer {

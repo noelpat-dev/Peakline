@@ -1,5 +1,7 @@
 # Next Codex Chat Handoff
 
+Current file: `Next codex chat.md`
+
 ## Context
 
 This chat worked in the Peakline SwiftUI + SwiftData iOS app at:

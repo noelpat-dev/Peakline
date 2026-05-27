@@ -2,6 +2,7 @@ import SwiftUI
 
 struct WorkoutModePicker: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var selection: WorkoutMode
 
     var body: some View {
@@ -9,7 +10,9 @@ struct WorkoutModePicker: View {
             ForEach(WorkoutMode.allCases) { mode in
                 Button {
                     AppHaptics.selection()
-                    selection = mode
+                    withAnimation(AppMotion.chip(reduceMotion: reduceMotion)) {
+                        selection = mode
+                    }
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: mode.systemImage)

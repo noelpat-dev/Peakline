@@ -1,5 +1,7 @@
 # Peakline
 
+Current file: `README.md`
+
 Peakline is a local-first SwiftUI and SwiftData lifting coach built around Noel's Push/Pull/Legs training. The app focuses on fast workout logging, practical progression targets, explainable coaching, useful history, and recovery context that stays on device.
 
 ## Product Goal

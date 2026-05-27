@@ -105,7 +105,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     func testCoachPreferencesAndSplitIntentOpen() throws {
         openCoachHub()
 
-        tapElement(identifier: "coach-preferences-open", maxSwipes: 8)
+        tapElement(identifier: "coach-preferences-open", maxSwipes: 18)
         XCTAssertTrue(app.navigationBars["Coach Preferences"].waitForExistence(timeout: 5))
 
         tapElement(identifier: "coach-preferences-aggressiveness", maxSwipes: 2)
@@ -122,7 +122,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     func testProblemNavigationCardsOpenWithoutFreezing() throws {
         openCoachHub()
 
-        tapElement(identifier: "coach-preferences-open", maxSwipes: 8)
+        tapElement(identifier: "coach-preferences-open", maxSwipes: 18)
         XCTAssertTrue(app.navigationBars["Coach Preferences"].waitForExistence(timeout: 5))
         tapBackButton()
 
@@ -145,8 +145,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         tapBackButton()
 
         tapElement(identifier: "quick-action-readiness", maxSwipes: 5)
-        XCTAssertTrue(app.descendants(matching: .any)["coach-preferences-open"].waitForExistence(timeout: 8))
-        tapElement(identifier: "coach-preferences-open", maxSwipes: 8)
+        XCTAssertTrue(waitForCoachScreen(), "Expected quick action readiness to open Coach")
+        tapElement(identifier: "coach-preferences-open", maxSwipes: 18)
         XCTAssertTrue(app.staticTexts["Coach Preferences"].waitForExistence(timeout: 8))
         tapBackButton()
 
@@ -171,7 +171,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         XCTAssertTrue(todaySuggestedSplit.waitForExistence(timeout: 10))
         let suggestedSplit = todaySuggestedSplit.label
 
-        tapButton(containing: "View brief", maxSwipes: 4)
+        tapElement(identifier: "today-coach-brief-open", maxSwipes: 4)
         XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Coach to open")
         let coachCall = dailyCallElement(containing: suggestedSplit)
         XCTAssertTrue(coachCall.waitForExistence(timeout: 12))
@@ -182,6 +182,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         let previewSplit = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", suggestedSplit)).firstMatch
         XCTAssertTrue(previewSplit.waitForExistence(timeout: 10))
         XCTAssertTrue(previewSplit.label.contains(suggestedSplit), "Expected Preview split \(previewSplit.label) to match Coach split \(suggestedSplit)")
+        tapButton(containing: "Quick", maxSwipes: 4)
+        XCTAssertTrue(waitForPreviewScreen(), "Expected Preview to remain visible after mode change")
         tapBackButton()
         XCTAssertTrue(waitForCoachScreen(), "Expected one back from Preview to return to Coach")
 
@@ -247,7 +249,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     private func openCoachHub() {
         tapTab(at: 4, expectedTitle: "Settings")
         tapElement(identifier: "settings-coach", maxSwipes: 4)
-        XCTAssertTrue(app.descendants(matching: .any)["coach-preferences-open"].waitForExistence(timeout: 8))
+        XCTAssertTrue(waitForCoachScreen(), "Expected Settings -> Coach to open")
     }
 
     private func openProgressHub() {
@@ -259,14 +261,45 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     private func tapTab(at index: Int, expectedTitle: String) {
         let tabBar = app.tabBars.firstMatch
         XCTAssertTrue(tabBar.waitForExistence(timeout: 5), "Expected tab bar to exist")
-        let tab = tabBar.buttons.element(boundBy: index)
+        let namedTab = tabBar.buttons[expectedTitle]
+        let tab = namedTab.exists ? namedTab : tabBar.buttons.element(boundBy: index)
         XCTAssertTrue(tab.waitForExistence(timeout: 5), "Expected tab \(index) to exist")
         tab.tap()
-        XCTAssertTrue(
-            app.navigationBars[expectedTitle].waitForExistence(timeout: 5) ||
-                app.staticTexts[expectedTitle].waitForExistence(timeout: 5),
-            "Expected \(expectedTitle) tab to be visible"
-        )
+
+        if !waitForTabContent(expectedTitle, timeout: 8), namedTab.exists {
+            namedTab.tap()
+        }
+
+        XCTAssertTrue(waitForTabContent(expectedTitle, timeout: 10), "Expected \(expectedTitle) tab to be visible")
+    }
+
+    private func waitForTabContent(_ expectedTitle: String, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if app.navigationBars[expectedTitle].exists || app.staticTexts[expectedTitle].exists {
+                return true
+            }
+
+            if let identifier = tabScreenIdentifier(for: expectedTitle),
+               app.descendants(matching: .any)[identifier].exists {
+                return true
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        } while Date() < deadline
+
+        return app.navigationBars[expectedTitle].exists || app.staticTexts[expectedTitle].exists
+    }
+
+    private func tabScreenIdentifier(for title: String) -> String? {
+        switch title {
+        case "Workout":
+            return "workout-screen"
+        case "Settings":
+            return "settings-screen"
+        default:
+            return nil
+        }
     }
 
     private func tapBackButton() {

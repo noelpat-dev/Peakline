@@ -165,9 +165,13 @@ struct DeferredCoachDestinationView: View {
             guard !showWarmStartContent && !showFullContent else { return }
             DispatchQueue.main.async {
                 PerformanceTracer.mark(.todayCoachContentMount, "show_warm_start_content")
-                showWarmStartContent = true
+                withAnimation(AppMotion.gentleFade(reduceMotion: reduceMotion)) {
+                    showWarmStartContent = true
+                }
                 PerformanceTracer.trace(.todayCoachContentMount) {
-                    showFullContent = true
+                    withAnimation(AppMotion.gentleFade(reduceMotion: reduceMotion)) {
+                        showFullContent = true
+                    }
                 }
             }
         }
@@ -185,11 +189,12 @@ struct DeferredCoachDestinationView: View {
             }
             PerformanceTracer.mark(.todayCoachContentMount, "before_showFullContent")
             PerformanceTracer.trace(.todayCoachContentMount) {
-                showFullContent = true
+                withAnimation(AppMotion.gentleFade(reduceMotion: reduceMotion)) {
+                    showFullContent = true
+                }
             }
             PerformanceTracer.mark(.todayCoachContentMount, "after_showFullContent")
         }
-        .animation(AppMotion.gentleFade(reduceMotion: reduceMotion), value: showFullContent)
     }
 
     private func handleBackNavigation() {
@@ -705,6 +710,34 @@ struct CoachContentView: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("coach-hero-card")
 
+            DashboardSection(title: "Coach Controls") {
+                VStack(spacing: 12) {
+                    Button {
+                        route = .preferences
+                    } label: {
+                        DashboardActionTile(
+                            title: "Coach Preferences",
+                            subtitle: "\(coachPreferencesSnapshot.aggressiveness.displayName), \(coachPreferencesSnapshot.trainingPriority.displayName.lowercased()) priority",
+                            systemImage: "slider.horizontal.3"
+                        )
+                    }
+                    .buttonStyle(PressableCardButtonStyle())
+                    .accessibilityIdentifier("coach-preferences-open")
+
+                    Button {
+                        route = .weeklyReview
+                    } label: {
+                        DashboardActionTile(
+                            title: "Weekly Review",
+                            subtitle: "\(weeklyWorkoutCount) workouts, \(weeklyWorkingSetCount) working sets",
+                            systemImage: "chart.bar.doc.horizontal"
+                        )
+                    }
+                    .buttonStyle(PressableCardButtonStyle())
+                    .accessibilityIdentifier("coach-weekly-review-open")
+                }
+            }
+
             DashboardSection(title: "Why this?") {
                 FitnessCard {
                     VStack(alignment: .leading, spacing: 14) {
@@ -806,15 +839,15 @@ struct CoachContentView: View {
                         CoachWeeklyReviewRow(title: "Split balance", message: practicalWeeklyReview.splitBalance)
                         CoachWeeklyReviewRow(title: "Recovery note", message: practicalWeeklyReview.recoveryNote)
 
-                        NavigationLink {
-                            WeeklyReviewView()
+                        Button {
+                            route = .weeklyReview
                         } label: {
                             Label("Open weekly review", systemImage: "chart.bar.doc.horizontal")
                                 .font(.subheadline.weight(.semibold))
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(SecondaryFitnessButtonStyle())
-                        .accessibilityIdentifier("coach-weekly-review-open")
+                        .accessibilityIdentifier("coach-weekly-review-open-detail")
                     }
                 }
                 .accessibilityIdentifier("coach-weekly-review-section")
@@ -971,20 +1004,6 @@ struct CoachContentView: View {
                 )
             }
 
-            DashboardSection(title: "Coach Controls") {
-                NavigationLink {
-                    CoachPreferencesView()
-                } label: {
-                    DashboardActionTile(
-                        title: "Coach Preferences",
-                        subtitle: "\(coachPreferencesSnapshot.aggressiveness.displayName), \(coachPreferencesSnapshot.trainingPriority.displayName.lowercased()) priority",
-                        systemImage: "slider.horizontal.3"
-                    )
-                }
-                .buttonStyle(PressableCardButtonStyle())
-                .accessibilityIdentifier("coach-preferences-open")
-            }
-
             DashboardSection(title: "Recent PRs") {
                 if recentPRs.isEmpty {
                     FitnessCard {
@@ -1033,6 +1052,10 @@ struct CoachContentView: View {
                     entries: coachActionHistory,
                     feedback: recommendationFeedback
                 )
+            case .preferences:
+                CoachPreferencesView()
+            case .weeklyReview:
+                WeeklyReviewView()
             }
         }
         .navigationDestination(item: $previewRoute) { route in
@@ -1064,7 +1087,6 @@ struct CoachContentView: View {
         }
         .redacted(reason: hasLoadedCoachSnapshot ? [] : .placeholder)
         .allowsHitTesting(hasLoadedCoachSnapshot)
-        .animation(AppMotion.gentleFade(reduceMotion: reduceMotion), value: hasLoadedCoachSnapshot)
         .sheet(isPresented: $showingCoachCheckIn) {
             DailyCheckInSheet(existingCheckIn: coachSnapshot.readiness.checkIn)
         }
@@ -1093,7 +1115,7 @@ struct CoachContentView: View {
             PerformanceTracer.mark(.unsafeBreadcrumb, "coach.deferred_refresh end")
         }
         deferredCoachRefreshWorkItem = workItem
-        DispatchQueue.main.async(execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: workItem)
     }
 
     private func scheduleFullCoachSnapshotRefresh() {
@@ -1140,9 +1162,12 @@ struct CoachContentView: View {
         }
 
         PerformanceTracer.mark(.unsafeBreadcrumb, "coach.snapshot before_make")
-        coachSnapshot = makeCoachSnapshot()
-        lastCoachSnapshotSignature = signature
-        hasLoadedCoachSnapshot = true
+        let nextSnapshot = makeCoachSnapshot()
+        AppMotion.withoutAnimation {
+            coachSnapshot = nextSnapshot
+            lastCoachSnapshotSignature = signature
+            hasLoadedCoachSnapshot = true
+        }
         CoachRouteSnapshotStore.shared.update(snapshot: coachSnapshot, signature: signature, source: "coach")
         refreshPresentationState()
         PerformanceTracer.mark(.unsafeBreadcrumb, "coach.snapshot after_make")
@@ -1178,8 +1203,10 @@ struct CoachContentView: View {
             }.value
 
             guard !Task.isCancelled else { return }
-            weeklyReview = result
-            lastWeeklyReviewSignature = signature
+            AppMotion.withoutAnimation {
+                weeklyReview = result
+                lastWeeklyReviewSignature = signature
+            }
             refreshPresentationState()
             PerformanceTracer.mark(.unsafeBreadcrumb, "coach.weekly_review task_end")
         }
@@ -1218,13 +1245,15 @@ struct CoachContentView: View {
             }.value
 
             guard !Task.isCancelled else { return }
-            summary = result.summary
-            recentPRs = result.recentPRs
-            targetSuggestions = result.targetSuggestions
-            weeklyWorkoutCount = result.weeklyWorkoutCount
-            weeklyWorkingSetCount = result.weeklyWorkingSetCount
-            progressOpportunityInsights = result.progressOpportunityInsights
-            lastCoachDerivedSignature = signature
+            AppMotion.withoutAnimation {
+                summary = result.summary
+                recentPRs = result.recentPRs
+                targetSuggestions = result.targetSuggestions
+                weeklyWorkoutCount = result.weeklyWorkoutCount
+                weeklyWorkingSetCount = result.weeklyWorkingSetCount
+                progressOpportunityInsights = result.progressOpportunityInsights
+                lastCoachDerivedSignature = signature
+            }
             refreshPresentationState()
             PerformanceTracer.mark(.unsafeBreadcrumb, "coach.derived_metrics task_end")
         }
@@ -1232,16 +1261,21 @@ struct CoachContentView: View {
 
     private func refreshPresentationState() {
         let intelligence = currentCoachSnapshot
-        dailyDecision = makeDailyDecision(
+        let nextDailyDecision = makeDailyDecision(
             intelligence: intelligence,
             summary: summary,
             weeklyReview: weeklyReview,
             targetSuggestions: targetSuggestions
         )
-        practicalWeeklyReview = makeWeeklyReviewSnapshot(
+        let nextPracticalWeeklyReview = makeWeeklyReviewSnapshot(
             intelligence: intelligence,
             weeklyReview: weeklyReview
         )
+
+        AppMotion.withoutAnimation {
+            dailyDecision = nextDailyDecision
+            practicalWeeklyReview = nextPracticalWeeklyReview
+        }
     }
 
     private func makeDailyDecision(
@@ -1503,12 +1537,12 @@ struct CoachContentView: View {
         )
     }
 
-    private func decisionHeadline(splitName: String?, mode: WorkoutMode) -> String {
+    private func decisionHeadline(splitName: String?, mode _: WorkoutMode) -> String {
         guard let splitName else {
             return "Build Today's Baseline"
         }
 
-        return "\(splitName) - \(mode.displayName) Mode"
+        return splitName
     }
 
     private func targetLine(for suggestion: TargetSuggestion) -> String {
@@ -2089,6 +2123,8 @@ private struct CoachActionHistoryTimeline: View {
 
 private enum CoachRoute: Hashable, Identifiable {
     case actionHistory
+    case preferences
+    case weeklyReview
 
     var id: Self { self }
 }

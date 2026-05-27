@@ -193,16 +193,21 @@ struct WorkoutAdjustmentPreviewSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
                         didResolve = true
-                        cancel()
                         dismiss()
+                        DispatchQueue.main.async {
+                            cancel()
+                        }
                     }
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
                     Button(applyButtonTitle) {
                         didResolve = true
-                        apply(adjustmentService.makePreview(from: draft))
+                        let resolvedPreview = adjustmentService.makePreview(from: draft)
                         dismiss()
+                        DispatchQueue.main.async {
+                            apply(resolvedPreview)
+                        }
                     }
                 }
             }
@@ -210,7 +215,9 @@ struct WorkoutAdjustmentPreviewSheet: View {
         .onDisappear {
             if !didResolve {
                 didResolve = true
-                cancel()
+                DispatchQueue.main.async {
+                    cancel()
+                }
             }
         }
     }

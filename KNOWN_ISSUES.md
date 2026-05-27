@@ -1,5 +1,7 @@
 # Known Issues
 
+Current file: `KNOWN_ISSUES.md`
+
 ## Xcode / Device Install
 
 - Free Apple ID installs on a real iPhone usually expire after about 7 days.

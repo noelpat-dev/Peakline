@@ -96,8 +96,6 @@ struct WorkoutLoggerView: View {
                 .zIndex(20)
             }
         }
-        .animation(AppMotion.popupEntrance(reduceMotion: reduceMotion), value: motivationPopupVisible)
-        .animation(AppMotion.popupEntrance(reduceMotion: reduceMotion), value: ratingPopupVisible)
         .navigationTitle(session.splitNameSnapshot)
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("workout-logger-screen")

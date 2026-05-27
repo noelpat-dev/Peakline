@@ -46,9 +46,12 @@ struct DashboardHeaderView: View {
 }
 
 struct DashboardChip: Identifiable, Hashable {
-    let id = UUID()
     let title: String
     let systemImage: String?
+
+    var id: String {
+        [title, systemImage ?? ""].joined(separator: "|")
+    }
 
     init(_ title: String, systemImage: String? = nil) {
         self.title = title
@@ -123,7 +126,8 @@ struct HeroRecommendationCard: View {
                         }
                         .padding(.vertical, 1)
                     }
-                    .scrollClipDisabled()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .clipped()
                 }
 
                 ViewThatFits(in: .horizontal) {
@@ -404,9 +408,12 @@ struct WeekMetricTile: View {
 }
 
 struct SplitCoverageItem: Identifiable, Hashable {
-    let id = UUID()
     let name: String
     let isComplete: Bool
+
+    var id: String {
+        name
+    }
 }
 
 struct SplitCoverageBarView: View {

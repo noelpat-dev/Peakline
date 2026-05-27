@@ -292,7 +292,6 @@ struct WorkoutPreviewView: View {
             "hydration": signature(hydrationEntries, limit: 120, sortedBy: { stableDateIDSort($0.loggedAt, $0.id, $1.loggedAt, $1.id) }) { "\($0.id.uuidString):\($0.loggedAt.timeIntervalSince1970):\($0.amountML):\($0.source.rawValue):\($0.context.rawValue):\($0.updatedAt.timeIntervalSince1970)" },
             "food_logs": signature(foodLogEntries, limit: 160, sortedBy: { stableDateIDSort($0.loggedAt, $0.id, $1.loggedAt, $1.id) }) { "\($0.id.uuidString):\($0.loggedAt.timeIntervalSince1970):\($0.foodItemId.uuidString):\($0.consumedAmount):\($0.amountUnit.rawValue):\($0.mealType.rawValue):\($0.caloriesSnapshot):\($0.proteinSnapshot):\($0.carbsSnapshot):\($0.fatSnapshot):\($0.updatedAt.timeIntervalSince1970)" },
             "coach_checkins": signature(coachCheckIns, limit: 30, sortedBy: { stableDateIDSort($0.date, $0.id, $1.date, $1.id) }) { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.energy):\($0.soreness):\($0.stress):\($0.motivation):\($0.updatedAt.timeIntervalSince1970)" },
-            "coach_action_history": signature(coachActionHistory, limit: 120, sortedBy: { stableDateIDSort($0.createdAt, $0.id, $1.createdAt, $1.id) }) { "\($0.id.uuidString):\($0.createdAt.timeIntervalSince1970)" },
             "recommendation_feedback": signature(recommendationFeedback, limit: 120, sortedBy: { stableDateIDSort($0.createdAt, $0.id, $1.createdAt, $1.id) }) { "\($0.id.uuidString):\($0.createdAt.timeIntervalSince1970)" },
             "saved_deload_blocks": signature(savedDeloadBlocks, limit: 40, sortedBy: { stableDateIDSort($0.updatedAt, $0.id, $1.updatedAt, $1.id) }) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
             "exercise_metadata": signature(exerciseMetadata, limit: 180, sortedBy: { $0.exerciseId.uuidString < $1.exerciseId.uuidString }) { "\($0.id.uuidString):\($0.exerciseId.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
@@ -354,12 +353,15 @@ struct WorkoutPreviewView: View {
             return
         }
 
-        renderSnapshot = PerformanceTracer.trace(.workoutPreviewRenderSnapshot) {
+        let nextSnapshot = PerformanceTracer.trace(.workoutPreviewRenderSnapshot) {
             makeRenderSnapshot()
         }
-        cancelRenderLoadingIndicator()
-        lastRenderSignature = signature
-        lastRenderSignatureParts = signatureParts
+        AppMotion.withoutAnimation {
+            renderSnapshot = nextSnapshot
+            cancelRenderLoadingIndicator()
+            lastRenderSignature = signature
+            lastRenderSignatureParts = signatureParts
+        }
     }
 
     private func scheduleRenderLoadingIndicator() {
@@ -469,16 +471,22 @@ struct WorkoutPreviewView: View {
     }
 
     private func makeRenderSnapshot() -> WorkoutPreviewRenderSnapshot {
-        let orderedExercises = makeOrderedExercises()
-        let selectedBaseExercises = makeSelectedBaseExercises(orderedExercises: orderedExercises)
+        let exerciseLookup = WorkoutPreviewExerciseLookup(exercises: exercises)
+        let orderedExercises = makeOrderedExercises(exerciseLookup: exerciseLookup)
+        let orderedExercisesByID = Dictionary(orderedExercises.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let selectedExerciseIDSet = Set(selectedExerciseIds)
+        let selectedBaseExercises = makeSelectedBaseExercises(
+            orderedExercisesByID: orderedExercisesByID,
+            exerciseLookup: exerciseLookup
+        )
         let basePlannedExercises = modePlanner.plannedExercises(from: selectedBaseExercises, mode: selectedMode)
         let plannedExercises = appliedWorkoutAdjustment?.adjustedExercises ?? basePlannedExercises
         let estimatedDuration = modePlanner.estimatedDurationMinutes(for: plannedExercises, mode: selectedMode)
         let suggestions = suggestionsByExerciseId(for: plannedExercises)
         let alternatives = alternativesByExerciseId(for: plannedExercises)
-        let exerciseByID = Dictionary(uniqueKeysWithValues: exercises.map { ($0.id, $0) })
+        let addableExercises = exercises.filter { !selectedExerciseIDSet.contains($0.id) }
         let plannedMuscleGroups = Set(plannedExercises.flatMap { planned in
-            exerciseByID[planned.exerciseId].map { exercise in
+            exerciseLookup.byID[planned.exerciseId].map { exercise in
                 [exercise.primaryMuscleGroup] + exercise.secondaryMuscleGroups
             } ?? []
         })
@@ -491,7 +499,11 @@ struct WorkoutPreviewView: View {
         )
 
         return WorkoutPreviewRenderSnapshot(
+            exerciseLookup: exerciseLookup,
             orderedExercises: orderedExercises,
+            selectedExerciseIDSet: selectedExerciseIDSet,
+            addableExercises: addableExercises,
+            coreExercise: exerciseLookup.byName["Abdominal Crunch"],
             basePlannedExercises: basePlannedExercises,
             plannedExercises: plannedExercises,
             estimatedDuration: estimatedDuration,
@@ -505,12 +517,13 @@ struct WorkoutPreviewView: View {
         )
     }
 
-    private func makeOrderedExercises() -> [WorkoutSelectableExercise] {
+    private func makeOrderedExercises(exerciseLookup: WorkoutPreviewExerciseLookup) -> [WorkoutSelectableExercise] {
         var items = split.exercises
+        let existingNames = Set(items.map(\.name))
 
         if
-            !items.contains(where: { $0.name == "Abdominal Crunch" }),
-            let abdominalCrunch = exercises.first(where: { $0.name == "Abdominal Crunch" })
+            !existingNames.contains("Abdominal Crunch"),
+            let abdominalCrunch = exerciseLookup.byName["Abdominal Crunch"]
         {
             items.append(
                 WorkoutSelectableExercise(
@@ -528,9 +541,19 @@ struct WorkoutPreviewView: View {
         return items
     }
 
-    private func makeSelectedBaseExercises(orderedExercises: [WorkoutSelectableExercise]) -> [WorkoutSelectableExercise] {
+    private func makeDefaultSelectedExerciseIds(for mode: WorkoutMode) -> [UUID] {
+        let exerciseLookup = WorkoutPreviewExerciseLookup(exercises: exercises)
+        return modePlanner
+            .plannedExercises(from: makeOrderedExercises(exerciseLookup: exerciseLookup), mode: mode)
+            .map(\.id)
+    }
+
+    private func makeSelectedBaseExercises(
+        orderedExercisesByID: [UUID: WorkoutSelectableExercise],
+        exerciseLookup: WorkoutPreviewExerciseLookup
+    ) -> [WorkoutSelectableExercise] {
         selectedExerciseIds.compactMap { selectedId in
-            if let planned = orderedExercises.first(where: { $0.id == selectedId }) {
+            if let planned = orderedExercisesByID[selectedId] {
                 return WorkoutSelectableExercise(
                     id: planned.id,
                     exerciseId: planned.exerciseId,
@@ -542,7 +565,7 @@ struct WorkoutPreviewView: View {
                 )
             }
 
-            guard let exercise = exercises.first(where: { $0.id == selectedId }) else { return nil }
+            guard let exercise = exerciseLookup.byID[selectedId] else { return nil }
 
             return WorkoutSelectableExercise(
                 id: exercise.id,
@@ -660,9 +683,6 @@ struct WorkoutPreviewView: View {
                 reduceMotion: reduceMotion
             )
         )
-        .destructiveSwipeAction("Remove") {
-            remove(exercise)
-        }
     }
 
     var body: some View {
@@ -691,7 +711,7 @@ struct WorkoutPreviewView: View {
                     )
                 },
                 select: { candidate, reason in
-                    if let replacement = exercises.first(where: { $0.id == candidate.exerciseId }) {
+                    if let replacement = currentRenderSnapshot.exerciseLookup.byID[candidate.exerciseId] {
                         substitute(exercise, with: replacement, reason: reason)
                     }
                 }
@@ -735,7 +755,7 @@ struct WorkoutPreviewView: View {
             hydrationTargetML = hydrationSettingsStore.dailyTargetML()
             nutritionGoal = nutritionGoalStore.loadGoal()
             if selectedExerciseIds.isEmpty {
-                selectedExerciseIds = modePlanner.plannedExercises(from: makeOrderedExercises(), mode: selectedMode).map(\.id)
+                selectedExerciseIds = makeDefaultSelectedExerciseIds(for: selectedMode)
             }
             guard !didRequestInitialRenderSnapshot else {
                 PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "skip onAppear already_requested")
@@ -745,10 +765,14 @@ struct WorkoutPreviewView: View {
             scheduleRenderSnapshotRefresh(reason: "onAppear", force: renderSnapshot == nil)
         }
         .onChange(of: selectedMode) { _, newMode in
+            PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "mode_change begin mode=\(newMode.rawValue)")
             resetCoachAdjustment()
-            selectedExerciseIds = modePlanner.plannedExercises(from: makeOrderedExercises(), mode: newMode).map(\.id)
+            withAnimation(AppMotion.modeChange(reduceMotion: reduceMotion)) {
+                selectedExerciseIds = makeDefaultSelectedExerciseIds(for: newMode)
+            }
             guard renderSnapshot != nil else { return }
             scheduleRenderSnapshotRefresh(reason: "mode_changed")
+            PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "mode_change end mode=\(newMode.rawValue)")
         }
         .onChange(of: selectedExerciseIds) { _, _ in
             guard renderSnapshot != nil else { return }
@@ -808,6 +832,10 @@ struct WorkoutPreviewView: View {
                     reset: resetCoachAdjustment
                 )
 
+                if appliedWorkoutAdjustment != nil {
+                    originalPlanShortcut(snapshot: snapshot)
+                }
+
                 WorkoutReadinessBriefCard(readiness: snapshot.intelligence.readiness)
 
                 if snapshot.plannedFatigueItems.contains(where: { $0.state == .loaded || $0.state == .fatigued }) {
@@ -841,7 +869,9 @@ struct WorkoutPreviewView: View {
                 HStack {
                     Spacer()
                     Button("Select All") {
-                        selectedExerciseIds = snapshot.orderedExercises.map(\.id)
+                        withAnimation(AppMotion.modeChange(reduceMotion: reduceMotion)) {
+                            selectedExerciseIds = snapshot.orderedExercises.map(\.id)
+                        }
                     }
                     .font(.subheadline.weight(.semibold))
                     .tint(appTheme.actionColor)
@@ -873,7 +903,7 @@ struct WorkoutPreviewView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Picker("Optional exercise", selection: $optionalExerciseId) {
                             Text("Choose").tag(Optional<UUID>.none)
-                            ForEach(addableExercises) { exercise in
+                            ForEach(snapshot.addableExercises) { exercise in
                                 Text(exercise.name).tag(Optional(exercise.id))
                             }
                         }
@@ -888,13 +918,13 @@ struct WorkoutPreviewView: View {
 
                             Spacer()
 
-                            if let coreExercise = exercises.first(where: { $0.name == "Abdominal Crunch" }) {
+                            if let coreExercise = snapshot.coreExercise {
                                 Button {
                                     addExercise(coreExercise, targetSets: 2, minReps: 8, maxReps: 15, notes: "Optional core work.")
                                 } label: {
                                     Label("Add Core", systemImage: "figure.core.training")
                                 }
-                                .disabled(selectedExerciseIds.contains(coreExercise.id))
+                                .disabled(snapshot.selectedExerciseIDSet.contains(coreExercise.id))
                             }
                         }
                         .buttonStyle(.borderless)
@@ -917,21 +947,7 @@ struct WorkoutPreviewView: View {
                         .disabled(snapshot.plannedExercises.isEmpty)
 
                         if appliedWorkoutAdjustment != nil {
-                        Button {
-                            if let appliedWorkoutAdjustment {
-                                recordCoachAction(
-                                    preview: appliedWorkoutAdjustment.preview,
-                                    outcome: .bypassed,
-                                    snapshot: snapshot.intelligence
-                                )
-                            }
-                            activeSession = createWorkout(from: split, plannedExercises: snapshot.basePlannedExercises, modeLabel: "\(selectedMode.displayName) Original")
-                        } label: {
-                            Label("Start Original Plan", systemImage: "arrow.uturn.backward.circle")
-                        }
-                        .buttonStyle(SecondaryFitnessButtonStyle())
-                        .accessibilityIdentifier("workout-preview-start-original")
-                        .disabled(snapshot.basePlannedExercises.isEmpty)
+                            startOriginalPlanButton(snapshot: snapshot, identifier: "workout-preview-start-original-footer")
                         }
 
                         Text(startHint)
@@ -956,6 +972,60 @@ struct WorkoutPreviewView: View {
             }
         }
         .animation(AppMotion.gentleFade(reduceMotion: reduceMotion), value: showRenderLoadingIndicator)
+    }
+
+    private func originalPlanShortcut(snapshot: WorkoutPreviewRenderSnapshot) -> some View {
+        FitnessCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "arrow.uturn.backward.circle")
+                        .font(.headline)
+                        .foregroundStyle(appTheme.colors.accent)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Original plan")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(appTheme.colors.textPrimary)
+
+                        Text("\(selectedMode.displayName) mode without the coach adjustment.")
+                            .font(.caption)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                    }
+                }
+
+                startOriginalPlanButton(snapshot: snapshot, identifier: "workout-preview-start-original")
+            }
+        }
+    }
+
+    private func startOriginalPlanButton(
+        snapshot: WorkoutPreviewRenderSnapshot,
+        identifier: String
+    ) -> some View {
+        Button {
+            startOriginalPlan(snapshot: snapshot)
+        } label: {
+            Label("Start Original Plan", systemImage: "arrow.uturn.backward.circle")
+        }
+        .buttonStyle(SecondaryFitnessButtonStyle())
+        .accessibilityIdentifier(identifier)
+        .disabled(snapshot.basePlannedExercises.isEmpty)
+    }
+
+    private func startOriginalPlan(snapshot: WorkoutPreviewRenderSnapshot) {
+        if let appliedWorkoutAdjustment {
+            recordCoachAction(
+                preview: appliedWorkoutAdjustment.preview,
+                outcome: .bypassed,
+                snapshot: snapshot.intelligence
+            )
+        }
+
+        activeSession = createWorkout(
+            from: split,
+            plannedExercises: snapshot.basePlannedExercises,
+            modeLabel: "\(selectedMode.displayName) Original"
+        )
     }
 
     private var startButtonTitle: String {
@@ -1018,15 +1088,11 @@ struct WorkoutPreviewView: View {
         return .repeatTarget
     }
 
-    private var addableExercises: [Exercise] {
-        exercises.filter { exercise in
-            !selectedExerciseIds.contains(exercise.id)
-        }
-    }
-
     private func remove(_ exercise: PlannedWorkoutExercise) {
         resetCoachAdjustment()
-        selectedExerciseIds.removeAll { $0 == exercise.id }
+        withAnimation(AppMotion.cardOut(reduceMotion: reduceMotion)) {
+            selectedExerciseIds.removeAll { $0 == exercise.id }
+        }
     }
 
     private func moveToTop(_ exercise: PlannedWorkoutExercise) {
@@ -1042,13 +1108,15 @@ struct WorkoutPreviewView: View {
         var ids = selectedExerciseIds
         let movedId = ids.remove(at: index)
         ids.insert(movedId, at: max(0, min(destination, ids.count)))
-        selectedExerciseIds = ids
+        withAnimation(AppMotion.reorderSpring(reduceMotion: reduceMotion)) {
+            selectedExerciseIds = ids
+        }
     }
 
     private func addOptionalExercise() {
         guard
             let optionalExerciseId,
-            let exercise = exercises.first(where: { $0.id == optionalExerciseId })
+            let exercise = currentRenderSnapshot.exerciseLookup.byID[optionalExerciseId]
         else { return }
 
         addExercise(exercise, targetSets: 2, minReps: 8, maxReps: 12, notes: "Added for today's workout.")
@@ -1058,7 +1126,9 @@ struct WorkoutPreviewView: View {
     private func addExercise(_ exercise: Exercise, targetSets: Int, minReps: Int, maxReps: Int, notes: String?) {
         guard !selectedExerciseIds.contains(exercise.id) else { return }
         resetCoachAdjustment()
-        selectedExerciseIds.append(exercise.id)
+        withAnimation(AppMotion.cardIn(reduceMotion: reduceMotion)) {
+            selectedExerciseIds.append(exercise.id)
+        }
     }
 
     private func alternatives(for exercise: PlannedWorkoutExercise) -> [Exercise] {
@@ -1084,12 +1154,14 @@ struct WorkoutPreviewView: View {
     private func substitute(_ exercise: PlannedWorkoutExercise, with alternative: Exercise, reason: ExerciseSubstitutionReason) {
         guard let index = selectedExerciseIds.firstIndex(of: exercise.id) else { return }
         resetCoachAdjustment()
-        selectedExerciseIds[index] = alternative.id
-        substitutionNotesByExerciseId[alternative.id] = substitutionService.substitutionNote(
-            originalName: exercise.exerciseNameSnapshot,
-            replacementName: alternative.name,
-            reason: reason
-        )
+        withAnimation(AppMotion.modeChange(reduceMotion: reduceMotion)) {
+            selectedExerciseIds[index] = alternative.id
+            substitutionNotesByExerciseId[alternative.id] = substitutionService.substitutionNote(
+                originalName: exercise.exerciseNameSnapshot,
+                replacementName: alternative.name,
+                reason: reason
+            )
+        }
     }
 
     private func createWorkout(
@@ -1223,7 +1295,11 @@ struct WorkoutPreviewView: View {
 }
 
 private struct WorkoutPreviewRenderSnapshot {
+    let exerciseLookup: WorkoutPreviewExerciseLookup
     let orderedExercises: [WorkoutSelectableExercise]
+    let selectedExerciseIDSet: Set<UUID>
+    let addableExercises: [Exercise]
+    let coreExercise: Exercise?
     let basePlannedExercises: [PlannedWorkoutExercise]
     let plannedExercises: [PlannedWorkoutExercise]
     let estimatedDuration: ClosedRange<Int>
@@ -1234,6 +1310,16 @@ private struct WorkoutPreviewRenderSnapshot {
     let actionRecommendations: [CoachWorkoutActionRecommendation]
     let coachSummaryText: String
     let coachSummaryBadge: CoachBadgeState
+}
+
+private struct WorkoutPreviewExerciseLookup {
+    let byID: [UUID: Exercise]
+    let byName: [String: Exercise]
+
+    init(exercises: [Exercise]) {
+        byID = Dictionary(exercises.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        byName = Dictionary(exercises.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
+    }
 }
 
 private enum CoachWorkoutSheet: Identifiable {

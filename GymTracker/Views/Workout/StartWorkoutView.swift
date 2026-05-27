@@ -724,7 +724,9 @@ struct StartWorkoutContentView: View {
             return
         }
 
-        previewSplit = preview
+        AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
+            previewSplit = preview
+        }
     }
 }
 

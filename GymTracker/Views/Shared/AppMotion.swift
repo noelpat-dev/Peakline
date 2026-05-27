@@ -3,26 +3,64 @@ import UIKit
 
 enum AppMotion {
     static let popupMountDelay: UInt64 = 16_000_000
-    static let popupExitDuration: UInt64 = 240_000_000
+    static let popupExitDuration: UInt64 = 200_000_000
     static let ratingSelectionDelay: UInt64 = 150_000_000
     static let popupContentRevealDelay: UInt64 = 70_000_000
     static let popupSecondaryRevealDelay: UInt64 = 80_000_000
     static let celebrationIconPulseDuration: TimeInterval = 0.58
-    static let cardPressScale: CGFloat = 0.992
+    static let cardPressScale: CGFloat = 0.985
     static let selectedControlScale: CGFloat = 1.02
     static let emphasizedControlScale: CGFloat = 1.035
-    static let cardAppearOffset: CGFloat = 14
+    static let cardAppearOffset: CGFloat = 10
 
     static func instantOr(_ animation: Animation, reduceMotion: Bool) -> Animation {
         reduceMotion ? .easeOut(duration: 0.01) : animation
     }
 
     static func press(reduceMotion: Bool) -> Animation {
-        instantOr(.easeOut(duration: 0.11), reduceMotion: reduceMotion)
+        instantOr(.easeOut(duration: 0.10), reduceMotion: reduceMotion)
+    }
+
+    static func route(reduceMotion: Bool) -> Animation {
+        instantOr(.smooth(duration: 0.26), reduceMotion: reduceMotion)
+    }
+
+    static func cardIn(reduceMotion: Bool) -> Animation {
+        instantOr(.smooth(duration: 0.24), reduceMotion: reduceMotion)
+    }
+
+    static func cardOut(reduceMotion: Bool) -> Animation {
+        instantOr(.easeIn(duration: 0.16), reduceMotion: reduceMotion)
+    }
+
+    static func modalIn(reduceMotion: Bool) -> Animation {
+        instantOr(.smooth(duration: 0.28), reduceMotion: reduceMotion)
+    }
+
+    static func modalOut(reduceMotion: Bool) -> Animation {
+        reduceMotion
+            ? .easeOut(duration: 0.01)
+            : .easeInOut(duration: 0.20)
+    }
+
+    static func chip(reduceMotion: Bool) -> Animation {
+        instantOr(.smooth(duration: 0.16), reduceMotion: reduceMotion)
+    }
+
+    static func modeChange(reduceMotion: Bool) -> Animation {
+        instantOr(.smooth(duration: 0.20), reduceMotion: reduceMotion)
+    }
+
+    static func swipeSnap(reduceMotion: Bool) -> Animation {
+        instantOr(.interactiveSpring(response: 0.26, dampingFraction: 0.9, blendDuration: 0.06), reduceMotion: reduceMotion)
+    }
+
+    static func celebration(reduceMotion: Bool) -> Animation {
+        instantOr(.spring(response: 0.38, dampingFraction: 0.82, blendDuration: 0.05), reduceMotion: reduceMotion)
     }
 
     static func navigation(reduceMotion: Bool) -> Animation {
-        instantOr(.easeInOut(duration: 0.22), reduceMotion: reduceMotion)
+        route(reduceMotion: reduceMotion)
     }
 
     static func tapConfirm(reduceMotion: Bool) -> Animation {
@@ -30,15 +68,15 @@ enum AppMotion {
     }
 
     static func cardAppear(reduceMotion: Bool) -> Animation {
-        instantOr(.spring(response: 0.42, dampingFraction: 0.9, blendDuration: 0.06), reduceMotion: reduceMotion)
+        cardIn(reduceMotion: reduceMotion)
     }
 
     static func listChange(reduceMotion: Bool) -> Animation {
-        instantOr(.spring(response: 0.32, dampingFraction: 0.88, blendDuration: 0.05), reduceMotion: reduceMotion)
+        instantOr(.smooth(duration: 0.20), reduceMotion: reduceMotion)
     }
 
     static func selection(reduceMotion: Bool) -> Animation {
-        instantOr(.spring(response: 0.24, dampingFraction: 0.9, blendDuration: 0.04), reduceMotion: reduceMotion)
+        chip(reduceMotion: reduceMotion)
     }
 
     static func progress(reduceMotion: Bool) -> Animation {
@@ -46,11 +84,11 @@ enum AppMotion {
     }
 
     static func swipeReveal(reduceMotion: Bool) -> Animation {
-        instantOr(.interactiveSpring(response: 0.28, dampingFraction: 0.88, blendDuration: 0.08), reduceMotion: reduceMotion)
+        swipeSnap(reduceMotion: reduceMotion)
     }
 
     static func sheet(reduceMotion: Bool) -> Animation {
-        instantOr(.spring(response: 0.36, dampingFraction: 0.88, blendDuration: 0.04), reduceMotion: reduceMotion)
+        modalIn(reduceMotion: reduceMotion)
     }
 
     static func sheetPopup(reduceMotion: Bool) -> Animation {
@@ -62,7 +100,7 @@ enum AppMotion {
     }
 
     static func workoutCompletion(reduceMotion: Bool) -> Animation {
-        instantOr(.spring(response: 0.44, dampingFraction: 0.76, blendDuration: 0.06), reduceMotion: reduceMotion)
+        celebration(reduceMotion: reduceMotion)
     }
 
     static func popupEntrance(reduceMotion: Bool) -> Animation {
@@ -70,9 +108,7 @@ enum AppMotion {
     }
 
     static func popupExit(reduceMotion: Bool) -> Animation {
-        reduceMotion
-            ? .easeOut(duration: 0.01)
-            : .easeInOut(duration: 0.24)
+        modalOut(reduceMotion: reduceMotion)
     }
 
     static func quickSpring(reduceMotion: Bool) -> Animation {
@@ -105,22 +141,42 @@ enum AppMotion {
             : .easeInOut(duration: 0.2)
     }
 
+    static func cardTransition(reduceMotion: Bool) -> AnyTransition {
+        reduceMotion
+            ? .opacity
+            : .asymmetric(
+                insertion: .opacity
+                    .combined(with: .offset(y: cardAppearOffset)),
+                removal: .opacity
+                    .combined(with: .offset(y: 6))
+            )
+    }
+
     static func popupTransition(reduceMotion: Bool) -> AnyTransition {
         reduceMotion
             ? .opacity
             : .asymmetric(
                 insertion: .opacity
-                    .combined(with: .scale(scale: 0.96, anchor: .center))
-                    .combined(with: .offset(y: 22)),
-                removal: .opacity
                     .combined(with: .scale(scale: 0.98, anchor: .center))
-                    .combined(with: .offset(y: 12))
+                    .combined(with: .offset(y: 16)),
+                removal: .opacity
+                    .combined(with: .scale(scale: 0.99, anchor: .center))
+                    .combined(with: .offset(y: 8))
             )
     }
 
     @MainActor
     static func smoothNavigate(reduceMotion: Bool, _ action: @escaping @MainActor () -> Void) {
         withAnimation(navigation(reduceMotion: reduceMotion)) {
+            action()
+        }
+    }
+
+    static func withoutAnimation(_ action: () -> Void) {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+
+        withTransaction(transaction) {
             action()
         }
     }
