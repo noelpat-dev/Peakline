@@ -1118,11 +1118,11 @@ private struct TodaySleepRecoveryCard: View {
     private var recoveryTitle: String {
         switch summary.recoveryState {
         case .high, .good:
-            return "Recovery looks good"
+            return "Sleep recovery looks good"
         case .moderate:
-            return "Recovery is slightly reduced"
+            return "Sleep recovery is slightly reduced"
         case .low, .veryLow:
-            return "Sleep may affect today"
+            return "Sleep recovery may affect today"
         case .unknown:
             return "No sleep data yet"
         }

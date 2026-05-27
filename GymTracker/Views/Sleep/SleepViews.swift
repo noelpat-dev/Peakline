@@ -165,7 +165,7 @@ struct SleepDashboardView: View {
                     ReadinessContextCard(
                         readiness: readinessScore,
                         focus: .sleep,
-                        title: "Sleep in today's readiness"
+                        title: "Sleep in daily readiness"
                     )
                 }
                 startCard
@@ -705,7 +705,7 @@ struct SleepDashboardView: View {
                         NavigationLink {
                             SleepSessionDetailView(session: session)
                         } label: {
-                            SleepHistoryRow(session: session, score: scoring.score(for: session, recentSessions: completedSessions, settings: settings))
+                            SleepHistoryRow(session: session, qualityScore: scoring.score(for: session, recentSessions: completedSessions, settings: settings))
                         }
                         .buttonStyle(.plain)
                     }
@@ -1585,9 +1585,17 @@ struct SleepSessionDetailView: View {
             }
 
             SleepGlassCard {
-                Text("Recovery impact: \(SleepCoachingService().historyImpact(for: scoring.score(for: session, recentSessions: [session], settings: SleepSettingsStore().load())))")
-                    .font(.headline)
-                    .foregroundStyle(appTheme.colors.textPrimary)
+                let qualityScore = scoring.score(for: session, recentSessions: [session], settings: SleepSettingsStore().load())
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Session quality: \(qualityScore)")
+                        .font(.headline)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+
+                    Text("Estimated training support: \(SleepCoachingService().historyImpact(for: qualityScore))")
+                        .font(.subheadline)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                }
             }
 
             SleepGlassCard {
@@ -2365,19 +2373,28 @@ private struct SleepHistoryRow: View {
     @Environment(\.appTheme) private var appTheme
 
     let session: SleepSession
-    let score: Int
+    let qualityScore: Int
 
     var body: some View {
         SleepGlassCard(style: .compact, padding: 16) {
             SleepGlassRow(
                 title: SleepCalendar.displayTitle(for: session.nightDate),
-                subtitle: "\(SleepScoringService.durationText(minutes: session.durationMinutes)) - \(session.qualityRating.map { SleepQualityPicker.label(for: $0) } ?? "No quality") - \(session.source.displayName). Recovery impact: \(SleepCoachingService().historyImpact(for: score))",
+                subtitle: "\(SleepScoringService.durationText(minutes: session.durationMinutes)) - \(session.qualityRating.map { SleepQualityPicker.label(for: $0) } ?? "No quality") - \(session.source.displayName). Estimated training support: \(SleepCoachingService().historyImpact(for: qualityScore))",
                 systemImage: session.source == .appleHealth ? "heart.text.square.fill" : "moon.zzz.fill",
                 showsChevron: true
             ) {
-                Text("\(score)")
-                    .font(.headline.bold())
-                    .foregroundStyle(appTheme.colors.accent)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("Session quality")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .multilineTextAlignment(.trailing)
+
+                    Text("\(qualityScore)")
+                        .font(.headline.bold())
+                        .foregroundStyle(appTheme.colors.accent)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Sleep quality \(qualityScore) out of 100")
             }
         }
     }
