@@ -143,23 +143,7 @@ struct DeferredCoachDestinationView: View {
         }
         .navigationTitle("Coach")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(backButtonTitle != nil)
         .accessibilityIdentifier("coach-route-screen")
-        .toolbar {
-            if let backButtonTitle {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        handleBackNavigation()
-                    } label: {
-                        Image(systemName: "chevron.backward")
-                            .font(.body.weight(.semibold))
-                            .frame(width: 44, height: 44)
-                    }
-                    .accessibilityIdentifier("coach-route-back")
-                    .accessibilityLabel(backButtonTitle)
-                }
-            }
-        }
         .onAppear {
             PerformanceTracer.mark(.todayCoachDestinationAppear, "root_onAppear showFullContent=\(showFullContent) initialSnapshot=\(initialSnapshot != nil)")
             guard !showWarmStartContent && !showFullContent else { return }
@@ -194,19 +178,6 @@ struct DeferredCoachDestinationView: View {
                 }
             }
             PerformanceTracer.mark(.todayCoachContentMount, "after_showFullContent")
-        }
-    }
-
-    private func handleBackNavigation() {
-        PerformanceTracer.mark(
-            .todayRouteSelectionState,
-            "coach_back_button tapped title=\(backButtonTitle ?? "nil") hasHandler=\(onBack != nil)"
-        )
-
-        if let onBack {
-            onBack()
-        } else {
-            dismiss()
         }
     }
 
@@ -1086,7 +1057,6 @@ struct CoachContentView: View {
             PerformanceTracer.mark(.unsafeBreadcrumb, "coach.willResignActive cancel_tasks end")
         }
         .redacted(reason: hasLoadedCoachSnapshot ? [] : .placeholder)
-        .allowsHitTesting(hasLoadedCoachSnapshot)
         .sheet(isPresented: $showingCoachCheckIn) {
             DailyCheckInSheet(existingCheckIn: coachSnapshot.readiness.checkIn)
         }

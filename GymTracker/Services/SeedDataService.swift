@@ -38,6 +38,10 @@ enum SeedDataService {
                 try seedLargeHistoryFixture(in: context, exercises: existingExercises)
             }
 
+            if ProcessInfo.processInfo.arguments.contains("-UITestSavedFoodsFixture") {
+                try seedSavedFoodsFixture(in: context)
+            }
+
             try context.save()
         } catch {
             assertionFailure("Seed data failed: \(error)")
@@ -271,6 +275,48 @@ enum SeedDataService {
 
             session.exerciseLogs = logs
             context.insert(session)
+        }
+    }
+
+    private static func seedSavedFoodsFixture(in context: ModelContext) throws {
+        let existingCount = try context.fetchCount(FetchDescriptor<FoodItem>())
+        guard existingCount < 18 else { return }
+
+        let foods: [(String, String, Double, Double, Double, Double)] = [
+            ("Greek Yogurt", "Peakline Test", 59, 10, 3.6, 0.4),
+            ("Chicken Breast", "Peakline Test", 165, 31, 0, 3.6),
+            ("Jasmine Rice", "Peakline Test", 130, 2.7, 28, 0.3),
+            ("Whey Protein", "Peakline Test", 390, 78, 8, 6),
+            ("Banana", "Peakline Test", 89, 1.1, 23, 0.3),
+            ("Oats", "Peakline Test", 389, 17, 66, 7),
+            ("Eggs", "Peakline Test", 143, 13, 1.1, 9.5),
+            ("Tuna", "Peakline Test", 132, 29, 0, 1),
+            ("Whole Milk", "Peakline Test", 64, 3.4, 4.8, 3.6),
+            ("Peanut Butter", "Peakline Test", 588, 25, 20, 50),
+            ("Protein Bar", "Peakline Test", 360, 30, 35, 10),
+            ("Cottage Cheese", "Peakline Test", 98, 11, 3.4, 4.3),
+            ("Blueberries", "Peakline Test", 57, 0.7, 14, 0.3),
+            ("Pasta", "Peakline Test", 158, 5.8, 31, 0.9),
+            ("Lean Mince", "Peakline Test", 176, 25, 0, 8),
+            ("Final Scroll Marker Food", "Peakline Test", 210, 12, 22, 7)
+        ]
+
+        for (index, food) in foods.enumerated() {
+            context.insert(
+                FoodItem(
+                    name: food.0,
+                    brand: food.1,
+                    servingSize: 100,
+                    caloriesPer100g: food.2,
+                    proteinPer100g: food.3,
+                    carbsPer100g: food.4,
+                    fatPer100g: food.5,
+                    source: .manual,
+                    verificationStatus: .userVerified,
+                    createdAt: Date().addingTimeInterval(TimeInterval(index)),
+                    updatedAt: Date().addingTimeInterval(TimeInterval(index))
+                )
+            )
         }
     }
 }
