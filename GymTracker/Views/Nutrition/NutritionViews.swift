@@ -655,12 +655,16 @@ struct FoodDatabaseView: View {
     }
 
     var body: some View {
-        FitnessScreen(
-            title: "Saved Foods",
-            subtitle: "Your user-confirmed local food database.",
-            systemImage: "tray.full"
-        ) {
+        List {
+            FitnessScreenHeader(
+                title: "Saved Foods",
+                subtitle: "Your user-confirmed local food database.",
+                systemImage: "tray.full"
+            )
+            .savedFoodsListRowStyle(rowInsets(top: appTheme.metrics.screenPadding, bottom: appTheme.metrics.screenContentSpacing))
+
             FoodDatabaseSummaryCard(foodCount: foodItems.count)
+                .savedFoodsListRowStyle(rowInsets(bottom: appTheme.metrics.screenContentSpacing))
 
             Button {
                 showingManualEntry = true
@@ -669,8 +673,10 @@ struct FoodDatabaseView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(PrimaryFitnessButtonStyle())
+            .savedFoodsListRowStyle(rowInsets(bottom: appTheme.metrics.screenContentSpacing))
 
             NutritionSearchField(searchText: $searchText)
+                .savedFoodsListRowStyle(rowInsets(bottom: appTheme.metrics.screenContentSpacing))
 
             if filteredFoods.isEmpty {
                 Button {
@@ -689,18 +695,34 @@ struct FoodDatabaseView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!foodItems.isEmpty)
+                .savedFoodsListRowStyle(rowInsets(bottom: appTheme.metrics.screenBottomPadding))
             } else {
-                LazyVStack(spacing: 12) {
-                    ForEach(filteredFoods) { food in
-                        SavedFoodCard(
-                            food: food,
-                            edit: { editingFood = food },
-                            delete: { pendingDelete = food }
-                        )
+                ForEach(filteredFoods) { food in
+                    let isLastFood = food.id == filteredFoods.last?.id
+
+                    SavedFoodCard(
+                        food: food,
+                        edit: { editingFood = food },
+                        delete: { pendingDelete = food }
+                    )
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            AppHaptics.warning()
+                            pendingDelete = food
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        .tint(appTheme.colors.danger)
                     }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("saved-food-row-\(food.name)")
+                    .savedFoodsListRowStyle(rowInsets(bottom: isLastFood ? appTheme.metrics.screenBottomPadding : 12))
                 }
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
         .navigationTitle("Saved Foods")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingManualEntry) {
@@ -721,6 +743,15 @@ struct FoodDatabaseView: View {
         }
     }
 
+    private func rowInsets(top: CGFloat = 0, bottom: CGFloat = 0) -> EdgeInsets {
+        EdgeInsets(
+            top: top,
+            leading: appTheme.metrics.screenPadding,
+            bottom: bottom,
+            trailing: appTheme.metrics.screenPadding
+        )
+    }
+
     private var deleteAlertBinding: Binding<Bool> {
         Binding {
             pendingDelete != nil
@@ -737,6 +768,14 @@ struct FoodDatabaseView: View {
         try? modelContext.save()
         AppHaptics.warning()
         self.pendingDelete = nil
+    }
+}
+
+private extension View {
+    func savedFoodsListRowStyle(_ insets: EdgeInsets) -> some View {
+        listRowInsets(insets)
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
     }
 }
 
@@ -1556,6 +1595,7 @@ private struct SavedFoodCard: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(SecondaryFitnessButtonStyle())
+                    .accessibilityIdentifier("log-saved-food-\(food.name)")
 
                     Button(action: edit) {
                         Image(systemName: "pencil")
@@ -1565,6 +1605,7 @@ private struct SavedFoodCard: View {
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .background(appTheme.colors.cardBackgroundElevated, in: Circle())
                     .accessibilityLabel("Edit \(food.name)")
+                    .accessibilityIdentifier("edit-saved-food-\(food.name)")
                 }
             }
         }
