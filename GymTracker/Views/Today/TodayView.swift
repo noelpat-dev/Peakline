@@ -37,6 +37,7 @@ struct TodayView: View {
     @State private var showingRestDayConfirmation = false
     @State private var showingCoachCheckIn = false
     @State private var previewSplit: WorkoutPreviewSplit?
+    @State private var startWorkoutRoute: StartWorkoutRoute?
     @State private var sleepSettings = SleepSettingsStore().load()
     @State private var sleepReadinessSnapshot = SleepAnalyticsService.emptyReadinessSnapshot()
     @State private var lastSleepReadinessSignature: SleepAnalyticsInputSignature?
@@ -575,7 +576,13 @@ struct TodayView: View {
         Group {
             switch route {
             case .workout:
-                StartWorkoutContentView()
+                StartWorkoutContentView { route in
+                    guard startWorkoutRoute != route else { return }
+                    startWorkoutRoute = route
+                }
+                .navigationDestination(item: $startWorkoutRoute) { route in
+                    startWorkoutDestination(for: route)
+                }
             case .coach:
                 CoachRouteDestinationView(
                     initialSnapshot: coachNavigationSnapshot,
@@ -602,6 +609,16 @@ struct TodayView: View {
         .onAppear {
             PerformanceTracer.mark(.todayRouteDestination, "onAppear route=\(route.analyticsName)")
             markRouteAppeared(route)
+        }
+    }
+
+    @ViewBuilder
+    private func startWorkoutDestination(for route: StartWorkoutRoute) -> some View {
+        switch route {
+        case .coach:
+            CoachRouteDestinationView()
+        case .templates:
+            WorkoutTemplateLibraryView()
         }
     }
 

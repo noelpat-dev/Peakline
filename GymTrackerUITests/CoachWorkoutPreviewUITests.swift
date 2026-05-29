@@ -199,6 +199,30 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         assertPerformanceAcceptancePassed()
     }
 
+    func testTodayCoachSupportsNativeEdgeSwipeBack() throws {
+        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 10) || app.staticTexts["Today"].waitForExistence(timeout: 10))
+
+        tapElement(identifier: "today-coach-brief-open", maxSwipes: 4)
+        XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Coach to open")
+
+        edgeSwipeBack()
+        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 10) || app.staticTexts["Today"].waitForExistence(timeout: 10))
+    }
+
+    func testTodayStartWorkoutCoachOpensAndReturnsResponsively() throws {
+        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 10) || app.staticTexts["Today"].waitForExistence(timeout: 10))
+
+        tapButton(containing: "Start Workout", maxSwipes: 2)
+        XCTAssertTrue(waitForWorkoutScreen(), "Expected Today -> Start Workout to open")
+
+        tapButton(containing: "Coach", maxSwipes: 5)
+        XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Start Workout -> Coach to open")
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 2), "Expected app window to remain responsive")
+
+        tapBackButton()
+        XCTAssertTrue(waitForWorkoutScreen(), "Expected Coach back navigation to return to Workout")
+    }
+
     func testPerformanceAcceptanceManualBlockerFlow() throws {
         XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 10) || app.staticTexts["Today"].waitForExistence(timeout: 10))
 
@@ -306,6 +330,12 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         let backButton = app.navigationBars.buttons.element(boundBy: 0)
         XCTAssertTrue(backButton.waitForExistence(timeout: 5))
         backButton.tap()
+    }
+
+    private func edgeSwipeBack() {
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.78, dy: 0.5))
+        start.press(forDuration: 0.05, thenDragTo: end)
     }
 
     private func tapElement(identifier: String, maxSwipes: Int = 6) {

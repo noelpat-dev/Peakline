@@ -1367,7 +1367,7 @@ private struct FoodLogRow: View {
 
             rowContent
                 .offset(x: visibleOffset)
-                .gesture(swipeGesture)
+                .simultaneousGesture(swipeGesture)
                 .onTapGesture {
                     guard horizontalOffset != 0 else { return }
                     closeSwipe()
@@ -1483,29 +1483,31 @@ private struct FoodLogRow: View {
 
 private struct SavedFoodCard: View {
     @Environment(\.appTheme) private var appTheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let food: FoodItem
     let edit: () -> Void
     let delete: () -> Void
 
-    @State private var horizontalOffset: CGFloat = 0
-    @GestureState private var dragTranslation: CGFloat = 0
-
     var body: some View {
-        ZStack(alignment: .trailing) {
-            deleteAction
-                .padding(.trailing, appTheme.metrics.swipeRevealActionTrailingPadding)
-                .opacity(deleteRevealProgress)
-
-            cardContent
-                .offset(x: visibleOffset)
-                .gesture(swipeGesture)
-                .onTapGesture {
-                    guard horizontalOffset != 0 else { return }
-                    closeSwipe()
+        cardContent
+            .contextMenu {
+                Button {
+                    AppHaptics.selection()
+                    edit()
+                } label: {
+                    Label("Edit Food", systemImage: "pencil")
                 }
-        }
+
+                Button(role: .destructive) {
+                    AppHaptics.warning()
+                    delete()
+                } label: {
+                    Label("Delete Food", systemImage: "trash")
+                }
+            }
+            .accessibilityAction(named: "Delete Food") {
+                delete()
+            }
     }
 
     private var cardContent: some View {
@@ -1565,64 +1567,6 @@ private struct SavedFoodCard: View {
                     .accessibilityLabel("Edit \(food.name)")
                 }
             }
-        }
-    }
-
-    private var deleteAction: some View {
-        Button(role: .destructive) {
-            AppHaptics.warning()
-            delete()
-        } label: {
-            Image(systemName: "trash")
-                .font(AppTypography.cardTitle)
-                .frame(width: appTheme.metrics.swipeRevealActionSize, height: appTheme.metrics.swipeRevealActionSize)
-                .foregroundStyle(.white)
-                .background(appTheme.colors.danger, in: Circle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Delete \(food.name)")
-    }
-
-    private var visibleOffset: CGFloat {
-        clampedOffset(horizontalOffset + dragTranslation)
-    }
-
-    private var deleteRevealWidth: CGFloat {
-        appTheme.metrics.swipeRevealWidth
-    }
-
-    private var deleteRevealProgress: CGFloat {
-        min(1, abs(visibleOffset) / deleteRevealWidth)
-    }
-
-    private var swipeGesture: some Gesture {
-        DragGesture(minimumDistance: 12, coordinateSpace: .local)
-            .updating($dragTranslation) { value, state, _ in
-                guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                state = value.translation.width
-            }
-            .onEnded { value in
-                guard abs(value.translation.width) > abs(value.translation.height) else {
-                    closeSwipe()
-                    return
-                }
-
-                let projectedOffset = horizontalOffset + value.predictedEndTranslation.width
-                let shouldOpen = projectedOffset < -(deleteRevealWidth * 0.45) || value.translation.width < -36
-
-                withAnimation(AppMotion.swipeRevealSnap(reduceMotion: reduceMotion)) {
-                    horizontalOffset = shouldOpen ? -deleteRevealWidth : 0
-                }
-            }
-    }
-
-    private func clampedOffset(_ offset: CGFloat) -> CGFloat {
-        min(0, max(-deleteRevealWidth, offset))
-    }
-
-    private func closeSwipe() {
-        withAnimation(AppMotion.swipeRevealSnap(reduceMotion: reduceMotion)) {
-            horizontalOffset = 0
         }
     }
 }
