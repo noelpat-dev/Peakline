@@ -14,7 +14,7 @@ struct SplitsView: View {
 
     @State private var showingAddSplit = false
     @State private var showingOtherSplits = false
-    @State private var pendingDeleteSplit: TrainingSplit?
+    @State private var pendingDeleteSplitID: UUID?
     @State private var dashboardSnapshot = SplitsDashboardSnapshot.empty
     @State private var lastDashboardSignature: String?
 
@@ -71,9 +71,7 @@ struct SplitsView: View {
 
                     DashboardSection(title: "Training Days") {
                         ForEach(snapshot.pplSplits) { split in
-                            NavigationLink {
-                                SplitDetailView(split: split)
-                            } label: {
+                            NavigationLink(value: split.id) {
                                 SplitTrainingDayCard(
                                     split: split,
                                     status: snapshot.statusesBySplitName[split.name] ?? .ready,
@@ -82,6 +80,7 @@ struct SplitsView: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            .accessibilityIdentifier("split-card-\(split.name.peaklineAccessibilityIdentifierFragment)")
                         }
                     }
                 } else {
@@ -132,6 +131,8 @@ struct SplitsView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel(showingOtherSplits ? "Hide other splits" : "Show other splits")
+                            .accessibilityValue(showingOtherSplits ? "expanded" : "collapsed")
+                            .accessibilityIdentifier("other-splits-toggle")
 
                             if showingOtherSplits {
                                 VStack(spacing: 0) {
@@ -146,15 +147,13 @@ struct SplitsView: View {
                                         Divider()
                                             .padding(.leading, 66)
 
-                                        NavigationLink {
-                                            SplitDetailView(split: split)
-                                        } label: {
+                                        NavigationLink(value: split.id) {
                                             inactiveSplitRow(split)
                                         }
                                         .buttonStyle(.plain)
                                         .contextMenu {
                                             Button(role: .destructive) {
-                                                pendingDeleteSplit = split
+                                                pendingDeleteSplitID = split.id
                                             } label: {
                                                 Label("Delete Split", systemImage: "trash")
                                             }
@@ -167,8 +166,12 @@ struct SplitsView: View {
                     }
                 }
             }
+            .accessibilityIdentifier("splits-screen")
             .navigationTitle("Splits")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: UUID.self) { splitID in
+                SplitDetailRouteView(splitID: splitID)
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Add split", systemImage: "plus.circle.fill") {
@@ -176,6 +179,7 @@ struct SplitsView: View {
                         showingAddSplit = true
                     }
                     .accessibilityLabel("Add split")
+                    .accessibilityIdentifier("add-split-button")
                 }
             }
             .sheet(isPresented: $showingAddSplit) {
@@ -183,7 +187,7 @@ struct SplitsView: View {
             }
             .alert("Delete split?", isPresented: deleteAlertBinding) {
                 Button("Cancel", role: .cancel) {
-                    pendingDeleteSplit = nil
+                    pendingDeleteSplitID = nil
                 }
                 Button("Delete", role: .destructive) {
                     deletePendingSplit()
@@ -192,7 +196,6 @@ struct SplitsView: View {
                 Text("This removes the split template and its exercise setup. Workout history stays intact.")
             }
         }
-        .accessibilityIdentifier("splits-screen")
         .onAppear {
             DispatchQueue.main.async {
                 PerformanceTracer.mark(.unsafeBreadcrumb, "splits.dashboard deferred_refresh")
@@ -206,12 +209,17 @@ struct SplitsView: View {
 
     private var deleteAlertBinding: Binding<Bool> {
         Binding {
-            pendingDeleteSplit != nil
+            pendingDeleteSplitID != nil
         } set: { showing in
             if !showing {
-                pendingDeleteSplit = nil
+                pendingDeleteSplitID = nil
             }
         }
+    }
+
+    private var pendingDeleteSplit: TrainingSplit? {
+        guard let pendingDeleteSplitID else { return nil }
+        return splits.first { $0.id == pendingDeleteSplitID }
     }
 
     private var currentDashboardSnapshot: SplitsDashboardSnapshot {
@@ -239,7 +247,14 @@ struct SplitsView: View {
             .joined(separator: "|"),
             completedSessions.prefix(40).map { session in
                 let logSignature = session.exerciseLogs
-                    .map { "\($0.id.uuidString):\($0.exerciseId.uuidString):\($0.setLogs.count)" }
+                    .sorted { $0.orderIndex < $1.orderIndex }
+                    .map { log in
+                        let setSignature = log.setLogs
+                            .sorted { $0.setNumber < $1.setNumber }
+                            .map { "\($0.id.uuidString):\($0.setNumber):\($0.weight):\($0.reps):\($0.completed):\($0.isWarmup)" }
+                            .joined(separator: ",")
+                        return "\(log.id.uuidString):\(log.exerciseId.uuidString):\(log.orderIndex):\(setSignature)"
+                    }
                     .joined(separator: ";")
                 return "\(session.id.uuidString):\(session.date.timeIntervalSince1970):\(session.endedAt?.timeIntervalSince1970 ?? 0):\(logSignature)"
             }
@@ -261,13 +276,27 @@ struct SplitsView: View {
             splits.first { $0.name == name && $0.isActive }
         }
         let otherSplits = splits.filter { !PPLRotation.names.contains($0.name) || !$0.isActive }
-        let recommendedSplitName = coachEngine.makeSummary(activeSplits: pplSplits, completedSessions: completedSessions).recommendedSplitName
+        let analyticsSessions = completedSessions.map(WorkoutAnalyticsSession.init)
+        let splitSnapshots = pplSplits.map(TrainingSplitSnapshot.init)
+        let targetSuggestionsByExerciseID = makeTargetSuggestions(
+            for: pplSplits.flatMap(\.exercises),
+            completedSessions: analyticsSessions,
+            targetService: targetService
+        )
+        let recommendedSplitName = coachEngine.makeSummary(
+            activeSplits: splitSnapshots,
+            completedSessions: analyticsSessions
+        ).recommendedSplitName
         var statusesBySplitName: [String: SplitStatus] = [:]
         var lastTrainedTextBySplitName: [String: String] = [:]
         var focusTextBySplitName: [String: String] = [:]
 
         for split in pplSplits {
-            statusesBySplitName[split.name] = status(for: split, recommendedSplitName: recommendedSplitName)
+            statusesBySplitName[split.name] = status(
+                for: split,
+                recommendedSplitName: recommendedSplitName,
+                targetSuggestionsByExerciseID: targetSuggestionsByExerciseID
+            )
             lastTrainedTextBySplitName[split.name] = lastTrainedDescription(for: split)
             focusTextBySplitName[split.name] = focusDescription(for: split)
         }
@@ -332,16 +361,19 @@ struct SplitsView: View {
     }
 
     private func deletePendingSplit() {
-        guard let pendingDeleteSplit else { return }
+        guard let pendingDeleteSplit else {
+            pendingDeleteSplitID = nil
+            return
+        }
         delete(pendingDeleteSplit)
-        self.pendingDeleteSplit = nil
+        pendingDeleteSplitID = nil
     }
 
-    private func status(for split: TrainingSplit) -> SplitStatus {
-        status(for: split, recommendedSplitName: recommendedSplitName)
-    }
-
-    private func status(for split: TrainingSplit, recommendedSplitName: String?) -> SplitStatus {
+    private func status(
+        for split: TrainingSplit,
+        recommendedSplitName: String?,
+        targetSuggestionsByExerciseID: [UUID: TargetSuggestion]
+    ) -> SplitStatus {
         guard split.isActive else { return .inactive }
 
         if wasTrainedRecently(split) {
@@ -352,7 +384,7 @@ struct SplitsView: View {
             return .prioritise
         }
 
-        if hasProgressOpportunity(split) {
+        if hasProgressOpportunity(split, targetSuggestionsByExerciseID: targetSuggestionsByExerciseID) {
             return .progressOpportunity
         }
 
@@ -374,9 +406,13 @@ struct SplitsView: View {
         return days >= 7
     }
 
-    private func hasProgressOpportunity(_ split: TrainingSplit) -> Bool {
+    private func hasProgressOpportunity(
+        _ split: TrainingSplit,
+        targetSuggestionsByExerciseID: [UUID: TargetSuggestion]
+    ) -> Bool {
         split.exercises.contains { splitExercise in
-            let suggestion = targetService.suggestion(for: splitExercise, completedSessions: completedSessions)
+            let suggestion = targetSuggestionsByExerciseID[splitExercise.id]
+                ?? targetService.suggestion(for: splitExercise, completedSessions: completedSessions)
             return suggestion.recommendationType == .increaseLoad || suggestion.recommendationType == .addReps
         }
     }
@@ -422,6 +458,39 @@ struct SplitsView: View {
     }
 }
 
+extension String {
+    var peaklineAccessibilityIdentifierFragment: String {
+        let scalars = unicodeScalars.map { scalar -> Character in
+            CharacterSet.alphanumerics.contains(scalar) ? Character(scalar) : "-"
+        }
+
+        return String(scalars)
+            .split(separator: "-")
+            .joined(separator: "-")
+    }
+}
+
+private func makeTargetSuggestions(
+    for exercises: [SplitExercise],
+    completedSessions: [WorkoutAnalyticsSession],
+    targetService: TargetSuggestionService
+) -> [UUID: TargetSuggestion] {
+    Dictionary(
+        uniqueKeysWithValues: exercises.map { exercise in
+            (
+                exercise.id,
+                targetService.suggestion(
+                    exerciseId: exercise.exerciseId,
+                    exerciseName: exercise.exerciseNameSnapshot,
+                    minReps: exercise.minReps,
+                    maxReps: exercise.maxReps,
+                    completedSessions: completedSessions
+                )
+            )
+        }
+    )
+}
+
 private enum PPLRotation {
     static let names = ["Push", "Pull", "Legs"]
 }
@@ -444,20 +513,67 @@ private struct SplitsDashboardSnapshot {
     )
 }
 
+private struct SplitDetailRouteView: View {
+    let splitID: UUID
+
+    @Query(sort: \TrainingSplit.name)
+    private var splits: [TrainingSplit]
+
+    var body: some View {
+        if let split = splits.first(where: { $0.id == splitID }) {
+            SplitDetailView(split: split)
+        } else {
+            FitnessScreen(
+                title: "Split unavailable",
+                subtitle: "This split may have been deleted or changed.",
+                systemImage: "exclamationmark.triangle"
+            ) {
+                DashboardEmptyStateCard(
+                    title: "Split no longer exists",
+                    message: "Return to Splits and choose an available training day.",
+                    systemImage: "list.bullet.rectangle"
+                )
+            }
+            .accessibilityIdentifier("split-detail-missing-screen")
+            .navigationTitle("Split")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+}
+
 private struct SplitDetailView: View {
     @Environment(\.appTheme) private var appTheme
     @Bindable var split: TrainingSplit
 
-    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    @Query
     private var completedSessions: [WorkoutSession]
 
+    @State private var targetSuggestionsByExerciseID: [UUID: TargetSuggestion] = [:]
+    @State private var lastTargetSuggestionSignature: String?
+
     private let targetService = TargetSuggestionService()
+
+    init(split: TrainingSplit) {
+        self.split = split
+        _completedSessions = Query(Self.completedSessionsDescriptor)
+    }
+
+    private static var completedSessionsDescriptor: FetchDescriptor<WorkoutSession> {
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 60
+        return descriptor
+    }
 
     private var orderedExercises: [SplitExercise] {
         split.exercises.sorted { $0.orderIndex < $1.orderIndex }
     }
 
     var body: some View {
+        let suggestionsByExerciseID = currentTargetSuggestionsByExerciseID
+
         FitnessScreen {
             splitHeroCard
 
@@ -479,7 +595,10 @@ private struct SplitDetailView: View {
 
                                 SplitExerciseRow(
                                     exercise: exercise,
-                                    suggestion: targetService.suggestion(for: exercise, completedSessions: completedSessions)
+                                    suggestion: targetSuggestion(
+                                        for: exercise,
+                                        suggestionsByExerciseID: suggestionsByExerciseID
+                                    )
                                 )
                             }
                         }
@@ -487,6 +606,7 @@ private struct SplitDetailView: View {
                 }
             }
         }
+        .accessibilityIdentifier("split-detail-screen")
         .navigationTitle(split.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -495,7 +615,77 @@ private struct SplitDetailView: View {
             } label: {
                 Label("Edit", systemImage: "pencil")
             }
+            .accessibilityIdentifier("split-edit-button")
         }
+        .onAppear {
+            refreshTargetSuggestions(force: true)
+        }
+        .onChange(of: targetSuggestionSignature) { _, _ in
+            refreshTargetSuggestions()
+        }
+    }
+
+    private var targetSuggestionSignature: String {
+        [
+            orderedExercises.map {
+                "\($0.id.uuidString):\($0.exerciseId.uuidString):\($0.orderIndex):\($0.exerciseNameSnapshot):\($0.minReps):\($0.maxReps)"
+            }
+            .joined(separator: "|"),
+            completedSessions.prefix(60).map { session in
+                let logSignature = session.exerciseLogs
+                    .sorted { $0.orderIndex < $1.orderIndex }
+                    .map { log in
+                        let setSignature = log.setLogs
+                            .sorted { $0.setNumber < $1.setNumber }
+                            .map { "\($0.id.uuidString):\($0.setNumber):\($0.weight):\($0.reps):\($0.completed):\($0.isWarmup)" }
+                            .joined(separator: ",")
+                        return "\(log.id.uuidString):\(log.exerciseId.uuidString):\(log.orderIndex):\(setSignature)"
+                    }
+                    .joined(separator: ";")
+                return "\(session.id.uuidString):\(session.date.timeIntervalSince1970):\(session.endedAt?.timeIntervalSince1970 ?? 0):\(logSignature)"
+            }
+            .joined(separator: "|")
+        ].joined(separator: "||")
+    }
+
+    private var currentTargetSuggestionsByExerciseID: [UUID: TargetSuggestion] {
+        let signature = targetSuggestionSignature
+        guard signature == lastTargetSuggestionSignature else {
+            let analyticsSessions = completedSessions.map(WorkoutAnalyticsSession.init)
+            return makeTargetSuggestions(
+                for: orderedExercises,
+                completedSessions: analyticsSessions,
+                targetService: targetService
+            )
+        }
+
+        return targetSuggestionsByExerciseID
+    }
+
+    private func refreshTargetSuggestions(force: Bool = false) {
+        let signature = targetSuggestionSignature
+        guard force || signature != lastTargetSuggestionSignature else { return }
+
+        let analyticsSessions = completedSessions.map(WorkoutAnalyticsSession.init)
+        targetSuggestionsByExerciseID = makeTargetSuggestions(
+            for: orderedExercises,
+            completedSessions: analyticsSessions,
+            targetService: targetService
+        )
+        lastTargetSuggestionSignature = signature
+    }
+
+    private func targetSuggestion(
+        for exercise: SplitExercise,
+        suggestionsByExerciseID: [UUID: TargetSuggestion]
+    ) -> TargetSuggestion {
+        suggestionsByExerciseID[exercise.id] ?? targetService.suggestion(
+            exerciseId: exercise.exerciseId,
+            exerciseName: exercise.exerciseNameSnapshot,
+            minReps: exercise.minReps,
+            maxReps: exercise.maxReps,
+            completedSessions: [WorkoutAnalyticsSession]()
+        )
     }
 
     private var splitHeroCard: some View {
@@ -520,6 +710,7 @@ private struct SplitDetailView: View {
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
+                            .accessibilityIdentifier("split-detail-title-\(split.name.peaklineAccessibilityIdentifierFragment)")
                         Text("\(orderedExercises.count) exercises - \(split.daysPerWeek) days/week")
                             .font(.subheadline)
                             .foregroundStyle(appTheme.colors.textSecondary)
@@ -600,6 +791,7 @@ private struct AddSplitView: View {
                     Stepper("Days per week: \(daysPerWeek)", value: $daysPerWeek, in: 1...7)
                 }
             }
+            .accessibilityIdentifier("add-split-screen")
             .navigationTitle("New Split")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

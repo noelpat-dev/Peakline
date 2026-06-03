@@ -49,6 +49,7 @@ struct SplitExerciseRow: View {
         }
         .padding(.vertical, 8)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("split-exercise-row-\(exercise.exerciseNameSnapshot.peaklineAccessibilityIdentifierFragment)")
     }
 
     private var detailText: String {

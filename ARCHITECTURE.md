@@ -90,7 +90,7 @@ GymTracker/Views/
 
 - `Today/`: dashboard and quick actions.
 - `Workout/`: start flow, preview, logger, rest timer, substitution, skipped reason, templates, completion, and session summary.
-- `Splits/`: Push/Pull/Legs programme cards, exercise rows, status badges, and split editing.
+- `Splits/`: Push/Pull/Legs programme cards, stable ID detail routes, cached target calculations, exercise rows, status badges, and split editing.
 - `History/`: calendar, filters, workout detail, and editing.
 - `Progress/`: exercise progress, PR timeline, charts, and summaries.
 - `Coach/`: coach dashboard and weekly review.
@@ -113,7 +113,7 @@ GymTrackerTests/
 GymTrackerUITests/
 ```
 
-Current coverage includes coach intelligence, workout reliability, sleep recovery reliability, nutrition/export reliability, coach workout preview UI, nutrition scanner navigation UI, and workout logging UI.
+Current coverage includes coach intelligence, workout reliability, sleep recovery reliability, nutrition/export reliability, coach workout preview UI, nutrition scanner navigation UI, Splits route/detail/add-sheet UI, and workout logging UI.
 
 Useful UI-test launch arguments include in-memory storage and seeded fixtures handled by the app and `SeedDataService`.
 

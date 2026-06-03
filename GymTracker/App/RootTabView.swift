@@ -66,6 +66,7 @@ struct RootTabView: View {
                     Label("Splits", systemImage: "list.bullet.rectangle")
                 }
                 .tag(RootTab.splits)
+                .accessibilityIdentifier("tab-splits")
 
             HistoryView()
                 .tabItem {

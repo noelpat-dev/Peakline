@@ -20,7 +20,7 @@ The main value loop is:
 
 - Push, Pull, and Legs are seeded as the core programme.
 - Today and Coach recommend the next split from workout history.
-- Splits show training-day cards, readiness and progression context, target rows, and exercise counts.
+- Splits show training-day cards, readiness and progression context, target rows, exercise counts, stable detail routes, and cached target calculations.
 - Exercise library and split editing support the personal programme instead of a generic template marketplace.
 
 ### Workout Preview And Logging
@@ -73,6 +73,7 @@ The main value loop is:
 - A focused acceptance verifier exists at `Scripts/verify_performance_acceptance.sh`.
 - The verifier runs build, unit tests, a focused UI acceptance flow, and log scanning.
 - Current acceptance checks cover Today to Coach, Workout to Coach, Workout to Preview, one Preview mode change, one-back navigation, notification refresh timing, duplicate Coach pushes, repeated Workout Preview onAppear refreshes, gesture timeouts, toolbar constraint warnings, and `unsafeForcedSync` regressions.
+- Focused Splits UI coverage verifies tab entry, Push/Pull/Legs cards, split detail navigation, Add Split presentation, and Other Splits expansion/collapse.
 
 ## Current Product Strengths
 

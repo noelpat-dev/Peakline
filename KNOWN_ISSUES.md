@@ -49,7 +49,7 @@ Current file: `KNOWN_ISSUES.md`
 ## Performance And Charts
 
 - Keep live workout logging fast and avoid heavy recomputation in hot logging views.
-- Today, Coach, Workout Preview, Nutrition, Sleep, and Progress remain performance-sensitive as history grows.
+- Today, Coach, Workout Preview, Splits, Nutrition, Sleep, and Progress remain performance-sensitive as history grows.
 - Keep charts lazy-loaded.
 - Exercise charts still need at least two completed sessions for a useful trend; one-session states should explain that clearly.
 - Protect the current acceptance thresholds:

@@ -42,6 +42,10 @@ enum SeedDataService {
                 try seedSavedFoodsFixture(in: context)
             }
 
+            if ProcessInfo.processInfo.arguments.contains("-UITestSplitsFixture") {
+                try seedSplitsFixture(in: context, exercises: existingExercises)
+            }
+
             try context.save()
         } catch {
             assertionFailure("Seed data failed: \(error)")
@@ -318,5 +322,36 @@ enum SeedDataService {
                 )
             )
         }
+    }
+
+    private static func seedSplitsFixture(in context: ModelContext, exercises: [Exercise]) throws {
+        let existingSplits = try context.fetch(FetchDescriptor<TrainingSplit>())
+        guard !existingSplits.contains(where: { $0.name == "UI Test Other Split" }) else { return }
+
+        let exercise = exercises.first { $0.name == "Bench Press" } ?? exercises.first
+        let split = TrainingSplit(
+            name: "UI Test Other Split",
+            splitType: .custom,
+            isActive: false,
+            daysPerWeek: 1
+        )
+
+        if let exercise {
+            let splitExercise = SplitExercise(
+                splitId: split.id,
+                exerciseId: exercise.id,
+                exerciseNameSnapshot: exercise.name,
+                orderIndex: 0,
+                targetSets: 2,
+                minReps: 8,
+                maxReps: 12,
+                restSeconds: 120,
+                notes: "UI test fixture exercise."
+            )
+            splitExercise.split = split
+            split.exercises = [splitExercise]
+        }
+
+        context.insert(split)
     }
 }
