@@ -35,8 +35,8 @@ struct TodayView: View {
 
     @State private var selectedRoute: TodayRoute?
     @State private var showingRestDayConfirmation = false
-    @State private var showingCoachCheckIn = false
     @State private var previewSplit: WorkoutPreviewSplit?
+    @State private var previewMode: WorkoutMode = .full
     @State private var startWorkoutRoute: StartWorkoutRoute?
     @State private var sleepSettings = SleepSettingsStore().load()
     @State private var sleepReadinessSnapshot = SleepAnalyticsService.emptyReadinessSnapshot()
@@ -52,6 +52,7 @@ struct TodayView: View {
 
     private let coachIntelligence = CoachIntelligenceService()
     private let decisionService = TrainingDecisionService()
+    private let trainingCallBuilder = TrainingCallSnapshotBuilder()
     private let modePlanner = WorkoutModePlanner()
     private let sleepCoaching = SleepCoachingService()
     private let sleepSettingsStore = SleepSettingsStore()
@@ -188,6 +189,16 @@ struct TodayView: View {
 
     private var trainingDecision: TrainingDecision {
         currentTodaySnapshot.trainingDecision
+    }
+
+    private var trainingCall: TrainingCallSnapshot {
+        trainingCallBuilder.make(
+            decision: trainingDecision,
+            activeSplits: activeSplits,
+            completedSessions: Array(completedSessions.prefix(40)),
+            readiness: readinessScore,
+            fatigueRisk: currentCoachSnapshot.fatigueRisk
+        )
     }
 
     private var currentSleepReadinessSignature: SleepAnalyticsInputSignature {
@@ -345,12 +356,16 @@ struct TodayView: View {
                     HeroRecommendationCard(
                         eyebrow: "Suggested today",
                         splitName: suggestedSplit?.name ?? "Create a split",
-                        reason: recommendationReason,
-                        context: recommendationContext,
+                        reason: trainingCall.reason,
+                        context: trainingCall.targetSummary ?? recommendationContext,
                         iconKey: ExerciseIconMapper.splitIconKey(for: suggestedSplit?.name ?? ""),
                         chips: heroChips,
+                        nextActionTitle: todayNextActionTitle,
+                        nextActionDetail: todayNextActionDetail,
                         primaryTitle: unfinishedSessions.isEmpty ? "Start Workout" : "Resume Workout",
                         secondaryTitle: "Preview Split",
+                        primarySystemImage: unfinishedSessions.isEmpty ? "play.fill" : "arrow.clockwise.circle.fill",
+                        secondarySystemImage: "doc.text.magnifyingglass",
                         isPrimaryEnabled: true,
                         isSecondaryEnabled: suggestedSplit != nil,
                         primaryAction: { openRoute(.workout) },
@@ -360,8 +375,7 @@ struct TodayView: View {
                     DashboardSection(title: "Daily Coach Brief") {
                         CoachBriefCard(
                             readiness: intelligence.readiness,
-                            viewBrief: openCoachRoute,
-                            checkIn: { showingCoachCheckIn = true }
+                            viewBrief: openCoachRoute
                         )
                     }
 
@@ -397,8 +411,8 @@ struct TodayView: View {
                         CoachInsightCard(
                             title: "Coach Insight",
                             recommendation: coachRecommendationTitle,
-                            reason: trainingDecision.reason,
-                            badge: trainingDecision.action.displayName,
+                            reason: trainingCall.reason,
+                            badge: trainingCall.action.displayName,
                             buttonTitle: coachButtonTitle,
                             isButtonEnabled: trainingDecision.recommendedSplitName != nil,
                             action: previewRecommendedSplit
@@ -454,15 +468,12 @@ struct TodayView: View {
                 destination(for: route)
             }
             .navigationDestination(item: $previewSplit) { split in
-                WorkoutPreviewView(split: split)
+                WorkoutPreviewView(split: split, initialMode: previewMode)
             }
             .alert("Rest day noted", isPresented: $showingRestDayConfirmation) {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text("Persistent rest-day logging is still on the roadmap. For now, your workout history remains unchanged.")
-            }
-            .sheet(isPresented: $showingCoachCheckIn) {
-                DailyCheckInSheet(existingCheckIn: readinessScore.checkIn)
             }
             .onAppear {
                 sleepSettings = sleepSettingsStore.load()
@@ -732,9 +743,33 @@ struct TodayView: View {
         return [
             DashboardChip("\(split.exercises.count) exercises", systemImage: "list.bullet"),
             DashboardChip(estimatedDurationText(for: split), systemImage: "clock"),
-            DashboardChip("\(trainingDecision.recommendedMode.displayName) Mode", systemImage: trainingDecision.recommendedMode.systemImage),
+            DashboardChip("\(trainingCall.recommendedMode.displayName) Mode", systemImage: trainingCall.recommendedMode.systemImage),
             DashboardChip(rotationChipText, systemImage: "arrow.triangle.2.circlepath")
         ]
+    }
+
+    private var todayNextActionTitle: String {
+        if !unfinishedSessions.isEmpty {
+            return "Resume the active log"
+        }
+
+        guard let splitName = suggestedSplit?.name else {
+            return "Create your first split"
+        }
+
+        return "Start \(trainingCall.recommendedMode.displayName) \(splitName)"
+    }
+
+    private var todayNextActionDetail: String {
+        if !unfinishedSessions.isEmpty {
+            return "Finish the workout in progress before starting a new session."
+        }
+
+        guard let split = suggestedSplit else {
+            return "Create or activate a split to unlock workout recommendations."
+        }
+
+        return "\(estimatedDurationText(for: split)) - preview if you want to adjust exercises first."
     }
 
     private var rotationChipText: String {
@@ -743,11 +778,11 @@ struct TodayView: View {
     }
 
     private var coachRecommendationTitle: String {
-        "Next: \(trainingDecision.recommendedSplitName ?? "Any split") - \(trainingDecision.recommendedMode.displayName)"
+        "Next: \(trainingCall.recommendedSplitName ?? "Any split") - \(trainingCall.recommendedMode.displayName)"
     }
 
     private var coachButtonTitle: String {
-        guard let splitName = trainingDecision.recommendedSplitName else { return "See Recommendation" }
+        guard let splitName = trainingCall.recommendedSplitName else { return "See Recommendation" }
         return "Preview \(splitName)"
     }
 
@@ -995,8 +1030,8 @@ struct TodayView: View {
 
     private func estimatedDurationText(for split: TrainingSplit) -> String {
         let selectable = split.exercises.sorted { $0.orderIndex < $1.orderIndex }.map(WorkoutSelectableExercise.init)
-        let planned = modePlanner.plannedExercises(from: selectable, mode: trainingDecision.recommendedMode)
-        let duration = modePlanner.estimatedDurationMinutes(for: planned, mode: trainingDecision.recommendedMode)
+        let planned = modePlanner.plannedExercises(from: selectable, mode: trainingCall.recommendedMode)
+        let duration = modePlanner.estimatedDurationMinutes(for: planned, mode: trainingCall.recommendedMode)
         return "~\(duration.lowerBound)-\(duration.upperBound)m"
     }
 
@@ -1006,19 +1041,19 @@ struct TodayView: View {
 
     private func previewSuggestedSplit() {
         guard let suggestedSplit else { return }
-        openPreview(WorkoutPreviewSplit(suggestedSplit))
+        openPreview(WorkoutPreviewSplit(suggestedSplit), mode: trainingCall.recommendedMode)
     }
 
     private func previewRecommendedSplit() {
         guard
-            let splitName = trainingDecision.recommendedSplitName,
+            let splitName = trainingCall.recommendedSplitName,
             let split = activeSplits.first(where: { $0.name == splitName })
         else { return }
 
-        openPreview(WorkoutPreviewSplit(split))
+        openPreview(WorkoutPreviewSplit(split), mode: trainingCall.recommendedMode)
     }
 
-    private func openPreview(_ split: WorkoutPreviewSplit) {
+    private func openPreview(_ split: WorkoutPreviewSplit, mode: WorkoutMode = .full) {
         PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "navigation request source=today split=\(split.id.uuidString) active=\(previewSplit?.id.uuidString ?? "none")")
         guard previewSplit?.id != split.id else {
             PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "navigation skip source=today already_active split=\(split.id.uuidString)")
@@ -1026,6 +1061,7 @@ struct TodayView: View {
         }
 
         AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
+            previewMode = mode
             previewSplit = split
         }
     }

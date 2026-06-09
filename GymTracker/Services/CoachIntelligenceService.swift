@@ -39,7 +39,17 @@ struct CoachIntelligenceService {
         hydrationTargetML: Int,
         nutritionGoal: NutritionGoal
     ) -> ReadinessScore {
-        readiness(
+        let sleepSummaries = sleepScoring.summaries(
+            from: sleepSessions,
+            naps: napSessions,
+            workouts: completedWorkouts,
+            settings: sleepSettings,
+            days: 14,
+            endingOn: date,
+            calendar: calendar
+        )
+
+        return readiness(
             for: date,
             sleepSessions: sleepSessions,
             napSessions: napSessions,
@@ -50,7 +60,7 @@ struct CoachIntelligenceService {
             sleepSettings: sleepSettings,
             hydrationTargetML: hydrationTargetML,
             nutritionGoal: nutritionGoal,
-            sleepSummaries: nil
+            sleepSummaries: sleepSummaries
         )
     }
 
@@ -178,6 +188,7 @@ struct CoachIntelligenceService {
             workouts: completedWorkouts,
             settings: sleepSettings,
             days: 14,
+            endingOn: date,
             calendar: calendar
         )
         let readinessSeries = readinessProxySeries(

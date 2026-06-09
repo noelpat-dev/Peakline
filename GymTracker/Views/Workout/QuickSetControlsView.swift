@@ -9,6 +9,8 @@ struct QuickSetControlsView: View {
     let copyPrevious: () -> Void
     let copyLastSession: () -> Void
     let markComplete: () -> Void
+    var completeTitle = "Complete"
+    var completeAccessibilityIdentifier = "quick-set-complete"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -17,7 +19,12 @@ struct QuickSetControlsView: View {
                     .disabled(!canCopyPrevious)
                 quickButton("Copy last", systemImage: "clock.arrow.circlepath", action: copyLastSession)
                     .disabled(!canCopyLastSession)
-                quickButton("Complete", systemImage: "checkmark.circle.fill", action: markComplete)
+                quickButton(
+                    completeTitle,
+                    systemImage: "checkmark.circle.fill",
+                    accessibilityIdentifier: completeAccessibilityIdentifier,
+                    action: markComplete
+                )
             }
 
             Text(suggestion)
@@ -28,7 +35,12 @@ struct QuickSetControlsView: View {
         }
     }
 
-    private func quickButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+    private func quickButton(
+        _ title: String,
+        systemImage: String,
+        accessibilityIdentifier: String? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
         Button {
             AppHaptics.selection()
             action()
@@ -48,7 +60,7 @@ struct QuickSetControlsView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(appTheme.colors.textPrimary)
-        .accessibilityIdentifier("quick-set-\(identifier(for: title))")
+        .accessibilityIdentifier(accessibilityIdentifier ?? "quick-set-\(identifier(for: title))")
     }
 
     private func identifier(for title: String) -> String {

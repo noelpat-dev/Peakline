@@ -298,7 +298,7 @@ private extension UIColor {
 }
 
 private struct AppThemeKey: EnvironmentKey {
-    static let defaultValue = AppTheme.appleGreen
+    static let defaultValue = AppTheme.black
 }
 
 extension EnvironmentValues {
@@ -309,7 +309,7 @@ extension EnvironmentValues {
 }
 
 struct AppThemeProvider<Content: View>: View {
-    @AppStorage("appTheme") private var storedTheme = AppTheme.appleGreen.rawValue
+    @AppStorage("appTheme") private var storedTheme = AppTheme.black.rawValue
     @AppStorage("appAppearance") private var storedAppearance = AppAppearance.system.rawValue
     let content: Content
 
@@ -318,7 +318,7 @@ struct AppThemeProvider<Content: View>: View {
     }
 
     private var theme: AppTheme {
-        AppTheme(rawValue: storedTheme) ?? .appleGreen
+        .black
     }
 
     private var appearance: AppAppearance {
@@ -331,6 +331,9 @@ struct AppThemeProvider<Content: View>: View {
             .tint(theme.actionColor)
             .toggleStyle(AppSwitchToggleStyle(theme: theme))
             .preferredColorScheme(appearance.colorScheme)
+            .onAppear {
+                storedTheme = AppTheme.black.rawValue
+            }
     }
 }
 

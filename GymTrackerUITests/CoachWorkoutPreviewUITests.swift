@@ -170,15 +170,18 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         let todaySuggestedSplit = app.descendants(matching: .any)["today-suggested-split"]
         XCTAssertTrue(todaySuggestedSplit.waitForExistence(timeout: 10))
         let suggestedSplit = todaySuggestedSplit.label
+        XCTAssertTrue(app.descendants(matching: .any)["today-suggested-chips"].exists)
 
         tapElement(identifier: "today-coach-brief-open", maxSwipes: 4)
         XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Coach to open")
         let coachCall = dailyCallElement(containing: suggestedSplit)
         XCTAssertTrue(coachCall.waitForExistence(timeout: 12))
         XCTAssertTrue(coachCall.label.contains(suggestedSplit), "Expected Coach call \(coachCall.label) to match Today split \(suggestedSplit)")
+        XCTAssertFalse(coachCall.label.contains("Mode"), "Coach hero should show only the split name, not \(coachCall.label)")
 
         tapElement(identifier: "coach-primary-action", maxSwipes: 10)
         XCTAssertTrue(waitForPreviewScreen(), "Expected Coach -> Preview to open")
+        XCTAssertTrue(app.descendants(matching: .any)["workout-preview-guidance-chips"].waitForExistence(timeout: 10))
         let previewSplit = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", suggestedSplit)).firstMatch
         XCTAssertTrue(previewSplit.waitForExistence(timeout: 10))
         XCTAssertTrue(previewSplit.label.contains(suggestedSplit), "Expected Preview split \(previewSplit.label) to match Coach split \(suggestedSplit)")
@@ -221,6 +224,19 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
         tapBackButton()
         XCTAssertTrue(waitForWorkoutScreen(), "Expected Coach back navigation to return to Workout")
+    }
+
+    func testRecoveryCheckInRatingControlsRenderWithoutValueBadges() throws {
+        tapElement(identifier: "today-coach-brief-open", maxSwipes: 4)
+        XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Coach to open")
+
+        tapElement(identifier: "coach-check-in-open", maxSwipes: 18)
+        XCTAssertTrue(app.navigationBars["Check-In"].waitForExistence(timeout: 5))
+
+        assertCheckInRatingRow("energy")
+        assertCheckInRatingRow("soreness")
+        assertCheckInRatingRow("stress")
+        assertCheckInRatingRow("motivation")
     }
 
     func testPerformanceAcceptanceManualBlockerFlow() throws {
@@ -327,7 +343,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     private func tapBackButton() {
-        let backButton = app.navigationBars.buttons.element(boundBy: 0)
+        let explicitBackButton = app.buttons["BackButton"]
+        let backButton = explicitBackButton.exists ? explicitBackButton : app.navigationBars.buttons.element(boundBy: 0)
         XCTAssertTrue(backButton.waitForExistence(timeout: 5))
         backButton.tap()
     }
@@ -449,5 +466,23 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         print("PERF_ACCEPTANCE_UI_SUMMARY \(summary)")
         XCTAssertTrue(summary.contains("performance_acceptance=PASS"), summary)
         XCTAssertFalse(summary.contains("FAIL"), summary)
+    }
+
+    private func assertCheckInRatingRow(_ suffix: String) {
+        let title = app.staticTexts["check-in-title-\(suffix)"]
+        XCTAssertTrue(title.waitForExistence(timeout: 3), "Expected check-in title \(suffix)")
+        XCTAssertFalse(app.staticTexts["check-in-value-\(suffix)"].exists, "Did not expect old \(suffix) value badge")
+
+        var previousMidX: CGFloat?
+        for rating in 1...5 {
+            let button = app.buttons["check-in-rating-\(suffix)-\(rating)"]
+            XCTAssertTrue(button.waitForExistence(timeout: 3), "Expected \(suffix) rating \(rating)")
+            XCTAssertGreaterThan(button.frame.width, 0, "Expected \(suffix) rating \(rating) to have width")
+
+            if let previousMidX {
+                XCTAssertGreaterThan(button.frame.midX, previousMidX, "Expected \(suffix) rating buttons to render left-to-right")
+            }
+            previousMidX = button.frame.midX
+        }
     }
 }

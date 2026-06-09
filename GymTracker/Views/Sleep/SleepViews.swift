@@ -24,10 +24,6 @@ struct SleepDashboardView: View {
     private var coachCheckIns: [DailyCoachCheckIn]
 
     @State private var settings = SleepSettingsStore().load()
-    @State private var showingSleepMode = false
-    @State private var showingManualEntry = false
-    @State private var showingNapEntry = false
-    @State private var showingNapTimer = false
     @State private var showingSettings = false
     @State private var confirmationSession: SleepSession?
     @State private var pendingDiscardSession: SleepSession?
@@ -162,6 +158,7 @@ struct SleepDashboardView: View {
                 activeSleepCard(activeSession)
             } else {
                 recoveryCard
+                trainingCallCard
                 DashboardSection(title: "Coach Context") {
                     ReadinessContextCard(
                         readiness: readinessScore,
@@ -193,18 +190,6 @@ struct SleepDashboardView: View {
                 }
                 .accessibilityLabel("Sleep settings")
             }
-        }
-        .sheet(isPresented: $showingSleepMode) {
-            SleepModeView(settings: $settings)
-        }
-        .sheet(isPresented: $showingManualEntry) {
-            SleepSessionEditorView(mode: .manual)
-        }
-        .sheet(isPresented: $showingNapEntry) {
-            NapSessionEditorView()
-        }
-        .sheet(isPresented: $showingNapTimer) {
-            NapTimerView()
         }
         .sheet(item: $confirmationSession) { session in
             SleepMorningConfirmationView(session: session)
@@ -262,6 +247,132 @@ struct SleepDashboardView: View {
             Task {
                 await SleepNotificationScheduler().refreshAllSleepNotifications(settings: notificationSettings, sessions: sessionSnapshots, workouts: workoutSnapshots)
             }
+        }
+    }
+
+    private var trainingCallCard: some View {
+        DashboardSection(title: "Today's Training Call") {
+            SleepGlassCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    SleepGlassRow(
+                        title: trainingCallTitle,
+                        subtitle: trainingCallMessage,
+                        systemImage: trainingCallSystemImage,
+                        tint: trainingCallTint
+                    ) {
+                        Text(trainingCallBadge)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(trainingCallTint)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(trainingCallTint.opacity(0.14), in: Capsule())
+                    }
+
+                    if let recommendation = dashboardSummary.adaptiveRecommendation, !recommendation.suggestedActions.isEmpty {
+                        FlowLayout(spacing: 8) {
+                            ForEach(recommendation.suggestedActions) { action in
+                                Text(action.displayName)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(appTheme.colors.textPrimary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 7)
+                                    .background(appTheme.colors.cardBackgroundElevated, in: Capsule())
+                            }
+                        }
+                    }
+
+                    Text(trainingCallBasisText)
+                        .font(.caption)
+                        .foregroundStyle(appTheme.colors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private var trainingCallTitle: String {
+        dashboardSummary.adaptiveRecommendation?.title ?? recoveryActionTitle
+    }
+
+    private var trainingCallMessage: String {
+        dashboardSummary.adaptiveRecommendation?.message ?? dashboardSummary.recommendation
+    }
+
+    private var trainingCallBadge: String {
+        dashboardSummary.adaptiveRecommendation?.level.displayName ?? latestSummary.recoveryState.displayName
+    }
+
+    private var trainingCallBasisText: String {
+        guard let recommendation = dashboardSummary.adaptiveRecommendation else {
+            return latestSummary.primarySession == nil
+                ? "Based on current sleep tracking status."
+                : "Based on last night's sleep score and recovery state."
+        }
+
+        guard !recommendation.basedOn.isEmpty else {
+            return "Based on sleep and recent training context."
+        }
+
+        return "Based on: \(recommendation.basedOn.map(\.displayName).joined(separator: ", "))."
+    }
+
+    private var trainingCallTint: Color {
+        if let recommendation = dashboardSummary.adaptiveRecommendation {
+            switch recommendation.level {
+            case .push, .normal:
+                return appTheme.colors.success
+            case .moderate:
+                return appTheme.colors.accent
+            case .light, .recovery:
+                return appTheme.colors.warning
+            case .rest:
+                return appTheme.colors.danger
+            }
+        }
+
+        switch latestSummary.recoveryState {
+        case .high, .good:
+            return appTheme.colors.success
+        case .moderate, .low:
+            return appTheme.colors.warning
+        case .veryLow:
+            return appTheme.colors.danger
+        case .unknown:
+            return appTheme.colors.textSecondary
+        }
+    }
+
+    private var trainingCallSystemImage: String {
+        if let recommendation = dashboardSummary.adaptiveRecommendation {
+            switch recommendation.level {
+            case .push:
+                return "bolt.fill"
+            case .normal:
+                return "checkmark.seal.fill"
+            case .moderate:
+                return "dial.medium.fill"
+            case .light:
+                return "arrow.down.forward.circle.fill"
+            case .recovery:
+                return "figure.cooldown"
+            case .rest:
+                return "moon.fill"
+            }
+        }
+
+        switch latestSummary.recoveryState {
+        case .high:
+            return "bolt.fill"
+        case .good:
+            return "checkmark.seal.fill"
+        case .moderate:
+            return "dial.medium.fill"
+        case .low:
+            return "arrow.down.forward.circle.fill"
+        case .veryLow:
+            return "figure.cooldown"
+        case .unknown:
+            return "moon.zzz.fill"
         }
     }
 
@@ -387,33 +498,7 @@ struct SleepDashboardView: View {
     }
 
     private var startCard: some View {
-        SleepGlassCard {
-            VStack(alignment: .leading, spacing: 16) {
-                SleepGlassRow(
-                    title: "Sleep Mode",
-                    subtitle: "Sleep start is estimated from your wind-down timer. You can edit it in the morning.",
-                    systemImage: "bed.double.fill"
-                )
-
-                SleepActionButton(
-                    title: "Start Sleep Mode",
-                    systemImage: "moon.zzz.fill",
-                    style: .primary
-                ) {
-                    showingSleepMode = true
-                }
-
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 10) {
-                        sleepSecondaryActions
-                    }
-
-                    VStack(spacing: 10) {
-                        sleepSecondaryActions
-                    }
-                }
-            }
-        }
+        SleepStartCard(settings: $settings)
     }
 
     private func activeSleepCard(_ session: SleepSession) -> some View {
@@ -444,33 +529,6 @@ struct SleepDashboardView: View {
                     }
                 }
             }
-        }
-    }
-
-    @ViewBuilder
-    private var sleepSecondaryActions: some View {
-        SleepActionButton(
-            title: "Log Nap",
-            systemImage: "plus.circle.fill",
-            style: .secondary
-        ) {
-            showingNapEntry = true
-        }
-
-        SleepActionButton(
-            title: "Nap Timer",
-            systemImage: "timer",
-            style: .secondary
-        ) {
-            showingNapTimer = true
-        }
-
-        SleepActionButton(
-            title: "Manual Entry",
-            systemImage: "square.and.pencil",
-            style: .secondary
-        ) {
-            showingManualEntry = true
         }
     }
 
@@ -671,10 +729,6 @@ struct SleepDashboardView: View {
     private var coachingInsightsSection: some View {
         DashboardSection(title: "Coaching Insights") {
             VStack(spacing: 10) {
-                if let recommendation = dashboardSummary.adaptiveRecommendation {
-                    SleepAdaptiveRecommendationCard(recommendation: recommendation)
-                }
-
                 if dashboardSummary.coachingInsights.isEmpty {
                     SleepGlassCard(style: .compact) {
                         SleepGlassRow(
@@ -868,6 +922,78 @@ struct SleepDashboardView: View {
         settingsStore.save(refreshedSettings)
 
         return imported
+    }
+}
+
+private enum SleepStartSheet: String, Identifiable {
+    case sleepMode
+    case napEntry
+    case napTimer
+    case manualEntry
+
+    var id: String { rawValue }
+}
+
+private struct SleepStartCard: View {
+    @Binding var settings: SleepSettings
+    @State private var activeSheet: SleepStartSheet?
+
+    var body: some View {
+        SleepGlassCard {
+            VStack(alignment: .leading, spacing: 16) {
+                SleepGlassRow(
+                    title: "Sleep Mode",
+                    subtitle: "Sleep start is estimated from your wind-down timer. You can edit it in the morning.",
+                    systemImage: "bed.double.fill"
+                )
+
+                SleepActionButton(
+                    title: "Start Sleep Mode",
+                    systemImage: "moon.zzz.fill",
+                    style: .primary
+                ) {
+                    activeSheet = .sleepMode
+                }
+
+                VStack(spacing: 10) {
+                    SleepActionButton(
+                        title: "Log Nap",
+                        systemImage: "plus.circle.fill",
+                        style: .secondary
+                    ) {
+                        activeSheet = .napEntry
+                    }
+
+                    SleepActionButton(
+                        title: "Nap Timer",
+                        systemImage: "timer",
+                        style: .secondary
+                    ) {
+                        activeSheet = .napTimer
+                    }
+
+                    SleepActionButton(
+                        title: "Manual Entry",
+                        systemImage: "square.and.pencil",
+                        style: .secondary
+                    ) {
+                        activeSheet = .manualEntry
+                    }
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .sleepMode:
+                SleepModeView(settings: $settings)
+            case .napEntry:
+                NapSessionEditorView()
+            case .napTimer:
+                NapTimerView()
+            case .manualEntry:
+                SleepSessionEditorView(mode: .manual)
+            }
+        }
     }
 }
 
@@ -1097,10 +1223,10 @@ struct SleepModeView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
 
-    @Query(sort: \SleepSession.createdAt, order: .reverse)
+    @Query
     private var sessions: [SleepSession]
 
-    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    @Query
     private var workouts: [WorkoutSession]
 
     @Binding var settings: SleepSettings
@@ -1114,6 +1240,25 @@ struct SleepModeView: View {
     init(settings: Binding<SleepSettings>) {
         self._settings = settings
         self._selectedMinutes = State(initialValue: settings.wrappedValue.defaultWindDownMinutes)
+        self._sessions = Query(Self.sessionsDescriptor)
+        self._workouts = Query(Self.workoutsDescriptor)
+    }
+
+    private static var sessionsDescriptor: FetchDescriptor<SleepSession> {
+        var descriptor = FetchDescriptor<SleepSession>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 90
+        return descriptor
+    }
+
+    private static var workoutsDescriptor: FetchDescriptor<WorkoutSession> {
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 40
+        return descriptor
     }
 
     var body: some View {
@@ -1121,121 +1266,182 @@ struct SleepModeView: View {
             ZStack {
                 appTheme.colors.backgroundPrimary.ignoresSafeArea()
 
-                VStack(spacing: 24) {
-                    Spacer(minLength: 18)
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 18) {
+                        sleepModeHeader
+                        windDownSummary
+                        windDownOptionsCard
 
-                    SleepGlassCard(style: .hero) {
-                        VStack(spacing: 18) {
-                            SleepGlassIcon(systemImage: "moon.zzz.fill", size: 70)
-
-                            VStack(spacing: 8) {
-                                Text("Sleep Mode")
-                                    .font(.system(.largeTitle, design: .rounded).weight(.bold))
-                                    .foregroundStyle(appTheme.colors.textPrimary)
-
-                                Text("Wind down now. Sleep tracking will begin soon.")
-                                    .font(.headline)
-                                    .foregroundStyle(appTheme.colors.textSecondary)
-                                    .multilineTextAlignment(.center)
-                            }
-
-                            countdownRing
-
-                            Text("Estimated sleep start: \(estimatedStart.formatted(date: .omitted, time: .shortened))")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(appTheme.colors.textSecondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-
-                    SleepGlassCard {
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text("Change Timer")
-                                .font(.headline)
-                                .foregroundStyle(appTheme.colors.textPrimary)
-
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 82), spacing: 8)], spacing: 8) {
-                                ForEach(SleepSettings.windDownOptions, id: \.self) { minutes in
-                                    FilterChip("\(minutes)m", systemImage: "timer", isSelected: minutes == selectedMinutes) {
-                                        selectedMinutes = minutes
-                                    }
-                                }
-                            }
-
-                            Text("Sleep start is estimated from your wind-down timer. You can edit it in the morning.")
-                                .font(.footnote)
-                                .foregroundStyle(appTheme.colors.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
+                        if let errorMessage {
+                            Text(errorMessage)
+                                .font(.caption)
+                                .foregroundStyle(appTheme.colors.danger)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
-
-                    VStack(spacing: 10) {
-                        SleepGlassActionButton(title: "Start Sleep Mode", systemImage: "moon.zzz.fill", style: .primary) {
-                            start(minutes: selectedMinutes)
-                        }
-
-                        SleepGlassActionButton(title: "Start Now", systemImage: "play.fill", style: .secondary) {
-                            start(minutes: 0)
-                        }
-
-                        SleepGlassActionButton(title: "Cancel", systemImage: "xmark", style: .neutral) {
-                            dismiss()
-                        }
-                    }
-
-                    if let errorMessage {
-                        Text(errorMessage)
-                            .font(.caption)
-                            .foregroundStyle(appTheme.colors.danger)
-                    }
-
-                    Spacer(minLength: 18)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 24)
+                    .padding(.bottom, 150)
                 }
-                .padding()
+                .scrollBounceBehavior(.basedOnSize)
             }
-            .navigationTitle("Sleep Mode")
-            .navigationBarTitleDisplayMode(.inline)
-            .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { value in
+            .safeAreaInset(edge: .bottom) {
+                sleepModeActions
+            }
+            .toolbar(.hidden, for: .navigationBar)
+            .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { value in
                 now = value
             }
         }
     }
 
-    private var estimatedStart: Date {
-        Date.now.addingTimeInterval(TimeInterval(selectedMinutes * 60))
-    }
+    private var sleepModeHeader: some View {
+        HStack(alignment: .center, spacing: 14) {
+            SleepGlassIcon(systemImage: "moon.zzz.fill", size: 50)
 
-    private var remainingSeconds: Int {
-        max(0, Int(estimatedStart.timeIntervalSince(now)))
-    }
-
-    private var countdownText: String {
-        String(format: "%02d:%02d", remainingSeconds / 60, remainingSeconds % 60)
-    }
-
-    private var countdownRing: some View {
-        ZStack {
-            Circle()
-                .stroke(appTheme.colors.cardBackgroundElevated, lineWidth: 14)
-
-            Circle()
-                .trim(from: 0, to: selectedMinutes == 0 ? 1 : CGFloat(remainingSeconds) / CGFloat(max(1, selectedMinutes * 60)))
-                .stroke(appTheme.colors.accent, style: StrokeStyle(lineWidth: 14, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-
-            VStack(spacing: 6) {
-                Text(countdownText)
-                    .font(.system(size: 52, weight: .bold, design: .rounded))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Sleep Mode")
+                    .font(.system(.title, design: .rounded).weight(.bold))
                     .foregroundStyle(appTheme.colors.textPrimary)
-                    .monospacedDigit()
-                    .accessibilityLabel("Wind-down countdown \(countdownText)")
-                Text(selectedMinutes == 0 ? "Start now" : "until estimate")
-                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+
+                Text("Wind down before tracking starts.")
+                    .font(.subheadline)
                     .foregroundStyle(appTheme.colors.textSecondary)
-                    .textCase(.uppercase)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private var windDownSummary: some View {
+        SleepGlassCard(style: .hero, padding: 22) {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Wind-down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .textCase(.uppercase)
+
+                        Text(durationHeadline)
+                            .font(.system(size: 68, weight: .bold, design: .rounded))
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
+                            .monospacedDigit()
+                    }
+
+                    Spacer(minLength: 12)
+
+                    VStack(alignment: .trailing, spacing: 5) {
+                        Image(systemName: "bed.double.fill")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                            .frame(width: 44, height: 44)
+                            .background(appTheme.colors.cardBackgroundElevated, in: Circle())
+
+                        Text(selectedMinutes == 0 ? "Tracking now" : "Tracking later")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    GeometryReader { proxy in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(appTheme.colors.cardBackgroundElevated)
+
+                            Capsule()
+                                .fill(appTheme.colors.accent)
+                                .frame(width: proxy.size.width * windDownFraction)
+                        }
+                    }
+                    .frame(height: 10)
+                    .accessibilityHidden(true)
+
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Estimated start")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(appTheme.colors.textSecondary)
+
+                        Spacer(minLength: 8)
+
+                        Text(estimatedStart.formatted(date: .omitted, time: .shortened))
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                            .monospacedDigit()
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var windDownOptionsCard: some View {
+        SleepGlassCard(padding: 18) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("Wind-down length")
+                        .font(.headline)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+
+                    Spacer()
+
+                    Text("Editable tomorrow")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                }
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 10)], spacing: 10) {
+                    ForEach(SleepSettings.windDownOptions, id: \.self) { minutes in
+                        SleepWindDownOptionButton(
+                            minutes: minutes,
+                            isSelected: minutes == selectedMinutes
+                        ) {
+                            selectedMinutes = minutes
+                        }
+                    }
+                }
             }
         }
-        .frame(width: 240, height: 240)
+    }
+
+    private var sleepModeActions: some View {
+        VStack(spacing: 10) {
+            SleepModeActionButton(title: "Start Sleep Mode", systemImage: "moon.zzz.fill", style: .primary) {
+                start(minutes: selectedMinutes)
+            }
+
+            HStack(spacing: 10) {
+                SleepModeActionButton(title: "Start Now", systemImage: "play.fill", style: .secondary) {
+                    start(minutes: 0)
+                }
+
+                SleepModeActionButton(title: "Cancel", systemImage: "xmark", style: .secondary) {
+                    dismiss()
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .background(.thinMaterial)
+    }
+
+    private var estimatedStart: Date {
+        now.addingTimeInterval(TimeInterval(selectedMinutes * 60))
+    }
+
+    private var durationHeadline: String {
+        selectedMinutes == 0 ? "Now" : "\(selectedMinutes) min"
+    }
+
+    private var windDownFraction: CGFloat {
+        CGFloat(max(0.12, Double(selectedMinutes) / Double(SleepSettings.windDownOptions.max() ?? 60)))
     }
 
     private func start(minutes: Int) {
@@ -1255,15 +1461,112 @@ struct SleepModeView: View {
     }
 }
 
+private struct SleepWindDownOptionButton: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let minutes: Int
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            AppHaptics.selection()
+            action()
+        } label: {
+            Text("\(minutes)m")
+                .font(.system(.headline, design: .rounded).weight(.semibold))
+                .foregroundStyle(isSelected ? appTheme.colors.accentForeground : appTheme.colors.textSecondary)
+                .monospacedDigit()
+                .frame(maxWidth: .infinity)
+                .frame(height: 46)
+                .background(background, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(border, lineWidth: 1)
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(minutes) minute wind-down")
+    }
+
+    private var background: Color {
+        isSelected ? appTheme.colors.accent : appTheme.colors.cardBackgroundElevated
+    }
+
+    private var border: Color {
+        isSelected ? appTheme.colors.accent.opacity(0.36) : appTheme.colors.cardBorder
+    }
+}
+
+private struct SleepModeActionButton: View {
+    enum Style {
+        case primary
+        case secondary
+    }
+
+    @Environment(\.appTheme) private var appTheme
+
+    let title: String
+    let systemImage: String
+    let style: Style
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.headline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+                .foregroundStyle(foreground)
+                .frame(maxWidth: .infinity)
+                .frame(height: style == .primary ? 58 : 52)
+                .background(background, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(border, lineWidth: 1)
+                }
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var foreground: Color {
+        switch style {
+        case .primary:
+            return appTheme.colors.accentForeground
+        case .secondary:
+            return appTheme.colors.textPrimary
+        }
+    }
+
+    private var background: Color {
+        switch style {
+        case .primary:
+            return appTheme.colors.accent
+        case .secondary:
+            return appTheme.colors.cardBackgroundElevated
+        }
+    }
+
+    private var border: Color {
+        switch style {
+        case .primary:
+            return appTheme.colors.accent.opacity(0.4)
+        case .secondary:
+            return appTheme.colors.cardBorder
+        }
+    }
+}
+
 struct SleepMorningConfirmationView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
 
-    @Query(sort: \SleepSession.createdAt, order: .reverse)
+    @Query
     private var sessions: [SleepSession]
 
-    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    @Query
     private var workouts: [WorkoutSession]
 
     let session: SleepSession
@@ -1428,6 +1731,8 @@ struct SleepSessionEditorView: View {
 
     init(mode: Mode) {
         self.mode = mode
+        self._sessions = Query(Self.sessionsDescriptor)
+        self._workouts = Query(Self.workoutsDescriptor)
 
         switch mode {
         case .manual:
@@ -1442,6 +1747,23 @@ struct SleepSessionEditorView: View {
             self._tags = State(initialValue: Set(session.tags))
             self._notes = State(initialValue: session.notes ?? "")
         }
+    }
+
+    private static var sessionsDescriptor: FetchDescriptor<SleepSession> {
+        var descriptor = FetchDescriptor<SleepSession>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 90
+        return descriptor
+    }
+
+    private static var workoutsDescriptor: FetchDescriptor<WorkoutSession> {
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 40
+        return descriptor
     }
 
     var body: some View {

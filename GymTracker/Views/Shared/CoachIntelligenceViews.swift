@@ -6,7 +6,7 @@ struct CoachBriefCard: View {
 
     let readiness: ReadinessScore
     let viewBrief: () -> Void
-    let checkIn: () -> Void
+    @State private var showingCheckIn = false
 
     var body: some View {
         FitnessCard {
@@ -58,6 +58,9 @@ struct CoachBriefCard: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Daily Coach Brief. Readiness \(readiness.value), \(readiness.category.displayName). \(readiness.recommendation.title).")
+        .sheet(isPresented: $showingCheckIn) {
+            DailyCheckInSheet(existingCheckIn: readiness.checkIn)
+        }
     }
 
     private var readinessScoreBlock: some View {
@@ -100,8 +103,7 @@ struct CoachBriefCard: View {
     private var checkInButton: some View {
         if readiness.hasCompletedTodayCheckIn {
             Button {
-                AppHaptics.selection()
-                checkIn()
+                presentCheckIn()
             } label: {
                 Label("Edit check-in", systemImage: "slider.horizontal.3")
                     .frame(maxWidth: .infinity)
@@ -109,13 +111,19 @@ struct CoachBriefCard: View {
             .buttonStyle(NeutralFitnessButtonStyle())
         } else {
             Button {
-                AppHaptics.selection()
-                checkIn()
+                presentCheckIn()
             } label: {
                 Label("Check in", systemImage: "plus.circle")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(PrimaryFitnessButtonStyle())
+        }
+    }
+
+    private func presentCheckIn() {
+        showingCheckIn = true
+        DispatchQueue.main.async {
+            AppHaptics.selection()
         }
     }
 
@@ -136,6 +144,123 @@ struct CoachBriefCard: View {
         case .recovery:
             return "leaf.fill"
         }
+    }
+}
+
+struct TrainingCallAuditCard: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let snapshot: TrainingCallSnapshot
+    var title: String = "Why this call?"
+
+    var body: some View {
+        FitnessCard {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 12) {
+                    FitnessIconBadge(
+                        systemImage: snapshot.recommendedMode.systemImage,
+                        size: 42,
+                        tint: accent,
+                        background: accent.opacity(0.14)
+                    )
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(title)
+                            .font(.headline)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+
+                        Text("\(snapshot.headline) - \(snapshot.confidence.displayName)")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(accent)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    CoachBadgeView(state: badgeState)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+
+                Text(snapshot.reason)
+                    .font(AppTypography.body)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let targetSummary = snapshot.targetSummary {
+                    Label(targetSummary, systemImage: "target")
+                        .font(AppTypography.metadataEmphasis)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if !snapshot.auditSignals.isEmpty {
+                    VStack(alignment: .leading, spacing: 7) {
+                        ForEach(snapshot.auditSignals, id: \.self) { signal in
+                            TrainingCallAuditLine(text: signal, systemImage: "checkmark.circle")
+                        }
+                    }
+                }
+
+                if !snapshot.missingOrStaleInputs.isEmpty {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("Inputs to improve")
+                            .font(AppTypography.metadataEmphasis)
+                            .foregroundStyle(appTheme.colors.textTertiary)
+                            .textCase(.uppercase)
+
+                        ForEach(snapshot.missingOrStaleInputs, id: \.self) { input in
+                            TrainingCallAuditLine(text: input, systemImage: "exclamationmark.circle")
+                        }
+                    }
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title). \(snapshot.headline). \(snapshot.reason)")
+    }
+
+    private var accent: Color {
+        if snapshot.isConservative {
+            return appTheme.colors.warning
+        }
+
+        switch snapshot.action {
+        case .push:
+            return appTheme.colors.success
+        case .recover:
+            return appTheme.colors.warning
+        case .repeatTarget, .rebalance, .buildBaseline:
+            return appTheme.colors.accent
+        }
+    }
+
+    private var badgeState: CoachBadgeState {
+        switch snapshot.action {
+        case .push:
+            return snapshot.recommendedMode == .heavy ? .increaseLoad : .ready
+        case .recover:
+            return .recovery
+        case .repeatTarget:
+            return .repeatTarget
+        case .rebalance:
+            return .missedSplit
+        case .buildBaseline:
+            return .baseline
+        }
+    }
+}
+
+private struct TrainingCallAuditLine: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let text: String
+    let systemImage: String
+
+    var body: some View {
+        Label(text, systemImage: systemImage)
+            .font(AppTypography.metadata)
+            .foregroundStyle(appTheme.colors.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -295,9 +420,9 @@ struct ReadinessFactorCard: View {
 
 struct CheckInStatusCard: View {
     @Environment(\.appTheme) private var appTheme
+    @State private var showingCheckIn = false
 
     let checkIn: DailyCoachCheckIn?
-    let action: () -> Void
 
     var body: some View {
         FitnessCard {
@@ -329,30 +454,40 @@ struct CheckInStatusCard: View {
 
                 if checkIn == nil {
                     Button {
-                        AppHaptics.selection()
-                        action()
+                        presentCheckIn()
                     } label: {
                         Label("Check in", systemImage: "plus.circle")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(PrimaryFitnessButtonStyle())
+                    .accessibilityIdentifier("coach-check-in-open")
                 } else {
                     Button {
-                        AppHaptics.selection()
-                        action()
+                        presentCheckIn()
                     } label: {
                         Label("Edit check-in", systemImage: "pencil")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(SecondaryFitnessButtonStyle())
+                    .accessibilityIdentifier("coach-check-in-open")
                 }
             }
+        }
+        .sheet(isPresented: $showingCheckIn) {
+            DailyCheckInSheet(existingCheckIn: checkIn)
         }
     }
 
     private var checkInSummary: String {
         guard let checkIn else { return "" }
         return "Energy \(checkIn.energy)/5, soreness \(checkIn.soreness)/5, stress \(checkIn.stress)/5, motivation \(checkIn.motivation)/5."
+    }
+
+    private func presentCheckIn() {
+        showingCheckIn = true
+        DispatchQueue.main.async {
+            AppHaptics.selection()
+        }
     }
 }
 
@@ -910,6 +1045,8 @@ struct AdaptiveWorkoutGuidanceCard: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .clipped()
+                .mask(Rectangle())
+                .accessibilityIdentifier("workout-preview-guidance-chips")
 
                 Label("Advisory only. Workout plan stays unchanged.", systemImage: "hand.raised.fill")
                     .font(.caption.weight(.semibold))
@@ -1043,49 +1180,33 @@ struct DailyCheckInSheet: View {
 
     var body: some View {
         NavigationStack {
-            FitnessScreen(
-                title: "Recovery Check-In",
-                subtitle: "Four quick inputs for today's coach brief.",
-                systemImage: "slider.horizontal.3"
-            ) {
-                FitnessCard {
-                    VStack(alignment: .leading, spacing: 18) {
-                        CheckInRatingRow(title: "Energy", lowLabel: "Low", highLabel: "High", value: $energy)
-                        CheckInRatingRow(title: "Soreness", lowLabel: "Low", highLabel: "High", value: $soreness)
-                        CheckInRatingRow(title: "Stress", lowLabel: "Low", highLabel: "High", value: $stress)
-                        CheckInRatingRow(title: "Motivation", lowLabel: "Low", highLabel: "High", value: $motivation)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    sheetHeader
+                    ratingsCard
+                    noteCard
+
+                    if let errorText {
+                        Text(errorText)
+                            .font(AppTypography.metadata)
+                            .foregroundStyle(appTheme.colors.danger)
                     }
-                }
 
-                FitnessCard {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Optional note")
-                            .font(AppTypography.sectionTitle)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-
-                        TextField("Anything affecting today?", text: $note, axis: .vertical)
-                            .lineLimit(2...4)
-                            .textFieldStyle(.plain)
-                            .font(AppTypography.body)
-                            .foregroundStyle(appTheme.colors.textPrimary)
+                    Button {
+                        AppHaptics.success()
+                        save()
+                    } label: {
+                        Label(existingCheckIn == nil ? "Save check-in" : "Update check-in", systemImage: "checkmark.circle.fill")
+                            .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(PrimaryFitnessButtonStyle())
                 }
-
-                if let errorText {
-                    Text(errorText)
-                        .font(AppTypography.metadata)
-                        .foregroundStyle(appTheme.colors.danger)
-                }
-
-                Button {
-                    AppHaptics.success()
-                    save()
-                } label: {
-                    Label(existingCheckIn == nil ? "Save check-in" : "Update check-in", systemImage: "checkmark.circle.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(PrimaryFitnessButtonStyle())
+                .padding(.horizontal, appTheme.metrics.screenPadding)
+                .padding(.top, 18)
+                .padding(.bottom, appTheme.metrics.screenBottomPadding)
             }
+            .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Check-In")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1096,6 +1217,62 @@ struct DailyCheckInSheet: View {
                 }
             }
         }
+    }
+
+    private var sheetHeader: some View {
+        HStack(alignment: .top, spacing: 12) {
+            FitnessIconBadge(systemImage: "slider.horizontal.3", size: 42)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Recovery Check-In")
+                    .font(AppTypography.cardTitle)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("Four quick inputs for today's coach brief.")
+                    .font(AppTypography.body)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var ratingsCard: some View {
+        FitnessCard(style: .compact) {
+            VStack(alignment: .leading, spacing: 14) {
+                CheckInRatingRow(title: "Energy", lowLabel: "Low", highLabel: "High", value: $energy)
+                checkInDivider
+                CheckInRatingRow(title: "Soreness", lowLabel: "Low", highLabel: "High", value: $soreness)
+                checkInDivider
+                CheckInRatingRow(title: "Stress", lowLabel: "Low", highLabel: "High", value: $stress)
+                checkInDivider
+                CheckInRatingRow(title: "Motivation", lowLabel: "Low", highLabel: "High", value: $motivation)
+            }
+        }
+    }
+
+    private var noteCard: some View {
+        FitnessCard(style: .compact) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Optional note")
+                    .font(AppTypography.sectionTitle)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+
+                TextField("Anything affecting today?", text: $note, axis: .vertical)
+                    .lineLimit(2...4)
+                    .textFieldStyle(.plain)
+                    .font(AppTypography.body)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .padding(12)
+                    .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+        }
+    }
+
+    private var checkInDivider: some View {
+        Rectangle()
+            .fill(appTheme.colors.cardBorder.opacity(0.7))
+            .frame(height: 1)
     }
 
     private func save() {
@@ -1140,75 +1317,58 @@ private struct CheckInRatingRow: View {
     @Binding var value: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text(title)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.textPrimary)
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(AppTypography.bodyEmphasis)
+                .foregroundStyle(appTheme.colors.textPrimary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("check-in-title-\(identifierSuffix)")
 
-                Spacer(minLength: 12)
-
-                Text("\(value)/5")
-                    .font(.caption.weight(.bold))
-                    .monospacedDigit()
-                    .foregroundStyle(appTheme.colors.accent)
-                    .frame(minWidth: 34, alignment: .trailing)
+            HStack {
+                Text(lowLabel)
+                Spacer()
+                Text(highLabel)
             }
-            .frame(maxWidth: .infinity)
+            .font(AppTypography.metadata)
+            .foregroundStyle(appTheme.colors.textTertiary)
 
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 14) {
-                    Text(lowLabel)
-                        .font(.caption)
-                        .foregroundStyle(appTheme.colors.textTertiary)
-                        .frame(width: 42, alignment: .leading)
-
-                    ratingButtons
-                        .frame(maxWidth: .infinity)
-
-                    Text(highLabel)
-                        .font(.caption)
-                        .foregroundStyle(appTheme.colors.textTertiary)
-                        .frame(width: 42, alignment: .trailing)
-                }
-                .frame(maxWidth: .infinity)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text(lowLabel)
-                            .font(.caption)
-                            .foregroundStyle(appTheme.colors.textTertiary)
-
-                        Spacer()
-
-                        Text(highLabel)
-                            .font(.caption)
-                            .foregroundStyle(appTheme.colors.textTertiary)
-                    }
-
-                    ratingButtons
-                }
-            }
+            ratingButtons
+                .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 
     private var ratingButtons: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 16) {
             ForEach(1...5, id: \.self) { rating in
                 Button {
                     value = rating
                 } label: {
-                    Text("\(rating)")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(rating <= value ? appTheme.colors.accentForeground : appTheme.colors.textSecondary)
-                        .frame(width: 40, height: 40)
-                        .background(rating <= value ? appTheme.colors.accent : appTheme.colors.cardBackgroundElevated, in: Circle())
+                    ZStack {
+                        Circle()
+                            .fill(rating <= value ? appTheme.colors.accent : appTheme.colors.cardBackgroundElevated)
+                            .frame(width: 44, height: 44)
+
+                        Text("\(rating)")
+                            .font(.subheadline.weight(.bold))
+                            .monospacedDigit()
+                            .foregroundStyle(rating <= value ? appTheme.colors.accentForeground : appTheme.colors.textSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                    }
+                    .frame(width: 48, height: 48)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("check-in-rating-\(identifierSuffix)-\(rating)")
                 .accessibilityLabel("\(title) \(rating) of 5")
                 .accessibilityAddTraits(rating == value ? .isSelected : [])
             }
         }
+    }
+
+    private var identifierSuffix: String {
+        title.lowercased().replacingOccurrences(of: " ", with: "-")
     }
 }
 

@@ -169,6 +169,376 @@ enum TrainingDecisionAction: String, Codable, Sendable {
     }
 }
 
+struct TrainingCallSnapshot: Equatable {
+    let recommendedSplitName: String?
+    let recommendedMode: WorkoutMode
+    let action: TrainingDecisionAction
+    let title: String
+    let reason: String
+    let confidence: ReadinessConfidence
+    let targetSummary: String?
+    let sourceSignals: [String]
+    let missingOrStaleInputs: [String]
+    let guardrailNotes: [String]
+    let isConservative: Bool
+
+    var headline: String {
+        guard let recommendedSplitName else { return title }
+        return "\(recommendedSplitName) - \(recommendedMode.displayName)"
+    }
+
+    var auditSignals: [String] {
+        Array((sourceSignals + guardrailNotes).prefix(5))
+    }
+
+    static let placeholder = TrainingCallSnapshot(
+        recommendedSplitName: nil,
+        recommendedMode: .full,
+        action: .buildBaseline,
+        title: "Preparing training call",
+        reason: "Peakline is preparing the latest local training call.",
+        confidence: .low,
+        targetSummary: nil,
+        sourceSignals: ["Recent workout history is being checked."],
+        missingOrStaleInputs: ["Readiness inputs are still loading."],
+        guardrailNotes: ["Limited data keeps this call conservative."],
+        isConservative: true
+    )
+}
+
+struct TrainingCallSnapshotBuilder {
+    private let targetService = TargetSuggestionService()
+
+    func make(
+        decision: TrainingDecision,
+        activeSplits: [TrainingSplit],
+        completedSessions: [WorkoutSession],
+        readiness: ReadinessScore? = nil,
+        fatigueRisk: CoachFatigueRisk? = nil,
+        targetSuggestions: [TargetSuggestion]? = nil,
+        selectedPreviewMode: WorkoutMode? = nil
+    ) -> TrainingCallSnapshot {
+        make(
+            decision: decision,
+            activeSplits: activeSplits.map(TrainingSplitSnapshot.init),
+            completedSessions: completedSessions.map(WorkoutAnalyticsSession.init),
+            readiness: readiness,
+            fatigueRisk: fatigueRisk,
+            targetSuggestions: targetSuggestions,
+            selectedPreviewMode: selectedPreviewMode
+        )
+    }
+
+    func make(
+        decision: TrainingDecision,
+        activeSplits: [TrainingSplitSnapshot],
+        completedSessions: [WorkoutAnalyticsSession],
+        readiness: ReadinessScore? = nil,
+        fatigueRisk: CoachFatigueRisk? = nil,
+        targetSuggestions: [TargetSuggestion]? = nil,
+        selectedPreviewMode: WorkoutMode? = nil
+    ) -> TrainingCallSnapshot {
+        let recommendedSplit = activeSplits.first { $0.name == decision.recommendedSplitName }
+        let suggestions = targetSuggestions ?? targetSuggestionsForRecommendedSplit(
+            recommendedSplit,
+            completedSessions: completedSessions
+        )
+        let primaryTarget = primaryTarget(from: suggestions)
+        let missingInputs = missingInputs(
+            readiness: readiness,
+            completedSessions: completedSessions,
+            targetSuggestions: suggestions
+        )
+        let confidence = readiness?.confidence ?? (completedSessions.count >= 3 ? .medium : .low)
+        let guarded = guardedDecision(
+            decision: decision,
+            confidence: confidence,
+            readiness: readiness,
+            fatigueRisk: fatigueRisk,
+            suggestions: suggestions,
+            selectedPreviewMode: selectedPreviewMode,
+            completedSessions: completedSessions
+        )
+        let targetSummary = targetSummary(
+            primaryTarget,
+            confidence: confidence,
+            mode: guarded.mode
+        )
+        let signals = sourceSignals(
+            decision: decision,
+            readiness: readiness,
+            fatigueRisk: fatigueRisk,
+            primaryTarget: primaryTarget,
+            completedSessions: completedSessions,
+            selectedPreviewMode: selectedPreviewMode
+        )
+
+        return TrainingCallSnapshot(
+            recommendedSplitName: decision.recommendedSplitName,
+            recommendedMode: guarded.mode,
+            action: guarded.action,
+            title: guarded.title,
+            reason: guarded.reason,
+            confidence: confidence,
+            targetSummary: targetSummary,
+            sourceSignals: signals,
+            missingOrStaleInputs: missingInputs,
+            guardrailNotes: guarded.guardrails,
+            isConservative: guarded.isConservative
+        )
+    }
+
+    private func targetSuggestionsForRecommendedSplit(
+        _ split: TrainingSplitSnapshot?,
+        completedSessions: [WorkoutAnalyticsSession]
+    ) -> [TargetSuggestion] {
+        guard let split else { return [] }
+        return split.exercises
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .prefix(6)
+            .map { exercise in
+                targetService.suggestion(
+                    exerciseId: exercise.exerciseId,
+                    exerciseName: exercise.exerciseNameSnapshot,
+                    minReps: exercise.minReps,
+                    maxReps: exercise.maxReps,
+                    completedSessions: completedSessions
+                )
+            }
+    }
+
+    private func guardedDecision(
+        decision: TrainingDecision,
+        confidence: ReadinessConfidence,
+        readiness: ReadinessScore?,
+        fatigueRisk: CoachFatigueRisk?,
+        suggestions: [TargetSuggestion],
+        selectedPreviewMode: WorkoutMode?,
+        completedSessions: [WorkoutAnalyticsSession]
+    ) -> (
+        mode: WorkoutMode,
+        action: TrainingDecisionAction,
+        title: String,
+        reason: String,
+        guardrails: [String],
+        isConservative: Bool
+    ) {
+        var mode = decision.recommendedMode
+        var action = decision.action
+        var title = decision.title
+        var reason = decision.reason
+        var guardrails: [String] = []
+        var isConservative = false
+        let hasPushTarget = suggestions.contains { $0.recommendationType == .increaseLoad || $0.recommendationType == .addReps }
+        let hasFatigueTarget = suggestions.contains { $0.recommendationType == .fatigueRisk || $0.recommendationType == .reduceLoad }
+        let readinessCategory = readiness?.category
+        let fatigueLevel = fatigueRisk?.level
+        let mixedSignals = (readinessCategory == .peak || readinessCategory == .ready)
+            && (hasFatigueTarget || fatigueLevel == .moderate || fatigueLevel == .high || fatigueLevel == .deloadWatch)
+
+        if completedSessions.count < 2 {
+            mode = .full
+            action = .buildBaseline
+            title = "Build a baseline"
+            reason = "Log a few clean sessions before Peakline pushes load or recovery urgency."
+            guardrails.append("Fewer than two completed workouts keeps this call baseline-focused.")
+            isConservative = true
+        } else if confidence == .low {
+            mode = decision.recommendedMode == .recovery ? .full : minStressMode(from: decision.recommendedMode)
+            action = decision.action == .buildBaseline ? .buildBaseline : .repeatTarget
+            title = action == .buildBaseline ? "Build a baseline" : "Repeat targets"
+            reason = "Based on limited recent inputs, repeat known targets and keep the plan controlled."
+            guardrails.append("Low confidence blocks heavy mode, load pushes, and strong recovery urgency.")
+            isConservative = true
+        } else if readinessCategory == .recovery || fatigueLevel == .deloadWatch {
+            mode = .recovery
+            action = .recover
+            title = "Recovery mode makes sense"
+            reason = "Recovery and fatigue signals are strong enough to keep today's plan lighter."
+            guardrails.append("Recovery evidence is strong, so progression is paused for this call.")
+            isConservative = true
+        } else if readinessCategory == .low || fatigueLevel == .high || hasFatigueTarget {
+            mode = .recovery
+            action = .recover
+            title = "Keep it controlled"
+            reason = "Recent readiness, fatigue, or lift trends point to a controlled session."
+            guardrails.append("Fatigue evidence overrides load progression for this call.")
+            isConservative = true
+        } else if mixedSignals {
+            mode = .quick
+            action = .repeatTarget
+            title = "Mixed signals"
+            reason = "Readiness looks useful, but fatigue signals are present. Keep main work and avoid chasing PRs."
+            guardrails.append("Mixed readiness and fatigue signals choose the conservative path.")
+            isConservative = true
+        } else if readinessCategory == .cautious {
+            mode = .quick
+            action = .repeatTarget
+            title = "Keep volume controlled"
+            reason = "Readiness is workable but not strong enough for extra target pressure."
+            guardrails.append("Cautious readiness trims the call toward main work and repeatable reps.")
+            isConservative = true
+        } else if hasPushTarget, readinessCategory == .peak, confidence == .high, (fatigueLevel == nil || fatigueLevel == .low) {
+            mode = .heavy
+            action = .push
+            title = "Push one key lift"
+            reason = "Readiness is high, fatigue looks manageable, and at least one target is ready to progress."
+        } else if hasPushTarget, confidence != .low {
+            mode = .full
+            action = .push
+            title = "Push today"
+            reason = "There is a progression target, but the call stays within the normal full session."
+        }
+
+        if let selectedPreviewMode, selectedPreviewMode != mode {
+            guardrails.append("\(selectedPreviewMode.displayName) mode is selected in Preview, but the coach call remains \(mode.displayName.lowercased()) based on current signals.")
+        }
+
+        return (mode, action, title, reason, Array(guardrails.prefix(3)), isConservative)
+    }
+
+    private func minStressMode(from mode: WorkoutMode) -> WorkoutMode {
+        switch mode {
+        case .heavy:
+            return .full
+        case .recovery:
+            return .full
+        case .full, .quick:
+            return mode
+        }
+    }
+
+    private func primaryTarget(from suggestions: [TargetSuggestion]) -> TargetSuggestion? {
+        suggestions.max { lhs, rhs in
+            let leftScore = targetRank(lhs.recommendationType)
+            let rightScore = targetRank(rhs.recommendationType)
+            if leftScore == rightScore {
+                return lhs.confidence < rhs.confidence
+            }
+            return leftScore < rightScore
+        }
+    }
+
+    private func targetRank(_ type: TargetRecommendationType) -> Int {
+        switch type {
+        case .fatigueRisk:
+            return 90
+        case .increaseLoad:
+            return 88
+        case .addReps:
+            return 82
+        case .reduceLoad:
+            return 78
+        case .possiblePlateau:
+            return 74
+        case .repeatTarget:
+            return 70
+        case .ready:
+            return 64
+        case .baseline:
+            return 58
+        }
+    }
+
+    private func targetSummary(
+        _ target: TargetSuggestion?,
+        confidence: ReadinessConfidence,
+        mode: WorkoutMode
+    ) -> String? {
+        guard let target else { return nil }
+        let targetText = targetDescription(for: target)
+
+        if confidence == .low {
+            return "\(target.exerciseName): repeat known work while confidence builds."
+        }
+
+        if mode == .recovery {
+            return "\(target.exerciseName): keep this controlled rather than chasing progression."
+        }
+
+        return "\(target.exerciseName): \(targetText)"
+    }
+
+    private func targetDescription(for suggestion: TargetSuggestion) -> String {
+        switch (suggestion.suggestedWeight, suggestion.suggestedReps) {
+        case let (.some(weight), .some(reps)):
+            return "\(format(weight))kg x \(reps)"
+        case let (.some(weight), .none):
+            return "\(format(weight))kg"
+        case let (.none, .some(reps)):
+            return "\(reps)+ reps"
+        case (.none, .none):
+            return "log clean sets"
+        }
+    }
+
+    private func sourceSignals(
+        decision: TrainingDecision,
+        readiness: ReadinessScore?,
+        fatigueRisk: CoachFatigueRisk?,
+        primaryTarget: TargetSuggestion?,
+        completedSessions: [WorkoutAnalyticsSession],
+        selectedPreviewMode: WorkoutMode?
+    ) -> [String] {
+        var signals = [decision.reason]
+
+        if let readiness {
+            signals.append("Readiness \(readiness.value) - \(readiness.category.displayName), \(readiness.confidence.displayName.lowercased()).")
+        }
+
+        if let fatigueRisk {
+            signals.append("\(fatigueRisk.title): \(fatigueRisk.summary)")
+        }
+
+        if let primaryTarget {
+            signals.append("Primary target: \(primaryTarget.reason)")
+        }
+
+        if recentSkippedFatigue(in: completedSessions) {
+            signals.append("Recent skipped work mentions fatigue or discomfort.")
+        }
+
+        if let selectedPreviewMode {
+            signals.append("Preview mode selected: \(selectedPreviewMode.displayName).")
+        }
+
+        return Array(signals.prefix(5))
+    }
+
+    private func missingInputs(
+        readiness: ReadinessScore?,
+        completedSessions: [WorkoutAnalyticsSession],
+        targetSuggestions: [TargetSuggestion]
+    ) -> [String] {
+        var inputs = readiness?.factors
+            .filter { !$0.isDataAvailable }
+            .map { "\($0.kind.displayName): missing or stale." } ?? ["Readiness: not available on this surface."]
+
+        if completedSessions.count < 2 {
+            inputs.append("Workout history: fewer than two completed sessions.")
+        }
+
+        if targetSuggestions.isEmpty {
+            inputs.append("Targets: no exercise target history for this call yet.")
+        }
+
+        return Array(inputs.prefix(5))
+    }
+
+    private func recentSkippedFatigue(in sessions: [WorkoutAnalyticsSession]) -> Bool {
+        sessions.prefix(3).contains { session in
+            session.exerciseLogs.contains { log in
+                let notes = log.notes ?? ""
+                return notes.localizedCaseInsensitiveContains("Too fatigued") || notes.localizedCaseInsensitiveContains("Pain / discomfort")
+            }
+        }
+    }
+
+    private func format(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(value.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1)))
+    }
+}
+
 struct WeeklyReviewBuilder {
     private let analytics = TrainingAnalyticsService()
     private let targetService = TargetSuggestionService()

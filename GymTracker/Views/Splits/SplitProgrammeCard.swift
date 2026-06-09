@@ -5,6 +5,7 @@ struct SplitProgrammeCard: View {
 
     let splits: [TrainingSplit]
     let statuses: [String: SplitStatus]
+    let trainingCall: TrainingCallSnapshot
 
     private var exerciseCount: Int {
         splits.reduce(0) { $0 + $1.exercises.count }
@@ -37,9 +38,16 @@ struct SplitProgrammeCard: View {
                     Spacer(minLength: 0)
                 }
 
-                Text("This is your active training programme.")
+                Text(trainingCall.reason)
                     .font(.subheadline)
                     .foregroundStyle(appTheme.colors.textSecondary)
+
+                if let targetSummary = trainingCall.targetSummary {
+                    Label(targetSummary, systemImage: "target")
+                        .font(AppTypography.metadataEmphasis)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 HStack(spacing: 8) {
                     ForEach(splits) { split in

@@ -413,9 +413,15 @@ struct CoachWorkoutAdjustmentService {
         }
 
         if snapshot.fatigueRisk.level == .high {
-            actions.formUnion([.reduceTotalVolume, .deloadStyleSession])
+            actions.insert(.reduceTotalVolume)
+            if snapshot.fatigueRisk.confidence == .high {
+                actions.insert(.deloadStyleSession)
+            }
         } else if snapshot.fatigueRisk.level == .deloadWatch {
-            actions.formUnion([.recoveryFocusedSession, .deloadStyleSession])
+            actions.insert(.recoveryFocusedSession)
+            if snapshot.fatigueRisk.confidence == .high {
+                actions.insert(.deloadStyleSession)
+            }
         }
 
         if splitMetadata?.expectedFatigue == .high {

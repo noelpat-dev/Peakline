@@ -67,7 +67,11 @@ struct SplitsView: View {
                 systemImage: "list.bullet.rectangle"
             ) {
                 if !snapshot.pplSplits.isEmpty {
-                    SplitProgrammeCard(splits: snapshot.pplSplits, statuses: snapshot.statusesBySplitName)
+                    SplitProgrammeCard(
+                        splits: snapshot.pplSplits,
+                        statuses: snapshot.statusesBySplitName,
+                        trainingCall: snapshot.trainingCall
+                    )
 
                     DashboardSection(title: "Training Days") {
                         ForEach(snapshot.pplSplits) { split in
@@ -283,10 +287,16 @@ struct SplitsView: View {
             completedSessions: analyticsSessions,
             targetService: targetService
         )
-        let recommendedSplitName = coachEngine.makeSummary(
+        let summary = coachEngine.makeSummary(
             activeSplits: splitSnapshots,
             completedSessions: analyticsSessions
-        ).recommendedSplitName
+        )
+        let recommendedSplitName = summary.recommendedSplitName
+        let trainingCall = TrainingCallSnapshotBuilder().make(
+            decision: summary.trainingDecision,
+            activeSplits: splitSnapshots,
+            completedSessions: analyticsSessions
+        )
         var statusesBySplitName: [String: SplitStatus] = [:]
         var lastTrainedTextBySplitName: [String: String] = [:]
         var focusTextBySplitName: [String: String] = [:]
@@ -305,6 +315,7 @@ struct SplitsView: View {
             pplSplits: pplSplits,
             otherSplits: otherSplits,
             recommendedSplitName: recommendedSplitName,
+            trainingCall: trainingCall,
             statusesBySplitName: statusesBySplitName,
             lastTrainedTextBySplitName: lastTrainedTextBySplitName,
             focusTextBySplitName: focusTextBySplitName
@@ -499,6 +510,7 @@ private struct SplitsDashboardSnapshot {
     let pplSplits: [TrainingSplit]
     let otherSplits: [TrainingSplit]
     let recommendedSplitName: String?
+    let trainingCall: TrainingCallSnapshot
     let statusesBySplitName: [String: SplitStatus]
     let lastTrainedTextBySplitName: [String: String]
     let focusTextBySplitName: [String: String]
@@ -507,6 +519,7 @@ private struct SplitsDashboardSnapshot {
         pplSplits: [],
         otherSplits: [],
         recommendedSplitName: nil,
+        trainingCall: .placeholder,
         statusesBySplitName: [:],
         lastTrainedTextBySplitName: [:],
         focusTextBySplitName: [:]

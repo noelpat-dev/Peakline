@@ -5,7 +5,7 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
     @Query private var profiles: [UserProfile]
-    @AppStorage("appTheme") private var storedTheme = AppTheme.appleGreen.rawValue
+    @AppStorage("appTheme") private var storedTheme = AppTheme.black.rawValue
 
     var body: some View {
         NavigationStack {
@@ -212,7 +212,7 @@ struct SettingsView: View {
     }
 
     private var selectedTheme: AppTheme {
-        AppTheme(rawValue: storedTheme) ?? .appleGreen
+        AppTheme(rawValue: storedTheme) ?? .black
     }
 }
 
@@ -340,12 +340,14 @@ private enum SettingsRoute: Hashable {
 
 private struct ThemeSettingsView: View {
     @Environment(\.appTheme) private var appTheme
-    @AppStorage("appTheme") private var storedTheme = AppTheme.appleGreen.rawValue
+    @AppStorage("appTheme") private var storedTheme = AppTheme.black.rawValue
     @AppStorage("appAppearance") private var storedAppearance = AppAppearance.system.rawValue
+
+    private let availableThemes: [AppTheme] = [.black]
 
     private var selectedTheme: Binding<AppTheme> {
         Binding {
-            AppTheme(rawValue: storedTheme) ?? .appleGreen
+            AppTheme(rawValue: storedTheme) ?? .black
         } set: { newTheme in
             storedTheme = newTheme.rawValue
         }
@@ -369,7 +371,7 @@ private struct ThemeSettingsView: View {
 
                     FitnessCard(padding: 10) {
                         VStack(spacing: 6) {
-                            ForEach(AppTheme.allCases) { theme in
+                            ForEach(availableThemes) { theme in
                                 ThemeOptionRow(
                                     theme: theme,
                                     isSelected: selectedTheme.wrappedValue == theme
@@ -406,6 +408,9 @@ private struct ThemeSettingsView: View {
         .navigationTitle("Themes")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("theme-settings-screen")
+        .onAppear {
+            storedTheme = AppTheme.black.rawValue
+        }
     }
 }
 

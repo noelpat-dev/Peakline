@@ -1465,14 +1465,14 @@ struct SleepScoringService {
     private let resolver = SleepSourceResolver()
     private let advancedRecovery = AdvancedRecoveryScoreService()
 
-    func summaries(from sessions: [SleepSession], settings: SleepSettings, days: Int = 7, calendar: Calendar = .current) -> [SleepSummary] {
-        summaries(from: sessions, naps: [], workouts: [], settings: settings, days: days, calendar: calendar)
+    func summaries(from sessions: [SleepSession], settings: SleepSettings, days: Int = 7, endingOn date: Date = .now, calendar: Calendar = .current) -> [SleepSummary] {
+        summaries(from: sessions, naps: [], workouts: [], settings: settings, days: days, endingOn: date, calendar: calendar)
     }
 
-    func summaries(from sessions: [SleepSession], naps: [NapSession], workouts: [WorkoutSession], settings: SleepSettings, days: Int = 7, calendar: Calendar = .current) -> [SleepSummary] {
+    func summaries(from sessions: [SleepSession], naps: [NapSession], workouts: [WorkoutSession], settings: SleepSettings, days: Int = 7, endingOn date: Date = .now, calendar: Calendar = .current) -> [SleepSummary] {
         let completed = sessions.filter { $0.status == .completed }
         let grouped = Dictionary(grouping: completed, by: { SleepCalendar.nightDate(for: $0.confirmedSleepStartAt, calendar: calendar) })
-        let start = calendar.startOfDay(for: Date.now)
+        let start = calendar.startOfDay(for: date)
 
         return (0..<days).compactMap { offset in
             guard let date = calendar.date(byAdding: .day, value: -offset, to: start) else { return nil }

@@ -310,7 +310,6 @@ struct CoachContentView: View {
     @State private var coachSnapshot = CoachIntelligenceService.emptySnapshot()
     @State private var lastCoachSnapshotSignature: String?
     @State private var hasLoadedCoachSnapshot = false
-    @State private var showingCoachCheckIn = false
     @State private var route: CoachRoute?
     @State private var previewRoute: CoachWorkoutPreviewRoute?
     @State private var weeklyReview: WeeklyReview?
@@ -339,6 +338,7 @@ struct CoachContentView: View {
     private let deloadBlockService = SavedCoachDeloadBlockService()
     private let coachPreferencesService = CoachPreferencesService()
     private let modePlanner = WorkoutModePlanner()
+    private let trainingCallBuilder = TrainingCallSnapshotBuilder()
     private let initialSnapshot: CoachIntelligenceSnapshot?
 
     init(initialSnapshot: CoachIntelligenceSnapshot? = nil) {
@@ -651,6 +651,7 @@ struct CoachContentView: View {
                         }
                         .buttonStyle(PrimaryFitnessButtonStyle())
                         .accessibilityIdentifier("coach-primary-action")
+                        .disabled(!dailyDecision.canOpenPreview)
                     }
 
                     if let targetLine = dailyDecision.targetLine {
@@ -672,51 +673,31 @@ struct CoachContentView: View {
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Text(dailyDecision.nextStep)
-                        .font(.footnote)
-                        .foregroundStyle(appTheme.colors.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "arrow.turn.down.right")
+                            .font(AppTypography.metadataEmphasis)
+                            .foregroundStyle(appTheme.colors.accent)
+                            .frame(width: 24)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Next step")
+                                .font(AppTypography.metadataEmphasis)
+                                .foregroundStyle(appTheme.colors.textTertiary)
+                                .textCase(.uppercase)
+
+                            Text(dailyDecision.nextStep)
+                                .font(AppTypography.body)
+                                .foregroundStyle(appTheme.colors.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                 }
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("coach-hero-card")
 
-            DashboardSection(title: "Coach Controls") {
-                VStack(spacing: 12) {
-                    Button {
-                        route = .preferences
-                    } label: {
-                        DashboardActionTile(
-                            title: "Coach Preferences",
-                            subtitle: "\(coachPreferencesSnapshot.aggressiveness.displayName), \(coachPreferencesSnapshot.trainingPriority.displayName.lowercased()) priority",
-                            systemImage: "slider.horizontal.3"
-                        )
-                    }
-                    .buttonStyle(PressableCardButtonStyle())
-                    .accessibilityIdentifier("coach-preferences-open")
-
-                    Button {
-                        route = .weeklyReview
-                    } label: {
-                        DashboardActionTile(
-                            title: "Weekly Review",
-                            subtitle: "\(weeklyWorkoutCount) workouts, \(weeklyWorkingSetCount) working sets",
-                            systemImage: "chart.bar.doc.horizontal"
-                        )
-                    }
-                    .buttonStyle(PressableCardButtonStyle())
-                    .accessibilityIdentifier("coach-weekly-review-open")
-                }
-            }
-
             DashboardSection(title: "Why this?") {
-                FitnessCard {
-                    VStack(alignment: .leading, spacing: 14) {
-                        ForEach(dailyDecision.whySignals) { signal in
-                            CoachDecisionSignalRow(signal: signal)
-                        }
-                    }
-                }
+                TrainingCallAuditCard(snapshot: dailyDecision.trainingCall)
                 .accessibilityIdentifier("coach-why-this-section")
             }
 
@@ -785,6 +766,34 @@ struct CoachContentView: View {
                 }
             }
 
+            DashboardSection(title: "Coach Controls") {
+                VStack(spacing: 12) {
+                    Button {
+                        route = .preferences
+                    } label: {
+                        DashboardActionTile(
+                            title: "Coach Preferences",
+                            subtitle: "\(coachPreferencesSnapshot.aggressiveness.displayName), \(coachPreferencesSnapshot.trainingPriority.displayName.lowercased()) priority",
+                            systemImage: "slider.horizontal.3"
+                        )
+                    }
+                    .buttonStyle(PressableCardButtonStyle())
+                    .accessibilityIdentifier("coach-preferences-open")
+
+                    Button {
+                        route = .weeklyReview
+                    } label: {
+                        DashboardActionTile(
+                            title: "Weekly Review",
+                            subtitle: "\(weeklyWorkoutCount) workouts, \(weeklyWorkingSetCount) working sets",
+                            systemImage: "chart.bar.doc.horizontal"
+                        )
+                    }
+                    .buttonStyle(PressableCardButtonStyle())
+                    .accessibilityIdentifier("coach-weekly-review-open")
+                }
+            }
+
             DashboardSection(title: "Weekly Review") {
                 FitnessCard {
                     VStack(alignment: .leading, spacing: 14) {
@@ -825,9 +834,7 @@ struct CoachContentView: View {
             }
 
             DashboardSection(title: "Today's Check-In") {
-                CheckInStatusCard(checkIn: intelligence.readiness.checkIn) {
-                    showingCoachCheckIn = true
-                }
+                CheckInStatusCard(checkIn: intelligence.readiness.checkIn)
             }
 
             ReadinessDetailHeaderCard(readiness: intelligence.readiness)
@@ -1057,9 +1064,6 @@ struct CoachContentView: View {
             PerformanceTracer.mark(.unsafeBreadcrumb, "coach.willResignActive cancel_tasks end")
         }
         .redacted(reason: hasLoadedCoachSnapshot ? [] : .placeholder)
-        .sheet(isPresented: $showingCoachCheckIn) {
-            DailyCheckInSheet(existingCheckIn: coachSnapshot.readiness.checkIn)
-        }
     }
 
     private func refreshCoachAfterFirstMount() {
@@ -1256,12 +1260,15 @@ struct CoachContentView: View {
     ) -> CoachDailyDecision {
         let canonicalDecision = summary.trainingDecision
         let splitName = canonicalDecision.recommendedSplitName
-        let recommendedMode = recommendedPreviewMode(
-            canonicalDecision: canonicalDecision,
-            intelligence: intelligence,
-            weeklyReview: weeklyReview,
+        let trainingCall = trainingCallBuilder.make(
+            decision: canonicalDecision,
+            activeSplits: activeSplits,
+            completedSessions: coachHistorySessions,
+            readiness: intelligence.readiness,
+            fatigueRisk: intelligence.fatigueRisk,
             targetSuggestions: targetSuggestions
         )
+        let recommendedMode = trainingCall.recommendedMode
         let displayedTargets = displayedTargetSuggestions(targetSuggestions, mode: recommendedMode)
         let primaryTarget = primaryTarget(from: displayedTargets, mode: recommendedMode)
         let whySignals = makeWhySignals(
@@ -1277,10 +1284,10 @@ struct CoachContentView: View {
             recommendedSplitName: splitName,
             recommendedMode: recommendedMode,
             headline: decisionHeadline(splitName: splitName, mode: recommendedMode),
-            targetLine: primaryTarget.map(targetLine(for:)),
-            shortReason: summaryText(from: whySignals, fallback: canonicalDecision.reason),
-            confidenceLabel: intelligence.readiness.confidence.displayName,
-            badgeState: decisionBadgeState(weeklyReview: weeklyReview, mode: recommendedMode, primaryTarget: primaryTarget),
+            targetLine: trainingCall.targetSummary ?? primaryTarget.map(targetLine(for:)),
+            shortReason: trainingCall.reason,
+            confidenceLabel: trainingCall.confidence.displayName,
+            badgeState: decisionBadgeState(trainingCall: trainingCall, primaryTarget: primaryTarget),
             canOpenPreview: canOpenPreview,
             primaryActionTitle: "Open \(recommendedMode.displayName) Preview",
             nextStep: nextStepText(splitName: splitName, mode: recommendedMode, canOpenPreview: canOpenPreview),
@@ -1288,7 +1295,8 @@ struct CoachContentView: View {
             primaryTarget: primaryTarget,
             additionalTargetCount: max(0, displayedTargets.count - (primaryTarget == nil ? 0 : 1)),
             targetFallback: targetFallbackText(splitName: splitName),
-            modeReason: modeReason(for: recommendedMode, intelligence: intelligence)
+            modeReason: modeReason(for: recommendedMode, intelligence: intelligence, trainingCall: trainingCall),
+            trainingCall: trainingCall
         )
     }
 
@@ -1545,7 +1553,15 @@ struct CoachContentView: View {
         return "Open \(splitName) and finish a clean session to build the next load target."
     }
 
-    private func modeReason(for mode: WorkoutMode, intelligence: CoachIntelligenceSnapshot) -> String {
+    private func modeReason(
+        for mode: WorkoutMode,
+        intelligence: CoachIntelligenceSnapshot,
+        trainingCall: TrainingCallSnapshot
+    ) -> String {
+        if let guardrail = trainingCall.guardrailNotes.first {
+            return guardrail
+        }
+
         switch mode {
         case .full:
             return "Normal training day. Keep the full split and chase one clear target."
@@ -1599,6 +1615,30 @@ struct CoachContentView: View {
         }
 
         return badgeState(for: mode)
+    }
+
+    private func decisionBadgeState(
+        trainingCall: TrainingCallSnapshot,
+        primaryTarget: TargetSuggestion?
+    ) -> CoachBadgeState {
+        switch trainingCall.action {
+        case .rebalance:
+            return .missedSplit
+        case .recover:
+            return .recovery
+        case .repeatTarget:
+            return primaryTarget.map { CoachBadgeState(recommendationType: $0.recommendationType) } ?? .repeatTarget
+        case .buildBaseline:
+            return .baseline
+        case .push:
+            if primaryTarget?.recommendationType == .increaseLoad {
+                return .increaseLoad
+            }
+            if primaryTarget?.recommendationType == .addReps {
+                return .addReps
+            }
+            return badgeState(for: trainingCall.recommendedMode)
+        }
     }
 
     private func recommendedSplit(named name: String?) -> TrainingSplit? {
@@ -1898,6 +1938,7 @@ private struct CoachDailyDecision: Equatable {
     let additionalTargetCount: Int
     let targetFallback: String
     let modeReason: String
+    let trainingCall: TrainingCallSnapshot
 
     static let placeholder = CoachDailyDecision(
         recommendedSplitName: nil,
@@ -1925,7 +1966,8 @@ private struct CoachDailyDecision: Equatable {
         primaryTarget: nil,
         additionalTargetCount: 0,
         targetFallback: "Complete a workout to unlock a clearer next target.",
-        modeReason: "Peakline is confirming which mode fits today best."
+        modeReason: "Peakline is confirming which mode fits today best.",
+        trainingCall: .placeholder
     )
 }
 

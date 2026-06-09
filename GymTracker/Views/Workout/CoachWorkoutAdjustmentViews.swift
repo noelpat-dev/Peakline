@@ -94,19 +94,21 @@ struct AdaptiveWorkoutActionsCard: View {
             )
 
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(recommendation.title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.textPrimary)
-                        .lineLimit(2)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        actionTitle(recommendation)
 
-                    if recommendation.isCoachSuggested {
-                        Text("Suggested")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(appTheme.colors.accent)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(appTheme.colors.accentSurface, in: Capsule())
+                        if recommendation.isCoachSuggested {
+                            suggestedBadge
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        actionTitle(recommendation)
+
+                        if recommendation.isCoachSuggested {
+                            suggestedBadge
+                        }
                     }
                 }
 
@@ -130,6 +132,23 @@ struct AdaptiveWorkoutActionsCard: View {
                 .stroke(recommendation.isCoachSuggested ? appTheme.colors.accent.opacity(0.26) : appTheme.cardBorder, lineWidth: 1)
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private func actionTitle(_ recommendation: CoachWorkoutActionRecommendation) -> some View {
+        Text(recommendation.title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(appTheme.colors.textPrimary)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var suggestedBadge: some View {
+        Text("Suggested")
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(appTheme.colors.accent)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(appTheme.colors.accentSurface, in: Capsule())
     }
 }
 

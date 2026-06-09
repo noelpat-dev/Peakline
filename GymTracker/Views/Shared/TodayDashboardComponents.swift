@@ -68,8 +68,12 @@ struct HeroRecommendationCard: View {
     let context: String?
     let iconKey: ExerciseIconKey
     let chips: [DashboardChip]
+    let nextActionTitle: String
+    let nextActionDetail: String
     let primaryTitle: String
     let secondaryTitle: String
+    let primarySystemImage: String
+    let secondarySystemImage: String
     let isPrimaryEnabled: Bool
     let isSecondaryEnabled: Bool
     let primaryAction: () -> Void
@@ -117,6 +121,39 @@ struct HeroRecommendationCard: View {
                     }
                 }
 
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: primarySystemImage)
+                        .font(AppTypography.metadataEmphasis)
+                        .frame(width: 30, height: 30)
+                        .foregroundStyle(appTheme.colors.accent)
+                        .background(appTheme.colors.accentSurface, in: Circle())
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Now")
+                            .font(AppTypography.metadataEmphasis)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .textCase(.uppercase)
+
+                        Text(nextActionTitle)
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text(nextActionDetail)
+                            .font(AppTypography.metadata)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, appTheme.metrics.spacing12)
+                .overlay(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(appTheme.colors.accent)
+                        .frame(width: 3)
+                }
+
                 if !chips.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
@@ -128,6 +165,8 @@ struct HeroRecommendationCard: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .clipped()
+                    .mask(Rectangle())
+                    .accessibilityIdentifier("today-suggested-chips")
                 }
 
                 ViewThatFits(in: .horizontal) {
@@ -150,7 +189,7 @@ struct HeroRecommendationCard: View {
             AppHaptics.mediumImpact()
             primaryAction()
         } label: {
-            Label(primaryTitle, systemImage: "play.fill")
+            Label(primaryTitle, systemImage: primarySystemImage)
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(PrimaryFitnessButtonStyle())
@@ -162,7 +201,7 @@ struct HeroRecommendationCard: View {
             AppHaptics.selection()
             secondaryAction()
         } label: {
-            Label(secondaryTitle, systemImage: "target")
+            Label(secondaryTitle, systemImage: secondarySystemImage)
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(SecondaryFitnessButtonStyle())

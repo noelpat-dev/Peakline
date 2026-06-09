@@ -63,7 +63,9 @@ enum PerformanceTracer {
     static func mark(_ metric: PerformanceMetric, _ message: String = "") {
         #if DEBUG
         PerformanceAcceptanceState.record(metric: metric, message: message)
-        logger.debug("\(metric.rawValue, privacy: .public) \(message, privacy: .public)")
+        if isConsoleLoggingEnabled {
+            logger.debug("\(metric.rawValue, privacy: .public) \(message, privacy: .public)")
+        }
         #endif
     }
 
@@ -78,7 +80,9 @@ enum PerformanceTracer {
             let milliseconds = elapsed.components.seconds * 1_000 + elapsed.components.attoseconds / 1_000_000_000_000_000
             os_signpost(.end, log: signpostLog, name: signpostName, signpostID: signpostID, "%{public}s", metric.rawValue)
             PerformanceAcceptanceState.recordCompletion(metric: metric, milliseconds: milliseconds)
-            logger.debug("\(metric.rawValue, privacy: .public) completed in \(milliseconds)ms")
+            if isConsoleLoggingEnabled {
+                logger.debug("\(metric.rawValue, privacy: .public) completed in \(milliseconds)ms")
+            }
         }
         #endif
 
@@ -95,7 +99,9 @@ enum PerformanceTracer {
             let milliseconds = elapsed.components.seconds * 1_000 + elapsed.components.attoseconds / 1_000_000_000_000_000
             os_signpost(.end, log: signpostLog, name: signpostName, signpostID: signpostID, "%{public}s", metric.rawValue)
             PerformanceAcceptanceState.recordCompletion(metric: metric, milliseconds: milliseconds)
-            logger.debug("\(metric.rawValue, privacy: .public) completed in \(milliseconds)ms")
+            if isConsoleLoggingEnabled {
+                logger.debug("\(metric.rawValue, privacy: .public) completed in \(milliseconds)ms")
+            }
         }
         #endif
 
@@ -107,6 +113,10 @@ enum PerformanceTracer {
     private static let logger = Logger(subsystem: subsystem, category: "Performance")
     private static let signpostLog = OSLog(subsystem: subsystem, category: "Performance")
     private static let signpostName: StaticString = "PeaklinePerformance"
+
+    private static var isConsoleLoggingEnabled: Bool {
+        ProcessInfo.processInfo.arguments.contains("-PeaklinePerformanceConsoleLogging")
+    }
     #endif
 }
 

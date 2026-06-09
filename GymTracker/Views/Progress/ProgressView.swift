@@ -62,6 +62,8 @@ struct ProgressContentView: View {
         ) {
             DashboardSection(title: "This Week") {
                 VStack(alignment: .leading, spacing: 12) {
+                    progressSignalCard
+
                     HStack(spacing: 10) {
                         MetricTile(label: "Workouts", value: "\(displayedWeeklySummary.completedWorkouts)", caption: "Completed", systemImage: "figure.strengthtraining.traditional")
                         MetricTile(label: "Sets", value: "\(displayedWeeklySummary.workingSets)", caption: "Working", systemImage: "checkmark.circle")
@@ -179,6 +181,108 @@ struct ProgressContentView: View {
         .onDisappear {
             summaryTask?.cancel()
         }
+    }
+
+    private var progressSignalCard: some View {
+        FitnessCard {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: progressSignalSystemImage)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(progressSignalTint)
+                    .frame(width: 42, height: 42)
+                    .background(progressSignalTint.opacity(0.14), in: Circle())
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text(progressSignalTitle)
+                            .font(.headline)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+
+                        Text(progressSignalBadge)
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(progressSignalTint)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(progressSignalTint.opacity(0.14), in: Capsule())
+                    }
+
+                    Text(progressSignalMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private var progressSignalTitle: String {
+        if displayedWeeklySummary.completedWorkouts == 0 {
+            return "No trend yet this week"
+        }
+        if let missedSplitName = displayedSplitConsistency.missedSplitName {
+            return "\(missedSplitName) needs attention"
+        }
+        if displayedWeeklySummary.prCount > 0 {
+            return "Progress is moving"
+        }
+        if displayedWeeklySummary.workingSets >= 12 {
+            return "Solid training week"
+        }
+        return "Keep building the week"
+    }
+
+    private var progressSignalMessage: String {
+        if displayedWeeklySummary.completedWorkouts == 0 {
+            return "Finish a workout to start this week's progress signal."
+        }
+        if let missedSplitName = displayedSplitConsistency.missedSplitName {
+            return "Push \(displayedSplitConsistency.pushCount) - Pull \(displayedSplitConsistency.pullCount) - Legs \(displayedSplitConsistency.legsCount). Prioritise \(missedSplitName) to rebalance the week."
+        }
+        if displayedWeeklySummary.prCount > 0 {
+            return "\(displayedWeeklySummary.prCount) PRs logged this week. Open the PR timeline to review what moved."
+        }
+        if displayedWeeklySummary.workingSets >= 12 {
+            return "\(displayedWeeklySummary.workingSets) working sets are logged. Check exercise charts for lift-specific changes."
+        }
+        return "\(displayedWeeklySummary.completedWorkouts) workouts logged. Add more working sets to make trends clearer."
+    }
+
+    private var progressSignalBadge: String {
+        if displayedWeeklySummary.completedWorkouts == 0 {
+            return "Build"
+        }
+        if displayedSplitConsistency.missedSplitName != nil {
+            return "Balance"
+        }
+        if displayedWeeklySummary.prCount > 0 {
+            return "\(displayedWeeklySummary.prCount) PR"
+        }
+        return "Review"
+    }
+
+    private var progressSignalSystemImage: String {
+        if displayedWeeklySummary.completedWorkouts == 0 {
+            return "calendar.badge.plus"
+        }
+        if displayedSplitConsistency.missedSplitName != nil {
+            return "scale.3d"
+        }
+        if displayedWeeklySummary.prCount > 0 {
+            return "trophy.fill"
+        }
+        return "chart.line.uptrend.xyaxis"
+    }
+
+    private var progressSignalTint: Color {
+        if displayedWeeklySummary.completedWorkouts == 0 || displayedSplitConsistency.missedSplitName != nil {
+            return appTheme.colors.warning
+        }
+        if displayedWeeklySummary.prCount > 0 {
+            return appTheme.colors.success
+        }
+        return appTheme.colors.accent
     }
 
     private var progressLoadingCard: some View {

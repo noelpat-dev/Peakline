@@ -122,6 +122,105 @@ final class WorkoutReliabilityTests: XCTestCase {
         XCTAssertEqual(summary.trainingDecision.recommendedSplitName, "Legs")
         XCTAssertEqual(suggestion.exerciseName, "Quad Extension")
         XCTAssertFalse(summary.exerciseRecommendations.contains { $0.exerciseName == "Bench Press" })
+
+        let call = TrainingCallSnapshotBuilder().make(
+            decision: decision,
+            activeSplits: splits,
+            completedSessions: sessions
+        )
+
+        XCTAssertEqual(call.recommendedSplitName, "Legs")
+        XCTAssertTrue(call.sourceSignals.contains(decision.reason))
+        XCTAssertEqual(call.confidence, .medium)
+    }
+
+    func testTrainingCallSnapshotDowngradesLowConfidenceProgression() {
+        let pushExerciseId = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!
+        let splits = [
+            splitSnapshot(name: "Push", exerciseId: pushExerciseId, exerciseName: "Bench Press")
+        ]
+        let sessions = [
+            analyticsSession(day: 25, splitName: "Push", exerciseId: pushExerciseId, exerciseName: "Bench Press", weight: 100, reps: 10),
+            analyticsSession(day: 20, splitName: "Push", exerciseId: pushExerciseId, exerciseName: "Bench Press", weight: 97.5, reps: 10),
+            analyticsSession(day: 15, splitName: "Push", exerciseId: pushExerciseId, exerciseName: "Bench Press", weight: 95, reps: 10)
+        ]
+        let decision = TrainingDecision(
+            recommendedSplitName: "Push",
+            recommendedMode: .full,
+            action: .push,
+            title: "Push today",
+            reason: "Progression target is available."
+        )
+        let call = TrainingCallSnapshotBuilder().make(
+            decision: decision,
+            activeSplits: splits,
+            completedSessions: sessions,
+            readiness: readiness(confidence: .low, category: .peak, value: 88),
+            fatigueRisk: fatigue(level: .low, confidence: .low),
+            targetSuggestions: [
+                TargetSuggestion(
+                    exerciseName: "Bench Press",
+                    lastBestSetDescription: "100kg x 10",
+                    lastBestWeight: 100,
+                    lastBestReps: 10,
+                    suggestedWeight: 102.5,
+                    suggestedReps: 8,
+                    recommendationType: .increaseLoad,
+                    reason: "Top of the range is available.",
+                    confidence: 0.85
+                )
+            ]
+        )
+
+        XCTAssertEqual(call.action, .repeatTarget)
+        XCTAssertEqual(call.recommendedMode, .full)
+        XCTAssertTrue(call.isConservative)
+        XCTAssertTrue(call.guardrailNotes.contains { $0.localizedCaseInsensitiveContains("low confidence") })
+        XCTAssertTrue(call.targetSummary?.localizedCaseInsensitiveContains("repeat") == true)
+    }
+
+    func testTrainingCallSnapshotLetsFatigueOverrideLoadPush() {
+        let pushExerciseId = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!
+        let splits = [
+            splitSnapshot(name: "Push", exerciseId: pushExerciseId, exerciseName: "Bench Press")
+        ]
+        let sessions = [
+            analyticsSession(day: 25, splitName: "Push", exerciseId: pushExerciseId, exerciseName: "Bench Press", weight: 100, reps: 10),
+            analyticsSession(day: 20, splitName: "Push", exerciseId: pushExerciseId, exerciseName: "Bench Press", weight: 97.5, reps: 10),
+            analyticsSession(day: 15, splitName: "Push", exerciseId: pushExerciseId, exerciseName: "Bench Press", weight: 95, reps: 10)
+        ]
+        let decision = TrainingDecision(
+            recommendedSplitName: "Push",
+            recommendedMode: .full,
+            action: .push,
+            title: "Push today",
+            reason: "Progression target is available."
+        )
+        let call = TrainingCallSnapshotBuilder().make(
+            decision: decision,
+            activeSplits: splits,
+            completedSessions: sessions,
+            readiness: readiness(confidence: .high, category: .peak, value: 91),
+            fatigueRisk: fatigue(level: .high, confidence: .high),
+            targetSuggestions: [
+                TargetSuggestion(
+                    exerciseName: "Bench Press",
+                    lastBestSetDescription: "100kg x 10",
+                    lastBestWeight: 100,
+                    lastBestReps: 10,
+                    suggestedWeight: 102.5,
+                    suggestedReps: 8,
+                    recommendationType: .increaseLoad,
+                    reason: "Top of the range is available.",
+                    confidence: 0.85
+                )
+            ]
+        )
+
+        XCTAssertEqual(call.action, .recover)
+        XCTAssertEqual(call.recommendedMode, .recovery)
+        XCTAssertTrue(call.isConservative)
+        XCTAssertTrue(call.guardrailNotes.contains { $0.localizedCaseInsensitiveContains("fatigue") })
     }
 
     func testWeeklyBalanceDoesNotSilentlyOverridePPLRotation() {
@@ -308,5 +407,35 @@ final class WorkoutReliabilityTests: XCTestCase {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         return calendar.date(from: DateComponents(year: 2026, month: 5, day: day, hour: hour, minute: minute))!
+    }
+
+    private func readiness(confidence: ReadinessConfidence, category: ReadinessCategory, value: Int) -> ReadinessScore {
+        ReadinessScore(
+            value: value,
+            category: category,
+            confidence: confidence,
+            recommendation: ReadinessCoachRecommendation(
+                title: "Fixture readiness",
+                summary: "Fixture readiness summary.",
+                reasonBullets: [],
+                suggestedActions: []
+            ),
+            factors: [],
+            generatedAt: date(day: 26, hour: 9),
+            checkIn: nil,
+            workoutAdjustment: "Fixture adjustment.",
+            recoveryNote: "Fixture note."
+        )
+    }
+
+    private func fatigue(level: CoachFatigueRiskLevel, confidence: ReadinessConfidence) -> CoachFatigueRisk {
+        CoachFatigueRisk(
+            level: level,
+            title: "Fixture fatigue",
+            summary: "Fixture fatigue summary.",
+            factors: ["Fixture fatigue factor."],
+            recommendedAction: "Keep controlled.",
+            confidence: confidence
+        )
     }
 }

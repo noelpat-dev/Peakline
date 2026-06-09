@@ -3,10 +3,11 @@ import SwiftUI
 struct RestTimerView: View {
     @Environment(\.appTheme) private var appTheme
     @Binding var state: RestTimerState
+    var showsActiveTimer = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let endDate = state.endDate {
+            if showsActiveTimer, let endDate = state.endDate {
                 TimelineView(.periodic(from: .now, by: 1)) { timeline in
                     let remaining = max(0, Int(endDate.timeIntervalSince(timeline.date)))
 

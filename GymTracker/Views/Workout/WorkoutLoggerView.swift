@@ -228,6 +228,12 @@ struct WorkoutLoggerView: View {
             )
         }
 
+        if restTimerState.endDate != nil {
+            Section {
+                ActiveRestTimerBanner(state: $restTimerState)
+            }
+        }
+
         Section {
             VStack(alignment: .leading, spacing: 10) {
                 TextField("Session notes", text: Binding($session.notes, replacingNilWith: ""))
@@ -235,8 +241,12 @@ struct WorkoutLoggerView: View {
             }
         }
 
-        Section("Rest Timer") {
-            RestTimerView(state: $restTimerState)
+        Section {
+            RestTimerView(state: $restTimerState, showsActiveTimer: false)
+        } header: {
+            Text("Rest Timer")
+        } footer: {
+            Text("Tap Complete on a set to start the suggested timer, or start one manually here.")
         }
 
         Section {
@@ -275,6 +285,7 @@ struct WorkoutLoggerView: View {
         if let currentExerciseLog {
             ExerciseLoggerSection(
                 exerciseLog: currentExerciseLog,
+                contextLabel: "Current exercise - \(currentExerciseIndex + 1) of \(orderedExerciseLogs.count)",
                 templateNote: templateNote(for: currentExerciseLog),
                 previousPerformance: previousPerformanceByExerciseId[currentExerciseLog.exerciseId],
                 completedSessions: completedSessions,
@@ -863,6 +874,73 @@ private struct LiveWorkoutOrderRow: View {
     }
 }
 
+private struct ActiveRestTimerBanner: View {
+    @Environment(\.appTheme) private var appTheme
+    @Binding var state: RestTimerState
+
+    var body: some View {
+        if let endDate = state.endDate {
+            TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                let remaining = max(0, Int(endDate.timeIntervalSince(timeline.date)))
+
+                HStack(spacing: 12) {
+                    Image(systemName: "timer")
+                        .font(AppTypography.badge)
+                        .foregroundStyle(appTheme.colors.accent)
+                        .frame(width: 34, height: 34)
+                        .background(appTheme.colors.accentSurface, in: Circle())
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(remainingText(remaining))
+                            .font(AppTypography.workoutNumber.monospacedDigit())
+                            .foregroundStyle(appTheme.colors.textPrimary)
+
+                        Text(nextSetText)
+                            .font(AppTypography.metadata)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+                    }
+
+                    Spacer()
+
+                    Button("+30s") {
+                        state.endDate = (state.endDate ?? Date()).addingTimeInterval(30)
+                    }
+                    .buttonStyle(.borderless)
+
+                    Button("Skip") {
+                        state = RestTimerState()
+                    }
+                    .buttonStyle(.borderless)
+                }
+                .padding(.vertical, 2)
+                .onChange(of: remaining) { _, newValue in
+                    if newValue == 0 {
+                        state = RestTimerState()
+                    }
+                }
+            }
+        }
+    }
+
+    private var nextSetText: String {
+        guard let exerciseName = state.exerciseName else {
+            return "Rest before the next set"
+        }
+
+        if let nextSetNumber = state.nextSetNumber {
+            return "\(exerciseName) - next set \(nextSetNumber)"
+        }
+
+        return exerciseName
+    }
+
+    private func remainingText(_ seconds: Int) -> String {
+        "\(seconds / 60):\(String(format: "%02d", seconds % 60))"
+    }
+}
+
 private struct WorkoutRating: Identifiable {
     let id: Int
     let face: String
@@ -1109,6 +1187,7 @@ private struct ExerciseLoggerSection: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
     @Bindable var exerciseLog: ExerciseLog
+    var contextLabel: String? = nil
     let templateNote: String?
     let previousPerformance: PreviousExercisePerformance?
     let completedSessions: [WorkoutSession]
@@ -1129,6 +1208,15 @@ private struct ExerciseLoggerSection: View {
     var body: some View {
         Section {
             VStack(alignment: .leading, spacing: 10) {
+                if let contextLabel {
+                    Label(contextLabel, systemImage: "location.viewfinder")
+                        .font(AppTypography.metadataEmphasis)
+                        .foregroundStyle(appTheme.colors.accent)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(appTheme.colors.accentSurface, in: Capsule())
+                }
+
                 HStack(alignment: .top, spacing: 12) {
                     ExerciseIconView(
                         iconKey: ExerciseIconMapper.iconKey(for: exerciseLog),
@@ -1163,6 +1251,10 @@ private struct ExerciseLoggerSection: View {
                 }
 
                 VStack(alignment: .leading, spacing: 5) {
+                    Text(setProgressText)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(appTheme.colors.textPrimary)
+
                     Text("Last time: \(previousPerformance?.summary ?? "No previous data")")
                         .font(.caption)
                         .foregroundStyle(appTheme.colors.textSecondary)
@@ -1255,6 +1347,12 @@ private struct ExerciseLoggerSection: View {
     private var targetText: String {
         guard exerciseLog.targetSets > 0 else { return "No target set" }
         return "Target: \(exerciseLog.targetSets) sets x \(exerciseLog.minReps)-\(exerciseLog.maxReps) reps"
+    }
+
+    private var setProgressText: String {
+        let completedWorkingSets = orderedSets.filter { $0.completed && !$0.isWarmup }.count
+        let target = max(exerciseLog.targetSets, orderedSets.count)
+        return "\(completedWorkingSets) of \(target) working sets logged"
     }
 
     private var noteLabel: String {
@@ -1438,8 +1536,10 @@ private struct SetRowView: View {
                     SetStatusChip(title: "Warm-up", systemImage: "flame", color: appTheme.warningColor)
                 }
 
-                if hasLoggedData {
+                if setLog.completed {
                     SetStatusChip(title: "Logged", systemImage: "checkmark.circle.fill", color: appTheme.successColor)
+                } else if hasLoggedData {
+                    SetStatusChip(title: "Draft", systemImage: "pencil", color: appTheme.colors.textSecondary)
                 }
             }
 
@@ -1471,7 +1571,8 @@ private struct SetRowView: View {
                 suggestion: nextSetSuggestion,
                 copyPrevious: copyPreviousSet,
                 copyLastSession: copyLastSessionSet,
-                markComplete: markComplete
+                markComplete: markComplete,
+                completeTitle: "Complete + Timer"
             )
 
             HStack(spacing: 8) {
@@ -1569,12 +1670,12 @@ private struct SetRowView: View {
 
     private func updateWeight(_ weight: Double) {
         setLog.weight = max(0, weight)
-        syncCompletedState(triggerAction: true)
+        syncCompletedState()
     }
 
     private func updateReps(_ reps: Int) {
         setLog.reps = max(0, reps)
-        syncCompletedState(triggerAction: true)
+        syncCompletedState()
     }
 
     private func copyPreviousSet() {
@@ -1634,11 +1735,15 @@ private struct SetRowView: View {
     }
 
     private func syncCompletedState(triggerAction: Bool = false) {
-        let shouldBeCompleted = hasLoggedData
-        let wasCompleted = setLog.completed
-        setLog.completed = shouldBeCompleted
+        guard hasLoggedData else {
+            setLog.completed = false
+            return
+        }
 
-        if triggerAction, shouldBeCompleted, !wasCompleted, !setLog.isWarmup {
+        let wasCompleted = setLog.completed
+
+        if triggerAction, !wasCompleted, !setLog.isWarmup {
+            setLog.completed = true
             completedAction()
         }
     }

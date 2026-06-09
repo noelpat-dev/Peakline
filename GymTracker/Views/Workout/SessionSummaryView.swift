@@ -20,6 +20,7 @@ struct SessionSummaryView: View {
     private let builder = SessionSummaryBuilder()
     private let analytics = TrainingAnalyticsService()
     private let reviewBuilder = WeeklyReviewBuilder()
+    private let trainingCallBuilder = TrainingCallSnapshotBuilder()
     private let reopenService = WorkoutSessionReopenService()
     private let splitUpdateService = SplitTemplateUpdateService()
 
@@ -33,6 +34,14 @@ struct SessionSummaryView: View {
 
     private var weeklyReview: WeeklyReview {
         reviewBuilder.build(activeSplits: activeSplits, completedSessions: completedSessions)
+    }
+
+    private var nextTrainingCall: TrainingCallSnapshot {
+        trainingCallBuilder.make(
+            decision: weeklyReview.nextDecision,
+            activeSplits: activeSplits,
+            completedSessions: completedSessions
+        )
     }
 
     var body: some View {
@@ -144,17 +153,7 @@ struct SessionSummaryView: View {
             }
 
             DashboardSection(title: "Next Decision") {
-                FitnessCard {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Next suggested session: \(weeklyReview.nextDecision.recommendedSplitName ?? "Any split")")
-                            .font(.subheadline.weight(.semibold))
-                        Text("Suggested mode: \(weeklyReview.nextDecision.recommendedMode.displayName)")
-                            .font(.subheadline)
-                        Text(weeklyReview.nextDecision.reason)
-                            .font(.footnote)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                    }
-                }
+                TrainingCallAuditCard(snapshot: nextTrainingCall, title: "Next call")
             }
 
             if !completedExerciseLogs.isEmpty {

@@ -106,6 +106,7 @@ struct StartWorkoutContentView: View {
     @State private var activeSession: WorkoutSession?
     @State private var pendingDiscardSession: WorkoutSession?
     @State private var previewSplit: WorkoutPreviewSplit?
+    @State private var previewMode: WorkoutMode = .full
     @State private var fallbackRoute: StartWorkoutRoute?
     @State private var templateCount = 0
     @State private var sleepSettings = SleepSettingsStore().load()
@@ -114,6 +115,7 @@ struct StartWorkoutContentView: View {
 
     private let openRoute: ((StartWorkoutRoute) -> Void)?
     private let coachEngine = CoachRecommendationEngine()
+    private let trainingCallBuilder = TrainingCallSnapshotBuilder()
     private let modePlanner = WorkoutModePlanner()
     private let summaryBuilder = SessionSummaryBuilder()
     private let reuseBuilder = WorkoutReuseBuilder()
@@ -176,6 +178,14 @@ struct StartWorkoutContentView: View {
 
     private var coachSummary: CoachRecommendationSummary {
         coachEngine.makeSummary(activeSplits: activeSplits, completedSessions: completedSessions)
+    }
+
+    private var trainingCall: TrainingCallSnapshot {
+        trainingCallBuilder.make(
+            decision: coachSummary.trainingDecision,
+            activeSplits: activeSplits,
+            completedSessions: completedSessions
+        )
     }
 
     private var recommendedSplit: TrainingSplit? {
@@ -243,7 +253,7 @@ struct StartWorkoutContentView: View {
             WorkoutLoggerView(session: session)
         }
         .navigationDestination(item: $previewSplit) { split in
-            WorkoutPreviewView(split: split)
+            WorkoutPreviewView(split: split, initialMode: previewMode)
         }
         .navigationDestination(item: $fallbackRoute) { route in
             switch route {
@@ -369,13 +379,18 @@ struct StartWorkoutContentView: View {
                     CoachBadgeView(state: .ready)
                 }
 
-                Text(coachSummary.reason)
+                Text(trainingCall.reason)
                     .font(AppTypography.body)
                     .foregroundStyle(appTheme.mutedText)
 
+                Label("\(trainingCall.recommendedMode.displayName) mode - \(trainingCall.confidence.displayName.lowercased())", systemImage: trainingCall.recommendedMode.systemImage)
+                    .font(AppTypography.metadataEmphasis)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
                 HStack {
                     Button {
-                        preview(split)
+                        preview(split, mode: trainingCall.recommendedMode)
                     } label: {
                         Label("Preview", systemImage: "target")
                             .frame(maxWidth: .infinity)
@@ -499,8 +514,8 @@ struct StartWorkoutContentView: View {
         .accessibilityIdentifier("start-split-\(split.name)")
     }
 
-    private func preview(_ split: TrainingSplit) {
-        openPreview(WorkoutPreviewSplit(split))
+    private func preview(_ split: TrainingSplit, mode: WorkoutMode = .full) {
+        openPreview(WorkoutPreviewSplit(split), mode: mode)
     }
 
     private var emptyWorkoutCard: some View {
@@ -717,7 +732,7 @@ struct StartWorkoutContentView: View {
         }
     }
 
-    private func openPreview(_ preview: WorkoutPreviewSplit) {
+    private func openPreview(_ preview: WorkoutPreviewSplit, mode: WorkoutMode = .full) {
         PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "navigation request source=workout split=\(preview.id.uuidString) active=\(previewSplit?.id.uuidString ?? "none")")
         guard previewSplit?.id != preview.id else {
             PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "navigation skip source=workout already_active split=\(preview.id.uuidString)")
@@ -725,6 +740,7 @@ struct StartWorkoutContentView: View {
         }
 
         AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
+            previewMode = mode
             previewSplit = preview
         }
     }

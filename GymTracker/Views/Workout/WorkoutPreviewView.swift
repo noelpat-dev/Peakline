@@ -82,6 +82,8 @@ struct WorkoutPreviewView: View {
     private let coachPreferencesService = CoachPreferencesService()
     private let targetService = TargetSuggestionService()
     private let modePlanner = WorkoutModePlanner()
+    private let trainingCallBuilder = TrainingCallSnapshotBuilder()
+    private let trainingDecisionService = TrainingDecisionService()
     private let substitutionService = ExerciseSubstitutionService()
     private let sleepSettingsStore = SleepSettingsStore()
     private let hydrationSettingsStore = HydrationSettingsStore()
@@ -497,6 +499,10 @@ struct WorkoutPreviewView: View {
             plannedExercises: plannedExercises,
             plannedFatigueItems: plannedFatigueItems
         )
+        let trainingCall = makeTrainingCallSnapshot(
+            suggestions: suggestions,
+            intelligence: intelligence
+        )
 
         return WorkoutPreviewRenderSnapshot(
             exerciseLookup: exerciseLookup,
@@ -512,8 +518,53 @@ struct WorkoutPreviewView: View {
             intelligence: intelligence,
             plannedFatigueItems: plannedFatigueItems,
             actionRecommendations: actionRecommendations,
-            coachSummaryText: coachSummaryText(suggestions: suggestions, mode: selectedMode),
+            trainingCall: trainingCall,
+            coachSummaryText: coachSummaryText(suggestions: suggestions, mode: selectedMode, trainingCall: trainingCall),
             coachSummaryBadge: coachSummaryBadge(suggestions: suggestions, mode: selectedMode)
+        )
+    }
+
+    private func makeTrainingCallSnapshot(
+        suggestions: [UUID: TargetSuggestion],
+        intelligence: CoachIntelligenceSnapshot
+    ) -> TrainingCallSnapshot {
+        let completedSnapshots = completedSessions.map(WorkoutAnalyticsSession.init)
+        let activeSnapshots = activeSplits.map(TrainingSplitSnapshot.init)
+        let previewSnapshot = trainingSplitSnapshot(from: split)
+        let snapshots = activeSnapshots.contains { $0.id == previewSnapshot.id }
+            ? activeSnapshots
+            : activeSnapshots + [previewSnapshot]
+        let decision = trainingDecisionService.decision(
+            activeSplits: snapshots,
+            completedSessions: completedSnapshots
+        )
+
+        return trainingCallBuilder.make(
+            decision: decision,
+            activeSplits: snapshots,
+            completedSessions: completedSnapshots,
+            readiness: intelligence.readiness,
+            fatigueRisk: intelligence.fatigueRisk,
+            targetSuggestions: Array(suggestions.values),
+            selectedPreviewMode: selectedMode
+        )
+    }
+
+    private func trainingSplitSnapshot(from split: WorkoutPreviewSplit) -> TrainingSplitSnapshot {
+        TrainingSplitSnapshot(
+            id: split.id,
+            name: split.name,
+            updatedAt: .distantPast,
+            exercises: split.exercises.enumerated().map { index, exercise in
+                SplitExerciseSnapshot(
+                    id: exercise.id,
+                    exerciseId: exercise.exerciseId,
+                    exerciseNameSnapshot: exercise.exerciseNameSnapshot,
+                    orderIndex: index,
+                    minReps: exercise.minReps,
+                    maxReps: exercise.maxReps
+                )
+            }
         )
     }
 
@@ -819,7 +870,14 @@ struct WorkoutPreviewView: View {
                 }
             }
 
+            DashboardSection(title: "Session Snapshot") {
+                planReadinessCard(snapshot: snapshot)
+            }
+
             DashboardSection(title: "Coach Brief") {
+                TrainingCallAuditCard(snapshot: snapshot.trainingCall)
+                    .accessibilityIdentifier("workout-preview-training-call-audit")
+
                 AdaptiveWorkoutGuidanceCard(guidance: snapshot.intelligence.adaptiveGuidance)
 
                 AdaptiveWorkoutActionsCard(
@@ -855,13 +913,6 @@ struct WorkoutPreviewView: View {
                             CoachBadgeView(state: snapshot.coachSummaryBadge)
                         }
                     }
-                }
-            }
-
-            DashboardSection(title: "Session Snapshot") {
-                HStack(spacing: 10) {
-                    MetricTile(label: "Exercises", value: "\(snapshot.plannedExercises.count)", caption: "\(selectedMode.displayName) mode", systemImage: "list.bullet")
-                    MetricTile(label: "Estimate", value: "\(snapshot.estimatedDuration.lowerBound)-\(snapshot.estimatedDuration.upperBound)m", caption: "Session time", systemImage: "clock")
                 }
             }
 
@@ -974,6 +1025,123 @@ struct WorkoutPreviewView: View {
         .animation(AppMotion.gentleFade(reduceMotion: reduceMotion), value: showRenderLoadingIndicator)
     }
 
+    private func planReadinessCard(snapshot: WorkoutPreviewRenderSnapshot) -> some View {
+        FitnessCard {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: planReadinessIcon(snapshot: snapshot))
+                        .font(.headline)
+                        .frame(width: 36, height: 36)
+                        .foregroundStyle(planReadinessAccent(snapshot: snapshot))
+                        .background(planReadinessAccent(snapshot: snapshot).opacity(0.14), in: Circle())
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(planReadinessTitle(snapshot: snapshot))
+                            .font(AppTypography.compactCardTitle)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+
+                        Text(planReadinessMessage(snapshot: snapshot))
+                            .font(AppTypography.body)
+                            .foregroundStyle(appTheme.mutedText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    CoachBadgeView(state: planReadinessBadge(snapshot: snapshot))
+                }
+
+                HStack(alignment: .top, spacing: 12) {
+                    planReadinessStat(label: "Mode", value: selectedMode.displayName, systemImage: selectedMode.systemImage)
+                    Divider().frame(height: 44)
+                    planReadinessStat(label: "Exercises", value: "\(snapshot.plannedExercises.count)", systemImage: "list.bullet")
+                    Divider().frame(height: 44)
+                    planReadinessStat(label: "Time", value: "\(snapshot.estimatedDuration.lowerBound)-\(snapshot.estimatedDuration.upperBound)m", systemImage: "clock")
+                }
+                .accessibilityElement(children: .combine)
+
+                if let appliedWorkoutAdjustment {
+                    Label(
+                        "\(appliedWorkoutAdjustment.title) is active for this workout only. The split template stays unchanged.",
+                        systemImage: "wand.and.stars"
+                    )
+                    .font(AppTypography.metadata)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private func planReadinessStat(label: String, value: String, systemImage: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 5) {
+                Image(systemName: systemImage)
+                    .font(AppTypography.badge)
+                Text(label)
+                    .font(AppTypography.metadataEmphasis)
+                    .textCase(.uppercase)
+            }
+            .foregroundStyle(appTheme.mutedText)
+
+            Text(value)
+                .font(AppTypography.bodyEmphasis)
+                .foregroundStyle(appTheme.colors.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func planReadinessTitle(snapshot: WorkoutPreviewRenderSnapshot) -> String {
+        if appliedWorkoutAdjustment != nil {
+            return "Coach-adjusted plan"
+        }
+
+        if snapshot.plannedExercises.isEmpty {
+            return "Plan needs exercises"
+        }
+
+        return "\(selectedMode.displayName) plan ready"
+    }
+
+    private func planReadinessMessage(snapshot: WorkoutPreviewRenderSnapshot) -> String {
+        if snapshot.plannedExercises.isEmpty {
+            return "Select at least one exercise before starting."
+        }
+
+        if let appliedWorkoutAdjustment {
+            return "\(appliedWorkoutAdjustment.title) is the plan that will start when you press play."
+        }
+
+        switch selectedMode {
+        case .full:
+            return "The planned session is intact, with every selected exercise kept in order."
+        case .quick:
+            return "Main lifts stay first so the session can move quickly without losing focus."
+        case .recovery:
+            return "Volume is lower and targets stay controlled for a lighter training day."
+        case .heavy:
+            return "The session keeps the load progression work prominent."
+        }
+    }
+
+    private func planReadinessBadge(snapshot: WorkoutPreviewRenderSnapshot) -> CoachBadgeState {
+        if snapshot.plannedExercises.isEmpty {
+            return .missedSplit
+        }
+
+        return snapshot.coachSummaryBadge
+    }
+
+    private func planReadinessIcon(snapshot: WorkoutPreviewRenderSnapshot) -> String {
+        snapshot.plannedExercises.isEmpty ? "exclamationmark.triangle" : selectedMode.systemImage
+    }
+
+    private func planReadinessAccent(snapshot: WorkoutPreviewRenderSnapshot) -> Color {
+        snapshot.plannedExercises.isEmpty ? appTheme.warningColor : appTheme.colors.accent
+    }
+
     private func originalPlanShortcut(snapshot: WorkoutPreviewRenderSnapshot) -> some View {
         FitnessCard {
             VStack(alignment: .leading, spacing: 10) {
@@ -1053,7 +1221,15 @@ struct WorkoutPreviewView: View {
         }
     }
 
-    private func coachSummaryText(suggestions: [UUID: TargetSuggestion], mode: WorkoutMode) -> String {
+    private func coachSummaryText(
+        suggestions: [UUID: TargetSuggestion],
+        mode: WorkoutMode,
+        trainingCall: TrainingCallSnapshot
+    ) -> String {
+        if trainingCall.recommendedMode != mode || trainingCall.isConservative {
+            return trainingCall.reason
+        }
+
         let suggestions = suggestions.values
         if suggestions.contains(where: { $0.recommendationType == .fatigueRisk }) {
             return "Performance has dipped on at least one lift. Keep the session controlled and rest properly."
@@ -1308,6 +1484,7 @@ private struct WorkoutPreviewRenderSnapshot {
     let intelligence: CoachIntelligenceSnapshot
     let plannedFatigueItems: [MuscleGroupFatigue]
     let actionRecommendations: [CoachWorkoutActionRecommendation]
+    let trainingCall: TrainingCallSnapshot
     let coachSummaryText: String
     let coachSummaryBadge: CoachBadgeState
 }

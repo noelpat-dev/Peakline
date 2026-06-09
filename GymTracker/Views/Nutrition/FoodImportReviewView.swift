@@ -114,8 +114,16 @@ struct FoodImportReviewView: View {
                 }
             }
 
+            DashboardSection(title: "Save Check") {
+                saveCheckCard
+            }
+
             if let warningText {
                 ReviewNoticeCard(message: warningText, systemImage: "exclamationmark.triangle", foregroundColor: appTheme.colors.warning)
+            }
+
+            if let duplicateBarcodeText {
+                ReviewNoticeCard(message: duplicateBarcodeText, systemImage: "barcode.viewfinder", foregroundColor: appTheme.colors.danger)
             }
 
             if let errorText {
@@ -518,6 +526,205 @@ struct FoodImportReviewView: View {
 
     private var displayedDetectedText: String {
         detectedRawText.isEmpty ? "No detected text." : detectedRawText
+    }
+
+    private var saveCheckCard: some View {
+        FitnessCard {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: saveCheckSystemImage)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(saveCheckTint)
+                        .frame(width: 42, height: 42)
+                        .background(saveCheckTint.opacity(0.14), in: Circle())
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Text(saveCheckTitle)
+                                .font(.headline)
+                                .foregroundStyle(appTheme.colors.textPrimary)
+
+                            Text(saveCheckBadge)
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(saveCheckTint)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(saveCheckTint.opacity(0.14), in: Capsule())
+                        }
+
+                        Text(saveCheckMessage)
+                            .font(.subheadline)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                VStack(spacing: 12) {
+                    saveCheckRow(
+                        title: "Food",
+                        message: trimmedName.isEmpty ? "Name required before saving." : trimmedName,
+                        systemImage: trimmedName.isEmpty ? "tag.slash" : "tag"
+                    )
+
+                    saveCheckRow(
+                        title: "Nutrition",
+                        message: nutritionReviewSummary,
+                        systemImage: parsedValues?.hasNutrition == true ? "checkmark.circle" : "chart.pie"
+                    )
+
+                    saveCheckRow(
+                        title: "Source",
+                        message: "\(sourceTitle) - \(sourceBadge)",
+                        systemImage: sourceSystemImage
+                    )
+
+                    saveCheckRow(
+                        title: "Save result",
+                        message: saveResultSummary,
+                        systemImage: "checkmark.seal"
+                    )
+                }
+            }
+        }
+    }
+
+    private func saveCheckRow(title: String, message: String, systemImage: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: systemImage)
+                .font(AppTypography.metadataEmphasis)
+                .foregroundStyle(appTheme.colors.accent)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(AppTypography.metadataEmphasis)
+                    .foregroundStyle(appTheme.colors.textTertiary)
+                    .textCase(.uppercase)
+
+                Text(message)
+                    .font(AppTypography.body)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var saveCheckTitle: String {
+        if duplicateBarcodeText != nil {
+            return "Barcode already saved"
+        }
+        if trimmedName.isEmpty {
+            return "Name required"
+        }
+        guard let values = parsedValues else {
+            return "Check number fields"
+        }
+        if !values.hasNutrition {
+            return "Nutrition value needed"
+        }
+        if warningText != nil {
+            return "Review warning"
+        }
+        return "Ready to save locally"
+    }
+
+    private var saveCheckMessage: String {
+        if duplicateBarcodeText != nil {
+            return "This barcode already matches a saved food. Use the existing local food or change the barcode."
+        }
+        if trimmedName.isEmpty {
+            return "Add a food name so the saved item is easy to find later."
+        }
+        guard let values = parsedValues else {
+            return "One or more nutrition fields contains an invalid number."
+        }
+        if !values.hasNutrition {
+            return "Add calories or at least one macro value before saving."
+        }
+        if warningText != nil {
+            return "The values can still be saved, but the warning above should be checked first."
+        }
+        return "Saving will create a user-verified local food from the confirmed fields."
+    }
+
+    private var saveCheckBadge: String {
+        if duplicateBarcodeText != nil || trimmedName.isEmpty || parsedValues == nil || parsedValues?.hasNutrition != true {
+            return "Blocked"
+        }
+        if warningText != nil {
+            return "Review"
+        }
+        return "Ready"
+    }
+
+    private var saveCheckSystemImage: String {
+        saveCheckBadge == "Ready" ? "checkmark.seal" : "exclamationmark.triangle"
+    }
+
+    private var saveCheckTint: Color {
+        switch saveCheckBadge {
+        case "Ready":
+            return appTheme.colors.success
+        case "Review":
+            return appTheme.colors.warning
+        default:
+            return appTheme.colors.danger
+        }
+    }
+
+    private var nutritionReviewSummary: String {
+        guard let values = parsedValues else {
+            return "Numbers must be zero or positive."
+        }
+        guard values.hasNutrition else {
+            return "No calorie or macro value confirmed yet."
+        }
+        return "\(confirmedNutritionFieldCount) values confirmed per \(nutritionBasisText)."
+    }
+
+    private var saveResultSummary: String {
+        if draft.barcode.isEmpty {
+            return "Creates a local verified food without a barcode."
+        }
+        return "Creates a local verified food matched to this barcode."
+    }
+
+    private var nutritionBasisText: String {
+        switch baseUnit {
+        case .grams:
+            return "100g"
+        case .millilitres:
+            return "100ml"
+        case .serving:
+            return "serving"
+        }
+    }
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var confirmedNutritionFieldCount: Int {
+        guard let values = parsedValues else { return 0 }
+        return [
+            values.calories,
+            values.protein,
+            values.carbs,
+            values.fat,
+            values.sugar,
+            values.fibre,
+            values.salt
+        ].compactMap { $0 }.count
+    }
+
+    private var duplicateBarcodeText: String? {
+        guard !draft.barcode.isEmpty else { return nil }
+        guard let duplicateFood = NutritionDataIntegrityService().existingFood(matchingBarcode: draft.barcode, in: savedFoods) else {
+            return nil
+        }
+        return NutritionDataIntegrityService().duplicateBarcodeMessage(for: duplicateFood)
     }
 
     private var macroSectionTitle: String {

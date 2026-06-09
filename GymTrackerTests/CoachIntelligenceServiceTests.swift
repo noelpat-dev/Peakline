@@ -105,12 +105,16 @@ final class CoachIntelligenceServiceTests: XCTestCase {
     }
 
     func testAdaptiveGuidancePushModeWhenRecoverySignalsAreStrong() {
-        let exercise = exercise(name: "Bench Press", primary: .chest, secondary: [.triceps], compound: true)
+        let plannedBench = exercise(name: "Bench Press", primary: .chest, secondary: [.triceps], compound: true)
+        let recentLegs = exercise(name: "Leg Press", primary: .quads, secondary: [.glutes], compound: true)
         let snapshot = makeSnapshot(
-            exercises: [exercise],
-            plannedExerciseIDs: [exercise.id],
+            exercises: [plannedBench, recentLegs],
+            plannedExerciseIDs: [plannedBench.id],
             sleepSessions: [sleep(daysAgo: 0, minutes: 540, quality: 5)],
             hydrationEntries: [hydration(daysAgo: 0, amount: 2_600)],
+            completedWorkouts: [
+                workout(daysAgo: 2, exercise: recentLegs, setCount: 3, weight: 120, reps: 8, rpe: 7, difficulty: 3)
+            ],
             foodLogs: [food(daysAgo: 0, calories: 2_600, protein: 170)],
             checkIns: [checkIn(daysAgo: 0, energy: 5, soreness: 1, stress: 1, motivation: 5)],
             nutritionGoal: NutritionGoal(
