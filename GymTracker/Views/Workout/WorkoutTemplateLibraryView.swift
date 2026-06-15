@@ -32,7 +32,9 @@ struct WorkoutTemplateLibraryView: View {
                     WorkoutTemplateRow(
                         template: template,
                         start: {
-                            previewSplit = reuseBuilder.previewSplit(from: template)
+                            let split = reuseBuilder.previewSplit(from: template)
+                            PerformanceTracer.mark(.previewRouteTap, "source=template split=\(split.name) mode=\(WorkoutMode.full.rawValue)")
+                            previewSplit = split
                         },
                         delete: {
                             pendingDelete = template
@@ -52,7 +54,7 @@ struct WorkoutTemplateLibraryView: View {
         .navigationTitle("Templates")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $previewSplit) { split in
-            WorkoutPreviewView(split: split)
+            WorkoutPreviewRouteView(split: split, initialMode: .full)
         }
         .alert("Delete template?", isPresented: deleteAlertBinding) {
             Button("Cancel", role: .cancel) {
@@ -92,4 +94,3 @@ struct WorkoutTemplateLibraryView: View {
         }
     }
 }
-

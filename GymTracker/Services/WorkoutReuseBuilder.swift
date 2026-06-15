@@ -1,12 +1,13 @@
 import Foundation
 
 struct WorkoutReuseBuilder {
-    func previewSplit(from session: WorkoutSession, nameSuffix: String = "Repeat") -> WorkoutPreviewSplit {
+    func previewSplit(from session: WorkoutSession, nameSuffix: String = "Repeat", exerciseLimit: Int = 12) -> WorkoutPreviewSplit {
         WorkoutPreviewSplit(
-            id: session.splitId ?? UUID(),
+            id: session.splitId ?? session.id,
             name: "\(baseSplitName(session.splitNameSnapshot)) - \(nameSuffix)",
             exercises: session.exerciseLogs
                 .sorted { $0.orderIndex < $1.orderIndex }
+                .prefix(exerciseLimit)
                 .map { log in
                     WorkoutSelectableExercise(
                         id: log.id,
@@ -66,4 +67,3 @@ struct WorkoutReuseBuilder {
         value.formatted(.number.precision(.fractionLength(value.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1)))
     }
 }
-

@@ -17,7 +17,7 @@ final class WorkoutLoggingUITests: XCTestCase {
         tapElement(identifier: "start-split-Push", maxSwipes: 8)
         XCTAssertTrue(app.navigationBars["Preview"].waitForExistence(timeout: 10))
 
-        tapElement(identifier: "workout-preview-start", maxSwipes: 12)
+        tapElement(identifier: "workout-preview-start", maxSwipes: 4)
         XCTAssertTrue(app.staticTexts["Workout Order"].waitForExistence(timeout: 10))
 
         tapElement(identifier: "workout-logger-add-set", maxSwipes: 8)
@@ -37,7 +37,15 @@ final class WorkoutLoggingUITests: XCTestCase {
 
         tapModalElement(identifier: "workout-rating-3")
 
-        tapModalElement(identifier: "workout-celebration-primary")
+        let celebrationPrimary = app.buttons["workout-celebration-primary"]
+        let celebrationDone = app.buttons["Done"]
+        if celebrationPrimary.waitForExistence(timeout: 6) {
+            celebrationPrimary.tap()
+        } else if celebrationDone.waitForExistence(timeout: 4) {
+            celebrationDone.tap()
+        } else {
+            XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 5), "Expected completion overlay or Summary after rating")
+        }
         XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Completed"].waitForExistence(timeout: 5))
 

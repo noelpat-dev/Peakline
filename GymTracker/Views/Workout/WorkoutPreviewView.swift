@@ -21,10 +21,16 @@ struct WorkoutPreviewView: View {
     @State private var lastRenderSignature: String?
     @State private var lastRenderSignatureParts: [String: String] = [:]
     @State private var queuedRenderRequestID: UUID?
-    @State private var renderRefreshWorkItem: DispatchWorkItem?
-    @State private var renderLoadingIndicatorWorkItem: DispatchWorkItem?
+    @State private var renderRefreshTask: Task<Void, Never>?
+    @State private var renderLoadingIndicatorTask: Task<Void, Never>?
     @State private var showRenderLoadingIndicator = false
     @State private var didRequestInitialRenderSnapshot = false
+    @State private var didMarkInitialPreviewContent = false
+    @State private var didMarkRouteShellVisible = false
+    @State private var didMarkStartButtonVisible = false
+    @State private var didMarkExerciseRowsVisible = false
+    @State private var didMarkCoachGuidanceVisible = false
+    @State private var didMarkFullContentVisible = false
     @State private var hydrationTargetML = HydrationSettingsStore().dailyTargetML()
     @State private var nutritionGoal = NutritionGoalService().loadGoal()
 
@@ -288,7 +294,7 @@ struct WorkoutPreviewView: View {
                     "\(exercise.updatedAt.timeIntervalSince1970)"
                 ].joined(separator: ":")
             },
-            "completed_sessions": signature(completedSessions, limit: 40, sortedBy: workoutSessionSort) { workoutSessionSignature($0) },
+            "completed_sessions": signature(recentCompletedSessions, limit: 20, sortedBy: workoutSessionSort) { workoutSessionRouteSignature($0) },
             "sleep_sessions": signature(sleepSessions, limit: 60, sortedBy: { stableDateIDSort($0.updatedAt, $0.id, $1.updatedAt, $1.id) }) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
             "nap_sessions": signature(napSessions, limit: 30, sortedBy: { stableDateIDSort($0.updatedAt, $0.id, $1.updatedAt, $1.id) }) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
             "hydration": signature(hydrationEntries, limit: 120, sortedBy: { stableDateIDSort($0.loggedAt, $0.id, $1.loggedAt, $1.id) }) { "\($0.id.uuidString):\($0.loggedAt.timeIntervalSince1970):\($0.amountML):\($0.source.rawValue):\($0.context.rawValue):\($0.updatedAt.timeIntervalSince1970)" },
@@ -319,17 +325,27 @@ struct WorkoutPreviewView: View {
     }
 
     private func scheduleRenderSnapshotRefresh(reason: String, force: Bool = false) {
-        renderRefreshWorkItem?.cancel()
+        renderRefreshTask?.cancel()
         let requestID = UUID()
         queuedRenderRequestID = requestID
         PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "queue \(reason)")
+        PerformanceTracer.mark(.previewHydrationBegin, "queued reason=\(reason) hydrated=\(renderSnapshot?.isHydrated == true)")
 
         if renderSnapshot == nil {
             scheduleRenderLoadingIndicator()
         }
 
-        let delay: TimeInterval = renderSnapshot == nil ? 0.16 : 0.04
-        let workItem = DispatchWorkItem {
+        let delay: TimeInterval
+        if renderSnapshot == nil {
+            delay = 0.02
+        } else if renderSnapshot?.isHydrated == false {
+            delay = fullHydrationDelaySeconds
+        } else {
+            delay = 0.04
+        }
+        let task = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
             guard queuedRenderRequestID == requestID else { return }
             let signatureParts = renderSignatureParts
             let signature = renderSignature(from: signatureParts)
@@ -345,8 +361,17 @@ struct WorkoutPreviewView: View {
             queuedRenderRequestID = nil
         }
 
-        renderRefreshWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+        renderRefreshTask = task
+    }
+
+    private var fullHydrationDelaySeconds: TimeInterval {
+        #if DEBUG
+        if PerformanceAcceptanceState.isEnabled {
+            return 0.6
+        }
+        #endif
+
+        return 0.35
     }
 
     private func refreshRenderSnapshot(signature: String, signatureParts: [String: String]) {
@@ -358,6 +383,9 @@ struct WorkoutPreviewView: View {
         let nextSnapshot = PerformanceTracer.trace(.workoutPreviewRenderSnapshot) {
             makeRenderSnapshot()
         }
+        PerformanceTracer.mark(.previewHydrationTargetSuggestionsReady, "count=\(nextSnapshot.suggestions.count)")
+        PerformanceTracer.mark(.previewHydrationCoachGuidanceReady, "actions=\(nextSnapshot.actionRecommendations.count)")
+        PerformanceTracer.mark(.previewHydrationFullContentReady, "exercises=\(nextSnapshot.plannedExercises.count)")
         AppMotion.withoutAnimation {
             renderSnapshot = nextSnapshot
             cancelRenderLoadingIndicator()
@@ -367,23 +395,73 @@ struct WorkoutPreviewView: View {
     }
 
     private func scheduleRenderLoadingIndicator() {
-        guard renderLoadingIndicatorWorkItem == nil else { return }
+        guard renderLoadingIndicatorTask == nil else { return }
 
-        let workItem = DispatchWorkItem {
+        let task = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            guard !Task.isCancelled else { return }
             guard renderSnapshot == nil else { return }
             showRenderLoadingIndicator = true
             PerformanceTracer.mark(.motionLoadingReveal, "workout_preview_loading_shell")
             PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "loading_indicator show delayed")
         }
 
-        renderLoadingIndicatorWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: workItem)
+        renderLoadingIndicatorTask = task
     }
 
     private func cancelRenderLoadingIndicator() {
-        renderLoadingIndicatorWorkItem?.cancel()
-        renderLoadingIndicatorWorkItem = nil
+        renderLoadingIndicatorTask?.cancel()
+        renderLoadingIndicatorTask = nil
         showRenderLoadingIndicator = false
+    }
+
+    private func installRouteShellSnapshotIfNeeded() {
+        guard renderSnapshot == nil else { return }
+
+        let snapshot = makeRouteShellSnapshot()
+        AppMotion.withoutAnimation {
+            renderSnapshot = snapshot
+            cancelRenderLoadingIndicator()
+        }
+        PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "route_shell installed exercises=\(snapshot.plannedExercises.count)")
+        PerformanceTracer.mark(.previewHydrationBasicPlanReady, "route_shell exercises=\(snapshot.plannedExercises.count)")
+        markInitialPreviewContentIfNeeded()
+    }
+
+    private func markInitialPreviewContentIfNeeded() {
+        guard !didMarkInitialPreviewContent else { return }
+        didMarkInitialPreviewContent = true
+        PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "first_content visible")
+    }
+
+    private func markRouteShellVisibleIfNeeded(_ source: String) {
+        guard !didMarkRouteShellVisible else { return }
+        didMarkRouteShellVisible = true
+        PerformanceTracer.mark(.previewRouteShellVisible, "\(source) split=\(split.name)")
+    }
+
+    private func markStartButtonVisibleIfNeeded(_ source: String) {
+        guard !didMarkStartButtonVisible else { return }
+        didMarkStartButtonVisible = true
+        PerformanceTracer.mark(.previewRouteStartButtonVisible, "\(source) split=\(split.name)")
+    }
+
+    private func markExerciseRowsVisibleIfNeeded(count: Int, source: String) {
+        guard !didMarkExerciseRowsVisible else { return }
+        didMarkExerciseRowsVisible = true
+        PerformanceTracer.mark(.previewHydrationExerciseRowsReady, "\(source) count=\(count)")
+    }
+
+    private func markCoachGuidanceVisibleIfNeeded(_ source: String) {
+        guard !didMarkCoachGuidanceVisible else { return }
+        didMarkCoachGuidanceVisible = true
+        PerformanceTracer.mark(.previewHydrationCoachGuidanceReady, "visible \(source)")
+    }
+
+    private func markFullContentVisibleIfNeeded(snapshot: WorkoutPreviewRenderSnapshot) {
+        guard !didMarkFullContentVisible else { return }
+        didMarkFullContentVisible = true
+        PerformanceTracer.mark(.previewHydrationFullContentReady, "visible exercises=\(snapshot.plannedExercises.count)")
     }
 
     private func renderSignature(from parts: [String: String]) -> String {
@@ -426,38 +504,15 @@ struct WorkoutPreviewView: View {
         stableDateIDSort(lhs.date, lhs.id, rhs.date, rhs.id)
     }
 
-    private func workoutSessionSignature(_ session: WorkoutSession) -> String {
-        let exerciseLogSignature = session.exerciseLogs
-            .sorted {
-                if $0.orderIndex != $1.orderIndex {
-                    return $0.orderIndex < $1.orderIndex
-                }
-                return $0.id.uuidString < $1.id.uuidString
-            }
-            .map { log in
-                let setSignature = log.setLogs
-                    .sorted {
-                        if $0.setNumber != $1.setNumber {
-                            return $0.setNumber < $1.setNumber
-                        }
-                        return $0.id.uuidString < $1.id.uuidString
-                    }
-                    .map { set in
-                        "\(set.id.uuidString):\(set.setNumber):\(set.weight):\(set.reps):\(set.rpe ?? 0):\(set.isWarmup):\(set.completed)"
-                    }
-                    .joined(separator: "+")
-                return "\(log.id.uuidString):\(log.exerciseId.uuidString):\(log.orderIndex):\(log.targetSets):\(log.minReps):\(log.maxReps):\(setSignature)"
-            }
-            .joined(separator: ";")
-
+    private func workoutSessionRouteSignature(_ session: WorkoutSession) -> String {
         return [
             session.id.uuidString,
             "\(session.date.timeIntervalSince1970)",
             "\(session.endedAt?.timeIntervalSince1970 ?? 0)",
+            "\(session.durationSeconds ?? 0)",
             "\(session.perceivedDifficulty ?? 0)",
             "\(session.energyLevel ?? 0)",
-            "\(session.sorenessLevel ?? 0)",
-            exerciseLogSignature
+            "\(session.sorenessLevel ?? 0)"
         ].joined(separator: ":")
     }
 
@@ -521,7 +576,52 @@ struct WorkoutPreviewView: View {
             actionRecommendations: actionRecommendations,
             trainingCall: trainingCall,
             coachSummaryText: coachSummaryText(suggestions: suggestions, mode: selectedMode, trainingCall: trainingCall),
-            coachSummaryBadge: coachSummaryBadge(suggestions: suggestions, mode: selectedMode)
+            coachSummaryBadge: coachSummaryBadge(suggestions: suggestions, mode: selectedMode),
+            isHydrated: true
+        )
+    }
+
+    private func makeRouteShellSnapshot() -> WorkoutPreviewRenderSnapshot {
+        let selectedIDs = selectedExerciseIds.isEmpty
+            ? defaultSelectedExerciseIdsFromSplit(for: selectedMode)
+            : selectedExerciseIds
+        let selectableByID = Dictionary(split.exercises.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let selectedExercises = selectedIDs.compactMap { selectableByID[$0] }
+        let basePlannedExercises = modePlanner.plannedExercises(from: selectedExercises, mode: selectedMode)
+        let estimatedDuration = modePlanner.estimatedDurationMinutes(for: basePlannedExercises, mode: selectedMode)
+        let suggestions = baselineSuggestionsByExerciseId(for: basePlannedExercises)
+        let trainingCall = TrainingCallSnapshot(
+            recommendedSplitName: split.name,
+            recommendedMode: selectedMode,
+            action: .buildBaseline,
+            title: "\(split.name) preview ready",
+            reason: "Preview is ready. Coach details are loading in the background.",
+            confidence: .low,
+            targetSummary: nil,
+            sourceSignals: ["Route shell loaded before history and readiness details."],
+            missingOrStaleInputs: ["Coach details are still preparing."],
+            guardrailNotes: ["Start controls stay available while richer guidance loads."],
+            isConservative: true
+        )
+
+        return WorkoutPreviewRenderSnapshot(
+            exerciseLookup: WorkoutPreviewExerciseLookup(exercises: []),
+            orderedExercises: split.exercises,
+            selectedExerciseIDSet: Set(selectedIDs),
+            addableExercises: [],
+            coreExercise: nil,
+            basePlannedExercises: basePlannedExercises,
+            plannedExercises: basePlannedExercises,
+            estimatedDuration: estimatedDuration,
+            suggestions: suggestions,
+            alternatives: [:],
+            intelligence: CoachIntelligenceService.emptySnapshot(),
+            plannedFatigueItems: [],
+            actionRecommendations: [],
+            trainingCall: trainingCall,
+            coachSummaryText: "Coach details are loading. The workout plan is ready to review now.",
+            coachSummaryBadge: .baseline,
+            isHydrated: false
         )
     }
 
@@ -529,7 +629,7 @@ struct WorkoutPreviewView: View {
         suggestions: [UUID: TargetSuggestion],
         intelligence: CoachIntelligenceSnapshot
     ) -> TrainingCallSnapshot {
-        let completedSnapshots = completedSessions.map(WorkoutAnalyticsSession.init)
+        let completedSnapshots = recentCompletedSessions.map(WorkoutAnalyticsSession.init)
         let activeSnapshots = activeSplits.map(TrainingSplitSnapshot.init)
         let previewSnapshot = trainingSplitSnapshot(from: split)
         let snapshots = activeSnapshots.contains { $0.id == previewSnapshot.id }
@@ -597,6 +697,12 @@ struct WorkoutPreviewView: View {
         let exerciseLookup = WorkoutPreviewExerciseLookup(exercises: exercises)
         return modePlanner
             .plannedExercises(from: makeOrderedExercises(exerciseLookup: exerciseLookup), mode: mode)
+            .map(\.id)
+    }
+
+    private func defaultSelectedExerciseIdsFromSplit(for mode: WorkoutMode) -> [UUID] {
+        modePlanner
+            .plannedExercises(from: split.exercises, mode: mode)
             .map(\.id)
     }
 
@@ -702,7 +808,7 @@ struct WorkoutPreviewView: View {
     ) -> some View {
         WorkoutPreviewExerciseCard(
             exercise: exercise,
-            suggestion: suggestions[exercise.id] ?? targetSuggestion(for: exercise),
+            suggestion: suggestions[exercise.id] ?? baselineSuggestion(for: exercise),
             alternatives: alternatives[exercise.id] ?? [],
             isFirst: index == 0,
             isLast: index == plannedCount - 1,
@@ -748,7 +854,6 @@ struct WorkoutPreviewView: View {
         }
         .navigationTitle("Preview")
         .navigationBarTitleDisplayMode(.inline)
-        .accessibilityIdentifier("workout-preview-screen")
         .navigationDestination(item: $activeSession) { session in
             WorkoutLoggerView(session: session)
         }
@@ -808,14 +913,16 @@ struct WorkoutPreviewView: View {
             hydrationTargetML = hydrationSettingsStore.dailyTargetML()
             nutritionGoal = nutritionGoalStore.loadGoal()
             if selectedExerciseIds.isEmpty {
-                selectedExerciseIds = makeDefaultSelectedExerciseIds(for: selectedMode)
+                selectedExerciseIds = defaultSelectedExerciseIdsFromSplit(for: selectedMode)
             }
+            installRouteShellSnapshotIfNeeded()
             guard !didRequestInitialRenderSnapshot else {
                 PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "skip onAppear already_requested")
                 return
             }
             didRequestInitialRenderSnapshot = true
-            scheduleRenderSnapshotRefresh(reason: "onAppear", force: renderSnapshot == nil)
+            PerformanceTracer.mark(.previewOnAppearRefresh, "requested")
+            scheduleRenderSnapshotRefresh(reason: "onAppear", force: true)
         }
         .onChange(of: selectedMode) { _, newMode in
             PerformanceTracer.trace(.motionPreviewModeChange) {
@@ -842,19 +949,19 @@ struct WorkoutPreviewView: View {
             scheduleRenderSnapshotRefresh(reason: "coach_adjustment_changed")
         }
         .onDisappear {
-            renderRefreshWorkItem?.cancel()
+            renderRefreshTask?.cancel()
             queuedRenderRequestID = nil
             cancelRenderLoadingIndicator()
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase != .active else { return }
-            renderRefreshWorkItem?.cancel()
+            renderRefreshTask?.cancel()
             queuedRenderRequestID = nil
             cancelRenderLoadingIndicator()
             PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "cancel scenePhase=\(String(describing: newPhase))")
         }
         .onReceive(NotificationCenter.default.publisher(for: .appWillResignActiveForCleanup)) { _ in
-            renderRefreshWorkItem?.cancel()
+            renderRefreshTask?.cancel()
             queuedRenderRequestID = nil
             cancelRenderLoadingIndicator()
             PerformanceTracer.mark(.unsafeBreadcrumb, "workout_preview.willResignActive no_async_task")
@@ -863,6 +970,100 @@ struct WorkoutPreviewView: View {
 
     @ViewBuilder
     private func previewContent(snapshot: WorkoutPreviewRenderSnapshot) -> some View {
+        if snapshot.isHydrated {
+            hydratedPreviewContent(snapshot: snapshot)
+        } else {
+            previewRouteShellContent(snapshot: snapshot)
+        }
+    }
+
+    private func previewRouteShellContent(snapshot: WorkoutPreviewRenderSnapshot) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("\(split.name) Preview")
+                        .font(AppTypography.sectionTitle)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text("\(selectedMode.displayName) mode - \(snapshot.plannedExercises.count) exercises - ~\(snapshot.estimatedDuration.lowerBound)-\(snapshot.estimatedDuration.upperBound)m")
+                        .font(AppTypography.body)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                WorkoutModePicker(selection: $selectedMode)
+                    .accessibilityIdentifier("workout-preview-mode-controls")
+
+                startWorkoutButton(snapshot: snapshot, identifier: "workout-preview-start")
+
+                FitnessCard(style: .compact) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Label("Exercise Order", systemImage: "list.bullet")
+                                .font(AppTypography.compactCardTitle)
+                                .foregroundStyle(appTheme.colors.textPrimary)
+                                .accessibilityIdentifier("workout-preview-basic-exercise-rows")
+
+                            Spacer()
+
+                            Text("Targets loading")
+                                .font(AppTypography.metadataEmphasis)
+                                .foregroundStyle(appTheme.mutedText)
+                        }
+
+                        basicExerciseRows(snapshot: snapshot, source: "route_shell")
+                    }
+                }
+
+                coachDetailsLoadingCard(snapshot: snapshot)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+            .padding(.bottom, 28)
+        }
+        .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
+        .accessibilityIdentifier("workout-preview-route-shell")
+        .onAppear {
+            markRouteShellVisibleIfNeeded("route_shell")
+            markInitialPreviewContentIfNeeded()
+        }
+    }
+
+    private func basicExerciseRows(snapshot: WorkoutPreviewRenderSnapshot, source: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(snapshot.plannedExercises.enumerated()), id: \.element.id) { index, exercise in
+                HStack(alignment: .top, spacing: 10) {
+                    Text("\(index + 1)")
+                        .font(AppTypography.metadataEmphasis)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .frame(width: 24, alignment: .leading)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(exercise.exerciseNameSnapshot)
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text("\(exercise.targetSets) sets - \(exercise.minReps)-\(exercise.maxReps) reps")
+                            .font(AppTypography.metadata)
+                            .foregroundStyle(appTheme.mutedText)
+                    }
+
+                    Spacer(minLength: 8)
+                }
+                .padding(.vertical, 3)
+                .accessibilityIdentifier("workout-preview-basic-exercise-row")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("workout-preview-basic-exercise-rows")
+        .onAppear {
+            markExerciseRowsVisibleIfNeeded(count: snapshot.plannedExercises.count, source: source)
+        }
+    }
+
+    private func hydratedPreviewContent(snapshot: WorkoutPreviewRenderSnapshot) -> some View {
         FitnessScreen(
             title: "\(split.name) Preview",
             subtitle: "\(selectedMode.displayName) mode - ~\(snapshot.estimatedDuration.lowerBound)-\(snapshot.estimatedDuration.upperBound)m",
@@ -876,55 +1077,52 @@ struct WorkoutPreviewView: View {
 
             DashboardSection(title: "Session Snapshot") {
                 planReadinessCard(snapshot: snapshot)
-            }
-
-            DashboardSection(title: "Start") {
-                startWorkoutCard(
-                    snapshot: snapshot,
-                    startIdentifier: "workout-preview-start",
-                    originalPlanIdentifier: "workout-preview-start-original-top"
-                )
+                startWorkoutShortcut(snapshot: snapshot)
             }
 
             DashboardSection(title: "Coach Brief") {
-                TrainingCallAuditCard(snapshot: snapshot.trainingCall)
-                    .accessibilityIdentifier("workout-preview-training-call-audit")
+                if snapshot.isHydrated {
+                    TrainingCallAuditCard(snapshot: snapshot.trainingCall)
+                        .accessibilityIdentifier("workout-preview-training-call-audit")
 
-                AdaptiveWorkoutGuidanceCard(guidance: snapshot.intelligence.adaptiveGuidance)
+                    AdaptiveWorkoutGuidanceCard(guidance: snapshot.intelligence.adaptiveGuidance)
 
-                AdaptiveWorkoutActionsCard(
-                    guidance: snapshot.intelligence.adaptiveGuidance,
-                    recommendations: snapshot.actionRecommendations,
-                    appliedAdjustment: appliedWorkoutAdjustment,
-                    selectAction: { action in
-                        requestCoachAction(action, snapshot: snapshot.intelligence, plannedFatigueItems: snapshot.plannedFatigueItems)
-                    },
-                    reset: resetCoachAdjustment
-                )
+                    AdaptiveWorkoutActionsCard(
+                        guidance: snapshot.intelligence.adaptiveGuidance,
+                        recommendations: snapshot.actionRecommendations,
+                        appliedAdjustment: appliedWorkoutAdjustment,
+                        selectAction: { action in
+                            requestCoachAction(action, snapshot: snapshot.intelligence, plannedFatigueItems: snapshot.plannedFatigueItems)
+                        },
+                        reset: resetCoachAdjustment
+                    )
 
-                if appliedWorkoutAdjustment != nil {
-                    originalPlanShortcut(snapshot: snapshot)
-                }
+                    if appliedWorkoutAdjustment != nil {
+                        originalPlanShortcut(snapshot: snapshot)
+                    }
 
-                WorkoutReadinessBriefCard(readiness: snapshot.intelligence.readiness)
+                    WorkoutReadinessBriefCard(readiness: snapshot.intelligence.readiness)
 
-                if snapshot.plannedFatigueItems.contains(where: { $0.state == .loaded || $0.state == .fatigued }) {
-                    MuscleFatigueMapCard(items: snapshot.plannedFatigueItems)
-                }
+                    if snapshot.plannedFatigueItems.contains(where: { $0.state == .loaded || $0.state == .fatigued }) {
+                        MuscleFatigueMapCard(items: snapshot.plannedFatigueItems)
+                    }
 
-                FitnessCard {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(alignment: .top, spacing: 12) {
-                            Text(snapshot.coachSummaryText)
-                                .font(.subheadline)
-                                .foregroundStyle(appTheme.mutedText)
-                                .fixedSize(horizontal: false, vertical: true)
+                    FitnessCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(alignment: .top, spacing: 12) {
+                                Text(snapshot.coachSummaryText)
+                                    .font(.subheadline)
+                                    .foregroundStyle(appTheme.mutedText)
+                                    .fixedSize(horizontal: false, vertical: true)
 
-                            Spacer()
+                                Spacer()
 
-                            CoachBadgeView(state: snapshot.coachSummaryBadge)
+                                CoachBadgeView(state: snapshot.coachSummaryBadge)
+                            }
                         }
                     }
+                } else {
+                    coachDetailsLoadingCard(snapshot: snapshot)
                 }
             }
 
@@ -954,54 +1152,72 @@ struct WorkoutPreviewView: View {
                                 index: index,
                                 plannedCount: snapshot.plannedExercises.count,
                                 suggestions: snapshot.suggestions,
-                                alternatives: snapshot.alternatives
+                                alternatives: snapshot.isHydrated ? snapshot.alternatives : [:]
                             )
                         }
+                    }
+                    .accessibilityIdentifier("workout-preview-basic-exercise-rows")
+                    .onAppear {
+                        markExerciseRowsVisibleIfNeeded(count: snapshot.plannedExercises.count, source: "hydrated")
                     }
                 }
             }
 
-            DashboardSection(title: "Add Exercise") {
-                FitnessCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Picker("Optional exercise", selection: $optionalExerciseId) {
-                            Text("Choose").tag(Optional<UUID>.none)
-                            ForEach(snapshot.addableExercises) { exercise in
-                                Text(exercise.name).tag(Optional(exercise.id))
-                            }
-                        }
-
-                        HStack {
-                            Button {
-                                addOptionalExercise()
-                            } label: {
-                                Label("Add Selected", systemImage: "plus.circle")
-                            }
-                            .disabled(optionalExerciseId == nil)
-
-                            Spacer()
-
-                            if let coreExercise = snapshot.coreExercise {
-                                Button {
-                                    addExercise(coreExercise, targetSets: 2, minReps: 8, maxReps: 15, notes: "Optional core work.")
-                                } label: {
-                                    Label("Add Core", systemImage: "figure.core.training")
+            if snapshot.isHydrated {
+                DashboardSection(title: "Add Exercise") {
+                    FitnessCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Picker("Optional exercise", selection: $optionalExerciseId) {
+                                Text("Choose").tag(Optional<UUID>.none)
+                                ForEach(snapshot.addableExercises) { exercise in
+                                    Text(exercise.name).tag(Optional(exercise.id))
                                 }
-                                .disabled(snapshot.selectedExerciseIDSet.contains(coreExercise.id))
                             }
+
+                            HStack {
+                                Button {
+                                    addOptionalExercise()
+                                } label: {
+                                    Label("Add Selected", systemImage: "plus.circle")
+                                }
+                                .disabled(optionalExerciseId == nil)
+
+                                Spacer()
+
+                                if let coreExercise = snapshot.coreExercise {
+                                    Button {
+                                        addExercise(coreExercise, targetSets: 2, minReps: 8, maxReps: 15, notes: "Optional core work.")
+                                    } label: {
+                                        Label("Add Core", systemImage: "figure.core.training")
+                                    }
+                                    .disabled(snapshot.selectedExerciseIDSet.contains(coreExercise.id))
+                                }
+                            }
+                            .buttonStyle(.borderless)
                         }
-                        .buttonStyle(.borderless)
                     }
                 }
             }
 
             DashboardSection(title: "Start") {
-                startWorkoutCard(
-                    snapshot: snapshot,
-                    startIdentifier: "workout-preview-start-footer",
-                    originalPlanIdentifier: "workout-preview-start-original-footer"
-                )
+                FitnessCard(style: .hero) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        startWorkoutButton(snapshot: snapshot, identifier: "workout-preview-start-footer")
+
+                        if appliedWorkoutAdjustment != nil {
+                            startOriginalPlanButton(snapshot: snapshot, identifier: "workout-preview-start-original-footer")
+                        }
+
+                        Text(startHint)
+                            .font(.footnote)
+                            .foregroundStyle(appTheme.mutedText)
+                    }
+                }
             }
+        }
+        .onAppear {
+            markInitialPreviewContentIfNeeded()
+            markFullContentVisibleIfNeeded(snapshot: snapshot)
         }
     }
 
@@ -1010,41 +1226,44 @@ struct WorkoutPreviewView: View {
             appTheme.colors.backgroundPrimary
                 .ignoresSafeArea()
 
-            FitnessScreen(
-                title: "\(split.name) Preview",
-                subtitle: "\(selectedMode.displayName) mode",
-                systemImage: "figure.strengthtraining.traditional"
-            ) {
-                DashboardSection(title: "Mode") {
-                    FitnessCard {
-                        WorkoutModePicker(selection: $selectedMode)
-                    }
-                }
-
-                FitnessCard {
-                    HStack(spacing: 12) {
-                        Image(systemName: showRenderLoadingIndicator ? "hourglass" : "figure.strengthtraining.traditional")
-                            .font(.headline.weight(.semibold))
-                            .foregroundStyle(appTheme.colors.accent)
-                            .frame(width: 36, height: 36)
-                            .background(appTheme.colors.accent.opacity(0.12), in: Circle())
-                            .accessibilityHidden(true)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Preparing session")
-                                .font(AppTypography.sectionTitle)
-                                .foregroundStyle(appTheme.colors.textPrimary)
-
-                            Text("The preview shell is ready while targets and coach guidance hydrate.")
-                                .font(AppTypography.body)
-                                .foregroundStyle(appTheme.colors.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-                .accessibilityLabel("Preparing preview")
-                .loadingReveal(reduceMotion: reduceMotion)
+            if showRenderLoadingIndicator {
+                SwiftUI.ProgressView()
+                    .tint(appTheme.colors.accent)
+                    .accessibilityLabel("Preparing preview")
+                    .transition(.opacity)
             }
+        }
+        .animation(AppMotion.gentleFade(reduceMotion: reduceMotion), value: showRenderLoadingIndicator)
+    }
+
+    private func coachDetailsLoadingCard(snapshot: WorkoutPreviewRenderSnapshot) -> some View {
+        FitnessCard {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "bolt.horizontal.circle")
+                    .font(.headline)
+                    .foregroundStyle(appTheme.colors.accent)
+                    .frame(width: 36, height: 36)
+                    .background(appTheme.colors.accentSurface, in: Circle())
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Preview ready")
+                        .font(AppTypography.compactCardTitle)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+
+                    Text(snapshot.coachSummaryText)
+                        .font(AppTypography.body)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                CoachBadgeView(state: snapshot.coachSummaryBadge)
+            }
+        }
+        .accessibilityIdentifier("workout-preview-guidance-chips")
+        .onAppear {
+            markCoachGuidanceVisibleIfNeeded(snapshot.isHydrated ? "hydrated" : "fallback")
         }
     }
 
@@ -1165,35 +1384,6 @@ struct WorkoutPreviewView: View {
         snapshot.plannedExercises.isEmpty ? appTheme.warningColor : appTheme.colors.accent
     }
 
-    private func startWorkoutCard(
-        snapshot: WorkoutPreviewRenderSnapshot,
-        startIdentifier: String,
-        originalPlanIdentifier: String
-    ) -> some View {
-        FitnessCard(style: .hero) {
-            VStack(alignment: .leading, spacing: 12) {
-                Button {
-                    activeSession = createWorkout(from: split)
-                } label: {
-                    Label(startButtonTitle, systemImage: "play.circle.fill")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(PrimaryFitnessButtonStyle())
-                .accessibilityIdentifier(startIdentifier)
-                .disabled(snapshot.plannedExercises.isEmpty)
-
-                if appliedWorkoutAdjustment != nil {
-                    startOriginalPlanButton(snapshot: snapshot, identifier: originalPlanIdentifier)
-                }
-
-                Text(startHint)
-                    .font(.footnote)
-                    .foregroundStyle(appTheme.mutedText)
-            }
-        }
-    }
-
     private func originalPlanShortcut(snapshot: WorkoutPreviewRenderSnapshot) -> some View {
         FitnessCard {
             VStack(alignment: .leading, spacing: 10) {
@@ -1215,6 +1405,54 @@ struct WorkoutPreviewView: View {
 
                 startOriginalPlanButton(snapshot: snapshot, identifier: "workout-preview-start-original")
             }
+        }
+    }
+
+    private func startWorkoutShortcut(snapshot: WorkoutPreviewRenderSnapshot) -> some View {
+        FitnessCard(style: .hero) {
+            VStack(alignment: .leading, spacing: 12) {
+                startWorkoutButton(snapshot: snapshot, identifier: "workout-preview-start")
+
+                Text(startHint)
+                    .font(.footnote)
+                    .foregroundStyle(appTheme.mutedText)
+
+                Divider()
+
+                HStack {
+                    Label("Exercise Order", systemImage: "list.bullet")
+                        .font(AppTypography.compactCardTitle)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .accessibilityIdentifier("workout-preview-basic-exercise-rows")
+
+                    Spacer()
+
+                    Text("\(snapshot.plannedExercises.count) moves")
+                        .font(AppTypography.metadataEmphasis)
+                        .foregroundStyle(appTheme.mutedText)
+                }
+
+                basicExerciseRows(snapshot: snapshot, source: "hydrated_priority")
+            }
+        }
+    }
+
+    private func startWorkoutButton(
+        snapshot: WorkoutPreviewRenderSnapshot,
+        identifier: String
+    ) -> some View {
+        Button {
+            activeSession = createWorkout(from: split)
+        } label: {
+            Label(startButtonTitle, systemImage: "play.circle.fill")
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(PrimaryFitnessButtonStyle())
+        .accessibilityIdentifier(identifier)
+        .disabled(snapshot.plannedExercises.isEmpty)
+        .onAppear {
+            markStartButtonVisibleIfNeeded(identifier)
         }
     }
 
@@ -1373,6 +1611,26 @@ struct WorkoutPreviewView: View {
         plannedExercises.reduce(into: [:]) { result, exercise in
             result[exercise.id] = alternatives(for: exercise)
         }
+    }
+
+    private func baselineSuggestionsByExerciseId(for plannedExercises: [PlannedWorkoutExercise]) -> [UUID: TargetSuggestion] {
+        plannedExercises.reduce(into: [:]) { result, exercise in
+            result[exercise.id] = baselineSuggestion(for: exercise)
+        }
+    }
+
+    private func baselineSuggestion(for exercise: PlannedWorkoutExercise) -> TargetSuggestion {
+        TargetSuggestion(
+            exerciseName: exercise.exerciseNameSnapshot,
+            lastBestSetDescription: nil,
+            lastBestWeight: nil,
+            lastBestReps: nil,
+            suggestedWeight: nil,
+            suggestedReps: exercise.minReps,
+            recommendationType: .baseline,
+            reason: "Review the plan now. Recent target history is still loading.",
+            confidence: 0.45
+        )
     }
 
     private func substitute(_ exercise: PlannedWorkoutExercise, with alternative: Exercise) {
@@ -1541,6 +1799,225 @@ private struct WorkoutPreviewRenderSnapshot {
     let trainingCall: TrainingCallSnapshot
     let coachSummaryText: String
     let coachSummaryBadge: CoachBadgeState
+    let isHydrated: Bool
+}
+
+struct WorkoutPreviewRouteView: View {
+    @Environment(\.modelContext) private var modelContext
+
+    @State private var showFullPreview = false
+    @State private var showFullPreviewTask: Task<Void, Never>?
+    @State private var activeSession: WorkoutSession?
+    @State private var selectedMode: WorkoutMode
+
+    let split: WorkoutPreviewSplit
+    let initialMode: WorkoutMode
+
+    private let modePlanner = WorkoutModePlanner()
+
+    init(split: WorkoutPreviewSplit, initialMode: WorkoutMode) {
+        self.split = split
+        self.initialMode = initialMode
+        _selectedMode = State(initialValue: initialMode)
+    }
+
+    var body: some View {
+        Group {
+            if showFullPreview {
+                WorkoutPreviewView(split: split, initialMode: selectedMode)
+            } else {
+                bootstrapShell
+                    .navigationDestination(item: $activeSession) { session in
+                        WorkoutLoggerView(session: session)
+                    }
+            }
+        }
+        .onAppear {
+            PerformanceTracer.mark(.previewRouteShellVisible, "route_host split=\(split.name)")
+            scheduleFullPreview()
+        }
+        .onDisappear {
+            showFullPreviewTask?.cancel()
+            showFullPreviewTask = nil
+        }
+    }
+
+    private var bootstrapShell: some View {
+        let plannedExercises = modePlanner.plannedExercises(from: split.exercises, mode: selectedMode)
+        let estimatedDuration = modePlanner.estimatedDurationMinutes(for: plannedExercises, mode: selectedMode)
+
+        return WorkoutPreviewBootstrapShellView(
+            splitName: split.name,
+            mode: selectedMode,
+            plannedExercises: plannedExercises,
+            estimatedDuration: estimatedDuration,
+            selectMode: { mode in
+                selectedMode = mode
+            },
+            start: startWorkout
+        )
+    }
+
+    private func scheduleFullPreview() {
+        guard !showFullPreview else { return }
+        guard showFullPreviewTask == nil else { return }
+
+        showFullPreviewTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: fullPreviewDelayNanoseconds)
+            guard !Task.isCancelled else { return }
+            showFullPreview = true
+            showFullPreviewTask = nil
+        }
+    }
+
+    private var fullPreviewDelayNanoseconds: UInt64 {
+        #if DEBUG
+        if PerformanceAcceptanceState.isEnabled {
+            return 120_000_000
+        }
+        #endif
+
+        return 120_000_000
+    }
+
+    private func startWorkout() {
+        let plannedExercises = modePlanner.plannedExercises(from: split.exercises, mode: selectedMode)
+        guard !plannedExercises.isEmpty else { return }
+
+        showFullPreviewTask?.cancel()
+        showFullPreviewTask = nil
+
+        let startDate = Date()
+        let session = WorkoutSession(
+            date: startDate,
+            splitId: split.id,
+            splitNameSnapshot: "\(split.name) - \(selectedMode.displayName)",
+            startedAt: startDate
+        )
+
+        session.exerciseLogs = plannedExercises.enumerated().map { index, exercise in
+            let log = ExerciseLog(
+                workoutSessionId: session.id,
+                exerciseId: exercise.exerciseId,
+                exerciseNameSnapshot: exercise.exerciseNameSnapshot,
+                orderIndex: index,
+                targetSets: exercise.targetSets,
+                minReps: exercise.minReps,
+                maxReps: exercise.maxReps,
+                notes: exercise.notes
+            )
+            log.workoutSession = session
+            return log
+        }
+
+        modelContext.insert(session)
+        try? modelContext.save()
+        activeSession = session
+    }
+}
+
+private struct WorkoutPreviewBootstrapShellView: View {
+    let splitName: String
+    let mode: WorkoutMode
+    let plannedExercises: [PlannedWorkoutExercise]
+    let estimatedDuration: ClosedRange<Int>
+    let selectMode: (WorkoutMode) -> Void
+    let start: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Spacer(minLength: 0)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(verbatim: "\(splitName) Preview")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(verbatim: "\(mode.displayName) mode - \(plannedExercises.count) exercises - ~\(estimatedDuration.lowerBound)-\(estimatedDuration.upperBound)m")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                ForEach(WorkoutMode.allCases) { modeOption in
+                    Button {
+                        selectMode(modeOption)
+                    } label: {
+                        Label(modeOption.displayName, systemImage: modeOption.systemImage)
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity, minHeight: 34)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(mode == modeOption ? .accentColor : .gray)
+                }
+            }
+
+            Button(action: start) {
+                Label("Start \(splitName)", systemImage: "play.circle.fill")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .accessibilityIdentifier("workout-preview-start")
+            .onAppear {
+                PerformanceTracer.mark(.previewRouteStartButtonVisible, "bootstrap split=\(splitName)")
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Exercise Order")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .accessibilityIdentifier("workout-preview-basic-exercise-rows")
+
+                ForEach(Array(plannedExercises.enumerated()), id: \.element.id) { index, exercise in
+                    HStack(alignment: .top, spacing: 10) {
+                        Text("\(index + 1)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 24, alignment: .leading)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(exercise.exerciseNameSnapshot)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.primary)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Text("\(exercise.targetSets) sets - \(exercise.minReps)-\(exercise.maxReps) reps")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer(minLength: 8)
+                    }
+                    .padding(.vertical, 2)
+                    .accessibilityIdentifier("workout-preview-basic-exercise-row")
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("workout-preview-basic-exercise-rows")
+            .onAppear {
+                PerformanceTracer.mark(.previewHydrationBasicPlanReady, "bootstrap exercises=\(plannedExercises.count)")
+                PerformanceTracer.mark(.previewHydrationExerciseRowsReady, "bootstrap count=\(plannedExercises.count)")
+            }
+
+            Text(verbatim: "Coach details are preparing. You can start now.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("workout-preview-guidance-chips")
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+        .navigationTitle("Preview")
+        .navigationBarTitleDisplayMode(.inline)
+    }
 }
 
 private struct WorkoutPreviewExerciseLookup {
@@ -1581,7 +2058,7 @@ private struct WorkoutPreviewExerciseDropDelegate: DropDelegate {
             let destinationIndex = selectedExerciseIds.firstIndex(of: destinationExerciseId)
         else { return }
 
-        withAnimation(AppMotion.reorderSpring(reduceMotion: reduceMotion)) {
+        withAnimation(AppMotion.animation(for: .rowReorder, reduceMotion: reduceMotion)) {
             selectedExerciseIds.move(
                 fromOffsets: IndexSet(integer: sourceIndex),
                 toOffset: destinationIndex > sourceIndex ? destinationIndex + 1 : destinationIndex

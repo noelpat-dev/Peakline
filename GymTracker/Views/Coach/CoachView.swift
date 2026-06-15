@@ -1037,7 +1037,7 @@ struct CoachContentView: View {
             }
         }
         .navigationDestination(item: $previewRoute) { route in
-            WorkoutPreviewView(split: route.split, initialMode: route.mode)
+            WorkoutPreviewRouteView(split: route.split, initialMode: route.mode)
         }
         .onAppear {
             PerformanceTracer.mark(.todayCoachDestinationAppear, "CoachContentView onAppear begin hasLoaded=\(hasLoadedCoachSnapshot) initialSnapshot=\(initialSnapshot != nil)")
@@ -1643,7 +1643,10 @@ struct CoachContentView: View {
 
     private func recommendedSplit(named name: String?) -> TrainingSplit? {
         guard let name else { return nil }
-        return activeSplits.first { $0.name == name }
+        let requestedBaseName = baseSplitName(name)
+        return activeSplits.first { split in
+            split.name == name || baseSplitName(split.name) == requestedBaseName
+        }
     }
 
     private func daysSinceLastCompletedSplit(named splitName: String) -> Int? {
@@ -1673,6 +1676,7 @@ struct CoachContentView: View {
             mode: dailyDecision.recommendedMode
         )
 
+        PerformanceTracer.mark(.previewRouteTap, "source=coach split=\(route.split.name) mode=\(route.mode.rawValue)")
         PerformanceTracer.mark(
             .workoutPreviewRenderSnapshot,
             "navigation request source=coach split=\(route.split.id.uuidString) mode=\(route.mode.rawValue) active=\(previewRoute?.split.id.uuidString ?? "none")"

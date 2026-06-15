@@ -468,7 +468,7 @@ struct TodayView: View {
                 destination(for: route)
             }
             .navigationDestination(item: $previewSplit) { split in
-                WorkoutPreviewView(split: split, initialMode: previewMode)
+                WorkoutPreviewRouteView(split: split, initialMode: previewMode)
             }
             .alert("Rest day noted", isPresented: $showingRestDayConfirmation) {
                 Button("OK", role: .cancel) {}
@@ -630,6 +630,8 @@ struct TodayView: View {
             CoachRouteDestinationView()
         case .templates:
             WorkoutTemplateLibraryView()
+        case let .preview(route):
+            WorkoutPreviewRouteView(split: route.split, initialMode: route.mode)
         }
     }
 
@@ -1054,13 +1056,14 @@ struct TodayView: View {
     }
 
     private func openPreview(_ split: WorkoutPreviewSplit, mode: WorkoutMode = .full) {
+        PerformanceTracer.mark(.previewRouteTap, "source=today split=\(split.name) mode=\(mode.rawValue)")
         PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "navigation request source=today split=\(split.id.uuidString) active=\(previewSplit?.id.uuidString ?? "none")")
         guard previewSplit?.id != split.id else {
             PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "navigation skip source=today already_active split=\(split.id.uuidString)")
             return
         }
 
-        AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
+        AppMotion.withoutAnimation {
             previewMode = mode
             previewSplit = split
         }

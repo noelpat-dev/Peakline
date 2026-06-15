@@ -96,11 +96,13 @@ Banned patterns:
 ## Feature Patterns
 
 - Today: quick status, next action, and compact recovery/nutrition/sleep context.
-- Workout Preview: split, mode, exercise order, last best, target, remove/reorder, and start.
+- Quick Actions: route immediately to usable screens with stable accessibility IDs and value snapshots; Start Workout -> Preview must never wait on heavy SwiftData, coach, history, sleep, hydration, or nutrition hydration before showing the Preview navigation bar and start controls.
+- Workout Preview: split, mode, exercise order, last best, target, remove/reorder, and start. Preview routes should show an immediate shell with `workout-preview-start` and basic exercise rows available, then hydrate richer targets and coach guidance in the background. Preserve stable IDs such as `quick-action-workout`, `workout-recommended-preview`, `workout-preview-basic-exercise-rows`, `workout-preview-guidance-chips`, and `workout-preview-start`.
 - Live Logger: timer, current exercise, set controls, rest timer, quick complete, finish.
 - Session Summary: completed work, duration, rating, improvements, next suggestion.
 - Splits: training-day cards, last trained state, target rows, progression badges.
 - Coach: recommendation, action, reason, confidence/status; avoid walls of analytics.
+- History: calendar remains a compact orientation tool, not the dominant dashboard. Lead with a small overview, compact filters, context-rich scannable rows, and a detail hero that explains what happened in the selected workout. Avoid heavy chart/dashboard layouts unless the product direction explicitly calls for them.
 - Nutrition/Sleep/Hydration: reviewable local data, compact summaries, and clear permission/unavailable states.
 
 ## Accessibility

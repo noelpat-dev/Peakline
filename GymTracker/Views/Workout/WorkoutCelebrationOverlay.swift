@@ -68,6 +68,7 @@ struct WorkoutCelebrationOverlay: View {
                     }
                     .buttonStyle(GlassPrimaryButtonStyle())
                     .disabled(isPrimaryActionDisabled)
+                    .accessibilityElement(children: .combine)
                     .accessibilityLabel(primaryActionTitle)
                     .accessibilityIdentifier("workout-celebration-primary")
                     .scaleEffect(reduceMotion ? 1 : (buttonRevealed ? 1 : 0.96))
