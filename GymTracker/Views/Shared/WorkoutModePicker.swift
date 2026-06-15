@@ -10,8 +10,10 @@ struct WorkoutModePicker: View {
             ForEach(WorkoutMode.allCases) { mode in
                 Button {
                     AppHaptics.selection()
-                    withAnimation(AppMotion.chip(reduceMotion: reduceMotion)) {
-                        selection = mode
+                    PerformanceTracer.trace(.motionChipSelect) {
+                        withAnimation(AppMotion.chipSelect(reduceMotion: reduceMotion)) {
+                            selection = mode
+                        }
                     }
                 } label: {
                     HStack(spacing: 10) {
@@ -38,6 +40,12 @@ struct WorkoutModePicker: View {
                             .stroke(selection == mode ? appTheme.colors.accent.opacity(0.38) : appTheme.cardBorder, lineWidth: 1)
                     }
                     .clipShape(RoundedRectangle(cornerRadius: appTheme.metrics.compactCardRadius, style: .continuous))
+                    .peaklineSelectionMotion(
+                        isSelected: selection == mode,
+                        reduceMotion: reduceMotion,
+                        scale: 1.01,
+                        role: .modeChange
+                    )
                 }
                 .buttonStyle(PressableCardButtonStyle())
             }

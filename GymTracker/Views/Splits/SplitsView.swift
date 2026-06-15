@@ -83,7 +83,7 @@ struct SplitsView: View {
                                     focusDescription: snapshot.focusTextBySplitName[split.name] ?? focusDescription(for: split)
                                 )
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(PressableCardButtonStyle())
                             .accessibilityIdentifier("split-card-\(split.name.peaklineAccessibilityIdentifierFragment)")
                         }
                     }
@@ -133,7 +133,7 @@ struct SplitsView: View {
                                 .padding(18)
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(PeaklineButtonPressStyle())
                             .accessibilityLabel(showingOtherSplits ? "Hide other splits" : "Show other splits")
                             .accessibilityValue(showingOtherSplits ? "expanded" : "collapsed")
                             .accessibilityIdentifier("other-splits-toggle")
@@ -154,7 +154,7 @@ struct SplitsView: View {
                                         NavigationLink(value: split.id) {
                                             inactiveSplitRow(split)
                                         }
-                                        .buttonStyle(.plain)
+                                        .buttonStyle(PeaklineButtonPressStyle())
                                         .contextMenu {
                                             Button(role: .destructive) {
                                                 pendingDeleteSplitID = split.id

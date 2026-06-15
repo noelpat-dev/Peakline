@@ -565,7 +565,6 @@ struct TodayView: View {
             return
         }
 
-        pendingRouteNavigation = TodayRouteNavigationStart(route: route, startedAt: ContinuousClock.now)
         PerformanceTracer.mark(.todayRouteSelection, "\(route.analyticsName) requested")
         PerformanceTracer.mark(.todayRouteSelectionState, "before selectedRoute=\(route.analyticsName)")
         AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
@@ -574,6 +573,7 @@ struct TodayView: View {
             }
         }
         PerformanceTracer.mark(.todayRouteSelectionState, "after selectedRoute=\(route.analyticsName)")
+        pendingRouteNavigation = TodayRouteNavigationStart(route: route, startedAt: ContinuousClock.now)
     }
 
     private func openCoachRoute() {

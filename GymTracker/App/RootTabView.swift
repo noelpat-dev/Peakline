@@ -47,7 +47,7 @@ struct RootTabView: View {
     }
 
     var body: some View {
-        TabView(selection: $selectedTab) {
+        TabView(selection: selectedTabBinding) {
             TodayView()
                 .tabItem {
                     Label("Today", systemImage: "calendar")
@@ -153,6 +153,18 @@ struct RootTabView: View {
         }
         .onDisappear {
             PerformanceTracer.mark(.appLifecycle, "root onDisappear no_task_cancel")
+        }
+    }
+
+    private var selectedTabBinding: Binding<RootTab> {
+        Binding {
+            selectedTab
+        } set: { newTab in
+            guard selectedTab != newTab else { return }
+            PerformanceTracer.trace(.motionTabSelect) {
+                selectedTab = newTab
+            }
+            AppHaptics.selection()
         }
     }
 

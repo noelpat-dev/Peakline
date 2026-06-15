@@ -13,7 +13,13 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         if name.contains("QuickActionProblemPaths") {
             launchArguments.append("-UITestLargeHistoryFixture")
         }
+        if name.contains("HistoryRowsOpenAfterMotionRehaul") {
+            launchArguments.append("-UITestLargeHistoryFixture")
+        }
         if name.contains("PerformanceAcceptance") {
+            launchArguments.append("-PerformanceAcceptanceMode")
+        }
+        if name.contains("ModeChangeDoesNotOverRefreshAfterMotionRehaul") {
             launchArguments.append("-PerformanceAcceptanceMode")
         }
         app.launchArguments = launchArguments
@@ -200,6 +206,30 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         XCTAssertTrue(waitForWorkoutScreen(), "Expected one back from Coach to return to Workout")
 
         assertPerformanceAcceptancePassed()
+    }
+
+    func testWorkoutPreviewModeChangeDoesNotOverRefreshAfterMotionRehaul() throws {
+        openWorkoutPreview()
+        tapButton(containing: "Quick", maxSwipes: 4)
+        XCTAssertTrue(waitForPreviewScreen(), "Expected Preview to remain visible after motion-aware mode change")
+        assertPerformanceAcceptancePassed()
+    }
+
+    func testHistoryRowsOpenAfterMotionRehaul() throws {
+        tapTab(at: 3, expectedTitle: "History")
+        tapHistorySessionRow(containing: "Push")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["history-workout-detail"].waitForExistence(timeout: 8),
+            "Expected History row to open workout detail"
+        )
+    }
+
+    func testTabSelectionStillWorksAfterMotionRehaul() throws {
+        tapTab(at: 1, expectedTitle: "Workout")
+        tapTab(at: 2, expectedTitle: "Splits")
+        tapTab(at: 3, expectedTitle: "History")
+        tapTab(at: 4, expectedTitle: "Settings")
+        tapTab(at: 0, expectedTitle: "Today")
     }
 
     func testTodayCoachSupportsNativeEdgeSwipeBack() throws {
@@ -395,6 +425,23 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         }
 
         return app.buttons.containing(.staticText, identifier: title).firstMatch
+    }
+
+    private func tapHistorySessionRow(containing title: String, maxSwipes: Int = 8) {
+        let predicate = NSPredicate(
+            format: "identifier == %@ AND label CONTAINS %@",
+            "history-session-row",
+            title
+        )
+        var row = app.buttons.matching(predicate).firstMatch
+        var swipes = 0
+        while (!row.waitForExistence(timeout: 1) || !row.isHittable) && swipes < maxSwipes {
+            app.swipeUp()
+            swipes += 1
+            row = app.buttons.matching(predicate).firstMatch
+        }
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "Expected History row containing \(title) to exist")
+        row.tap()
     }
 
     private func waitForCoachScreen() -> Bool {

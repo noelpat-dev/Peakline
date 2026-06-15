@@ -98,7 +98,6 @@ struct WorkoutLoggerView: View {
         }
         .navigationTitle(session.splitNameSnapshot)
         .navigationBarTitleDisplayMode(.inline)
-        .accessibilityIdentifier("workout-logger-screen")
         .navigationDestination(item: $summarySession) { session in
             SessionSummaryView(session: session)
         }
@@ -112,7 +111,7 @@ struct WorkoutLoggerView: View {
         .alert("Finish with skipped exercises?", isPresented: $showingSkippedExerciseConfirmation) {
             Button("Keep Logging", role: .cancel) {}
             Button("Finish Anyway") {
-                finishWorkout()
+                confirmSkippedAndFinish()
             }
             Button("Add Reasons") {
                 showingSkippedReasonSheet = true
@@ -192,6 +191,7 @@ struct WorkoutLoggerView: View {
         .scrollContentBackground(.hidden)
         .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
         .listSectionSpacing(12)
+        .accessibilityIdentifier("workout-logger-screen")
     }
 
     private var motivationOverlay: some View {
@@ -593,6 +593,15 @@ struct WorkoutLoggerView: View {
             markEnteredSetsComplete()
             restTimerState = RestTimerState()
             presentRatingOverlay()
+        }
+    }
+
+    private func confirmSkippedAndFinish() {
+        showingSkippedExerciseConfirmation = false
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: reduceMotion ? 10_000_000 : 120_000_000)
+            finishWorkout()
         }
     }
 
@@ -1088,10 +1097,30 @@ private struct WorkoutRatingOverlay: View {
             }
             .frame(maxWidth: .infinity, minHeight: 68)
             .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .foregroundStyle(appTheme.colors.textPrimary)
+            .padding(.vertical, 12)
+            .padding(.horizontal, 8)
+            .background {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(isSelected ? appTheme.colors.accent.opacity(0.10) : .white.opacity(0.012))
+            }
+            .shadow(
+                color: isSelected ? appTheme.colors.accent.opacity(0.14) : .black.opacity(0.08),
+                radius: isSelected ? 12 : 5,
+                y: isSelected ? 7 : 3
+            )
+            .scaleEffect(reduceMotion ? 1 : (isSelected ? AppMotion.selectedControlScale : 1))
+            .animation(AppMotion.ratingSelect(reduceMotion: reduceMotion), value: isSelected)
         }
-        .buttonStyle(WorkoutRatingButtonStyle(isSelected: isSelected))
-        .disabled(selectedRating != nil || isTransitioning)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("workout-rating-\(rating.id)")
         .accessibilityLabel("\(rating.title) workout rating")
+        .buttonStyle(.plain)
+        .disabled(selectedRating != nil || isTransitioning)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
@@ -1100,12 +1129,14 @@ private struct WorkoutRatingOverlay: View {
 
         isTransitioning = true
         AppHaptics.selection()
-        withAnimation(AppMotion.quickSpring(reduceMotion: reduceMotion)) {
-            selectedRating = rating
+        PerformanceTracer.trace(.motionRatingSelect) {
+            withAnimation(AppMotion.ratingSelect(reduceMotion: reduceMotion)) {
+                selectedRating = rating
+            }
         }
 
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: reduceMotion ? 40_000_000 : AppMotion.ratingSelectionDelay)
+            try? await Task.sleep(nanoseconds: reduceMotion ? 10_000_000 : AppMotion.ratingSelectionDelay)
             selectRating(rating)
         }
     }
@@ -1130,32 +1161,6 @@ private struct WorkoutRatingOverlay: View {
                 contentRevealed = false
             }
         }
-    }
-}
-
-private struct WorkoutRatingButtonStyle: ButtonStyle {
-    @Environment(\.appTheme) private var appTheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    let isSelected: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(appTheme.colors.textPrimary)
-            .padding(.vertical, 12)
-            .padding(.horizontal, 8)
-            .background {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(.ultraThinMaterial)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(isSelected ? appTheme.colors.accent.opacity(0.10) : .white.opacity(0.012))
-            }
-            .shadow(color: isSelected ? appTheme.colors.accent.opacity(0.14) : .black.opacity(0.08), radius: isSelected ? 12 : 5, y: isSelected ? 7 : 3)
-            .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.97 : (isSelected ? AppMotion.selectedControlScale : 1)))
-            .animation(AppMotion.selectionSpring(reduceMotion: reduceMotion), value: configuration.isPressed)
-            .animation(AppMotion.selectionSpring(reduceMotion: reduceMotion), value: isSelected)
     }
 }
 
@@ -1695,22 +1700,25 @@ private struct SetRowView: View {
     }
 
     private func markComplete() {
-        if !hasLoggedData {
-            if let previousSet {
-                setLog.weight = previousSet.weight
-                setLog.reps = previousSet.reps
-                setLog.rpe = previousSet.rpe
-            } else if let lastSessionSet {
-                setLog.weight = lastSessionSet.weight
-                setLog.reps = lastSessionSet.reps
-                setLog.rpe = lastSessionSet.rpe
+        PerformanceTracer.trace(.motionSetCompletion) {
+            if !hasLoggedData {
+                if let previousSet {
+                    setLog.weight = previousSet.weight
+                    setLog.reps = previousSet.reps
+                    setLog.rpe = previousSet.rpe
+                } else if let lastSessionSet {
+                    setLog.weight = lastSessionSet.weight
+                    setLog.reps = lastSessionSet.reps
+                    setLog.rpe = lastSessionSet.rpe
+                }
             }
-        }
 
-        let wasCompleted = setLog.completed
-        setLog.completed = hasLoggedData
-        if setLog.completed, !wasCompleted, !setLog.isWarmup {
-            completedAction()
+            let wasCompleted = setLog.completed
+            setLog.completed = hasLoggedData
+            if setLog.completed, !wasCompleted, !setLog.isWarmup {
+                AppHaptics.success()
+                completedAction()
+            }
         }
     }
 

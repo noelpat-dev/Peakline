@@ -23,6 +23,7 @@ struct QuickSetControlsView: View {
                     completeTitle,
                     systemImage: "checkmark.circle.fill",
                     accessibilityIdentifier: completeAccessibilityIdentifier,
+                    playsSelectionHaptic: false,
                     action: markComplete
                 )
             }
@@ -39,10 +40,13 @@ struct QuickSetControlsView: View {
         _ title: String,
         systemImage: String,
         accessibilityIdentifier: String? = nil,
+        playsSelectionHaptic: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
         Button {
-            AppHaptics.selection()
+            if playsSelectionHaptic {
+                AppHaptics.selection()
+            }
             action()
         } label: {
             Label(title, systemImage: systemImage)
@@ -58,7 +62,7 @@ struct QuickSetControlsView: View {
                         .stroke(appTheme.colors.cardBorder, lineWidth: 1)
                 }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PeaklineButtonPressStyle())
         .foregroundStyle(appTheme.colors.textPrimary)
         .accessibilityIdentifier(accessibilityIdentifier ?? "quick-set-\(identifier(for: title))")
     }

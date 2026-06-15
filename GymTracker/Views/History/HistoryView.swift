@@ -67,7 +67,9 @@ struct HistoryView: View {
                     ForEach(sessionRows) { row in
                         Button {
                             AppHaptics.selection()
-                            selectedWorkoutDetailRoute = HistoryWorkoutDetailRoute(sessionID: row.id)
+                            PerformanceTracer.trace(.motionHistoryRowOpen) {
+                                selectedWorkoutDetailRoute = HistoryWorkoutDetailRoute(sessionID: row.id)
+                            }
                         } label: {
                             FitnessCard(style: .compact) {
                                 HStack(alignment: .center, spacing: 12) {
@@ -89,7 +91,8 @@ struct HistoryView: View {
                                 }
                             }
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(PressableCardButtonStyle())
+                        .accessibilityIdentifier("history-session-row")
                         .destructiveSwipeAction {
                             pendingDeleteSessionID = row.id
                         }
@@ -624,6 +627,7 @@ private struct WorkoutHistoryDetailView: View {
         .scrollContentBackground(.hidden)
         .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
         .listSectionSpacing(12)
+        .accessibilityIdentifier("history-workout-detail")
         .navigationTitle(session.splitNameSnapshot)
         .navigationDestination(item: $previewSplit) { split in
             WorkoutPreviewView(split: split)

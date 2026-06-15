@@ -121,7 +121,9 @@ struct CoachBriefCard: View {
     }
 
     private func presentCheckIn() {
-        showingCheckIn = true
+        PerformanceTracer.trace(.motionTapFeedback) {
+            showingCheckIn = true
+        }
         DispatchQueue.main.async {
             AppHaptics.selection()
         }
@@ -1310,6 +1312,7 @@ struct DailyCheckInSheet: View {
 
 private struct CheckInRatingRow: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let title: String
     let lowLabel: String
@@ -1342,7 +1345,12 @@ private struct CheckInRatingRow: View {
         HStack(spacing: 16) {
             ForEach(1...5, id: \.self) { rating in
                 Button {
-                    value = rating
+                    AppHaptics.selection()
+                    PerformanceTracer.trace(.motionCheckInSelect) {
+                        withAnimation(AppMotion.checkInSelect(reduceMotion: reduceMotion)) {
+                            value = rating
+                        }
+                    }
                 } label: {
                     ZStack {
                         Circle()
@@ -1358,6 +1366,11 @@ private struct CheckInRatingRow: View {
                     }
                     .frame(width: 48, height: 48)
                     .contentShape(Rectangle())
+                    .peaklineSelectionMotion(
+                        isSelected: rating == value,
+                        reduceMotion: reduceMotion,
+                        role: .checkInSelect
+                    )
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("check-in-rating-\(identifierSuffix)-\(rating)")

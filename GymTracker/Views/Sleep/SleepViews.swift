@@ -1485,7 +1485,7 @@ private struct SleepWindDownOptionButton: View {
                         .stroke(border, lineWidth: 1)
                 }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PeaklineButtonPressStyle())
         .accessibilityLabel("\(minutes) minute wind-down")
     }
 
@@ -1527,7 +1527,7 @@ private struct SleepModeActionButton: View {
                 }
                 .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PeaklineButtonPressStyle())
     }
 
     private var foreground: Color {
@@ -2558,7 +2558,7 @@ private struct SleepGlassActionButton: View {
                 }
                 .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PeaklineButtonPressStyle())
     }
 
     private var labelFont: Font {
@@ -2925,8 +2925,11 @@ struct SleepQualityPicker: View {
         HStack(spacing: 8) {
             ForEach(1...5, id: \.self) { value in
                 Button {
-                    withAnimation(AppMotion.selectionSpring(reduceMotion: reduceMotion)) {
-                        selection = value
+                    AppHaptics.selection()
+                    PerformanceTracer.trace(.motionRatingSelect) {
+                        withAnimation(AppMotion.ratingSelect(reduceMotion: reduceMotion)) {
+                            selection = value
+                        }
                     }
                 } label: {
                     VStack(spacing: 3) {
@@ -2944,6 +2947,7 @@ struct SleepQualityPicker: View {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .stroke(selection == value ? appTheme.colors.accent.opacity(0.32) : appTheme.colors.cardBorder, lineWidth: 1)
                     }
+                    .peaklineSelectionMotion(isSelected: selection == value, reduceMotion: reduceMotion, role: .ratingSelect)
                 }
                 .buttonStyle(PressableCardButtonStyle())
                 .accessibilityLabel("Sleep quality \(Self.label(for: value))")

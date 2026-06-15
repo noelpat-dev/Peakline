@@ -17,7 +17,7 @@ final class WorkoutLoggingUITests: XCTestCase {
         tapElement(identifier: "start-split-Push", maxSwipes: 8)
         XCTAssertTrue(app.navigationBars["Preview"].waitForExistence(timeout: 10))
 
-        tapElement(identifier: "workout-preview-start", maxSwipes: 4)
+        tapElement(identifier: "workout-preview-start", maxSwipes: 12)
         XCTAssertTrue(app.staticTexts["Workout Order"].waitForExistence(timeout: 10))
 
         tapElement(identifier: "workout-logger-add-set", maxSwipes: 8)
@@ -35,11 +35,9 @@ final class WorkoutLoggingUITests: XCTestCase {
             app.buttons["Finish Anyway"].tap()
         }
 
-        let goodRating = app.buttons["Good workout rating"]
-        XCTAssertTrue(goodRating.waitForExistence(timeout: 8))
-        goodRating.tap()
+        tapModalElement(identifier: "workout-rating-3")
 
-        tapElement(identifier: "workout-celebration-primary", maxSwipes: 1)
+        tapModalElement(identifier: "workout-celebration-primary")
         XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Completed"].waitForExistence(timeout: 5))
 
@@ -82,6 +80,20 @@ final class WorkoutLoggingUITests: XCTestCase {
             element = tappableElement(identifier: identifier)
         }
         XCTAssertTrue(element.waitForExistence(timeout: 5), "Expected \(identifier) to exist")
+        element.tap()
+    }
+
+    private func tapModalElement(identifier: String, timeout: TimeInterval = 8) {
+        let deadline = Date().addingTimeInterval(timeout)
+        var element = tappableElement(identifier: identifier)
+
+        while (!element.exists || !element.isHittable) && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+            element = tappableElement(identifier: identifier)
+        }
+
+        XCTAssertTrue(element.exists, "Expected \(identifier) to exist")
+        XCTAssertTrue(element.isHittable, "Expected \(identifier) to be hittable")
         element.tap()
     }
 

@@ -372,6 +372,7 @@ struct WorkoutPreviewView: View {
         let workItem = DispatchWorkItem {
             guard renderSnapshot == nil else { return }
             showRenderLoadingIndicator = true
+            PerformanceTracer.mark(.motionLoadingReveal, "workout_preview_loading_shell")
             PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "loading_indicator show delayed")
         }
 
@@ -721,6 +722,7 @@ struct WorkoutPreviewView: View {
                 remove(exercise)
             }
         )
+        .rowInsertRemoveMotion(reduceMotion: reduceMotion)
         .onDrag {
             draggingExerciseId = exercise.id
             return NSItemProvider(object: exercise.id.uuidString as NSString)
@@ -816,10 +818,12 @@ struct WorkoutPreviewView: View {
             scheduleRenderSnapshotRefresh(reason: "onAppear", force: renderSnapshot == nil)
         }
         .onChange(of: selectedMode) { _, newMode in
-            PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "mode_change begin mode=\(newMode.rawValue)")
-            resetCoachAdjustment()
-            withAnimation(AppMotion.modeChange(reduceMotion: reduceMotion)) {
-                selectedExerciseIds = makeDefaultSelectedExerciseIds(for: newMode)
+            PerformanceTracer.trace(.motionPreviewModeChange) {
+                PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "mode_change begin mode=\(newMode.rawValue)")
+                resetCoachAdjustment()
+                AppMotion.withoutAnimation {
+                    selectedExerciseIds = makeDefaultSelectedExerciseIds(for: newMode)
+                }
             }
             guard renderSnapshot != nil else { return }
             scheduleRenderSnapshotRefresh(reason: "mode_changed")
@@ -874,6 +878,14 @@ struct WorkoutPreviewView: View {
                 planReadinessCard(snapshot: snapshot)
             }
 
+            DashboardSection(title: "Start") {
+                startWorkoutCard(
+                    snapshot: snapshot,
+                    startIdentifier: "workout-preview-start",
+                    originalPlanIdentifier: "workout-preview-start-original-top"
+                )
+            }
+
             DashboardSection(title: "Coach Brief") {
                 TrainingCallAuditCard(snapshot: snapshot.trainingCall)
                     .accessibilityIdentifier("workout-preview-training-call-audit")
@@ -920,7 +932,7 @@ struct WorkoutPreviewView: View {
                 HStack {
                     Spacer()
                     Button("Select All") {
-                        withAnimation(AppMotion.modeChange(reduceMotion: reduceMotion)) {
+                        AppMotion.withoutAnimation {
                             selectedExerciseIds = snapshot.orderedExercises.map(\.id)
                         }
                     }
@@ -984,28 +996,11 @@ struct WorkoutPreviewView: View {
             }
 
             DashboardSection(title: "Start") {
-                FitnessCard(style: .hero) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Button {
-                            activeSession = createWorkout(from: split)
-                        } label: {
-                            Label(startButtonTitle, systemImage: "play.circle.fill")
-                                .font(.headline)
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(PrimaryFitnessButtonStyle())
-                        .accessibilityIdentifier("workout-preview-start")
-                        .disabled(snapshot.plannedExercises.isEmpty)
-
-                        if appliedWorkoutAdjustment != nil {
-                            startOriginalPlanButton(snapshot: snapshot, identifier: "workout-preview-start-original-footer")
-                        }
-
-                        Text(startHint)
-                            .font(.footnote)
-                            .foregroundStyle(appTheme.mutedText)
-                    }
-                }
+                startWorkoutCard(
+                    snapshot: snapshot,
+                    startIdentifier: "workout-preview-start-footer",
+                    originalPlanIdentifier: "workout-preview-start-original-footer"
+                )
             }
         }
     }
@@ -1015,14 +1010,42 @@ struct WorkoutPreviewView: View {
             appTheme.colors.backgroundPrimary
                 .ignoresSafeArea()
 
-            if showRenderLoadingIndicator {
-                SwiftUI.ProgressView()
-                    .tint(appTheme.colors.accent)
-                    .accessibilityLabel("Preparing preview")
-                    .transition(.opacity)
+            FitnessScreen(
+                title: "\(split.name) Preview",
+                subtitle: "\(selectedMode.displayName) mode",
+                systemImage: "figure.strengthtraining.traditional"
+            ) {
+                DashboardSection(title: "Mode") {
+                    FitnessCard {
+                        WorkoutModePicker(selection: $selectedMode)
+                    }
+                }
+
+                FitnessCard {
+                    HStack(spacing: 12) {
+                        Image(systemName: showRenderLoadingIndicator ? "hourglass" : "figure.strengthtraining.traditional")
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(appTheme.colors.accent)
+                            .frame(width: 36, height: 36)
+                            .background(appTheme.colors.accent.opacity(0.12), in: Circle())
+                            .accessibilityHidden(true)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Preparing session")
+                                .font(AppTypography.sectionTitle)
+                                .foregroundStyle(appTheme.colors.textPrimary)
+
+                            Text("The preview shell is ready while targets and coach guidance hydrate.")
+                                .font(AppTypography.body)
+                                .foregroundStyle(appTheme.colors.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .accessibilityLabel("Preparing preview")
+                .loadingReveal(reduceMotion: reduceMotion)
             }
         }
-        .animation(AppMotion.gentleFade(reduceMotion: reduceMotion), value: showRenderLoadingIndicator)
     }
 
     private func planReadinessCard(snapshot: WorkoutPreviewRenderSnapshot) -> some View {
@@ -1140,6 +1163,35 @@ struct WorkoutPreviewView: View {
 
     private func planReadinessAccent(snapshot: WorkoutPreviewRenderSnapshot) -> Color {
         snapshot.plannedExercises.isEmpty ? appTheme.warningColor : appTheme.colors.accent
+    }
+
+    private func startWorkoutCard(
+        snapshot: WorkoutPreviewRenderSnapshot,
+        startIdentifier: String,
+        originalPlanIdentifier: String
+    ) -> some View {
+        FitnessCard(style: .hero) {
+            VStack(alignment: .leading, spacing: 12) {
+                Button {
+                    activeSession = createWorkout(from: split)
+                } label: {
+                    Label(startButtonTitle, systemImage: "play.circle.fill")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PrimaryFitnessButtonStyle())
+                .accessibilityIdentifier(startIdentifier)
+                .disabled(snapshot.plannedExercises.isEmpty)
+
+                if appliedWorkoutAdjustment != nil {
+                    startOriginalPlanButton(snapshot: snapshot, identifier: originalPlanIdentifier)
+                }
+
+                Text(startHint)
+                    .font(.footnote)
+                    .foregroundStyle(appTheme.mutedText)
+            }
+        }
     }
 
     private func originalPlanShortcut(snapshot: WorkoutPreviewRenderSnapshot) -> some View {
@@ -1266,7 +1318,7 @@ struct WorkoutPreviewView: View {
 
     private func remove(_ exercise: PlannedWorkoutExercise) {
         resetCoachAdjustment()
-        withAnimation(AppMotion.cardOut(reduceMotion: reduceMotion)) {
+        withAnimation(AppMotion.animation(for: .rowRemove, reduceMotion: reduceMotion)) {
             selectedExerciseIds.removeAll { $0 == exercise.id }
         }
     }
@@ -1284,7 +1336,7 @@ struct WorkoutPreviewView: View {
         var ids = selectedExerciseIds
         let movedId = ids.remove(at: index)
         ids.insert(movedId, at: max(0, min(destination, ids.count)))
-        withAnimation(AppMotion.reorderSpring(reduceMotion: reduceMotion)) {
+        withAnimation(AppMotion.animation(for: .rowReorder, reduceMotion: reduceMotion)) {
             selectedExerciseIds = ids
         }
     }
@@ -1302,7 +1354,7 @@ struct WorkoutPreviewView: View {
     private func addExercise(_ exercise: Exercise, targetSets: Int, minReps: Int, maxReps: Int, notes: String?) {
         guard !selectedExerciseIds.contains(exercise.id) else { return }
         resetCoachAdjustment()
-        withAnimation(AppMotion.cardIn(reduceMotion: reduceMotion)) {
+        withAnimation(AppMotion.animation(for: .rowInsert, reduceMotion: reduceMotion)) {
             selectedExerciseIds.append(exercise.id)
         }
     }
@@ -1393,10 +1445,12 @@ struct WorkoutPreviewView: View {
         plannedFatigueItems: [MuscleGroupFatigue]
     ) {
         if action == .deloadStyleSession {
+            PerformanceTracer.mark(.motionTapFeedback, "preview coach deload sheet requested")
             activeCoachSheet = .deloadPlanner
             return
         }
 
+        PerformanceTracer.mark(.motionTapFeedback, "preview coach action sheet requested")
         activeCoachSheet = .actionPreview(
             workoutAdjustmentPreview(
                 action: action,

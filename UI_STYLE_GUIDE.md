@@ -63,12 +63,35 @@ Text should remain readable in light and dark mode and should not rely on color 
 
 ## Motion
 
-Motion should feel smooth and useful, never flashy.
+Motion should communicate state, not decoration. Use shared `AppMotion` roles so interaction feedback stays immediate, scoped, and Reduce Motion-aware.
 
-- Use shared `AppMotion` timings for card transitions, popup entry/exit, swipe reveal snap, and lightweight feedback.
-- Completion and celebration moments can have more personality, but they must not delay dismissal or logging.
-- Live workout controls should avoid heavy animation.
-- Avoid springy repeated scale effects that make selection feel noisy.
+Motion roles:
+
+- `tapDown`, `tapRelease`, `cardPress`, and `buttonPress`: acknowledge touch within about 100ms with tiny scale or opacity only.
+- `chipSelect`, `modeChange`, `ratingSelect`, and `checkInSelect`: animate only the selected control, not the whole screen or list.
+- `rowInsert`, `rowRemove`, and `rowReorder`: use only for small local Preview/order changes, never for full-list refreshes.
+- `sheetPresent`, `sheetDismiss`, `modalPresent`, and `modalDismiss`: keep native-feeling presentation; do not wait for heavy data before showing the shell.
+- `routePush` and `routePop`: mutate route state immediately and let native navigation carry the transition.
+- `loadingReveal`: show the route or shell first, then reveal hydrated coach/target data progressively.
+- `metricChange`: reserve numeric transitions for small metric values that do not relayout their container.
+- `successConfirm`, `destructiveConfirm`, and `celebration`: use for completed sets, saves, deletes, and workout completion; never block logging or dismissal.
+
+Rules:
+
+- Prefer `PressableCardButtonStyle`, `PeaklineButtonPressStyle`, shared fitness button styles, and `AppMotion` helpers over local one-off animation curves.
+- Card and button press feedback should use scale around `0.985` plus subtle opacity; do not bounce large containers.
+- Chips, filters, ratings, and check-in controls can use haptics sparingly on selection.
+- Live workout logging stays restrained: no slow steppers, no full-card transitions for weight/reps edits, and no noisy haptics for every tiny update.
+- Loading follows `tap -> feedback -> route shell -> content -> progressive hydration`.
+- Reduce Motion removes movement and keeps opacity or instant state changes.
+
+Banned patterns:
+
+- Broad root `.animation` modifiers.
+- Animating long lists on every render or filter refresh.
+- Heavy blur, shadow, or material animation inside scrolling hot paths.
+- Delaying navigation, save, dismissal, or route mutation for an animation.
+- Using animation to hide slow data retrieval.
 
 ## Feature Patterns
 

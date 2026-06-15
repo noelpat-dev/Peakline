@@ -150,7 +150,7 @@ struct PrimaryFitnessButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity)
             .background(appTheme.colors.accent.opacity(configuration.isPressed ? 0.75 : 1), in: Capsule())
             .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? AppMotion.cardPressScale : 1))
-            .animation(AppMotion.press(reduceMotion: reduceMotion), value: configuration.isPressed)
+            .animation(AppMotion.buttonPress(reduceMotion: reduceMotion), value: configuration.isPressed)
     }
 }
 
@@ -167,7 +167,7 @@ struct SecondaryFitnessButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity)
             .background(appTheme.colors.accentSurface.opacity(configuration.isPressed ? 0.7 : 1), in: Capsule())
             .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? AppMotion.cardPressScale : 1))
-            .animation(AppMotion.press(reduceMotion: reduceMotion), value: configuration.isPressed)
+            .animation(AppMotion.buttonPress(reduceMotion: reduceMotion), value: configuration.isPressed)
     }
 }
 
@@ -184,7 +184,7 @@ struct NeutralFitnessButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity)
             .background(appTheme.elevatedCardBackground.opacity(configuration.isPressed ? 0.7 : 1), in: Capsule())
             .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? AppMotion.cardPressScale : 1))
-            .animation(AppMotion.press(reduceMotion: reduceMotion), value: configuration.isPressed)
+            .animation(AppMotion.buttonPress(reduceMotion: reduceMotion), value: configuration.isPressed)
     }
 }
 
@@ -196,7 +196,7 @@ struct PressableCardButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.94 : 1)
             .brightness(configuration.isPressed && !reduceMotion ? -0.018 : 0)
             .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? AppMotion.cardPressScale : 1))
-            .animation(AppMotion.press(reduceMotion: reduceMotion), value: configuration.isPressed)
+            .animation(AppMotion.cardPress(reduceMotion: reduceMotion), value: configuration.isPressed)
     }
 }
 
@@ -382,6 +382,7 @@ extension View {
 
 struct FilterChip: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let title: String
     let systemImage: String?
@@ -416,6 +417,7 @@ struct FilterChip: View {
                 Capsule()
                     .stroke(isSelected ? appTheme.colors.accent.opacity(0.32) : appTheme.cardBorder, lineWidth: 1)
             }
+            .peaklineSelectionMotion(isSelected: isSelected, reduceMotion: reduceMotion, scale: 1.01)
         }
         .buttonStyle(.plain)
     }
