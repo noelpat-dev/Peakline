@@ -20,7 +20,11 @@ struct WorkoutSessionExportDTO: Codable {
     let endedAt: Date?
     let durationMinutes: Int?
     let durationSeconds: Int?
+    let pausedAt: Date?
+    let accumulatedPausedSeconds: Int?
     let perceivedDifficulty: Int?
+    let energyLevel: Int?
+    let sorenessLevel: Int?
     let notes: String?
     let completed: Bool
     let exerciseLogs: [ExerciseLogExportDTO]
@@ -68,6 +72,7 @@ struct TrainingSplitExportDTO: Codable {
     let createdAt: Date
     let updatedAt: Date
     let isActive: Bool
+    let activeRotationIndex: Int?
     let daysPerWeek: Int
     let exercises: [SplitExerciseExportDTO]
 }

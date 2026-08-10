@@ -60,6 +60,94 @@ struct PlannedWorkoutExercise: Identifiable, Hashable {
     var exerciseNameSnapshot: String { name }
 }
 
+struct WorkoutLaunchExerciseDraft: Identifiable, Hashable, Sendable {
+    let id: UUID
+    let exerciseId: UUID
+    let name: String
+    let orderIndex: Int
+    let targetSets: Int
+    let minReps: Int
+    let maxReps: Int
+    let notes: String?
+
+    init(_ exercise: PlannedWorkoutExercise, orderIndex: Int) {
+        id = exercise.id
+        exerciseId = exercise.exerciseId
+        name = exercise.exerciseNameSnapshot
+        self.orderIndex = orderIndex
+        targetSets = exercise.targetSets
+        minReps = exercise.minReps
+        maxReps = exercise.maxReps
+        notes = exercise.notes
+    }
+}
+
+struct WorkoutLaunchDraft: Hashable, Sendable {
+    let splitId: UUID
+    let splitNameSnapshot: String
+    let exercises: [WorkoutLaunchExerciseDraft]
+
+    init(
+        splitId: UUID,
+        splitName: String,
+        modeLabel: String,
+        exercises: [PlannedWorkoutExercise]
+    ) {
+        self.splitId = splitId
+        splitNameSnapshot = "\(splitName) - \(modeLabel)"
+        self.exercises = exercises.enumerated().map {
+            WorkoutLaunchExerciseDraft($0.element, orderIndex: $0.offset)
+        }
+    }
+
+    @MainActor
+    func makeSession(startedAt: Date = .now) -> WorkoutSession {
+        let session = WorkoutSession(
+            date: startedAt,
+            splitId: splitId,
+            splitNameSnapshot: splitNameSnapshot,
+            startedAt: startedAt
+        )
+        session.exerciseLogs = exercises.map { exercise in
+            let log = ExerciseLog(
+                workoutSessionId: session.id,
+                exerciseId: exercise.exerciseId,
+                exerciseNameSnapshot: exercise.name,
+                orderIndex: exercise.orderIndex,
+                targetSets: exercise.targetSets,
+                minReps: exercise.minReps,
+                maxReps: exercise.maxReps,
+                notes: exercise.notes
+            )
+            log.workoutSession = session
+            return log
+        }
+        return session
+    }
+}
+
+enum WorkoutPreviewOrderReducer {
+    static func move(
+        _ ids: [UUID],
+        sourceID: UUID,
+        destinationID: UUID
+    ) -> [UUID] {
+        guard
+            sourceID != destinationID,
+            Set(ids).count == ids.count,
+            let sourceIndex = ids.firstIndex(of: sourceID),
+            let destinationIndex = ids.firstIndex(of: destinationID)
+        else {
+            return ids
+        }
+
+        var reordered = ids
+        let movedID = reordered.remove(at: sourceIndex)
+        reordered.insert(movedID, at: min(destinationIndex, reordered.endIndex))
+        return reordered
+    }
+}
+
 struct WorkoutModePlanner {
     func plannedExercises(
         from exercises: [WorkoutSelectableExercise],

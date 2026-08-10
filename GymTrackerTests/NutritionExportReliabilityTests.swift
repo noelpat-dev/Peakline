@@ -3,6 +3,53 @@ import XCTest
 
 @MainActor
 final class NutritionExportReliabilityTests: XCTestCase {
+    func testNutritionParserInfersPer100gForGoogleStyleCompositionTable() throws {
+        let result = NutritionParser().parse(lines: [
+            "Macro / Component Amount",
+            "Calories 52 kcal",
+            "Carbohydrates 13.8g",
+            "Total Sugars 10.4g",
+            "Dietary Fiber 2.4g",
+            "Protein 0.3g",
+            "Fat 0.2g",
+            "Water 85.6g"
+        ])
+
+        XCTAssertEqual(result.selectedBasis, .per100g)
+        XCTAssertEqual(result.overallConfidence, .medium)
+        XCTAssertTrue(result.warnings.contains(.basisInferredFromComposition))
+        XCTAssertFalse(result.warnings.contains(.basisNotDetected))
+        XCTAssertEqual(try XCTUnwrap(result.value(for: .calories)).amount, 52, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(result.value(for: .carbohydrates)).amount, 13.8, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(result.value(for: .protein)).amount, 0.3, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(result.value(for: .fat)).amount, 0.2, accuracy: 0.001)
+
+        let draftValues = ParsedNutritionDraftValues(parseResult: result)
+        XCTAssertEqual(draftValues.baseUnit, .grams)
+        XCTAssertEqual(try XCTUnwrap(draftValues.calories), 52, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(draftValues.sugar), 10.4, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(draftValues.fibre), 2.4, accuracy: 0.001)
+    }
+
+    func testAmbiguousMacroTableKeepsDetectedValuesForBasisConfirmation() throws {
+        let result = NutritionParser().parse(lines: [
+            "Calories 52 kcal",
+            "Carbohydrates 13.8g",
+            "Protein 0.3g",
+            "Fat 0.2g"
+        ])
+
+        XCTAssertEqual(result.selectedBasis, .unknown)
+        XCTAssertEqual(result.overallConfidence, .low)
+        XCTAssertTrue(result.warnings.contains(.basisNotDetected))
+
+        let draftValues = ParsedNutritionDraftValues(parseResult: result)
+        XCTAssertEqual(try XCTUnwrap(draftValues.calories), 52, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(draftValues.carbs), 13.8, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(draftValues.protein), 0.3, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(draftValues.fat), 0.2, accuracy: 0.001)
+    }
+
     func testEmptyNutritionGoalHasStableTimestampForDashboardSignatures() {
         let first = NutritionGoal.empty
         let second = NutritionGoal.empty
@@ -10,6 +57,38 @@ final class NutritionExportReliabilityTests: XCTestCase {
         XCTAssertFalse(first.hasTargets)
         XCTAssertEqual(first.updatedAt, second.updatedAt)
         XCTAssertEqual(first.updatedAt.timeIntervalSince1970, 0)
+    }
+
+    func testNutritionGoalFibreTargetRoundTripsAndLegacyPayloadDefaultsToNil() throws {
+        let suiteName = "NutritionGoalFibreTargetTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let service = NutritionGoalService(defaults: defaults)
+        service.saveGoal(
+            NutritionGoal(
+                dailyCaloriesTarget: 2_100,
+                dailyProteinTarget: 160,
+                dailyCarbsTarget: 240,
+                dailyFatTarget: 70,
+                dailyFibreTarget: 30,
+                trainingDayCaloriesTarget: nil,
+                restDayCaloriesTarget: nil,
+                isEnabled: true,
+                updatedAt: Date(timeIntervalSince1970: 1_800_000_000)
+            )
+        )
+
+        XCTAssertEqual(service.loadGoal().dailyFibreTarget, 30)
+
+        let legacyPayload: [String: Any] = [
+            "dailyCaloriesTarget": 2_100,
+            "dailyProteinTarget": 160,
+            "isEnabled": true,
+            "updatedAt": 1_800_000_000
+        ]
+        defaults.set(try JSONSerialization.data(withJSONObject: legacyPayload), forKey: "nutrition.goal.v1")
+        XCTAssertNil(service.loadGoal().dailyFibreTarget)
     }
 
     func testNutritionCalculatorScalesClampsAndTotalsSnapshots() {

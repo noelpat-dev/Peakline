@@ -64,11 +64,61 @@ final class NutritionScannerNavigationUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Scan Barcode"].waitForExistence(timeout: 5))
     }
 
+    func testNutritionPreviousDayIsReadOnlyAndNavigatesWithArrows() throws {
+        XCTAssertTrue(app.staticTexts["Today"].waitForExistence(timeout: 10))
+        openNutritionFromQuickAction()
+
+        XCTAssertTrue(app.descendants(matching: .any)["nutrition-date-picker"].waitForExistence(timeout: 5))
+        app.buttons["Previous nutrition day"].tap()
+
+        XCTAssertFalse(app.buttons["nutrition-today-reset"].exists)
+        XCTAssertTrue(
+            app.staticTexts["Rest Day"].waitForExistence(timeout: 5)
+                || app.staticTexts["Training Day"].waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Add Food")).firstMatch.exists)
+
+        app.buttons["Next nutrition day"].tap()
+        XCTAssertTrue(app.staticTexts["Coach Context"].waitForExistence(timeout: 5))
+    }
+
+    func testNutritionTargetsExposeFibreAndDismissKeyboardInteractively() throws {
+        XCTAssertTrue(app.staticTexts["Today"].waitForExistence(timeout: 10))
+        openNutritionFromQuickAction()
+
+        tapButton(containing: "Targets", maxSwipes: 6)
+        XCTAssertTrue(app.navigationBars["Targets"].waitForExistence(timeout: 5))
+
+        let fibreField = app.textFields["nutrition-target-fibre"]
+        XCTAssertTrue(fibreField.waitForExistence(timeout: 5))
+        fibreField.tap()
+        fibreField.typeText("30")
+
+        XCTAssertFalse(app.buttons["keyboard-done-button"].exists)
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
+        let scrollView = app.scrollViews.firstMatch
+        XCTAssertTrue(scrollView.exists)
+        scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            .press(
+                forDuration: 0.05,
+                thenDragTo: scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+            )
+        XCTAssertTrue(
+            app.keyboards.firstMatch.waitForNonExistence(timeout: 3),
+            "Expected the number keyboard to dismiss through interactive scrolling"
+        )
+        XCTAssertEqual(fibreField.value as? String, "30")
+    }
+
     func testSavedFoodsNativeSwipeDeleteShowsConfirmationWithoutBreakingScroll() throws {
         openSavedFoods()
         XCTAssertTrue(app.staticTexts["Banana"].waitForExistence(timeout: 5))
 
         scrollToSavedFood(named: "Final Scroll Marker Food")
+        _ = revealNativeDeleteAction(for: "Final Scroll Marker Food")
+        closeOpenSwipeAction(for: "Final Scroll Marker Food")
+        XCTAssertFalse(app.buttons["Delete"].waitForExistence(timeout: 1), "Expected one right swipe to close the native action")
+
         revealNativeDeleteAction(for: "Final Scroll Marker Food").tap()
 
         let alert = app.alerts["Delete food?"]
@@ -76,7 +126,6 @@ final class NutritionScannerNavigationUITests: XCTestCase {
         alert.buttons["Cancel"].tap()
         XCTAssertTrue(app.staticTexts["Final Scroll Marker Food"].waitForExistence(timeout: 2), "Expected cancel to keep the saved food")
 
-        cancelContextMenuDelete(for: "Final Scroll Marker Food")
         searchSavedFoods(query: "tuna", expectedResult: "Tuna")
     }
 
@@ -136,15 +185,7 @@ final class NutritionScannerNavigationUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5), "Expected \(foodName) row before swiping")
 
         let deleteButton = app.buttons["Delete"]
-        for _ in 0..<2 where !deleteButton.exists {
-            let start = row.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.28))
-            let end = row.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.28))
-            start.press(forDuration: 0.05, thenDragTo: end)
-            if deleteButton.waitForExistence(timeout: 2) {
-                return deleteButton
-            }
-            row.swipeLeft()
-        }
+        row.swipeLeft()
 
         XCTAssertTrue(deleteButton.waitForExistence(timeout: 5), "Expected native trailing Delete action for \(foodName)")
         return deleteButton
@@ -161,32 +202,6 @@ final class NutritionScannerNavigationUITests: XCTestCase {
         }
 
         return app.staticTexts[foodName]
-    }
-
-    private func cancelContextMenuDelete(for foodName: String) {
-        let foodLabel = app.staticTexts[foodName]
-        XCTAssertTrue(foodLabel.waitForExistence(timeout: 5), "Expected \(foodName) before opening its context menu")
-        closeOpenSwipeAction(for: foodName)
-
-        for attempt in 0..<2 {
-            foodLabel.press(forDuration: 1.0)
-            let deleteFoodAction = app.buttons["Delete Food"]
-            XCTAssertTrue(deleteFoodAction.waitForExistence(timeout: 5), "Expected context menu delete action for \(foodName)")
-            deleteFoodAction.tap()
-
-            let alert = app.alerts["Delete food?"]
-            if alert.waitForExistence(timeout: 5) {
-                alert.buttons["Cancel"].tap()
-                XCTAssertTrue(foodLabel.waitForExistence(timeout: 2), "Expected context menu cancel to keep \(foodName)")
-                return
-            }
-
-            if attempt == 0 {
-                closeOpenSwipeAction(for: foodName)
-            }
-        }
-
-        XCTFail("Expected context menu delete to keep confirmation")
     }
 
     private func closeOpenSwipeAction(for foodName: String) {

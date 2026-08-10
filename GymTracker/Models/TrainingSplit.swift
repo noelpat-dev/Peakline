@@ -9,6 +9,7 @@ final class TrainingSplit {
     var createdAt: Date
     var updatedAt: Date
     var isActive: Bool
+    var activeRotationIndex: Int?
     var daysPerWeek: Int
 
     @Relationship(deleteRule: .cascade, inverse: \SplitExercise.split)
@@ -21,6 +22,7 @@ final class TrainingSplit {
         createdAt: Date = .now,
         updatedAt: Date = .now,
         isActive: Bool = true,
+        activeRotationIndex: Int? = nil,
         daysPerWeek: Int = 3,
         exercises: [SplitExercise] = []
     ) {
@@ -30,6 +32,7 @@ final class TrainingSplit {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isActive = isActive
+        self.activeRotationIndex = activeRotationIndex
         self.daysPerWeek = daysPerWeek
         self.exercises = exercises
     }

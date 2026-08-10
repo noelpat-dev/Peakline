@@ -46,6 +46,8 @@ enum ExerciseIconKey: String, CaseIterable, Codable, Hashable {
     case genericBarbell
     case genericCable
     case genericExercise
+    case upperBody
+    case programmeRotation
 
     var assetName: String {
         switch self {
@@ -79,7 +81,7 @@ enum ExerciseIconKey: String, CaseIterable, Codable, Hashable {
             return "icon_exercise_standing_calf_raise"
         case .tricepPushDown, .tricepsPushdown, .overheadTricepsExtension:
             return "icon_exercise_tricep_push_down"
-        case .abdominalCrunch, .cableLateralRaise, .genericPush, .genericPull, .genericCore, .genericMachine, .genericDumbbell, .genericBarbell, .genericCable, .genericExercise:
+        case .abdominalCrunch, .cableLateralRaise, .genericPush, .genericPull, .genericCore, .genericMachine, .genericDumbbell, .genericBarbell, .genericCable, .genericExercise, .upperBody, .programmeRotation:
             return "icon_exercise_\(rawValue.snakeCased)"
         }
     }
@@ -100,6 +102,10 @@ enum ExerciseIconKey: String, CaseIterable, Codable, Hashable {
             return "rectangle.stack.fill"
         case .genericCable:
             return "point.3.connected.trianglepath.dotted"
+        case .upperBody:
+            return "figure.arms.open"
+        case .programmeRotation:
+            return "arrow.triangle.2.circlepath"
         case .genericPush, .inclineChestPressSmith, .inclineChestPress, .convergingChestPress, .chestPress, .chestFly, .dumbbellShoulderPress, .shoulderPressSmith, .shoulderPress, .cableLateralRaise, .tricepsPushdown, .tricepPushDown, .overheadTricepsExtension, .divergingRow, .divergingSeatedRow, .seatedRow, .divergingLowerLatRow, .lowerLatRow, .rearDeltCable, .genericExercise:
             return "figure.strengthtraining.traditional"
         }

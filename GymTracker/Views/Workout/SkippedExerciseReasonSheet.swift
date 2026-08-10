@@ -30,6 +30,7 @@ struct SkippedExerciseReasonSheet: View {
                     }
                 }
             }
+            .peaklineGroupedContent()
             .navigationTitle("Skipped Reasons")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

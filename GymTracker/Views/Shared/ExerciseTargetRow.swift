@@ -14,9 +14,9 @@ struct ExerciseTargetRow: View {
     private var targetDescription: String {
         switch (suggestion.suggestedWeight, suggestion.suggestedReps) {
         case let (.some(weight), .some(reps)):
-            return "\(format(weight))kg x \(reps)"
+            return PeaklineText.loadReps(weight: format(weight), reps: reps)
         case let (.some(weight), .none):
-            return "\(format(weight))kg"
+            return "\(format(weight)) kg"
         case let (.none, .some(reps)):
             return "\(reps)+ reps"
         case (.none, .none):

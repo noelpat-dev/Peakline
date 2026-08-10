@@ -40,6 +40,57 @@ final class BackupRestoreReliabilityTests: XCTestCase {
         XCTAssertEqual(restoredSplits.first?.exercises.first?.exerciseNameSnapshot, "Bench Press")
     }
 
+    func testVersionTwoExportPreservesCustomRotationOrder() throws {
+        let lower = TrainingSplit(
+            name: "Lower",
+            splitType: .custom,
+            activeRotationIndex: 0
+        )
+        let push = TrainingSplit(
+            name: "Push",
+            splitType: .custom,
+            activeRotationIndex: 1
+        )
+        let service = LocalBackupExportService()
+        let envelope = service.makeEnvelope(workouts: [], exercises: [], splits: [push, lower])
+
+        XCTAssertEqual(envelope.schemaVersion, 2)
+
+        let target = try makeContainer()
+        _ = try LocalBackupImportService().importBackup(
+            from: service.encode(envelope),
+            into: target.mainContext
+        )
+        let restored = try target.mainContext.fetch(FetchDescriptor<TrainingSplit>())
+        XCTAssertEqual(TrainingRotationService().orderedActiveSplits(restored).map(\.name), ["Lower", "Push"])
+    }
+
+    func testVersionOneExportWithoutIndexesBootstrapsFiveDayRotation() throws {
+        let sourceSplits = ["Lower", "Upper", "Pull", "Legs", "Push"].map {
+            TrainingSplit(name: $0, splitType: .custom, activeRotationIndex: nil)
+        }
+        let service = LocalBackupExportService()
+        let currentData = try service.encode(
+            service.makeEnvelope(workouts: [], exercises: [], splits: sourceSplits)
+        )
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: currentData) as? [String: Any])
+        json["schemaVersion"] = 1
+        var splitObjects = try XCTUnwrap(json["splits"] as? [[String: Any]])
+        for index in splitObjects.indices {
+            splitObjects[index].removeValue(forKey: "activeRotationIndex")
+        }
+        json["splits"] = splitObjects
+        let versionOneData = try JSONSerialization.data(withJSONObject: json)
+
+        let target = try makeContainer()
+        _ = try LocalBackupImportService().importBackup(from: versionOneData, into: target.mainContext)
+        let restored = try target.mainContext.fetch(FetchDescriptor<TrainingSplit>())
+        let ordered = TrainingRotationService().orderedActiveSplits(restored)
+
+        XCTAssertEqual(ordered.map(\.name), ["Push", "Pull", "Legs", "Upper", "Lower"])
+        XCTAssertEqual(ordered.map(\.activeRotationIndex), [0, 1, 2, 3, 4])
+    }
+
     func testEmergencyBackupRestoresOnlyIntoEmptyStore() throws {
         let sourceContainer = try makeContainer()
         let sample = try insertSampleData(in: sourceContainer.mainContext)
@@ -64,6 +115,31 @@ final class BackupRestoreReliabilityTests: XCTestCase {
 
         let secondRestoreOutcome = service.restoreIfNeeded(in: targetContainer.mainContext)
         XCTAssertEqual(secondRestoreOutcome, .skippedStoreNotEmpty)
+    }
+
+    func testEmergencyBackupRejectsUnsupportedRecordSchemaWithoutMutatingStore() throws {
+        let sourceContainer = try makeContainer()
+        let sample = try insertSampleData(in: sourceContainer.mainContext)
+        let store = InMemoryEmergencyBackupStore()
+        let service = EmergencyBackupService(store: store)
+
+        _ = try service.saveBackup(
+            workouts: [sample.workout],
+            exercises: [sample.exercise],
+            splits: [sample.split]
+        )
+        try store.mutateRecord { json in
+            json["schemaVersion"] = 99
+        }
+
+        let targetContainer = try makeContainer()
+        let restoreOutcome = service.restoreIfNeeded(in: targetContainer.mainContext)
+
+        guard case .failed(let message) = restoreOutcome else {
+            return XCTFail("Expected unsupported record failure, got \(restoreOutcome)")
+        }
+        XCTAssertTrue(message.contains("schema version 99"))
+        XCTAssertEqual(try targetContainer.mainContext.fetchCount(FetchDescriptor<WorkoutSession>()), 0)
     }
 
     func testEmergencyBackupRestoresOverStarterDataWhenNoWorkoutsExist() throws {
@@ -269,6 +345,17 @@ private struct SampleBackupData {
 
 private final class InMemoryEmergencyBackupStore: EmergencyBackupStoring {
     private var data: Data?
+
+    func mutateRecord(_ mutation: (inout [String: Any]) -> Void) throws {
+        guard let data else {
+            return XCTFail("Expected an emergency backup record before mutation")
+        }
+        guard var json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return XCTFail("Expected the emergency backup record to be a JSON object")
+        }
+        mutation(&json)
+        self.data = try JSONSerialization.data(withJSONObject: json)
+    }
 
     func readBackupRecord() throws -> Data? {
         data

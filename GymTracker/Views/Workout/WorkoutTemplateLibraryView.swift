@@ -4,7 +4,7 @@ struct WorkoutTemplateLibraryView: View {
     @Environment(\.appTheme) private var appTheme
 
     @State private var templates: [CustomWorkoutTemplate] = []
-    @State private var previewSplit: WorkoutPreviewSplit?
+    @State private var previewRoute: WorkoutPreviewPreparedRoute?
     @State private var pendingDelete: CustomWorkoutTemplate?
     @State private var errorText: String?
 
@@ -33,8 +33,12 @@ struct WorkoutTemplateLibraryView: View {
                         template: template,
                         start: {
                             let split = reuseBuilder.previewSplit(from: template)
+                            let preparedRoute = WorkoutPreviewWarmStartStore.shared.prepareRoute(
+                                for: split,
+                                initialMode: .full
+                            )
                             PerformanceTracer.mark(.previewRouteTap, "source=template split=\(split.name) mode=\(WorkoutMode.full.rawValue)")
-                            previewSplit = split
+                            previewRoute = preparedRoute
                         },
                         delete: {
                             pendingDelete = template
@@ -53,8 +57,8 @@ struct WorkoutTemplateLibraryView: View {
         }
         .navigationTitle("Templates")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(item: $previewSplit) { split in
-            WorkoutPreviewRouteView(split: split, initialMode: .full)
+        .navigationDestination(item: $previewRoute) { route in
+            WorkoutPreviewRouteView(preparedRoute: route)
         }
         .alert("Delete template?", isPresented: deleteAlertBinding) {
             Button("Cancel", role: .cancel) {

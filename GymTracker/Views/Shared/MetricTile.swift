@@ -50,10 +50,10 @@ struct MetricTile: View {
         }
         .padding(appTheme.metrics.compactCardPadding)
         .frame(maxWidth: .infinity, minHeight: appTheme.metrics.metricTileMinHeight, alignment: .topLeading)
-        .background(appTheme.elevatedCardBackground, in: RoundedRectangle(cornerRadius: appTheme.metrics.compactCardRadius, style: .continuous))
+        .background(appTheme.cardBackground, in: RoundedRectangle(cornerRadius: appTheme.metrics.compactCardRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: appTheme.metrics.compactCardRadius, style: .continuous)
-                .stroke(appTheme.cardBorder.opacity(0.55), lineWidth: 1)
+                .stroke(appTheme.cardBorder.opacity(0.48), lineWidth: 0.75)
         }
     }
 }

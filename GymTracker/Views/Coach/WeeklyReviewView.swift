@@ -11,6 +11,14 @@ struct WeeklyReviewView: View {
     @State private var didRequestInitialRefresh = false
     @State private var refreshTask: Task<Void, Never>?
 
+    private let initialReview: WeeklyReview?
+
+    init(initialReview: WeeklyReview? = nil) {
+        self.initialReview = initialReview
+        _review = State(initialValue: initialReview)
+        _didRequestInitialRefresh = State(initialValue: initialReview != nil)
+    }
+
     private static var activeSplitsDescriptor: FetchDescriptor<TrainingSplit> {
         var descriptor = FetchDescriptor<TrainingSplit>(
             predicate: #Predicate<TrainingSplit> { $0.isActive },
@@ -52,7 +60,7 @@ struct WeeklyReviewView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Split Balance")
                             .font(.headline)
-                        Text("Push \(review.splitConsistency.pushCount) - Pull \(review.splitConsistency.pullCount) - Legs \(review.splitConsistency.legsCount)")
+                        Text(review.splitConsistency.countDescription())
                             .font(.subheadline.weight(.semibold))
                         Text(review.splitConsistency.balanceDescription)
                             .font(.subheadline)
@@ -146,7 +154,7 @@ struct WeeklyReviewView: View {
     private static func signature(activeSplits: [TrainingSplit], completedSessions: [WorkoutSession]) -> String {
         [
             activeSplits
-                .map { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" }
+                .map { "\($0.id.uuidString):\($0.activeRotationIndex ?? -1):\($0.updatedAt.timeIntervalSince1970)" }
                 .joined(separator: ","),
             completedSessions
                 .map { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.endedAt?.timeIntervalSince1970 ?? 0)" }

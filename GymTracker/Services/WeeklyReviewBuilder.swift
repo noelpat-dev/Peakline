@@ -5,12 +5,20 @@ struct TrainingSplitSnapshot: Sendable, Hashable {
     let id: UUID
     let name: String
     let updatedAt: Date
+    let activeRotationIndex: Int?
     let exercises: [SplitExerciseSnapshot]
 
-    init(id: UUID, name: String, updatedAt: Date, exercises: [SplitExerciseSnapshot]) {
+    init(
+        id: UUID,
+        name: String,
+        updatedAt: Date,
+        activeRotationIndex: Int? = nil,
+        exercises: [SplitExerciseSnapshot]
+    ) {
         self.id = id
         self.name = name
         self.updatedAt = updatedAt
+        self.activeRotationIndex = activeRotationIndex
         self.exercises = exercises
     }
 
@@ -18,6 +26,7 @@ struct TrainingSplitSnapshot: Sendable, Hashable {
         self.id = split.id
         self.name = split.name
         self.updatedAt = split.updatedAt
+        self.activeRotationIndex = split.activeRotationIndex
         self.exercises = split.exercises.map(SplitExerciseSnapshot.init)
     }
 }
@@ -82,9 +91,165 @@ enum TrainingSplitSnapshotBuilder {
                 id: split.id,
                 name: split.name,
                 updatedAt: split.updatedAt,
+                activeRotationIndex: split.activeRotationIndex,
                 exercises: exerciseSnapshots
             )
         }
+    }
+}
+
+struct TrainingRotationService {
+    private static let canonicalNames = ["Push", "Pull", "Legs", "Upper", "Lower"]
+
+    func orderedActiveSplits(_ splits: [TrainingSplit]) -> [TrainingSplit] {
+        splits
+            .filter(\.isActive)
+            .sorted(by: liveSplitPrecedes)
+    }
+
+    func orderedSplits(_ splits: [TrainingSplitSnapshot]) -> [TrainingSplitSnapshot] {
+        splits.sorted(by: snapshotPrecedes)
+    }
+
+    func nextSplit(
+        activeSplits: [TrainingSplitSnapshot],
+        completedSessions: [WorkoutAnalyticsSession]
+    ) -> TrainingSplitSnapshot? {
+        let ordered = orderedSplits(activeSplits)
+        guard !ordered.isEmpty else { return nil }
+
+        for session in completedSessions
+            .filter(isMeaningfulCompletedSession)
+            .sorted(by: { $0.date > $1.date }) {
+            if let splitId = session.splitId,
+               let index = ordered.firstIndex(where: { $0.id == splitId }) {
+                return ordered[(index + 1) % ordered.count]
+            }
+
+            guard session.splitId == nil else { continue }
+            let legacyMatches = ordered.indices.filter { index in
+                legacySessionName(session.splitNameSnapshot, matches: ordered[index].name)
+            }
+            if legacyMatches.count == 1, let index = legacyMatches.first {
+                return ordered[(index + 1) % ordered.count]
+            }
+        }
+
+        return ordered.first
+    }
+
+    private func isMeaningfulCompletedSession(_ session: WorkoutAnalyticsSession) -> Bool {
+        session.completed && session.exerciseLogs.contains { exercise in
+            exercise.setLogs.contains { set in
+                set.completed || set.weight > 0 || set.reps > 0
+            }
+        }
+    }
+
+    @MainActor
+    func normalizePersistedRotation(in context: ModelContext) throws {
+        let splits = try context.fetch(FetchDescriptor<TrainingSplit>())
+        let active = splits.filter(\.isActive)
+
+        for split in splits where !split.isActive && split.activeRotationIndex != nil {
+            split.activeRotationIndex = nil
+            split.updatedAt = .now
+        }
+
+        let existingIndexes = active.compactMap(\.activeRotationIndex)
+        let isAlreadyNormalised = existingIndexes.count == active.count
+            && Set(existingIndexes).count == active.count
+            && existingIndexes.sorted() == Array(0..<active.count)
+        guard !isAlreadyNormalised else { return }
+
+        for (index, split) in active.sorted(by: liveSplitPrecedes).enumerated() {
+            split.activeRotationIndex = index
+            split.updatedAt = .now
+        }
+    }
+
+    @MainActor
+    func applyRotation(
+        orderedSplitIDs: [UUID],
+        to splits: [TrainingSplit],
+        in context: ModelContext
+    ) throws {
+        var seen = Set<UUID>()
+        let uniqueIDs = orderedSplitIDs.filter { seen.insert($0).inserted }
+        let orderByID = Dictionary(
+            uniqueKeysWithValues: uniqueIDs.enumerated().map { ($0.element, $0.offset) }
+        )
+
+        for split in splits {
+            if let index = orderByID[split.id] {
+                split.isActive = true
+                split.activeRotationIndex = index
+            } else {
+                split.isActive = false
+                split.activeRotationIndex = nil
+            }
+            split.updatedAt = .now
+        }
+
+        try context.save()
+    }
+
+    func displayName(for splits: [TrainingSplit]) -> String {
+        orderedActiveSplits(splits).map(\.name).joined(separator: " / ")
+    }
+
+    private func liveSplitPrecedes(_ lhs: TrainingSplit, _ rhs: TrainingSplit) -> Bool {
+        switch (lhs.activeRotationIndex, rhs.activeRotationIndex) {
+        case let (.some(left), .some(right)) where left != right:
+            return left < right
+        case (.some, .none):
+            return true
+        case (.none, .some):
+            return false
+        default:
+            let leftRank = canonicalRank(for: lhs.name)
+            let rightRank = canonicalRank(for: rhs.name)
+            if leftRank != rightRank {
+                return leftRank < rightRank
+            }
+            if lhs.createdAt != rhs.createdAt {
+                return lhs.createdAt < rhs.createdAt
+            }
+            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+        }
+    }
+
+    private func snapshotPrecedes(_ lhs: TrainingSplitSnapshot, _ rhs: TrainingSplitSnapshot) -> Bool {
+        switch (lhs.activeRotationIndex, rhs.activeRotationIndex) {
+        case let (.some(left), .some(right)) where left != right:
+            return left < right
+        case (.some, .none):
+            return true
+        case (.none, .some):
+            return false
+        default:
+            let leftRank = canonicalRank(for: lhs.name)
+            let rightRank = canonicalRank(for: rhs.name)
+            if leftRank != rightRank {
+                return leftRank < rightRank
+            }
+            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+        }
+    }
+
+    private func canonicalRank(for name: String) -> Int {
+        let baseName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Self.canonicalNames.firstIndex {
+            baseName.compare($0, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        } ?? Self.canonicalNames.count
+    }
+
+    private func legacySessionName(_ snapshot: String, matches splitName: String) -> Bool {
+        snapshot.compare(splitName, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+            || snapshot.range(
+                of: "\(splitName) - ",
+                options: [.anchored, .caseInsensitive, .diacriticInsensitive]
+            ) != nil
     }
 }
 
@@ -169,7 +334,7 @@ enum TrainingDecisionAction: String, Codable, Sendable {
     }
 }
 
-struct TrainingCallSnapshot: Equatable {
+struct TrainingCallSnapshot: Equatable, Sendable {
     let recommendedSplitName: String?
     let recommendedMode: WorkoutMode
     let action: TrainingDecisionAction
@@ -553,7 +718,11 @@ struct WeeklyReviewBuilder {
     func build(activeSplits: [TrainingSplitSnapshot], completedSessions: [WorkoutAnalyticsSession]) -> WeeklyReview {
         let prRecords = analytics.prTimeline(from: completedSessions)
         let weekly = analytics.weeklySummary(from: completedSessions, prRecords: prRecords)
-        let consistency = analytics.splitConsistency(from: completedSessions)
+        let orderedActiveSplits = TrainingRotationService().orderedSplits(activeSplits)
+        let consistency = analytics.splitConsistency(
+            from: completedSessions,
+            activeSplitNames: orderedActiveSplits.map(\.name)
+        )
         let decision = TrainingDecisionService().decision(activeSplits: activeSplits, completedSessions: completedSessions)
         let recentPRs = prRecords.prefix(3)
 
@@ -627,6 +796,7 @@ struct WeeklyReviewBuilder {
 struct TrainingDecisionService {
     private let targetService = TargetSuggestionService()
     private let analytics = TrainingAnalyticsService()
+    private let rotationService = TrainingRotationService()
 
     func decision(activeSplits: [TrainingSplit], completedSessions: [WorkoutSession]) -> TrainingDecision {
         decision(
@@ -636,9 +806,14 @@ struct TrainingDecisionService {
     }
 
     func decision(activeSplits: [TrainingSplitSnapshot], completedSessions: [WorkoutAnalyticsSession]) -> TrainingDecision {
+        let split = rotationService.nextSplit(
+            activeSplits: activeSplits,
+            completedSessions: completedSessions
+        )
+
         guard completedSessions.count >= 2 else {
             return TrainingDecision(
-                recommendedSplitName: activeSplits.first?.name,
+                recommendedSplitName: split?.name,
                 recommendedMode: .full,
                 action: .buildBaseline,
                 title: "Build a baseline",
@@ -646,7 +821,6 @@ struct TrainingDecisionService {
             )
         }
 
-        let split = recommendedSplit(from: activeSplits, completedSessions: completedSessions)
         let suggestions = split?.exercises.map {
             targetService.suggestion(
                 exerciseId: $0.exerciseId,
@@ -687,7 +861,10 @@ struct TrainingDecisionService {
     }
 
     func weeklyBalanceContext(activeSplits: [TrainingSplitSnapshot], completedSessions: [WorkoutAnalyticsSession]) -> String? {
-        let consistency = analytics.splitConsistency(from: completedSessions)
+        let consistency = analytics.splitConsistency(
+            from: completedSessions,
+            activeSplitNames: rotationService.orderedSplits(activeSplits).map(\.name)
+        )
         guard
             let missed = consistency.missedSplitName,
             activeSplits.contains(where: { $0.name == missed })
@@ -695,55 +872,7 @@ struct TrainingDecisionService {
             return nil
         }
 
-        return "\(missed) is lowest in this week's balance, but the daily call is following the Push/Pull/Legs rotation."
-    }
-
-    private func recommendedSplit(from activeSplits: [TrainingSplitSnapshot], completedSessions: [WorkoutAnalyticsSession]) -> TrainingSplitSnapshot? {
-        let orderedSplits = PPLReviewRotation.names.compactMap { name in
-            activeSplits.first { $0.name == name }
-        }
-        guard !orderedSplits.isEmpty else { return activeSplits.first }
-
-        let completedNames = Set(recentPPLCycleNames(from: completedSessions))
-        if let missingSplit = orderedSplits.first(where: { !completedNames.contains($0.name) }) {
-            return missingSplit
-        }
-
-        guard
-            let mostRecentName = completedSessions.compactMap({ pplName(for: $0.splitNameSnapshot) }).first,
-            let mostRecentIndex = PPLReviewRotation.names.firstIndex(of: mostRecentName)
-        else {
-            return orderedSplits.first
-        }
-
-        let nextName = PPLReviewRotation.names[(mostRecentIndex + 1) % PPLReviewRotation.names.count]
-        return orderedSplits.first { $0.name == nextName } ?? orderedSplits.first
-    }
-
-    private func recentPPLCycleNames(from completedSessions: [WorkoutAnalyticsSession]) -> [String] {
-        var names: [String] = []
-
-        for session in completedSessions {
-            guard let name = pplName(for: session.splitNameSnapshot) else { continue }
-
-            if names.contains(name) {
-                break
-            }
-
-            names.append(name)
-
-            if names.count == PPLReviewRotation.names.count {
-                break
-            }
-        }
-
-        return names
-    }
-
-    private func pplName(for splitNameSnapshot: String) -> String? {
-        PPLReviewRotation.names.first { name in
-            splitNameSnapshot == name || splitNameSnapshot.hasPrefix("\(name) - ")
-        }
+        return "\(missed) is lowest in this week's balance, but the daily call is following the active programme rotation."
     }
 
     private func recentSkippedFatigue(in sessions: [WorkoutAnalyticsSession]) -> Bool {
@@ -754,8 +883,4 @@ struct TrainingDecisionService {
             }
         }
     }
-}
-
-private enum PPLReviewRotation {
-    static let names = ["Push", "Pull", "Legs"]
 }

@@ -54,23 +54,49 @@ struct WeeklyTrainingSummary: Equatable, Sendable {
 }
 
 struct SplitConsistencySummary: Equatable, Sendable {
-    let pushCount: Int
-    let pullCount: Int
-    let legsCount: Int
+    struct DayCount: Equatable, Sendable {
+        let name: String
+        let count: Int
+    }
+
+    let orderedCounts: [DayCount]
     let missedSplitName: String?
     let balanceDescription: String
+
+    var pushCount: Int { count(for: "Push") }
+    var pullCount: Int { count(for: "Pull") }
+    var legsCount: Int { count(for: "Legs") }
+
+    func countDescription(separator: String = " - ") -> String {
+        orderedCounts
+            .map { "\($0.name) \($0.count)" }
+            .joined(separator: separator)
+    }
+
+    private func count(for name: String) -> Int {
+        orderedCounts.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.count ?? 0
+    }
 }
 
 struct WorkoutAnalyticsSession: Sendable {
     let id: UUID
     let date: Date
+    let splitId: UUID?
     let splitNameSnapshot: String
     let completed: Bool
     let exerciseLogs: [ExerciseAnalyticsLog]
 
-    init(id: UUID, date: Date, splitNameSnapshot: String, completed: Bool, exerciseLogs: [ExerciseAnalyticsLog]) {
+    init(
+        id: UUID,
+        date: Date,
+        splitId: UUID? = nil,
+        splitNameSnapshot: String,
+        completed: Bool,
+        exerciseLogs: [ExerciseAnalyticsLog]
+    ) {
         self.id = id
         self.date = date
+        self.splitId = splitId
         self.splitNameSnapshot = splitNameSnapshot
         self.completed = completed
         self.exerciseLogs = exerciseLogs
@@ -79,6 +105,7 @@ struct WorkoutAnalyticsSession: Sendable {
     init(session: WorkoutSession) {
         self.id = session.id
         self.date = session.date
+        self.splitId = session.splitId
         self.splitNameSnapshot = session.splitNameSnapshot
         self.completed = session.completed
         self.exerciseLogs = session.exerciseLogs.map(ExerciseAnalyticsLog.init)
@@ -299,26 +326,49 @@ struct TrainingAnalyticsService {
         )
     }
 
-    func splitConsistency(from sessions: [WorkoutSession], now: Date = Date()) -> SplitConsistencySummary {
-        splitConsistency(from: sessions.map(WorkoutAnalyticsSession.init), now: now)
+    func splitConsistency(
+        from sessions: [WorkoutSession],
+        activeSplitNames: [String] = ["Push", "Pull", "Legs"],
+        now: Date = Date()
+    ) -> SplitConsistencySummary {
+        splitConsistency(
+            from: sessions.map(WorkoutAnalyticsSession.init),
+            activeSplitNames: activeSplitNames,
+            now: now
+        )
     }
 
-    func splitConsistency(from sessions: [WorkoutAnalyticsSession], now: Date = Date()) -> SplitConsistencySummary {
+    func splitConsistency(
+        from sessions: [WorkoutAnalyticsSession],
+        activeSplitNames: [String] = ["Push", "Pull", "Legs"],
+        now: Date = Date()
+    ) -> SplitConsistencySummary {
         let calendar = Calendar.current
         let week = calendar.dateInterval(of: .weekOfYear, for: now) ?? DateInterval(start: now, duration: 7 * 24 * 60 * 60)
         let weekSessions = sessions.filter { $0.completed && $0.date >= week.start && $0.date < week.end }
         let counts = Dictionary(grouping: weekSessions, by: { baseSplitName($0.splitNameSnapshot) }).mapValues(\.count)
-        let push = counts["Push"] ?? 0
-        let pull = counts["Pull"] ?? 0
-        let legs = counts["Legs"] ?? 0
-        let missed = [("Push", push), ("Pull", pull), ("Legs", legs)].min { $0.1 < $1.1 }?.0
-        let missedName = [push, pull, legs].contains(0) ? missed : nil
-        let description = missedName.map { "\($0) is due next." } ?? "Push/Pull/Legs is balanced this week."
+        var seen = Set<String>()
+        let orderedNames = activeSplitNames.filter { name in
+            seen.insert(name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()).inserted
+        }
+        let orderedCounts = orderedNames.map { name in
+            SplitConsistencySummary.DayCount(
+                name: name,
+                count: counts.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value ?? 0
+            )
+        }
+        let missedName = orderedCounts.first { $0.count == 0 }?.name
+        let description: String
+        if orderedCounts.isEmpty {
+            description = "Add training days to start programme coverage."
+        } else if let missedName {
+            description = "\(missedName) has not been trained this week."
+        } else {
+            description = "The active programme is covered this week."
+        }
 
         return SplitConsistencySummary(
-            pushCount: push,
-            pullCount: pull,
-            legsCount: legs,
+            orderedCounts: orderedCounts,
             missedSplitName: missedName,
             balanceDescription: description
         )

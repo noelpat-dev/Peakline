@@ -5,6 +5,7 @@ struct NutritionGoal: Codable, Equatable {
     var dailyProteinTarget: Double?
     var dailyCarbsTarget: Double?
     var dailyFatTarget: Double?
+    var dailyFibreTarget: Double? = nil
     var trainingDayCaloriesTarget: Double?
     var restDayCaloriesTarget: Double?
     var isEnabled: Bool
@@ -16,6 +17,7 @@ struct NutritionGoal: Codable, Equatable {
             dailyProteinTarget: nil,
             dailyCarbsTarget: nil,
             dailyFatTarget: nil,
+            dailyFibreTarget: nil,
             trainingDayCaloriesTarget: nil,
             restDayCaloriesTarget: nil,
             isEnabled: false,
@@ -24,7 +26,7 @@ struct NutritionGoal: Codable, Equatable {
     }
 
     var hasTargets: Bool {
-        isEnabled && [dailyCaloriesTarget, dailyProteinTarget, dailyCarbsTarget, dailyFatTarget, trainingDayCaloriesTarget, restDayCaloriesTarget]
+        isEnabled && [dailyCaloriesTarget, dailyProteinTarget, dailyCarbsTarget, dailyFatTarget, dailyFibreTarget, trainingDayCaloriesTarget, restDayCaloriesTarget]
             .contains { ($0 ?? 0) > 0 }
     }
 

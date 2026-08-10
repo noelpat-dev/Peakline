@@ -13,31 +13,43 @@ struct SplitCardView: View {
 
     var body: some View {
         FitnessCard(style: .compact) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center, spacing: 12) {
                     ExerciseIconView(
                         iconKey: ExerciseIconMapper.splitIconKey(for: splitName),
-                        size: 46,
+                        size: 44,
                         showBackground: true,
                         isDecorative: true
                     )
 
-                    VStack(alignment: .leading, spacing: 5) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text(splitName)
-                            .font(AppTypography.largeMetric)
+                            .font(AppTypography.cardTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
-                        Text(lastTrainedText)
-                            .font(AppTypography.body)
+                            .lineLimit(2)
+
+                        Text(
+                            PeaklineText.joinedMetadata([
+                                PeaklineText.count(exerciseCount, singular: "exercise"),
+                                estimatedDurationText,
+                                lastTrainedText
+                            ])
+                        )
+                            .font(AppTypography.metadata)
                             .foregroundStyle(appTheme.colors.textSecondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    Spacer()
+                    Spacer(minLength: 8)
                     CoachBadgeView(state: badgeState)
-                }
 
-                HStack(spacing: 10) {
-                    MetricTile(label: "Exercises", value: "\(exerciseCount)", caption: nil, systemImage: "list.bullet")
-                    MetricTile(label: "Estimate", value: estimatedDurationText, caption: nil, systemImage: "clock")
+                    if actionTitle == nil {
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(appTheme.colors.textTertiary)
+                            .accessibilityHidden(true)
+                    }
                 }
 
                 if let actionTitle, let action {

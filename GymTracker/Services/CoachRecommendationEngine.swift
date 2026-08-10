@@ -37,6 +37,7 @@ enum CoachPriority: String, Hashable, Sendable {
 
 struct CoachRecommendationEngine {
     private let calendar: Calendar
+    private let rotationService = TrainingRotationService()
 
     init(calendar: Calendar = .current) {
         self.calendar = calendar
@@ -96,52 +97,6 @@ struct CoachRecommendationEngine {
         )
     }
 
-    private func recommendedSplit(
-        from activeSplits: [TrainingSplit],
-        completedSessions: [WorkoutSession]
-    ) -> TrainingSplit? {
-        let orderedSplits = pplOrderedSplits(from: activeSplits)
-        guard !orderedSplits.isEmpty else { return activeSplits.first }
-
-        let completedNames = Set(recentPPLCycleNames(from: completedSessions))
-        if let missingSplit = orderedSplits.first(where: { !completedNames.contains($0.name) }) {
-            return missingSplit
-        }
-
-        guard
-            let mostRecentName = completedSessions.compactMap({ pplName(for: $0.splitNameSnapshot) }).first,
-            let mostRecentIndex = PPLRotation.names.firstIndex(of: mostRecentName)
-        else {
-            return orderedSplits.first
-        }
-
-        let nextName = PPLRotation.names[(mostRecentIndex + 1) % PPLRotation.names.count]
-        return orderedSplits.first { $0.name == nextName } ?? orderedSplits.first
-    }
-
-    private func recommendedSplit(
-        from activeSplits: [TrainingSplitSnapshot],
-        completedSessions: [WorkoutAnalyticsSession]
-    ) -> TrainingSplitSnapshot? {
-        let orderedSplits = pplOrderedSplits(from: activeSplits)
-        guard !orderedSplits.isEmpty else { return activeSplits.first }
-
-        let completedNames = Set(recentPPLCycleNames(from: completedSessions))
-        if let missingSplit = orderedSplits.first(where: { !completedNames.contains($0.name) }) {
-            return missingSplit
-        }
-
-        guard
-            let mostRecentName = completedSessions.compactMap({ pplName(for: $0.splitNameSnapshot) }).first,
-            let mostRecentIndex = PPLRotation.names.firstIndex(of: mostRecentName)
-        else {
-            return orderedSplits.first
-        }
-
-        let nextName = PPLRotation.names[(mostRecentIndex + 1) % PPLRotation.names.count]
-        return orderedSplits.first { $0.name == nextName } ?? orderedSplits.first
-    }
-
     private func recommendationReason(
         for split: TrainingSplit?,
         activeSplits: [TrainingSplit],
@@ -149,21 +104,17 @@ struct CoachRecommendationEngine {
     ) -> String {
         guard let split else {
             if activeSplits.isEmpty {
-                return "Create or activate Push, Pull, and Legs splits before the coach can plan the next session."
+                return "Create or activate training days before the coach can plan the next session."
             }
 
             return "Finish a workout so the coach can compare your recent split rotation."
         }
 
         if completedSessions.isEmpty {
-            return "\(split.name) is the first available day in your active Push/Pull/Legs setup."
+            return "\(split.name) is the first day in your active programme rotation."
         }
 
-        if !recentPPLCycleNames(from: completedSessions).contains(split.name) {
-            return "\(split.name) is the next missing day in your current Push/Pull/Legs rotation."
-        }
-
-        return "You have completed the current Push/Pull/Legs round. \(split.name) starts the next rotation."
+        return "\(split.name) follows your most recent completed day in the active programme."
     }
 
     private func recommendationReason(
@@ -173,21 +124,17 @@ struct CoachRecommendationEngine {
     ) -> String {
         guard let split else {
             if activeSplits.isEmpty {
-                return "Create or activate Push, Pull, and Legs splits before the coach can plan the next session."
+                return "Create or activate training days before the coach can plan the next session."
             }
 
             return "Finish a workout so the coach can compare your recent split rotation."
         }
 
         if completedSessions.isEmpty {
-            return "\(split.name) is the first available day in your active Push/Pull/Legs setup."
+            return "\(split.name) is the first day in your active programme rotation."
         }
 
-        if !recentPPLCycleNames(from: completedSessions).contains(split.name) {
-            return "\(split.name) is the next missing day in your current Push/Pull/Legs rotation."
-        }
-
-        return "You have completed the current Push/Pull/Legs round. \(split.name) starts the next rotation."
+        return "\(split.name) follows your most recent completed day in the active programme."
     }
 
     private func exerciseRecommendations(
@@ -389,8 +336,8 @@ struct CoachRecommendationEngine {
         completedSessions: [WorkoutSession],
         now: Date
     ) -> [CoachWarning] {
-        pplOrderedSplits(from: activeSplits).compactMap { split in
-            guard let lastSession = completedSessions.first(where: { pplName(for: $0.splitNameSnapshot) == split.name }) else {
+        rotationService.orderedActiveSplits(activeSplits).compactMap { split in
+            guard let lastSession = completedSessions.first(where: { sessionMatches($0, split: split) }) else {
                 return CoachWarning(
                     title: "\(split.name) has no history yet",
                     message: "Log one \(split.name) workout so the coach can track your rotation.",
@@ -414,8 +361,8 @@ struct CoachRecommendationEngine {
         completedSessions: [WorkoutAnalyticsSession],
         now: Date
     ) -> [CoachWarning] {
-        pplOrderedSplits(from: activeSplits).compactMap { split in
-            guard let lastSession = completedSessions.first(where: { pplName(for: $0.splitNameSnapshot) == split.name }) else {
+        rotationService.orderedSplits(activeSplits).compactMap { split in
+            guard let lastSession = completedSessions.first(where: { sessionMatches($0, split: split) }) else {
                 return CoachWarning(
                     title: "\(split.name) has no history yet",
                     message: "Log one \(split.name) workout so the coach can track your rotation.",
@@ -521,62 +468,26 @@ struct CoachRecommendationEngine {
             .sorted { $0.setNumber < $1.setNumber }
     }
 
-    private func pplOrderedSplits(from activeSplits: [TrainingSplit]) -> [TrainingSplit] {
-        PPLRotation.names.compactMap { name in
-            activeSplits.first { $0.name == name }
+    private func sessionMatches(_ session: WorkoutSession, split: TrainingSplit) -> Bool {
+        if let splitId = session.splitId {
+            return splitId == split.id
         }
+        return legacySessionName(session.splitNameSnapshot, matches: split.name)
     }
 
-    private func pplOrderedSplits(from activeSplits: [TrainingSplitSnapshot]) -> [TrainingSplitSnapshot] {
-        PPLRotation.names.compactMap { name in
-            activeSplits.first { $0.name == name }
+    private func sessionMatches(_ session: WorkoutAnalyticsSession, split: TrainingSplitSnapshot) -> Bool {
+        if let splitId = session.splitId {
+            return splitId == split.id
         }
+        return legacySessionName(session.splitNameSnapshot, matches: split.name)
     }
 
-    private func recentPPLCycleNames(from completedSessions: [WorkoutSession]) -> [String] {
-        var names: [String] = []
-
-        for session in completedSessions {
-            guard let name = pplName(for: session.splitNameSnapshot) else { continue }
-
-            if names.contains(name) {
-                break
-            }
-
-            names.append(name)
-
-            if names.count == PPLRotation.names.count {
-                break
-            }
-        }
-
-        return names
-    }
-
-    private func recentPPLCycleNames(from completedSessions: [WorkoutAnalyticsSession]) -> [String] {
-        var names: [String] = []
-
-        for session in completedSessions {
-            guard let name = pplName(for: session.splitNameSnapshot) else { continue }
-
-            if names.contains(name) {
-                break
-            }
-
-            names.append(name)
-
-            if names.count == PPLRotation.names.count {
-                break
-            }
-        }
-
-        return names
-    }
-
-    private func pplName(for splitNameSnapshot: String) -> String? {
-        PPLRotation.names.first { name in
-            splitNameSnapshot == name || splitNameSnapshot.hasPrefix("\(name) - ")
-        }
+    private func legacySessionName(_ snapshot: String, matches splitName: String) -> Bool {
+        snapshot.compare(splitName, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+            || snapshot.range(
+                of: "\(splitName) - ",
+                options: [.anchored, .caseInsensitive, .diacriticInsensitive]
+            ) != nil
     }
 
     private func estimatedOneRepMax(_ set: SetLog) -> Double {
@@ -597,8 +508,4 @@ struct CoachRecommendationEngine {
     private func format(_ value: Double) -> String {
         value.formatted(.number.precision(.fractionLength(value.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1)))
     }
-}
-
-private enum PPLRotation {
-    static let names = ["Push", "Pull", "Legs"]
 }

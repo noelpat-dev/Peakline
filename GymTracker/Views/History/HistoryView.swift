@@ -1,53 +1,327 @@
 import SwiftData
 import SwiftUI
 
+struct HistoryWorkoutSnapshot: Hashable, Sendable {
+    struct Exercise: Hashable, Sendable {
+        struct SetEntry: Hashable, Sendable {
+            let completed: Bool
+            let weight: Double
+            let reps: Int
+            let rpe: Double?
+        }
+
+        let name: String
+        let orderIndex: Int
+        let sets: [SetEntry]
+    }
+
+    let id: UUID
+    let date: Date
+    let splitName: String
+    let startedAt: Date?
+    let endedAt: Date?
+    let durationMinutes: Int?
+    let durationSeconds: Int?
+    let rating: Int?
+    let notes: String?
+    let exercises: [Exercise]
+
+    @MainActor
+    init(_ session: WorkoutSession) {
+        id = session.id
+        date = session.date
+        splitName = session.splitNameSnapshot
+        startedAt = session.startedAt
+        endedAt = session.endedAt
+        durationMinutes = session.durationMinutes
+        durationSeconds = session.durationSeconds
+        rating = session.perceivedDifficulty
+        notes = session.notes
+        exercises = session.exerciseLogs.map { log in
+            Exercise(
+                name: log.exerciseNameSnapshot,
+                orderIndex: log.orderIndex,
+                sets: log.setLogs.map {
+                    Exercise.SetEntry(
+                        completed: $0.completed,
+                        weight: $0.weight,
+                        reps: $0.reps,
+                        rpe: $0.rpe
+                    )
+                }
+            )
+        }
+    }
+}
+
+struct HistoryWarmSnapshot: Sendable {
+    let workouts: [HistoryWorkoutSnapshot]
+    let display: HistoryDisplaySnapshot
+
+    static let empty = HistoryWarmSnapshot(workouts: [], display: .empty)
+}
+
+enum HistoryDisplaySnapshotBuilder {
+    static func build(
+        workouts: [HistoryWorkoutSnapshot],
+        filters: HistoryFilters = HistoryFilters(),
+        calendar: Calendar = .current
+    ) -> HistoryDisplaySnapshot {
+        let filtered = workouts.filter { workout in
+            matches(workout, filters: filters, calendar: calendar)
+        }
+
+        return HistoryDisplaySnapshot(
+            sessionRows: filtered.map(rowSnapshot),
+            calendarDaySummaries: calendarSummaries(filtered, calendar: calendar),
+            splitOptions: Array(Set(workouts.map { baseSplitName($0.splitName) })).sorted(),
+            overview: overview(filtered)
+        )
+    }
+
+    private static func matches(
+        _ workout: HistoryWorkoutSnapshot,
+        filters: HistoryFilters,
+        calendar: Calendar
+    ) -> Bool {
+        if let splitName = filters.splitName, baseSplitName(workout.splitName) != splitName {
+            return false
+        }
+        let query = filters.exerciseNameQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !query.isEmpty, !workout.exercises.contains(where: { $0.name.localizedCaseInsensitiveContains(query) }) {
+            return false
+        }
+        if let minimumRating = filters.minimumRating, (workout.rating ?? 0) < minimumRating {
+            return false
+        }
+        if let startDate = filters.startDate, workout.date < calendar.startOfDay(for: startDate) {
+            return false
+        }
+        if let endDate = filters.endDate,
+           workout.date > (calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: endDate)) ?? endDate) {
+            return false
+        }
+        return true
+    }
+
+    private static func loggedExercises(_ workout: HistoryWorkoutSnapshot) -> [HistoryWorkoutSnapshot.Exercise] {
+        workout.exercises
+            .filter { exercise in
+                exercise.sets.contains { $0.completed || $0.weight > 0 || $0.reps > 0 || $0.rpe != nil }
+            }
+            .sorted { $0.orderIndex < $1.orderIndex }
+    }
+
+    private static func rowSnapshot(_ workout: HistoryWorkoutSnapshot) -> HistorySessionRowSnapshot {
+        let exercises = loggedExercises(workout)
+        let setCount = exercises.flatMap(\.sets).filter(\.completed).count
+        let topExercises = exercises.prefix(3).map(\.name)
+        return HistorySessionRowSnapshot(
+            id: workout.id,
+            splitName: workout.splitName,
+            date: workout.date,
+            dateText: workout.date.formatted(date: .abbreviated, time: .shortened),
+            exerciseCountText: "\(exercises.count)",
+            setCountText: "\(setCount)",
+            durationText: durationText(workout) ?? "No duration",
+            ratingText: ratingText(workout.rating),
+            topExerciseSummary: topExercises.isEmpty ? "No exercises logged" : topExercises.joined(separator: ", "),
+            notesPreview: workout.notes?.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
+    private static func overview(_ workouts: [HistoryWorkoutSnapshot]) -> HistoryOverviewSnapshot {
+        let exercises = workouts.flatMap(loggedExercises)
+        let totalSets = exercises.flatMap(\.sets).filter(\.completed).count
+        let totalDuration = workouts.reduce(0) { $0 + durationSeconds($1) }
+        let ratings = workouts.compactMap(\.rating)
+        return HistoryOverviewSnapshot(
+            sessionCountText: "\(workouts.count)",
+            setCountText: "\(totalSets)",
+            exerciseCountText: "\(exercises.count)",
+            durationText: totalDuration > 0 ? formatDuration(totalDuration) : "No duration",
+            topSplitText: mostFrequent(workouts.map { baseSplitName($0.splitName) }) ?? "No split yet",
+            topExerciseText: mostFrequent(exercises.map(\.name)) ?? "No exercise yet",
+            averageRatingText: ratings.isEmpty
+                ? "No rating"
+                : (Double(ratings.reduce(0, +)) / Double(ratings.count)).formatted(.number.precision(.fractionLength(1)))
+        )
+    }
+
+    private static func calendarSummaries(
+        _ workouts: [HistoryWorkoutSnapshot],
+        calendar: Calendar
+    ) -> [HistoryCalendarDaySummary] {
+        Dictionary(grouping: workouts) { calendar.startOfDay(for: $0.date) }
+            .map { date, workouts in
+                let ordered = workouts.sorted { $0.date < $1.date }
+                let exercises = ordered.flatMap(loggedExercises)
+                let splitNames = ordered.map { baseSplitName($0.splitName) }
+                let completedSets = exercises.flatMap(\.sets).filter(\.completed).count
+                let duration = ordered.reduce(0) { $0 + durationSeconds($1) }
+                let ratings = ordered.compactMap(\.rating)
+                let ratingSummary: String? = {
+                    guard !ratings.isEmpty else { return nil }
+                    if ratings.count == 1 { return "\(ratings[0])/5 feel" }
+                    let average = Double(ratings.reduce(0, +)) / Double(ratings.count)
+                    return "avg \(average.formatted(.number.precision(.fractionLength(1))))/5 feel"
+                }()
+                let metrics = [
+                    collapsedSplitSummary(splitNames),
+                    duration > 0 ? formatDuration(duration) : nil,
+                    "\(completedSets) sets",
+                    "\(exercises.count) \(exercises.count == 1 ? "exercise" : "exercises")",
+                    ratingSummary
+                ].compactMap { $0 }.joined(separator: " · ")
+                let names = exercises.prefix(3).map(\.name)
+                return HistoryCalendarDaySummary(
+                    date: date,
+                    title: ordered.count == 1 ? (splitNames.first ?? "Workout") : "\(ordered.count) workouts logged",
+                    metricLine: metrics,
+                    helperLine: ordered.count == 1
+                        ? (names.isEmpty ? "No exercises logged" : names.joined(separator: ", "))
+                        : "Sessions: \(splitNames.joined(separator: ", "))",
+                    sessionCount: ordered.count
+                )
+            }
+            .sorted { $0.date < $1.date }
+    }
+
+    private static func durationSeconds(_ workout: HistoryWorkoutSnapshot) -> Int {
+        if let seconds = workout.durationSeconds { return seconds }
+        if let minutes = workout.durationMinutes { return minutes * 60 }
+        if let startedAt = workout.startedAt, let endedAt = workout.endedAt {
+            return max(0, Int(endedAt.timeIntervalSince(startedAt)))
+        }
+        return 0
+    }
+
+    private static func durationText(_ workout: HistoryWorkoutSnapshot) -> String? {
+        let seconds = durationSeconds(workout)
+        return seconds > 0 ? formatDuration(seconds) : nil
+    }
+
+    private static func formatDuration(_ seconds: Int) -> String {
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+        if hours > 0 { return "\(hours) hr \(minutes) min" }
+        if minutes > 0 { return "\(minutes) min" }
+        return "\(seconds) sec"
+    }
+
+    private static func ratingText(_ rating: Int?) -> String? {
+        switch rating {
+        case 1: "Rough"
+        case 2: "Okay"
+        case 3: "Good"
+        case 4: "Great"
+        case 5: "Excellent"
+        default: nil
+        }
+    }
+
+    private static func baseSplitName(_ name: String) -> String {
+        name.components(separatedBy: " - ").first ?? name
+    }
+
+    private static func mostFrequent(_ values: [String]) -> String? {
+        let nonEmptyValues = values.filter { !$0.isEmpty }
+        let groupedValues: [String: [String]] = Dictionary(grouping: nonEmptyValues, by: { $0 })
+        let valueCounts: [(value: String, count: Int)] = groupedValues.map { entry in
+            (value: entry.key, count: entry.value.count)
+        }
+        let sortedCounts = valueCounts.sorted { lhs, rhs in
+            lhs.count == rhs.count ? lhs.value < rhs.value : lhs.count > rhs.count
+        }
+        return sortedCounts.first?.value
+    }
+
+    private static func collapsedSplitSummary(_ names: [String]) -> String {
+        let nonEmptyNames = names.filter { !$0.isEmpty }
+        let groupedNames: [String: [String]] = Dictionary(grouping: nonEmptyNames, by: { $0 })
+        let unsortedCounts: [(name: String, count: Int)] = groupedNames.map { entry in
+            (name: entry.key, count: entry.value.count)
+        }
+        let counts = unsortedCounts.sorted { lhs, rhs in
+            lhs.count == rhs.count ? lhs.name < rhs.name : lhs.count > rhs.count
+        }
+        return counts.prefix(2)
+            .map { $0.count > 1 ? "\($0.name) x\($0.count)" : $0.name }
+            .joined(separator: " + ")
+    }
+}
+
 struct HistoryView: View {
-    @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
 
-    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    @Query
     private var sessions: [WorkoutSession]
 
     @State private var displayedMonth = Date()
+    @State private var selectedCalendarDate = Calendar.current.startOfDay(for: .now)
     @State private var filters = HistoryFilters()
     @State private var useDateRange = false
     @State private var showingFilters = false
-    @State private var pendingDeleteSessionID: UUID?
     @State private var selectedWorkoutDetailRoute: HistoryWorkoutDetailRoute?
     @State private var displaySnapshot = HistoryDisplaySnapshot.empty
-    @State private var lastDisplaySignature: String?
+    @State private var workoutSnapshots: [HistoryWorkoutSnapshot] = []
+    @State private var lastSessionGeneration = ""
     @State private var didRequestInitialRefresh = false
     @State private var displaySnapshotReady = false
+    @State private var historyScrollActive = false
+    @State private var historyRefreshPending = false
+    @State private var isWorkoutCompletionPresentationActive = false
+    @State private var isHistoryVisible = false
+    @State private var sourceSnapshotRefreshTask: Task<Void, Never>?
 
-    private let filterService = HistoryFilterService()
+    private let initialWarmSnapshot: HistoryWarmSnapshot?
+
+    init(startupSnapshot: HistoryWarmSnapshot? = nil) {
+        _sessions = Query(Self.sessionsDescriptor)
+        initialWarmSnapshot = startupSnapshot
+        _displaySnapshot = State(initialValue: startupSnapshot?.display ?? .empty)
+        _workoutSnapshots = State(initialValue: startupSnapshot?.workouts ?? [])
+        _lastSessionGeneration = State(
+            initialValue: startupSnapshot.map { Self.generation(for: $0.workouts) } ?? ""
+        )
+        _displaySnapshotReady = State(initialValue: startupSnapshot != nil)
+    }
+
+    private static var sessionsDescriptor: FetchDescriptor<WorkoutSession> {
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\WorkoutSession.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 120
+        return descriptor
+    }
 
     private var currentDisplaySnapshot: HistoryDisplaySnapshot {
         displaySnapshot
     }
 
-    private var displaySignature: String {
-        [
-            sessions.prefix(120).map { session in
-                let setSignature = session.exerciseLogs
-                    .flatMap(\.setLogs)
-                    .map { "\($0.id.uuidString):\($0.setNumber):\($0.weight):\($0.reps):\($0.completed)" }
-                    .joined(separator: ",")
-                return "\(session.id.uuidString):\(session.date.timeIntervalSince1970):\(session.endedAt?.timeIntervalSince1970 ?? 0):\(session.durationSeconds ?? 0):\(session.durationMinutes ?? 0):\(session.perceivedDifficulty ?? 0):\(session.notes ?? ""):\(setSignature)"
-            }.joined(separator: "|"),
-            filters.splitName ?? "all",
-            filters.exerciseNameQuery,
-            "\(filters.minimumRating ?? 0)",
-            "\(filters.startDate?.timeIntervalSince1970 ?? 0)",
-            "\(filters.endDate?.timeIntervalSince1970 ?? 0)"
-        ].joined(separator: "|")
+    private var sessionGeneration: String {
+        sessions.prefix(120).map {
+            "\($0.id.uuidString):\($0.splitNameSnapshot):\($0.date.timeIntervalSince1970):\($0.perceivedDifficulty ?? 0):\($0.durationSeconds ?? 0)"
+        }.joined(separator: "|")
+    }
+
+    private var sessionGenerationForObservation: String? {
+        isWorkoutCompletionPresentationActive || !isHistoryVisible ? nil : sessionGeneration
+    }
+
+    private static func generation(for workouts: [HistoryWorkoutSnapshot]) -> String {
+        workouts.map {
+            "\($0.id.uuidString):\($0.splitName):\($0.date.timeIntervalSince1970):\($0.rating ?? 0):\($0.durationSeconds ?? 0)"
+        }.joined(separator: "|")
     }
 
     private var sessionRows: [HistorySessionRowSnapshot] {
         currentDisplaySnapshot.sessionRows
     }
 
-    private var calendarLoggedDates: [Date] {
-        currentDisplaySnapshot.loggedDates
+    private var calendarDaySummaries: [HistoryCalendarDaySummary] {
+        currentDisplaySnapshot.calendarDaySummaries
     }
 
     private var splitOptions: [String] {
@@ -59,8 +333,12 @@ struct HistoryView: View {
             FitnessScreen {
                 HistoryOverviewCard(snapshot: currentDisplaySnapshot.overview, filtersActive: filters.isActive)
 
-                FitnessCard(style: .compact) {
-                    WorkoutCalendarView(displayedMonth: $displayedMonth, loggedDates: calendarLoggedDates)
+                FitnessCard(style: .compact, padding: 12) {
+                    WorkoutCalendarView(
+                        displayedMonth: $displayedMonth,
+                        selectedDate: $selectedCalendarDate,
+                        daySummaries: calendarDaySummaries
+                    )
                 }
                 .accessibilityIdentifier("history-calendar-card")
 
@@ -75,97 +353,123 @@ struct HistoryView: View {
                 } else {
                     ForEach(sessionRows) { row in
                         Button {
-                            AppHaptics.selection()
-                            PerformanceTracer.trace(.motionHistoryRowOpen) {
+                            PerformanceTracer.mark(.motionHistoryRowOpen, "session=\(row.id.uuidString)")
+                            NavigationInteraction.perform(
+                                key: "history.session.\(row.id.uuidString)",
+                                destinationClass: .deep,
+                                haptic: .selection
+                            ) {
                                 selectedWorkoutDetailRoute = HistoryWorkoutDetailRoute(sessionID: row.id)
                             }
                         } label: {
-                            FitnessCard(style: .compact) {
+                            HistoryScrollRowSurface {
                                 HistorySessionRowCard(row: row)
                             }
                         }
-                        .buttonStyle(PressableCardButtonStyle())
+                        .buttonStyle(HistoryScrollRowButtonStyle())
                         .accessibilityIdentifier("history-session-row")
-                        .destructiveSwipeAction {
-                            pendingDeleteSessionID = row.id
-                        }
                     }
                 }
             }
+            .accessibilityIdentifier("history-screen")
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 2)
+                    .onChanged { _ in
+                        guard !historyScrollActive else { return }
+                        historyScrollActive = true
+                        PerformanceTracer.mark(.historyScroll, "begin")
+                    }
+                    .onEnded { _ in
+                        guard historyScrollActive else { return }
+                        historyScrollActive = false
+                        PerformanceTracer.mark(.historyScroll, "end")
+                        if historyRefreshPending {
+                            historyRefreshPending = false
+                            scheduleSourceSnapshotRefresh()
+                        }
+                    }
+            )
             .navigationTitle("History")
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showingFilters) {
                 filterSheet
                     .presentationDetents([.medium, .large])
             }
-            .alert("Delete workout?", isPresented: deleteAlertBinding) {
-                Button("Cancel", role: .cancel) {
-                    pendingDeleteSessionID = nil
-                }
-                Button("Delete", role: .destructive) {
-                    deletePendingSession()
-                }
-            } message: {
-                Text("This removes the workout from history and progress trends.")
-            }
             .navigationDestination(item: $selectedWorkoutDetailRoute) { route in
                 WorkoutHistoryDetailRouteView(sessionID: route.sessionID)
-            }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showingFilters = true
-                    } label: {
-                        Label("Filters", systemImage: "line.3.horizontal.decrease.circle")
+                    .onAppear {
+                        NavigationInteraction.destinationDidAppear(
+                            key: "history.session.\(route.sessionID.uuidString)"
+                        )
                     }
-                    .accessibilityIdentifier("history-filter-button")
-                }
             }
         }
-        .accessibilityIdentifier("history-screen")
         .onAppear {
+            isHistoryVisible = true
             let shouldForceRefresh = !didRequestInitialRefresh
             didRequestInitialRefresh = true
-            DispatchQueue.main.async {
-                refreshDisplaySnapshot(force: shouldForceRefresh)
-            }
+            scheduleSourceSnapshotRefresh(force: shouldForceRefresh && initialWarmSnapshot == nil)
         }
-        .onChange(of: displaySignature) { _, _ in
+        .onChange(of: sessionGenerationForObservation) { _, generation in
+            guard generation != nil else { return }
+            scheduleSourceSnapshotRefresh()
+        }
+        .onChange(of: selectedWorkoutDetailRoute) { oldRoute, newRoute in
+            guard oldRoute != nil, newRoute == nil else { return }
+            scheduleSourceSnapshotRefresh(force: true)
+        }
+        .onChange(of: filters) { _, _ in
             refreshDisplaySnapshot()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .workoutCompletionPresentationBegan)) { _ in
+            isWorkoutCompletionPresentationActive = true
+            PerformanceTracer.mark(.workoutLoggerFinish, "history_refresh_suspended")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .workoutCompletionPresentationEnded)) { _ in
+            isWorkoutCompletionPresentationActive = false
+            PerformanceTracer.mark(.workoutLoggerFinish, "history_refresh_resumed")
+        }
+        .onDisappear {
+            isHistoryVisible = false
+            sourceSnapshotRefreshTask?.cancel()
+            sourceSnapshotRefreshTask = nil
         }
     }
 
-    private func refreshDisplaySnapshot(force: Bool = false) {
-        let signature = displaySignature
-        guard force || signature != lastDisplaySignature else { return }
+    private func scheduleSourceSnapshotRefresh(force: Bool = false) {
+        guard !historyScrollActive else {
+            historyRefreshPending = true
+            return
+        }
+        sourceSnapshotRefreshTask?.cancel()
+        sourceSnapshotRefreshTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled, isHistoryVisible else { return }
+            guard !historyScrollActive else {
+                historyRefreshPending = true
+                sourceSnapshotRefreshTask = nil
+                return
+            }
+            refreshSourceSnapshots(force: force)
+            sourceSnapshotRefreshTask = nil
+        }
+    }
+
+    private func refreshSourceSnapshots(force: Bool = false) {
+        let generation = sessionGeneration
+        guard force || generation != lastSessionGeneration else { return }
+        workoutSnapshots = sessions.prefix(120).map(HistoryWorkoutSnapshot.init)
+        lastSessionGeneration = generation
+        refreshDisplaySnapshot()
+    }
+
+    private func refreshDisplaySnapshot() {
         let nextSnapshot = PerformanceTracer.trace(.historyDisplaySnapshot) {
-            makeDisplaySnapshot()
+            HistoryDisplaySnapshotBuilder.build(workouts: workoutSnapshots, filters: filters)
         }
         AppMotion.withoutAnimation {
             displaySnapshot = nextSnapshot
-            lastDisplaySignature = signature
             displaySnapshotReady = true
-        }
-    }
-
-    private func makeDisplaySnapshot() -> HistoryDisplaySnapshot {
-        let filteredSessions = filterService.filter(sessions, using: filters)
-        let sessionRows = filteredSessions.map(rowSnapshot(for:))
-        return HistoryDisplaySnapshot(
-            sessionRows: sessionRows,
-            loggedDates: filteredSessions.map(\.date),
-            splitOptions: Array(Set(sessions.map { baseSplitName($0.splitNameSnapshot) })).sorted(),
-            overview: overviewSnapshot(for: filteredSessions)
-        )
-    }
-
-    private var deleteAlertBinding: Binding<Bool> {
-        Binding {
-            pendingDeleteSessionID != nil
-        } set: { showing in
-            if !showing {
-                pendingDeleteSessionID = nil
-            }
         }
     }
 
@@ -281,6 +585,7 @@ struct HistoryView: View {
                 .padding()
             }
             .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
+            .peaklineKeyboardDismissal()
             .navigationTitle("Filters")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -319,157 +624,6 @@ struct HistoryView: View {
         }
     }
 
-    private func rowSnapshot(for session: WorkoutSession) -> HistorySessionRowSnapshot {
-        let loggedExercises = loggedExerciseLogs(in: session)
-        let completedSetCount = loggedExercises.flatMap(\.setLogs).filter(\.completed).count
-        let topExerciseNames = loggedExercises.prefix(3).map(\.exerciseNameSnapshot)
-        let topExerciseSummary = topExerciseNames.isEmpty ? "No exercises logged" : topExerciseNames.joined(separator: ", ")
-
-        return HistorySessionRowSnapshot(
-            id: session.id,
-            splitName: session.splitNameSnapshot,
-            date: session.date,
-            dateText: session.date.formatted(date: .abbreviated, time: .shortened),
-            exerciseCountText: "\(loggedExercises.count)",
-            setCountText: "\(completedSetCount)",
-            durationText: durationText(for: session) ?? "No duration",
-            ratingText: ratingText(for: session.perceivedDifficulty),
-            topExerciseSummary: topExerciseSummary,
-            notesPreview: session.notes?.trimmingCharacters(in: .whitespacesAndNewlines)
-        )
-    }
-
-    private func overviewSnapshot(for filteredSessions: [WorkoutSession]) -> HistoryOverviewSnapshot {
-        let totalSets = filteredSessions.reduce(0) { partial, session in
-            partial + session.exerciseLogs.flatMap(\.setLogs).filter(\.completed).count
-        }
-        let totalExercises = filteredSessions.reduce(0) { partial, session in
-            partial + loggedExerciseLogs(in: session).count
-        }
-        let topSplit = mostFrequent(filteredSessions.map { baseSplitName($0.splitNameSnapshot) })
-        let topExercise = mostFrequent(filteredSessions.flatMap { loggedExerciseLogs(in: $0).map(\.exerciseNameSnapshot) })
-        let totalDurationSeconds = filteredSessions.reduce(0) { partial, session in
-            partial + durationSeconds(for: session)
-        }
-        let averageRating = averageRatingText(for: filteredSessions)
-
-        return HistoryOverviewSnapshot(
-            sessionCountText: "\(filteredSessions.count)",
-            setCountText: "\(totalSets)",
-            exerciseCountText: "\(totalExercises)",
-            durationText: totalDurationSeconds > 0 ? formatDuration(seconds: totalDurationSeconds) : "No duration",
-            topSplitText: topSplit ?? "No split yet",
-            topExerciseText: topExercise ?? "No exercise yet",
-            averageRatingText: averageRating ?? "No rating"
-        )
-    }
-
-    private func loggedExerciseLogs(in session: WorkoutSession) -> [ExerciseLog] {
-        session.exerciseLogs
-            .filter { exerciseLog in
-                exerciseLog.setLogs.contains { $0.completed || $0.weight > 0 || $0.reps > 0 || $0.rpe != nil }
-            }
-            .sorted { $0.orderIndex < $1.orderIndex }
-    }
-
-    private func durationSeconds(for session: WorkoutSession) -> Int {
-        if let durationSeconds = session.durationSeconds {
-            return durationSeconds
-        }
-
-        if let durationMinutes = session.durationMinutes {
-            return durationMinutes * 60
-        }
-
-        if let startedAt = session.startedAt, let endedAt = session.endedAt {
-            return max(0, Int(endedAt.timeIntervalSince(startedAt)))
-        }
-
-        return 0
-    }
-
-    private func durationText(for session: WorkoutSession) -> String? {
-        let seconds = durationSeconds(for: session)
-        guard seconds > 0 else { return nil }
-        return formatDuration(seconds: seconds)
-    }
-
-    private func formatDuration(seconds totalSeconds: Int) -> String {
-        let hours = totalSeconds / 3600
-        let minutes = (totalSeconds % 3600) / 60
-
-        if hours > 0 {
-            return "\(hours) hr \(minutes) min"
-        }
-
-        if minutes > 0 {
-            return "\(minutes) min"
-        }
-
-        return "\(totalSeconds) sec"
-    }
-
-    private func ratingText(for rating: Int?) -> String? {
-        guard let rating else { return nil }
-
-        switch rating {
-        case 1:
-            return "Rough"
-        case 2:
-            return "Okay"
-        case 3:
-            return "Good"
-        case 4:
-            return "Great"
-        case 5:
-            return "Excellent"
-        default:
-            return nil
-        }
-    }
-
-    private func averageRatingText(for sessions: [WorkoutSession]) -> String? {
-        let ratings = sessions.compactMap(\.perceivedDifficulty)
-        guard !ratings.isEmpty else { return nil }
-        let average = Double(ratings.reduce(0, +)) / Double(ratings.count)
-        return average.formatted(.number.precision(.fractionLength(1)))
-    }
-
-    private func mostFrequent(_ values: [String]) -> String? {
-        let trimmedValues = values
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        guard !trimmedValues.isEmpty else { return nil }
-
-        return Dictionary(grouping: trimmedValues, by: { $0 })
-            .map { (value: $0.key, count: $0.value.count) }
-            .sorted {
-                if $0.count == $1.count {
-                    return $0.value.localizedStandardCompare($1.value) == .orderedAscending
-                }
-                return $0.count > $1.count
-            }
-            .first?
-            .value
-    }
-
-    private func baseSplitName(_ splitNameSnapshot: String) -> String {
-        splitNameSnapshot.components(separatedBy: " - ").first ?? splitNameSnapshot
-    }
-
-    private func delete(_ session: WorkoutSession) {
-        modelContext.delete(session)
-        try? modelContext.save()
-    }
-
-    private func deletePendingSession() {
-        guard let pendingDeleteSessionID else { return }
-        defer { self.pendingDeleteSessionID = nil }
-
-        guard let pendingDeleteSession = sessions.first(where: { $0.id == pendingDeleteSessionID }) else { return }
-        delete(pendingDeleteSession)
-    }
-
     private var splitFilterBinding: Binding<String?> {
         Binding {
             filters.splitName
@@ -503,16 +657,16 @@ struct HistoryView: View {
     }
 }
 
-private struct HistoryDisplaySnapshot {
+struct HistoryDisplaySnapshot: Sendable {
     var sessionRows: [HistorySessionRowSnapshot]
-    var loggedDates: [Date]
+    var calendarDaySummaries: [HistoryCalendarDaySummary]
     var splitOptions: [String]
     var overview: HistoryOverviewSnapshot
 
-    static let empty = HistoryDisplaySnapshot(sessionRows: [], loggedDates: [], splitOptions: [], overview: .empty)
+    static let empty = HistoryDisplaySnapshot(sessionRows: [], calendarDaySummaries: [], splitOptions: [], overview: .empty)
 }
 
-private struct HistoryOverviewSnapshot: Hashable {
+struct HistoryOverviewSnapshot: Hashable, Sendable {
     let sessionCountText: String
     let setCountText: String
     let exerciseCountText: String
@@ -532,7 +686,7 @@ private struct HistoryOverviewSnapshot: Hashable {
     )
 }
 
-private struct HistorySessionRowSnapshot: Identifiable, Hashable {
+struct HistorySessionRowSnapshot: Identifiable, Hashable, Sendable {
     let id: UUID
     let splitName: String
     let date: Date
@@ -545,11 +699,57 @@ private struct HistorySessionRowSnapshot: Identifiable, Hashable {
     let notesPreview: String?
 }
 
+struct HistoryCalendarDaySummary: Identifiable, Hashable, Sendable {
+    let date: Date
+    let title: String
+    let metricLine: String
+    let helperLine: String
+    let sessionCount: Int
+
+    var id: Date {
+        date
+    }
+}
+
 private struct HistoryWorkoutDetailRoute: Identifiable, Hashable {
     let sessionID: UUID
 
     var id: UUID {
         sessionID
+    }
+}
+
+private struct HistoryScrollRowSurface<Content: View>: View {
+    @Environment(\.appTheme) private var appTheme
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        let shape = RoundedRectangle(
+            cornerRadius: appTheme.metrics.compactCardRadius,
+            style: .continuous
+        )
+        content
+            .padding(appTheme.metrics.compactCardPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(appTheme.cardBackground, in: shape)
+            .overlay {
+                shape.stroke(appTheme.cardBorder.opacity(0.54), lineWidth: 1)
+            }
+            .contentShape(shape)
+    }
+}
+
+private struct HistoryScrollRowButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.90 : 1)
+            .animation(AppMotion.buttonPress(reduceMotion: reduceMotion), value: configuration.isPressed)
     }
 }
 
@@ -560,67 +760,113 @@ private struct HistoryOverviewCard: View {
     let filtersActive: Bool
 
     var body: some View {
-        FitnessCard(style: .compact, padding: 12) {
-            VStack(alignment: .leading, spacing: 10) {
+        FitnessCard(style: .hero) {
+            VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 12) {
-                    FitnessIconBadge(systemImage: "chart.bar.xaxis", size: 32)
+                    FitnessIconBadge(systemImage: "chart.bar.xaxis", size: 38)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(filtersActive ? "Filtered training log" : "Training log")
-                            .font(.subheadline.weight(.semibold))
+                            .font(AppTypography.cardTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                         Text(filtersActive ? "Calendar and totals reflect active filters." : "Calendar, volume, and recent sessions in one view.")
-                            .font(AppTypography.metadata)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Spacer(minLength: 0)
                 }
 
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                    HistoryOverviewMetric(label: "Workouts", value: snapshot.sessionCountText, caption: snapshot.topSplitText, systemImage: "calendar.badge.checkmark")
-                    HistoryOverviewMetric(label: "Sets", value: snapshot.setCountText, caption: snapshot.durationText, systemImage: "number")
-                    HistoryOverviewMetric(label: "Exercises", value: snapshot.exerciseCountText, caption: snapshot.topExerciseText, systemImage: "figure.strengthtraining.traditional")
-                    HistoryOverviewMetric(label: "Avg rating", value: snapshot.averageRatingText, caption: "Session feel", systemImage: "star.fill")
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .bottom, spacing: 14) {
+                        HistoryOverviewPrimaryMetric(value: snapshot.sessionCountText)
+
+                        Divider()
+                            .overlay(appTheme.colors.cardBorder)
+                            .frame(height: 64)
+
+                        HStack(alignment: .bottom, spacing: 14) {
+                            HistoryOverviewSupportingMetric(label: "Sets", value: snapshot.setCountText)
+                            HistoryOverviewSupportingMetric(label: "Exercises", value: snapshot.exerciseCountText)
+                            HistoryOverviewSupportingMetric(label: "Rating", value: snapshot.averageRatingText)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        HistoryOverviewPrimaryMetric(value: snapshot.sessionCountText)
+
+                        Divider()
+                            .overlay(appTheme.colors.cardBorder)
+
+                        HStack(alignment: .bottom, spacing: 16) {
+                            HistoryOverviewSupportingMetric(label: "Sets", value: snapshot.setCountText)
+                            HistoryOverviewSupportingMetric(label: "Exercises", value: snapshot.exerciseCountText)
+                            HistoryOverviewSupportingMetric(label: "Rating", value: snapshot.averageRatingText)
+                        }
+                    }
                 }
+
+                Text(
+                    PeaklineText.joinedMetadata([
+                        "Top split: \(snapshot.topSplitText)",
+                        snapshot.durationText,
+                        "Most used: \(snapshot.topExerciseText)"
+                    ])
+                )
+                    .font(AppTypography.metadata)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .accessibilityIdentifier("history-overview-card")
     }
 }
 
-private struct HistoryOverviewMetric: View {
+private struct HistoryOverviewPrimaryMetric: View {
     @Environment(\.appTheme) private var appTheme
 
-    let label: String
     let value: String
-    let caption: String
-    let systemImage: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(label, systemImage: systemImage)
-                .font(AppTypography.metadataEmphasis)
-                .foregroundStyle(appTheme.colors.textSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-
+        VStack(alignment: .leading, spacing: 3) {
             Text(value)
-                .font(AppTypography.largeMetric)
+                .font(AppTypography.heroMetric)
                 .foregroundStyle(appTheme.colors.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
 
-            Text(caption)
+            Label("Workouts", systemImage: "calendar.badge.checkmark")
+                .font(AppTypography.metadataEmphasis)
+                .foregroundStyle(appTheme.colors.textSecondary)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct HistoryOverviewSupportingMetric: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(value)
+                .font(AppTypography.largeMetric)
+                .foregroundStyle(appTheme.colors.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.64)
+
+            Text(label)
                 .font(AppTypography.metadata)
                 .foregroundStyle(appTheme.colors.textSecondary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.72)
         }
-        .frame(maxWidth: .infinity, minHeight: 58, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -657,8 +903,8 @@ private struct HistorySessionRowCard: View {
                         Label(ratingText, systemImage: "star.fill")
                             .font(AppTypography.metadataEmphasis)
                             .foregroundStyle(appTheme.colors.accent)
-                            .padding(.horizontal, 9)
                             .padding(.vertical, 5)
+                            .frame(width: 108)
                             .background(appTheme.colors.accentSurface, in: Capsule())
                     }
                 }
@@ -718,23 +964,56 @@ private struct HistoryRowMetric: View {
 
 private struct WorkoutCalendarView: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @Binding var displayedMonth: Date
-    let loggedDates: [Date]
+    @Binding var selectedDate: Date
+    let daySummaries: [HistoryCalendarDaySummary]
+
+    @State private var isMonthExpanded = false
 
     private let calendar = Calendar.current
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
+    private let columns = Array(repeating: GridItem(.flexible(minimum: 30), spacing: 4), count: 7)
     private let weekdays = ["M", "T", "W", "T", "F", "S", "S"]
 
-    private var loggedDays: Set<Date> {
-        Set(loggedDates.map { calendar.startOfDay(for: $0) })
+    private var daySummaryByDate: [Date: HistoryCalendarDaySummary] {
+        daySummaries.reduce(into: [:]) { partial, summary in
+            partial[calendar.startOfDay(for: summary.date)] = summary
+        }
     }
 
     private var monthTitle: String {
         displayedMonth.formatted(.dateTime.month(.wide).year())
     }
 
-    private var monthDays: [Date?] {
+    private var monthWorkoutCount: Int {
+        daySummaries
+            .filter { calendar.isDate($0.date, equalTo: displayedMonth, toGranularity: .month) }
+            .reduce(0) { $0 + $1.sessionCount }
+    }
+
+    private var monthActivityText: String {
+        switch monthWorkoutCount {
+        case 0:
+            return "No workouts this month"
+        case 1:
+            return "1 workout this month"
+        default:
+            return "\(monthWorkoutCount) workouts this month"
+        }
+    }
+
+    private var selectedDaySummary: HistoryCalendarDaySummary? {
+        daySummaryByDate[calendar.startOfDay(for: selectedDate)]
+    }
+
+    private var shouldShowTodayButton: Bool {
+        let today = Date()
+        return !calendar.isDate(selectedDate, inSameDayAs: today)
+            || !calendar.isDate(displayedMonth, equalTo: today, toGranularity: .month)
+    }
+
+    private var monthDays: [HistoryCalendarDayViewModel?] {
         guard
             let monthInterval = calendar.dateInterval(of: .month, for: displayedMonth),
             let dayRange = calendar.range(of: .day, in: .month, for: displayedMonth)
@@ -742,101 +1021,413 @@ private struct WorkoutCalendarView: View {
 
         let firstWeekday = calendar.component(.weekday, from: monthInterval.start)
         let leadingEmptyDays = (firstWeekday + 5) % 7
-        let days = dayRange.compactMap { day -> Date? in
-            calendar.date(byAdding: .day, value: day - 1, to: monthInterval.start)
+        let summariesByDate = daySummaryByDate
+        let days = dayRange.compactMap { day -> HistoryCalendarDayViewModel? in
+            guard let date = calendar.date(byAdding: .day, value: day - 1, to: monthInterval.start) else {
+                return nil
+            }
+
+            let day = calendar.startOfDay(for: date)
+            return HistoryCalendarDayViewModel(date: day, summary: summariesByDate[day])
+        }
+        let trailingEmptyDays = (7 - ((leadingEmptyDays + days.count) % 7)) % 7
+
+        return Array(repeating: nil, count: leadingEmptyDays) + days + Array(repeating: nil, count: trailingEmptyDays)
+    }
+
+    private var selectedWeekDays: [HistoryCalendarDayViewModel?] {
+        let selectedStart = calendar.startOfDay(for: selectedDate)
+        let weekday = calendar.component(.weekday, from: selectedStart)
+        let daysFromMonday = (weekday + 5) % 7
+        guard let monday = calendar.date(byAdding: .day, value: -daysFromMonday, to: selectedStart) else {
+            return []
         }
 
-        return Array(repeating: nil, count: leadingEmptyDays) + days
+        return (0..<7).compactMap { offset -> HistoryCalendarDayViewModel? in
+            guard let date = calendar.date(byAdding: .day, value: offset, to: monday) else { return nil }
+            let day = calendar.startOfDay(for: date)
+            return HistoryCalendarDayViewModel(date: day, summary: daySummaryByDate[day])
+        }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Button {
-                    moveMonth(by: -1)
-                } label: {
-                    Image(systemName: "chevron.left")
-                }
-                .buttonStyle(.borderless)
+        let visibleDays = isMonthExpanded ? monthDays : selectedWeekDays
 
-                Spacer()
+        VStack(alignment: .leading, spacing: appTheme.metrics.spacing12) {
+            calendarHeader
 
-                Text(monthTitle)
-                    .font(.headline)
-
-                Spacer()
-
-                Button {
-                    moveMonth(by: 1)
-                } label: {
-                    Image(systemName: "chevron.right")
-                }
-                .buttonStyle(.borderless)
-            }
-
-            LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(Array(weekdays.enumerated()), id: \.offset) { _, weekday in
+            LazyVGrid(columns: columns, spacing: appTheme.metrics.spacing6) {
+                ForEach(Array(weekdays.enumerated()), id: \.offset) { index, weekday in
                     Text(weekday)
-                        .font(.caption)
+                        .font(AppTypography.badge)
                         .foregroundStyle(appTheme.colors.textSecondary)
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, minHeight: 18)
+                        .accessibilityLabel(weekdayAccessibilityLabels[index])
                 }
 
-                ForEach(Array(monthDays.enumerated()), id: \.offset) { _, date in
+                ForEach(Array(visibleDays.enumerated()), id: \.offset) { _, date in
                     if let date {
                         CalendarDayCell(
-                            date: date,
-                            isLogged: loggedDays.contains(calendar.startOfDay(for: date)),
-                            isToday: calendar.isDateInToday(date)
-                        )
+                            date: date.date,
+                            summary: date.summary,
+                            isSelected: calendar.isDate(date.date, inSameDayAs: selectedDate),
+                            isToday: calendar.isDateInToday(date.date)
+                        ) {
+                            select(date.date)
+                        }
                     } else {
                         Color.clear
-                            .frame(height: 24)
+                            .frame(minHeight: appTheme.metrics.minimumHitTarget + appTheme.metrics.spacing4)
+                            .accessibilityHidden(true)
                     }
                 }
             }
+
+            Divider()
+                .overlay(appTheme.colors.cardBorder)
+
+            HistorySelectedDaySummaryView(date: selectedDate, summary: selectedDaySummary)
         }
         .padding(.vertical, 2)
     }
 
+    private var calendarHeader: some View {
+        HStack(spacing: appTheme.metrics.spacing10) {
+            monthButton(systemImage: "chevron.left") {
+                moveMonth(by: -1)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(monthTitle)
+                    .font(AppTypography.compactCardTitle)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+
+                Text(monthActivityText)
+                    .font(AppTypography.metadata)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if shouldShowTodayButton {
+                Button {
+                    resetToToday()
+                } label: {
+                    Image(systemName: "location.fill")
+                        .font(AppTypography.metadataEmphasis)
+                        .foregroundStyle(appTheme.colors.accent)
+                        .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
+                        .background(
+                            appTheme.colors.accentSurface,
+                            in: RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
+                                .stroke(appTheme.colors.accent.opacity(0.26), lineWidth: 1)
+                        }
+                }
+                .buttonStyle(PressableCardButtonStyle())
+                .accessibilityLabel("Show today")
+            }
+
+            Button {
+                withAnimation(AppMotion.modeChange(reduceMotion: reduceMotion)) {
+                    isMonthExpanded.toggle()
+                }
+            } label: {
+                Image(systemName: isMonthExpanded ? "rectangle.compress.vertical" : "calendar")
+                    .font(AppTypography.metadataEmphasis)
+                    .foregroundStyle(isMonthExpanded ? appTheme.colors.accent : appTheme.colors.textPrimary)
+                    .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
+                    .background(
+                        isMonthExpanded ? appTheme.colors.accentSurface : appTheme.elevatedCardBackground,
+                        in: RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
+                            .stroke(
+                                isMonthExpanded ? appTheme.colors.accent.opacity(0.26) : appTheme.colors.cardBorder.opacity(0.56),
+                                lineWidth: 1
+                            )
+                    }
+            }
+            .buttonStyle(PressableCardButtonStyle())
+            .accessibilityLabel(isMonthExpanded ? "Show selected week" : "Show full month")
+            .accessibilityIdentifier("history-calendar-view-toggle")
+
+            monthButton(systemImage: "chevron.right") {
+                moveMonth(by: 1)
+            }
+        }
+    }
+
+    private var weekdayAccessibilityLabels: [String] {
+        ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    }
+
+    private func monthButton(systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(appTheme.colors.textPrimary)
+                .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
+                .background(
+                    appTheme.elevatedCardBackground,
+                    in: RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
+                        .stroke(appTheme.colors.cardBorder.opacity(0.56), lineWidth: 1)
+                }
+        }
+        .buttonStyle(PressableCardButtonStyle())
+        .accessibilityLabel(systemImage == "chevron.left" ? "Previous month" : "Next month")
+    }
+
+    private func select(_ date: Date) {
+        AppHaptics.selection()
+        withAnimation(AppMotion.chipSelect(reduceMotion: reduceMotion)) {
+            selectedDate = calendar.startOfDay(for: date)
+        }
+    }
+
     private func moveMonth(by value: Int) {
-        displayedMonth = calendar.date(byAdding: .month, value: value, to: displayedMonth) ?? displayedMonth
+        guard let nextMonth = calendar.date(byAdding: .month, value: value, to: displayedMonth) else { return }
+
+        AppHaptics.selection()
+        withAnimation(AppMotion.modeChange(reduceMotion: reduceMotion)) {
+            displayedMonth = nextMonth
+            selectedDate = preferredSelectedDate(in: nextMonth)
+        }
+    }
+
+    private func resetToToday() {
+        let today = Date()
+        AppHaptics.selection()
+        withAnimation(AppMotion.chipSelect(reduceMotion: reduceMotion)) {
+            displayedMonth = today
+            selectedDate = calendar.startOfDay(for: today)
+        }
+    }
+
+    private func preferredSelectedDate(in month: Date) -> Date {
+        let today = Date()
+        if calendar.isDate(month, equalTo: today, toGranularity: .month) {
+            return calendar.startOfDay(for: today)
+        }
+
+        guard
+            let monthInterval = calendar.dateInterval(of: .month, for: month),
+            let dayRange = calendar.range(of: .day, in: .month, for: month)
+        else {
+            return calendar.startOfDay(for: month)
+        }
+
+        let requestedDay = min(max(1, calendar.component(.day, from: selectedDate)), dayRange.count)
+        let adjustedDate = calendar.date(byAdding: .day, value: requestedDay - 1, to: monthInterval.start) ?? monthInterval.start
+        return calendar.startOfDay(for: adjustedDate)
+    }
+}
+
+private struct HistoryCalendarDayViewModel: Identifiable, Hashable {
+    let date: Date
+    let summary: HistoryCalendarDaySummary?
+
+    var id: Date {
+        date
     }
 }
 
 private struct CalendarDayCell: View {
     @Environment(\.appTheme) private var appTheme
+
     let date: Date
-    let isLogged: Bool
+    let summary: HistoryCalendarDaySummary?
+    let isSelected: Bool
     let isToday: Bool
+    let onSelect: () -> Void
 
     private var dayNumber: String {
         String(Calendar.current.component(.day, from: date))
     }
 
+    private var isLogged: Bool {
+        summary != nil
+    }
+
+    private var tokenSize: CGFloat {
+        appTheme.metrics.minimumHitTarget
+    }
+
     var body: some View {
+        Button(action: onSelect) {
+            ZStack {
+                dayToken
+
+                dayText
+                    .padding(.horizontal, appTheme.metrics.spacing2)
+            }
+            .frame(width: tokenSize, height: tokenSize)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: tokenSize + appTheme.metrics.spacing4
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableCardButtonStyle())
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var dayText: some View {
         Text(dayNumber)
-            .font(.subheadline.weight(isLogged ? .semibold : .regular))
-            .foregroundStyle(isLogged ? appTheme.colors.accentForeground : appTheme.colors.textPrimary)
-            .frame(maxWidth: .infinity)
-            .frame(height: 24)
-            .background {
-                if isLogged {
-                    Circle().fill(appTheme.colors.accent)
-                } else if isToday {
-                    Circle().stroke(appTheme.colors.textTertiary, lineWidth: 1)
+            .font(.system(.body, design: .rounded).weight(isSelected || isLogged ? .bold : .semibold))
+            .monospacedDigit()
+            .foregroundStyle(dayForeground)
+            .lineLimit(1)
+            .minimumScaleFactor(0.78)
+    }
+
+    private var dayToken: some View {
+        RoundedRectangle(cornerRadius: appTheme.metrics.radius12, style: .continuous)
+            .fill(backgroundColor)
+            .overlay {
+                RoundedRectangle(cornerRadius: appTheme.metrics.radius12, style: .continuous)
+                    .stroke(strokeColor, lineWidth: strokeWidth)
+            }
+            .frame(width: tokenSize, height: tokenSize)
+    }
+
+    private var dayForeground: Color {
+        if isSelected { return appTheme.colors.accentForeground }
+        if isToday { return appTheme.colors.accent }
+        return appTheme.colors.textPrimary
+    }
+
+    private var backgroundColor: Color {
+        if isSelected { return appTheme.colors.accent }
+        if isLogged { return appTheme.colors.accentSurface }
+        if isToday { return appTheme.elevatedCardBackground }
+        return .clear
+    }
+
+    private var strokeColor: Color {
+        if isSelected { return appTheme.colors.accentHighlight.opacity(0.86) }
+        if isToday { return appTheme.colors.accent.opacity(0.55) }
+        if isLogged { return appTheme.colors.accent.opacity(0.18) }
+        return .clear
+    }
+
+    private var strokeWidth: CGFloat {
+        isSelected || isToday || isLogged ? 1 : 0
+    }
+
+    private var accessibilityLabel: String {
+        let dateText = date.formatted(.dateTime.weekday(.wide).month(.wide).day())
+        let stateText = [
+            isSelected ? "selected" : nil,
+            isToday ? "today" : nil,
+            isLogged ? "Workout logged" : "No workout logged"
+        ]
+            .compactMap { $0 }
+            .joined(separator: ", ")
+        return "\(dateText), \(stateText)"
+    }
+}
+
+private struct HistorySelectedDaySummaryView: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let date: Date
+    let summary: HistoryCalendarDaySummary?
+
+    private var dateText: String {
+        date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: appTheme.metrics.spacing10) {
+            FitnessIconBadge(
+                systemImage: summary == nil ? "calendar" : "figure.strengthtraining.traditional",
+                size: 34,
+                tint: summary == nil ? appTheme.colors.textSecondary : appTheme.colors.accent,
+                background: summary == nil ? appTheme.elevatedCardBackground : appTheme.colors.accentSurface
+            )
+
+            VStack(alignment: .leading, spacing: appTheme.metrics.spacing4) {
+                Text(dateText)
+                    .font(AppTypography.metadataEmphasis)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .lineLimit(1)
+
+                Text(summary?.title ?? "No workout logged")
+                    .font(AppTypography.compactCardTitle)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(summary?.metricLine ?? "Rest, recovery, or an unlogged training day.")
+                    .font(AppTypography.bodyEmphasis)
+                    .foregroundStyle(summary == nil ? appTheme.colors.textSecondary : appTheme.colors.accent)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.84)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let helperLine = summary?.helperLine, !helperLine.isEmpty {
+                    Text(helperLine)
+                        .font(AppTypography.metadata)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, appTheme.metrics.spacing4)
+        .padding(.vertical, appTheme.metrics.spacing2)
     }
 }
 
 private struct WorkoutHistoryDetailRouteView: View {
+    @Environment(\.modelContext) private var modelContext
+
     let sessionID: UUID
 
-    @Query private var sessions: [WorkoutSession]
+    @State private var session: WorkoutSession?
+    @State private var didResolveSession = false
 
-    init(sessionID: UUID) {
-        self.sessionID = sessionID
+    var body: some View {
+        Group {
+            if let session {
+                WorkoutHistoryDetailView(session: session)
+            } else if didResolveSession {
+                FitnessScreen(
+                    title: "Workout",
+                    subtitle: "This workout is no longer available.",
+                    systemImage: "clock.badge.questionmark"
+                ) {
+                    DashboardEmptyStateCard(
+                        title: "Workout unavailable",
+                        message: "It may have been deleted from history.",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                }
+            } else {
+                Color.clear
+                    .ignoresSafeArea()
+            }
+        }
+        .task(id: sessionID) {
+            resolveSession()
+        }
+    }
+
+    @MainActor
+    private func resolveSession() {
+        guard !didResolveSession else { return }
 
         var descriptor = FetchDescriptor<WorkoutSession>(
             predicate: #Predicate<WorkoutSession> { session in
@@ -845,25 +1436,9 @@ private struct WorkoutHistoryDetailRouteView: View {
             sortBy: [SortDescriptor(\.date, order: .reverse)]
         )
         descriptor.fetchLimit = 1
-        _sessions = Query(descriptor)
-    }
 
-    var body: some View {
-        if let session = sessions.first {
-            WorkoutHistoryDetailView(session: session)
-        } else {
-            FitnessScreen(
-                title: "Workout",
-                subtitle: "This workout is no longer available.",
-                systemImage: "clock.badge.questionmark"
-            ) {
-                DashboardEmptyStateCard(
-                    title: "Workout unavailable",
-                    message: "It may have been deleted from history.",
-                    systemImage: "exclamationmark.triangle"
-                )
-            }
-        }
+        session = try? modelContext.fetch(descriptor).first
+        didResolveSession = true
     }
 }
 
@@ -872,21 +1447,25 @@ private struct WorkoutHistoryDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
     @Bindable var session: WorkoutSession
-    @State private var previewSplit: WorkoutPreviewSplit?
+    @State private var previewRoute: WorkoutPreviewPreparedRoute?
     @State private var reopenedSession: WorkoutSession?
     @State private var showingTemplateSave = false
     @State private var showingReopenConfirmation = false
     @State private var showingDeleteConfirmation = false
-
-    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
-    private var completedSessions: [WorkoutSession]
+    @State private var editRoute: HistoryWorkoutEditRoute?
+    @State private var sessionPRs: [PRRecord] = []
+    @State private var didPrepareSessionPRs = false
 
     private let reuseBuilder = WorkoutReuseBuilder()
     private let reopenService = WorkoutSessionReopenService()
-    private let analytics = TrainingAnalyticsService()
 
-    private var sessionPRs: [PRRecord] {
-        analytics.prs(for: session, in: completedSessions)
+    private static var completedSessionsDescriptor: FetchDescriptor<WorkoutSession> {
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 120
+        return descriptor
     }
 
     private var orderedExerciseLogs: [ExerciseLog] {
@@ -905,7 +1484,142 @@ private struct WorkoutHistoryDetailView: View {
         orderedExerciseLogs.filter { !hasLoggedSets($0) }
     }
 
+    private var isChildRouteActive: Bool {
+        previewRoute != nil || reopenedSession != nil || editRoute != nil
+    }
+
     var body: some View {
+        Group {
+            if isChildRouteActive {
+                appTheme.colors.backgroundPrimary
+                    .ignoresSafeArea()
+            } else {
+                detailList
+            }
+        }
+        .navigationTitle(session.splitNameSnapshot)
+        .task(id: session.id) {
+            await prepareSessionPRsIfNeeded()
+        }
+        .navigationDestination(item: $previewRoute) { route in
+            WorkoutPreviewRouteView(preparedRoute: route)
+                .onAppear {
+                    NavigationInteraction.destinationDidAppear(
+                        key: "history.preview.\(route.split.id.uuidString)"
+                    )
+                }
+        }
+        .navigationDestination(item: $reopenedSession) { session in
+            WorkoutLoggerView(session: session)
+                .onAppear {
+                    NavigationInteraction.destinationDidAppear(
+                        key: "history.reopen.\(session.id.uuidString)"
+                    )
+                }
+        }
+        .navigationDestination(item: $editRoute) { route in
+            if route.sessionID == session.id {
+                WorkoutLoggerView(session: session, isEditingCompletedWorkout: true)
+                    .onAppear {
+                        NavigationInteraction.destinationDidAppear(
+                            key: "history.edit.\(route.sessionID.uuidString)"
+                        )
+                    }
+            }
+        }
+        .sheet(isPresented: $showingTemplateSave) {
+            WorkoutTemplateSaveSheet(session: session)
+                .onAppear {
+                    NavigationInteraction.destinationDidAppear(
+                        key: "history.template.\(session.id.uuidString)"
+                    )
+                }
+        }
+        .alert("Reopen this workout?", isPresented: $showingReopenConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Reopen") {
+                reopenWorkout()
+            }
+        } message: {
+            Text("This moves it back into the live workout logger so you can add or edit sets before finishing again.")
+        }
+        .alert("Delete workout?", isPresented: $showingDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                deleteWorkout()
+            }
+        } message: {
+            Text("This removes the workout from history and progress trends.")
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .bottomBar) {
+                Button {
+                    let split = reuseBuilder.previewSplit(from: session)
+                    let preparedRoute = WorkoutPreviewWarmStartStore.shared.prepareRoute(
+                        for: split,
+                        initialMode: .full
+                    )
+                    PerformanceTracer.mark(.previewRouteTap, "source=history split=\(split.name) mode=\(WorkoutMode.full.rawValue)")
+                    NavigationInteraction.perform(
+                        key: "history.preview.\(split.id.uuidString)",
+                        destinationClass: .warm,
+                        haptic: .selection
+                    ) {
+                        previewRoute = preparedRoute
+                    }
+                } label: {
+                    Label("Repeat", systemImage: "repeat")
+                }
+
+                Button {
+                    NavigationInteraction.perform(
+                        key: "history.template.\(session.id.uuidString)",
+                        destinationClass: .deep,
+                        haptic: .selection
+                    ) {
+                        showingTemplateSave = true
+                    }
+                } label: {
+                    Label("Save Template", systemImage: "rectangle.stack.badge.plus")
+                }
+            }
+
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button {
+                    NavigationInteraction.perform(
+                        key: "history.edit.\(session.id.uuidString)",
+                        destinationClass: .deep,
+                        haptic: .selection
+                    ) {
+                        editRoute = HistoryWorkoutEditRoute(sessionID: session.id)
+                    }
+                } label: {
+                    Label("Edit", systemImage: "pencil")
+                }
+                .accessibilityIdentifier("history-workout-edit")
+
+                Menu {
+                    Button(role: .destructive) {
+                        showingDeleteConfirmation = true
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                } label: {
+                    Label("Workout actions", systemImage: "ellipsis.circle")
+                }
+                .accessibilityLabel("Workout actions")
+            }
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    showingReopenConfirmation = true
+                } label: {
+                    Label("Reopen", systemImage: "arrow.uturn.backward.circle")
+                }
+            }
+        }
+    }
+
+    private var detailList: some View {
         List {
             Section {
                 HistoryDetailHero(
@@ -959,78 +1673,36 @@ private struct WorkoutHistoryDetailView: View {
                 }
             }
         }
-        .scrollContentBackground(.hidden)
-        .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
+        .peaklineGroupedContent()
         .listSectionSpacing(12)
-        .navigationTitle(session.splitNameSnapshot)
-        .navigationDestination(item: $previewSplit) { split in
-            WorkoutPreviewRouteView(split: split, initialMode: .full)
-        }
-        .navigationDestination(item: $reopenedSession) { session in
-            WorkoutLoggerView(session: session)
-        }
-        .sheet(isPresented: $showingTemplateSave) {
-            WorkoutTemplateSaveSheet(session: session)
-        }
-        .alert("Reopen this workout?", isPresented: $showingReopenConfirmation) {
-            Button("Cancel", role: .cancel) {}
-            Button("Reopen") {
-                reopenWorkout()
-            }
-        } message: {
-            Text("This moves it back into the live workout logger so you can add or edit sets before finishing again.")
-        }
-        .alert("Delete workout?", isPresented: $showingDeleteConfirmation) {
-            Button("Cancel", role: .cancel) {}
-            Button("Delete", role: .destructive) {
-                deleteWorkout()
-            }
-        } message: {
-            Text("This removes the workout from history and progress trends.")
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .bottomBar) {
-                Button {
-                    let split = reuseBuilder.previewSplit(from: session)
-                    PerformanceTracer.mark(.previewRouteTap, "source=history split=\(split.name) mode=\(WorkoutMode.full.rawValue)")
-                    previewSplit = split
-                } label: {
-                    Label("Repeat", systemImage: "repeat")
-                }
+    }
 
-                Button {
-                    showingTemplateSave = true
-                } label: {
-                    Label("Save Template", systemImage: "rectangle.stack.badge.plus")
-                }
-            }
+    @MainActor
+    private func prepareSessionPRsIfNeeded() async {
+        guard !didPrepareSessionPRs else { return }
+        didPrepareSessionPRs = true
 
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                NavigationLink {
-                    WorkoutLoggerView(session: session, isEditingCompletedWorkout: true)
-                } label: {
-                    Label("Edit", systemImage: "pencil")
-                }
-
-                Menu {
-                    Button(role: .destructive) {
-                        showingDeleteConfirmation = true
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
-                } label: {
-                    Label("Workout actions", systemImage: "ellipsis.circle")
-                }
-                .accessibilityLabel("Workout actions")
-            }
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    showingReopenConfirmation = true
-                } label: {
-                    Label("Reopen", systemImage: "arrow.uturn.backward.circle")
-                }
-            }
+        let sessionID = session.id
+        let snapshots: [WorkoutAnalyticsSession]
+        do {
+            let completedSessions = try modelContext.fetch(Self.completedSessionsDescriptor)
+            snapshots = try WorkoutAnalyticsSnapshotBuilder.snapshots(
+                from: completedSessions,
+                in: modelContext
+            )
+        } catch {
+            sessionPRs = []
+            return
         }
+
+        let records = await Task.detached(priority: .userInitiated) {
+            TrainingAnalyticsService()
+                .prTimeline(from: snapshots)
+                .filter { $0.sessionId == sessionID }
+        }.value
+
+        guard !Task.isCancelled else { return }
+        sessionPRs = records
     }
 
     private func hasLoggedSets(_ exerciseLog: ExerciseLog) -> Bool {
@@ -1081,7 +1753,13 @@ private struct WorkoutHistoryDetailView: View {
     private func reopenWorkout() {
         reopenService.reopen(session)
         try? modelContext.save()
-        reopenedSession = session
+        NavigationInteraction.perform(
+            key: "history.reopen.\(session.id.uuidString)",
+            destinationClass: .warm,
+            haptic: .medium
+        ) {
+            reopenedSession = session
+        }
     }
 
     private func formatDuration(seconds totalSeconds: Int) -> String {
@@ -1099,6 +1777,12 @@ private struct WorkoutHistoryDetailView: View {
 
         return "\(seconds) sec"
     }
+}
+
+private struct HistoryWorkoutEditRoute: Identifiable, Hashable {
+    let sessionID: UUID
+
+    var id: UUID { sessionID }
 }
 
 private struct HistoryDetailHero: View {
@@ -1217,7 +1901,7 @@ private struct ExerciseHistorySummary: View {
                         HStack {
                             Text("Set \(set.setNumber)")
                             Spacer()
-                            Text("\(formatWeight(set.weight))kg x \(set.reps)")
+                            Text(PeaklineText.loadReps(weight: formatWeight(set.weight), reps: set.reps))
                                 .font(.headline)
                             if let rpe = set.rpe {
                                 Text("RPE \(formatWeight(rpe))")

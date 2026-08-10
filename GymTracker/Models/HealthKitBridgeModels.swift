@@ -163,14 +163,6 @@ struct HealthKitFoodLogSyncRecord: Identifiable, Codable, Equatable {
     static let currentSyncVersion = 1
 }
 
-struct HealthKitFoodLogSyncResult: Equatable {
-    var foodLogEntryId: UUID
-    var status: HealthKitSyncStatus
-    var sampleIdentifiers: [String]
-    var syncedAt: Date?
-    var errorMessage: String?
-}
-
 struct HealthKitSyncSummary: Equatable {
     var attempted: Int = 0
     var synced: Int = 0
@@ -203,17 +195,4 @@ struct HealthKitDailyContext: Codable, Equatable {
     var hasAnyValue: Bool {
         bodyMassKg != nil || activeEnergyKcal != nil || stepCount != nil || workoutCount != nil
     }
-}
-
-struct HealthKitDailyMetric: Identifiable, Equatable {
-    var id = UUID()
-    var date: Date
-    var value: Double
-    var unit: String
-}
-
-struct HealthKitBodyMassSample: Identifiable, Equatable {
-    var id = UUID()
-    var date: Date
-    var kilograms: Double
 }

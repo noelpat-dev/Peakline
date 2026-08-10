@@ -2,14 +2,26 @@ import Foundation
 
 struct LocalBackupExportService {
     private let appName = "Peakline"
-    private let schemaVersion = 1
+    private let schemaVersion = 2
 
     func exportJSON(
         workouts: [WorkoutSession],
         exercises: [Exercise],
         splits: [TrainingSplit]
     ) throws -> URL {
-        let envelope = PeaklineExportEnvelope(
+        let envelope = makeEnvelope(workouts: workouts, exercises: exercises, splits: splits)
+        let data = try encode(envelope)
+        let url = exportURL(prefix: "Peakline-Workout-Backup", fileExtension: "json")
+        try data.write(to: url, options: [.atomic])
+        return url
+    }
+
+    func makeEnvelope(
+        workouts: [WorkoutSession],
+        exercises: [Exercise],
+        splits: [TrainingSplit]
+    ) -> PeaklineExportEnvelope {
+        PeaklineExportEnvelope(
             schemaVersion: schemaVersion,
             exportedAt: Date(),
             appName: appName,
@@ -24,15 +36,19 @@ struct LocalBackupExportService {
                 .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
                 .map(TrainingSplitExportDTO.init)
         )
+    }
 
+    func encode(_ envelope: PeaklineExportEnvelope) throws -> Data {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try encoder.encode(envelope)
+    }
 
-        let data = try encoder.encode(envelope)
-        let url = exportURL(prefix: "Peakline-Workout-Backup", fileExtension: "json")
-        try data.write(to: url, options: [.atomic])
-        return url
+    func decodeEnvelope(from data: Data) throws -> PeaklineExportEnvelope {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(PeaklineExportEnvelope.self, from: data)
     }
 
     func exportCSV(workouts: [WorkoutSession]) throws -> URL {
@@ -74,7 +90,11 @@ private extension WorkoutSessionExportDTO {
         endedAt = session.endedAt
         durationMinutes = session.durationMinutes
         durationSeconds = session.durationSeconds
+        pausedAt = session.pausedAt
+        accumulatedPausedSeconds = session.accumulatedPausedSeconds
         perceivedDifficulty = session.perceivedDifficulty
+        energyLevel = session.energyLevel
+        sorenessLevel = session.sorenessLevel
         notes = session.notes
         completed = session.completed
         exerciseLogs = session.exerciseLogs
@@ -134,6 +154,7 @@ private extension TrainingSplitExportDTO {
         createdAt = split.createdAt
         updatedAt = split.updatedAt
         isActive = split.isActive
+        activeRotationIndex = split.activeRotationIndex
         daysPerWeek = split.daysPerWeek
         exercises = split.exercises
             .sorted { $0.orderIndex < $1.orderIndex }

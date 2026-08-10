@@ -54,8 +54,15 @@ struct HealthKitSyncStateStore {
     }
 
     func save(_ record: HealthKitFoodLogSyncRecord) {
+        save([record])
+    }
+
+    func save(_ updatedRecords: [HealthKitFoodLogSyncRecord]) {
+        guard !updatedRecords.isEmpty else { return }
         var records = loadRecords()
-        records[record.foodLogEntryId.uuidString] = record
+        for record in updatedRecords {
+            records[record.foodLogEntryId.uuidString] = record
+        }
         saveRecords(records)
     }
 
@@ -135,6 +142,11 @@ struct HealthKitFoodItemSyncSnapshot: Sendable {
     let verificationStatus: FoodVerificationStatus
 
     init(food: FoodItem) {
+        self.id = food.id
+        self.verificationStatus = food.verificationStatus
+    }
+
+    init(food: SavedFoodSnapshot) {
         self.id = food.id
         self.verificationStatus = food.verificationStatus
     }
@@ -292,18 +304,16 @@ final class NutritionHealthKitBridge: HealthKitProviding {
 
         guard preferences.isHealthKitEnabled, preferences.writeNutritionToHealthKit else {
             PerformanceTracer.mark(.healthKitNutritionBridge, "sync skipped not_enabled entries=\(entries.count)")
-            entries.forEach { entry in
-                syncStore.save(record(for: entry, status: .notEnabled, errorMessage: nil))
-            }
+            syncStore.save(entries.map { record(for: $0, status: .notEnabled, errorMessage: nil) })
             summary.skipped = entries.count
             return summary
         }
 
         guard isAvailable else {
             PerformanceTracer.mark(.healthKitNutritionBridge, "sync unavailable entries=\(entries.count)")
-            entries.forEach { entry in
-                syncStore.save(record(for: entry, status: .unavailable, errorMessage: HealthKitSyncError.unavailable.localizedDescription))
-            }
+            syncStore.save(entries.map {
+                record(for: $0, status: .unavailable, errorMessage: HealthKitSyncError.unavailable.localizedDescription)
+            })
             summary.failed = entries.count
             return summary
         }
@@ -312,21 +322,31 @@ final class NutritionHealthKitBridge: HealthKitProviding {
         let permissionState = currentPermissionState(preferences: preferences)
         guard permissionState == .sharingAuthorized || permissionState == .partiallyAuthorized else {
             PerformanceTracer.mark(.healthKitNutritionBridge, "sync denied state=\(permissionState.rawValue) entries=\(entries.count)")
-            entries.forEach { entry in
-                syncStore.save(record(for: entry, status: .failed, errorMessage: HealthKitSyncError.authorizationDenied.localizedDescription))
-            }
+            syncStore.save(entries.map {
+                record(for: $0, status: .failed, errorMessage: HealthKitSyncError.authorizationDenied.localizedDescription)
+            })
             summary.failed = entries.count
             return summary
+        }
+
+        var recordsByEntryID = Dictionary(
+            uniqueKeysWithValues: syncStore.records().map { ($0.foodLogEntryId, $0) }
+        )
+        var pendingRecordsByEntryID: [UUID: HealthKitFoodLogSyncRecord] = [:]
+        defer {
+            syncStore.save(Array(pendingRecordsByEntryID.values))
         }
 
         for entry in entries {
             summary.attempted += 1
 
-            if let existing = syncStore.record(for: entry.id),
+            if let existing = recordsByEntryID[entry.id],
                existing.status == .synced,
                existing.syncVersion == HealthKitFoodLogSyncRecord.currentSyncVersion {
                 if entry.updatedAt > (existing.sourceUpdatedAt ?? .distantPast) {
-                    syncStore.save(record(for: entry, status: .needsResync, errorMessage: "This log changed after syncing. Manual Apple Health cleanup is deferred."))
+                    let updatedRecord = record(for: entry, status: .needsResync, errorMessage: "This log changed after syncing. Manual Apple Health cleanup is deferred.")
+                    recordsByEntryID[entry.id] = updatedRecord
+                    pendingRecordsByEntryID[entry.id] = updatedRecord
                     summary.skipped += 1
                     summary.warnings.append("\(entry.foodNameSnapshot) changed after syncing and was not duplicated.")
                 } else {
@@ -335,13 +355,27 @@ final class NutritionHealthKitBridge: HealthKitProviding {
                 continue
             }
 
-            if preferences.syncOnlyUserConfirmedEntries,
-               let food = foodItemsById[entry.foodItemId],
-               food.verificationStatus != .userVerified,
-               food.verificationStatus != .edited {
-                syncStore.save(record(for: entry, status: .skipped, errorMessage: "Food is not user-confirmed."))
-                summary.skipped += 1
-                continue
+            if preferences.syncOnlyUserConfirmedEntries {
+                guard let food = foodItemsById[entry.foodItemId] else {
+                    let missingFoodRecord = record(
+                        for: entry,
+                        status: .skipped,
+                        errorMessage: "The source food is unavailable, so confirmation could not be verified."
+                    )
+                    recordsByEntryID[entry.id] = missingFoodRecord
+                    pendingRecordsByEntryID[entry.id] = missingFoodRecord
+                    summary.skipped += 1
+                    summary.warnings.append("\(entry.foodNameSnapshot) was not synced because its confirmation status is unavailable.")
+                    continue
+                }
+
+                if food.verificationStatus != .userVerified, food.verificationStatus != .edited {
+                    let unconfirmedRecord = record(for: entry, status: .skipped, errorMessage: "Food is not user-confirmed.")
+                    recordsByEntryID[entry.id] = unconfirmedRecord
+                    pendingRecordsByEntryID[entry.id] = unconfirmedRecord
+                    summary.skipped += 1
+                    continue
+                }
             }
 
             do {
@@ -353,11 +387,21 @@ final class NutritionHealthKitBridge: HealthKitProviding {
 
                 let syncedAt = Date.now
                 let identifiers = build.samples.map { $0.uuid.uuidString }
-                syncStore.save(record(for: entry, status: .synced, sampleIdentifiers: identifiers, syncedAt: syncedAt, errorMessage: nil))
+                let syncedRecord = record(
+                    for: entry,
+                    status: .synced,
+                    sampleIdentifiers: identifiers,
+                    syncedAt: syncedAt,
+                    errorMessage: nil
+                )
+                recordsByEntryID[entry.id] = syncedRecord
+                pendingRecordsByEntryID[entry.id] = syncedRecord
                 summary.synced += 1
                 PerformanceTracer.mark(.healthKitNutritionBridge, "sync entry_synced id=\(entry.id.uuidString)")
             } catch {
-                syncStore.save(record(for: entry, status: .failed, errorMessage: userFacingMessage(from: error)))
+                let failedRecord = record(for: entry, status: .failed, errorMessage: userFacingMessage(from: error))
+                recordsByEntryID[entry.id] = failedRecord
+                pendingRecordsByEntryID[entry.id] = failedRecord
                 summary.failed += 1
                 PerformanceTracer.mark(.healthKitNutritionBridge, "sync entry_failed id=\(entry.id.uuidString)")
             }
@@ -368,9 +412,9 @@ final class NutritionHealthKitBridge: HealthKitProviding {
         return summary
         #else
         PerformanceTracer.mark(.healthKitNutritionBridge, "sync unavailable no_healthkit entries=\(entries.count)")
-        entries.forEach { entry in
-            syncStore.save(record(for: entry, status: .unavailable, errorMessage: HealthKitSyncError.unavailable.localizedDescription))
-        }
+        syncStore.save(entries.map {
+            record(for: $0, status: .unavailable, errorMessage: HealthKitSyncError.unavailable.localizedDescription)
+        })
         summary.failed = entries.count
         return summary
         #endif

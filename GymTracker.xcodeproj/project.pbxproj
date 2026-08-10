@@ -19,7 +19,6 @@
 		00100000000000000000000A /* Recommendation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000000A /* Recommendation.swift */; };
 		00100000000000000000000B /* BodyweightLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000000B /* BodyweightLog.swift */; };
 		00100000000000000000000C /* SeedDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000000C /* SeedDataService.swift */; };
-		00100000000000000000000D /* MetricPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000000D /* MetricPill.swift */; };
 		001000000000000000000017 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000018 /* AppTheme.swift */; };
 		00100000000000000000000E /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000000E /* TodayView.swift */; };
 		00100000000000000000000F /* StartWorkoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000000F /* StartWorkoutView.swift */; };
@@ -63,7 +62,6 @@
 		001000000000000000000036 /* SplitTrainingDayCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000037 /* SplitTrainingDayCard.swift */; };
 		001000000000000000000037 /* SplitExerciseRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000038 /* SplitExerciseRow.swift */; };
 		001000000000000000000038 /* WorkoutPreviewExerciseCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000039 /* WorkoutPreviewExerciseCard.swift */; };
-		001000000000000000000039 /* GlassCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000003A /* GlassCard.swift */; };
 		00100000000000000000003A /* GlassIconBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000003B /* GlassIconBadge.swift */; };
 		00100000000000000000003B /* WorkoutCelebrationOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000003C /* WorkoutCelebrationOverlay.swift */; };
 		001000000000000000000090 /* AppMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000090 /* AppMotion.swift */; };
@@ -73,7 +71,6 @@
 		00100000000000000000003F /* NoteTemplateProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000040 /* NoteTemplateProvider.swift */; };
 		001000000000000000000040 /* QuickNoteChipsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000041 /* QuickNoteChipsView.swift */; };
 		001000000000000000000041 /* ExerciseNotesEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000042 /* ExerciseNotesEditor.swift */; };
-		001000000000000000000042 /* QuickSetControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000043 /* QuickSetControlsView.swift */; };
 		001000000000000000000043 /* BackupExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000044 /* BackupExportView.swift */; };
 		001000000000000000000044 /* WorkoutReuseBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000045 /* WorkoutReuseBuilder.swift */; };
 		001000000000000000000045 /* WorkoutTemplateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000046 /* WorkoutTemplateStore.swift */; };
@@ -122,15 +119,32 @@
 		001000000000000000000070 /* SleepViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000072 /* SleepViews.swift */; };
 		001000000000000000000091 /* ReadinessModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000091 /* ReadinessModels.swift */; };
 		001000000000000000000092 /* CoachIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000092 /* CoachIntelligenceService.swift */; };
+		0010000000000000000000E0 /* ReadinessScoringService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000E0 /* ReadinessScoringService.swift */; };
 		001000000000000000000093 /* CoachIntelligenceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000093 /* CoachIntelligenceViews.swift */; };
 		001000000000000000000094 /* CoachWorkoutAdjustmentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000094 /* CoachWorkoutAdjustmentModels.swift */; };
 		001000000000000000000095 /* CoachWorkoutAdjustmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000095 /* CoachWorkoutAdjustmentService.swift */; };
 		001000000000000000000096 /* CoachWorkoutAdjustmentViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000096 /* CoachWorkoutAdjustmentViews.swift */; };
 		001000000000000000000097 /* PerformanceTracer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000097 /* PerformanceTracer.swift */; };
+		001000000000000000000098 /* AppStartupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000098 /* AppStartupView.swift */; };
+		001000000000000000000099 /* LocalBackupImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000099 /* LocalBackupImportService.swift */; };
+		00100000000000000000009A /* EmergencyBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000009A /* EmergencyBackupService.swift */; };
+		00100000000000000000009C /* AccountBackupServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000009C /* AccountBackupServices.swift */; };
+		00100000000000000000009D /* FullAppBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000009D /* FullAppBackupService.swift */; };
+		00100000000000000000009E /* FullAppCloudBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000009E /* FullAppCloudBackupService.swift */; };
+		00100000000000000000009F /* WarmStartSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000009F /* WarmStartSnapshotStore.swift */; };
+		0010000000000000000000C0 /* AccountBackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000C0 /* AccountBackupView.swift */; };
+		0010000000000000000000D0 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 00C000000000000000000001 /* FirebaseCore */; };
+		0010000000000000000000D1 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 00C000000000000000000002 /* FirebaseAuth */; };
+		0010000000000000000000D2 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 00C000000000000000000003 /* FirebaseFirestore */; };
+		0010000000000000000000D4 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000D4 /* LaunchScreen.storyboard */; };
+		0010000000000000000000D5 /* PeaklineModelSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000D5 /* PeaklineModelSchema.swift */; };
 		0010000000000000000000A1 /* CoachIntelligenceServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000A1 /* CoachIntelligenceServiceTests.swift */; };
 		0010000000000000000000A2 /* WorkoutReliabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000A2 /* WorkoutReliabilityTests.swift */; };
 		0010000000000000000000A3 /* SleepRecoveryReliabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000A3 /* SleepRecoveryReliabilityTests.swift */; };
 		0010000000000000000000A4 /* NutritionExportReliabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000A4 /* NutritionExportReliabilityTests.swift */; };
+		0010000000000000000000A5 /* WarmStartSnapshotStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000A5 /* WarmStartSnapshotStoreTests.swift */; };
+		0010000000000000000000A6 /* BackupRestoreReliabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000A6 /* BackupRestoreReliabilityTests.swift */; };
+		0010000000000000000000A7 /* FullAppBackupReliabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000A7 /* FullAppBackupReliabilityTests.swift */; };
 		0010000000000000000000B1 /* CoachWorkoutPreviewUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B1 /* CoachWorkoutPreviewUITests.swift */; };
 		0010000000000000000000B2 /* WorkoutLoggingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B2 /* WorkoutLoggingUITests.swift */; };
 		0010000000000000000000B3 /* NutritionScannerNavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B3 /* NutritionScannerNavigationUITests.swift */; };
@@ -169,7 +183,6 @@
 		00200000000000000000000A /* Recommendation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recommendation.swift; sourceTree = "<group>"; };
 		00200000000000000000000B /* BodyweightLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodyweightLog.swift; sourceTree = "<group>"; };
 		00200000000000000000000C /* SeedDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeedDataService.swift; sourceTree = "<group>"; };
-		00200000000000000000000D /* MetricPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricPill.swift; sourceTree = "<group>"; };
 		002000000000000000000018 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
 		00200000000000000000000E /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
 		00200000000000000000000F /* StartWorkoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartWorkoutView.swift; sourceTree = "<group>"; };
@@ -214,7 +227,6 @@
 		002000000000000000000037 /* SplitTrainingDayCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitTrainingDayCard.swift; sourceTree = "<group>"; };
 		002000000000000000000038 /* SplitExerciseRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitExerciseRow.swift; sourceTree = "<group>"; };
 		002000000000000000000039 /* WorkoutPreviewExerciseCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutPreviewExerciseCard.swift; sourceTree = "<group>"; };
-		00200000000000000000003A /* GlassCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassCard.swift; sourceTree = "<group>"; };
 		00200000000000000000003B /* GlassIconBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassIconBadge.swift; sourceTree = "<group>"; };
 		00200000000000000000003C /* WorkoutCelebrationOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutCelebrationOverlay.swift; sourceTree = "<group>"; };
 		002000000000000000000090 /* AppMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMotion.swift; sourceTree = "<group>"; };
@@ -224,7 +236,6 @@
 		002000000000000000000040 /* NoteTemplateProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Notes/NoteTemplateProvider.swift; sourceTree = "<group>"; };
 		002000000000000000000041 /* QuickNoteChipsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickNoteChipsView.swift; sourceTree = "<group>"; };
 		002000000000000000000042 /* ExerciseNotesEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseNotesEditor.swift; sourceTree = "<group>"; };
-		002000000000000000000043 /* QuickSetControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickSetControlsView.swift; sourceTree = "<group>"; };
 		002000000000000000000044 /* BackupExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupExportView.swift; sourceTree = "<group>"; };
 		002000000000000000000045 /* WorkoutReuseBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutReuseBuilder.swift; sourceTree = "<group>"; };
 		002000000000000000000046 /* WorkoutTemplateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutTemplateStore.swift; sourceTree = "<group>"; };
@@ -274,16 +285,27 @@
 		002000000000000000000072 /* SleepViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepViews.swift; sourceTree = "<group>"; };
 		002000000000000000000091 /* ReadinessModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadinessModels.swift; sourceTree = "<group>"; };
 		002000000000000000000092 /* CoachIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachIntelligenceService.swift; sourceTree = "<group>"; };
+		0020000000000000000000E0 /* ReadinessScoringService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadinessScoringService.swift; sourceTree = "<group>"; };
 		002000000000000000000093 /* CoachIntelligenceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachIntelligenceViews.swift; sourceTree = "<group>"; };
 		002000000000000000000094 /* CoachWorkoutAdjustmentModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkoutAdjustmentModels.swift; sourceTree = "<group>"; };
 		002000000000000000000095 /* CoachWorkoutAdjustmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkoutAdjustmentService.swift; sourceTree = "<group>"; };
 		002000000000000000000096 /* CoachWorkoutAdjustmentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkoutAdjustmentViews.swift; sourceTree = "<group>"; };
 		002000000000000000000097 /* PerformanceTracer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceTracer.swift; sourceTree = "<group>"; };
+		002000000000000000000098 /* AppStartupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStartupView.swift; sourceTree = "<group>"; };
+		002000000000000000000099 /* LocalBackupImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Export/LocalBackupImportService.swift; sourceTree = "<group>"; };
+		00200000000000000000009A /* EmergencyBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Export/EmergencyBackupService.swift; sourceTree = "<group>"; };
+		00200000000000000000009C /* AccountBackupServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountBackupServices.swift; sourceTree = "<group>"; };
+		00200000000000000000009D /* FullAppBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullAppBackupService.swift; sourceTree = "<group>"; };
+		00200000000000000000009E /* FullAppCloudBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullAppCloudBackupService.swift; sourceTree = "<group>"; };
+		00200000000000000000009F /* WarmStartSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WarmStartSnapshotStore.swift; sourceTree = "<group>"; };
 		0020000000000000000000A0 /* GymTrackerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GymTrackerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0020000000000000000000A1 /* CoachIntelligenceServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachIntelligenceServiceTests.swift; sourceTree = "<group>"; };
 		0020000000000000000000A2 /* WorkoutReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutReliabilityTests.swift; sourceTree = "<group>"; };
 		0020000000000000000000A3 /* SleepRecoveryReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepRecoveryReliabilityTests.swift; sourceTree = "<group>"; };
 		0020000000000000000000A4 /* NutritionExportReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionExportReliabilityTests.swift; sourceTree = "<group>"; };
+		0020000000000000000000A5 /* WarmStartSnapshotStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WarmStartSnapshotStoreTests.swift; sourceTree = "<group>"; };
+		0020000000000000000000A6 /* BackupRestoreReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRestoreReliabilityTests.swift; sourceTree = "<group>"; };
+		0020000000000000000000A7 /* FullAppBackupReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullAppBackupReliabilityTests.swift; sourceTree = "<group>"; };
 		0020000000000000000000B0 /* GymTrackerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GymTrackerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0020000000000000000000B1 /* CoachWorkoutPreviewUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkoutPreviewUITests.swift; sourceTree = "<group>"; };
 		0020000000000000000000B2 /* WorkoutLoggingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutLoggingUITests.swift; sourceTree = "<group>"; };
@@ -291,6 +313,9 @@
 		0020000000000000000000B4 /* AppLifecycleSwipeAwayUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLifecycleSwipeAwayUITests.swift; sourceTree = "<group>"; };
 		0020000000000000000000B5 /* SplitsPageUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitsPageUITests.swift; sourceTree = "<group>"; };
 		0020000000000000000000B6 /* HistoryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryUITests.swift; sourceTree = "<group>"; };
+		0020000000000000000000C0 /* AccountBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountBackupView.swift; sourceTree = "<group>"; };
+		0020000000000000000000D4 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+		0020000000000000000000D5 /* PeaklineModelSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeaklineModelSchema.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -298,6 +323,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0010000000000000000000D0 /* FirebaseCore in Frameworks */,
+				0010000000000000000000D1 /* FirebaseAuth in Frameworks */,
+				0010000000000000000000D2 /* FirebaseFirestore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -332,6 +360,7 @@
 			isa = PBXGroup;
 			children = (
 				002000000000000000000019 /* Assets.xcassets */,
+				0020000000000000000000D4 /* LaunchScreen.storyboard */,
 				004000000000000000000003 /* App */,
 				004000000000000000000004 /* Models */,
 				004000000000000000000005 /* Views */,
@@ -347,7 +376,9 @@
 			isa = PBXGroup;
 			children = (
 				002000000000000000000001 /* GymTrackerApp.swift */,
+				0020000000000000000000D5 /* PeaklineModelSchema.swift */,
 				002000000000000000000002 /* RootTabView.swift */,
+				002000000000000000000098 /* AppStartupView.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -412,7 +443,6 @@
 				002000000000000000000039 /* WorkoutPreviewExerciseCard.swift */,
 				002000000000000000000015 /* WorkoutLoggerView.swift */,
 				00200000000000000000003C /* WorkoutCelebrationOverlay.swift */,
-				002000000000000000000043 /* QuickSetControlsView.swift */,
 				00200000000000000000004D /* WorkoutTemplateSaveSheet.swift */,
 				00200000000000000000004E /* WorkoutTemplateLibraryView.swift */,
 				00200000000000000000004F /* SkippedExerciseReasonSheet.swift */,
@@ -460,6 +490,7 @@
 				002000000000000000000013 /* SettingsView.swift */,
 				002000000000000000000017 /* ExerciseLibraryView.swift */,
 				002000000000000000000044 /* BackupExportView.swift */,
+				0020000000000000000000C0 /* AccountBackupView.swift */,
 				00200000000000000000006C /* HealthKitSettingsView.swift */,
 			);
 			path = Settings;
@@ -490,7 +521,12 @@
 				00200000000000000000003D /* LocalExportModels.swift */,
 				00200000000000000000003E /* LocalBackupExportService.swift */,
 				00200000000000000000003F /* WorkoutCSVExporter.swift */,
+				002000000000000000000099 /* LocalBackupImportService.swift */,
+				00200000000000000000009A /* EmergencyBackupService.swift */,
 				002000000000000000000040 /* NoteTemplateProvider.swift */,
+				00200000000000000000009C /* AccountBackupServices.swift */,
+				00200000000000000000009D /* FullAppBackupService.swift */,
+				00200000000000000000009E /* FullAppCloudBackupService.swift */,
 				002000000000000000000045 /* WorkoutReuseBuilder.swift */,
 				002000000000000000000046 /* WorkoutTemplateStore.swift */,
 				002000000000000000000047 /* WorkoutTemplateBuilder.swift */,
@@ -510,8 +546,10 @@
 				00200000000000000000006E /* NutritionDataIntegrityService.swift */,
 				002000000000000000000070 /* SleepServices.swift */,
 				002000000000000000000071 /* HealthKitSleepService.swift */,
+				0020000000000000000000E0 /* ReadinessScoringService.swift */,
 				002000000000000000000092 /* CoachIntelligenceService.swift */,
 				002000000000000000000095 /* CoachWorkoutAdjustmentService.swift */,
+				00200000000000000000009F /* WarmStartSnapshotStore.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -537,7 +575,6 @@
 		004000000000000000000014 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
-				00200000000000000000000D /* MetricPill.swift */,
 				002000000000000000000018 /* AppTheme.swift */,
 				00200000000000000000001B /* FitnessCard.swift */,
 				00200000000000000000001C /* MetricTile.swift */,
@@ -553,7 +590,6 @@
 				002000000000000000000032 /* ExerciseIconView.swift */,
 				002000000000000000000033 /* ExerciseIconTile.swift */,
 				002000000000000000000090 /* AppMotion.swift */,
-				00200000000000000000003A /* GlassCard.swift */,
 				00200000000000000000003B /* GlassIconBadge.swift */,
 				002000000000000000000041 /* QuickNoteChipsView.swift */,
 				002000000000000000000042 /* ExerciseNotesEditor.swift */,
@@ -601,6 +637,9 @@
 				0020000000000000000000A2 /* WorkoutReliabilityTests.swift */,
 				0020000000000000000000A3 /* SleepRecoveryReliabilityTests.swift */,
 				0020000000000000000000A4 /* NutritionExportReliabilityTests.swift */,
+				0020000000000000000000A5 /* WarmStartSnapshotStoreTests.swift */,
+				0020000000000000000000A6 /* BackupRestoreReliabilityTests.swift */,
+				0020000000000000000000A7 /* FullAppBackupReliabilityTests.swift */,
 			);
 			path = GymTrackerTests;
 			sourceTree = "<group>";
@@ -628,12 +667,18 @@
 				006000000000000000000001 /* Sources */,
 				003000000000000000000001 /* Frameworks */,
 				006000000000000000000002 /* Resources */,
+				00E000000000000000000001 /* Copy optional Firebase configuration */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			name = GymTracker;
+			packageProductDependencies = (
+				00C000000000000000000001 /* FirebaseCore */,
+				00C000000000000000000002 /* FirebaseAuth */,
+				00C000000000000000000003 /* FirebaseFirestore */,
+			);
 			productName = GymTracker;
 			productReference = 002000000000000000000014 /* GymTracker.app */;
 			productType = "com.apple.product-type.application";
@@ -711,6 +756,9 @@
 				Base,
 			);
 			mainGroup = 004000000000000000000001;
+			packageReferences = (
+				00D000000000000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
 			productRefGroup = 004000000000000000000012 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -728,6 +776,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				001000000000000000000018 /* Assets.xcassets in Resources */,
+				0010000000000000000000D4 /* LaunchScreen.storyboard in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -747,13 +796,34 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		00E000000000000000000001 /* Copy optional Firebase configuration */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Copy optional Firebase configuration";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GoogleService-Info.plist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -eu\ndefault_source_path=\"${PROJECT_DIR}/GymTracker/GoogleService-Info.plist\"\nsource_path=\"${PEAKLINE_FIREBASE_CONFIG_PATH:-${default_source_path}}\"\ndestination_path=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GoogleService-Info.plist\"\nif [ -f \"${source_path}\" ]; then\n    /bin/mkdir -p \"$(/usr/bin/dirname \"${destination_path}\")\"\n    /bin/cp \"${source_path}\" \"${destination_path}\"\nelse\n    /bin/rm -f \"${destination_path}\"\n    echo \"note: GoogleService-Info.plist is absent; Peakline will run in local-only mode.\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		006000000000000000000001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				001000000000000000000001 /* GymTrackerApp.swift in Sources */,
+				0010000000000000000000D5 /* PeaklineModelSchema.swift in Sources */,
 				001000000000000000000002 /* RootTabView.swift in Sources */,
+				001000000000000000000098 /* AppStartupView.swift in Sources */,
 				001000000000000000000003 /* Enums.swift in Sources */,
 				001000000000000000000004 /* UserProfile.swift in Sources */,
 				001000000000000000000005 /* TrainingSplit.swift in Sources */,
@@ -764,7 +834,6 @@
 				00100000000000000000000A /* Recommendation.swift in Sources */,
 				00100000000000000000000B /* BodyweightLog.swift in Sources */,
 				00100000000000000000000C /* SeedDataService.swift in Sources */,
-				00100000000000000000000D /* MetricPill.swift in Sources */,
 				001000000000000000000017 /* AppTheme.swift in Sources */,
 				00100000000000000000000E /* TodayView.swift in Sources */,
 				00100000000000000000000F /* StartWorkoutView.swift in Sources */,
@@ -808,17 +877,21 @@
 				001000000000000000000037 /* SplitExerciseRow.swift in Sources */,
 				001000000000000000000038 /* WorkoutPreviewExerciseCard.swift in Sources */,
 				001000000000000000000090 /* AppMotion.swift in Sources */,
-				001000000000000000000039 /* GlassCard.swift in Sources */,
 				00100000000000000000003A /* GlassIconBadge.swift in Sources */,
 				00100000000000000000003B /* WorkoutCelebrationOverlay.swift in Sources */,
 				00100000000000000000003C /* LocalExportModels.swift in Sources */,
 				00100000000000000000003D /* LocalBackupExportService.swift in Sources */,
 				00100000000000000000003E /* WorkoutCSVExporter.swift in Sources */,
+				001000000000000000000099 /* LocalBackupImportService.swift in Sources */,
+				00100000000000000000009A /* EmergencyBackupService.swift in Sources */,
 				00100000000000000000003F /* NoteTemplateProvider.swift in Sources */,
+				00100000000000000000009C /* AccountBackupServices.swift in Sources */,
+				00100000000000000000009D /* FullAppBackupService.swift in Sources */,
+				00100000000000000000009E /* FullAppCloudBackupService.swift in Sources */,
 				001000000000000000000040 /* QuickNoteChipsView.swift in Sources */,
 				001000000000000000000041 /* ExerciseNotesEditor.swift in Sources */,
-				001000000000000000000042 /* QuickSetControlsView.swift in Sources */,
 				001000000000000000000043 /* BackupExportView.swift in Sources */,
+				0010000000000000000000C0 /* AccountBackupView.swift in Sources */,
 				001000000000000000000044 /* WorkoutReuseBuilder.swift in Sources */,
 				001000000000000000000045 /* WorkoutTemplateStore.swift in Sources */,
 				001000000000000000000046 /* WorkoutTemplateBuilder.swift in Sources */,
@@ -865,12 +938,14 @@
 				00100000000000000000006F /* HealthKitSleepService.swift in Sources */,
 				001000000000000000000070 /* SleepViews.swift in Sources */,
 				001000000000000000000091 /* ReadinessModels.swift in Sources */,
+				0010000000000000000000E0 /* ReadinessScoringService.swift in Sources */,
 				001000000000000000000092 /* CoachIntelligenceService.swift in Sources */,
 				001000000000000000000093 /* CoachIntelligenceViews.swift in Sources */,
 				001000000000000000000094 /* CoachWorkoutAdjustmentModels.swift in Sources */,
 				001000000000000000000095 /* CoachWorkoutAdjustmentService.swift in Sources */,
 				001000000000000000000096 /* CoachWorkoutAdjustmentViews.swift in Sources */,
 				001000000000000000000097 /* PerformanceTracer.swift in Sources */,
+				00100000000000000000009F /* WarmStartSnapshotStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -882,6 +957,9 @@
 				0010000000000000000000A2 /* WorkoutReliabilityTests.swift in Sources */,
 				0010000000000000000000A3 /* SleepRecoveryReliabilityTests.swift in Sources */,
 				0010000000000000000000A4 /* NutritionExportReliabilityTests.swift in Sources */,
+				0010000000000000000000A5 /* WarmStartSnapshotStoreTests.swift in Sources */,
+				0010000000000000000000A6 /* BackupRestoreReliabilityTests.swift in Sources */,
+				0010000000000000000000A7 /* FullAppBackupReliabilityTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1040,6 +1118,7 @@
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = 272AN3AJLF;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Peakline;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
@@ -1049,7 +1128,7 @@
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "GymTracker lets you choose nutrition label photos so OCR can prefill food details for local food logging.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
@@ -1062,6 +1141,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.noel.GymTracker;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = "$(PEAKLINE_STRICT_CONCURRENCY)";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -1078,6 +1158,7 @@
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = 272AN3AJLF;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Peakline;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
@@ -1087,7 +1168,7 @@
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "GymTracker lets you choose nutrition label photos so OCR can prefill food details for local food logging.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
@@ -1100,6 +1181,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.noel.GymTracker;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = "$(PEAKLINE_STRICT_CONCURRENCY)";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -1239,6 +1321,35 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		00D000000000000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		00C000000000000000000001 /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 00D000000000000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		00C000000000000000000002 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 00D000000000000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		00C000000000000000000003 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 00D000000000000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 007000000000000000000001 /* Project object */;
 }

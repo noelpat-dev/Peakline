@@ -8,6 +8,10 @@ final class AppNotificationDelegate: NSObject, UIApplicationDelegate, UNUserNoti
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        // Firebase must be configured after UIKit has installed the real app
+        // delegate. Configuring it from the SwiftUI App initializer causes
+        // Firebase's delegate swizzler to inspect the property-wrapper proxy.
+        FirebaseBootstrap.configureIfPossible()
         UNUserNotificationCenter.current().delegate = self
         return true
     }
@@ -37,47 +41,9 @@ final class AppNotificationDelegate: NSObject, UIApplicationDelegate, UNUserNoti
 struct GymTrackerApp: App {
     @UIApplicationDelegateAdaptor(AppNotificationDelegate.self) private var appDelegate
 
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            UserProfile.self,
-            TrainingSplit.self,
-            SplitExercise.self,
-            Exercise.self,
-            WorkoutSession.self,
-            ExerciseLog.self,
-            SetLog.self,
-            Recommendation.self,
-            BodyweightLog.self,
-            FoodItem.self,
-            FoodLogEntry.self,
-            HydrationEntry.self,
-            SleepSession.self,
-            NapSession.self,
-            DailyCoachCheckIn.self,
-            CoachActionHistoryEntry.self,
-            SavedCoachDeloadBlock.self,
-            CoachExerciseMetadata.self,
-            CoachRecommendationFeedback.self,
-            CoachPreferences.self,
-            CoachSplitMetadata.self
-        ])
-
-        let useInMemoryStore = ProcessInfo.processInfo.arguments.contains("-UITestInMemoryStore")
-        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: useInMemoryStore)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [configuration])
-        } catch {
-            fatalError("Could not create SwiftData container: \(error)")
-        }
-    }()
-
     var body: some Scene {
         WindowGroup {
-            AppThemeProvider {
-                RootTabView()
-            }
+            PeaklineModelContainerHost()
         }
-        .modelContainer(sharedModelContainer)
     }
 }

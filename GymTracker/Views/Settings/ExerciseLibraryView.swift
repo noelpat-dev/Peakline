@@ -45,6 +45,7 @@ struct ExerciseLibraryView: View {
                 }
             }
         }
+        .peaklineGroupedContent()
         .navigationTitle("Exercise Library")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -375,6 +376,8 @@ private struct ExerciseForm: View {
                 }
             }
         }
+        .peaklineGroupedContent()
+        .peaklineKeyboardDismissal()
         .onChange(of: primaryMuscleGroup) { _, newPrimaryMuscleGroup in
             secondaryMuscleGroups.removeAll { $0 == newPrimaryMuscleGroup }
         }

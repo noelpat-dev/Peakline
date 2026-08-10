@@ -6,6 +6,7 @@ struct CoachIntelligenceService {
     private let hydrationService = HydrationService()
     private let nutritionSummaryService = NutritionSummaryService()
     private let trendService = NutritionTrendService()
+    private let readinessScoring = ReadinessScoringService()
 
     init(calendar: Calendar = .current) {
         self.calendar = calendar
@@ -39,17 +40,7 @@ struct CoachIntelligenceService {
         hydrationTargetML: Int,
         nutritionGoal: NutritionGoal
     ) -> ReadinessScore {
-        let sleepSummaries = sleepScoring.summaries(
-            from: sleepSessions,
-            naps: napSessions,
-            workouts: completedWorkouts,
-            settings: sleepSettings,
-            days: 14,
-            endingOn: date,
-            calendar: calendar
-        )
-
-        return readiness(
+        return makeReadiness(
             for: date,
             sleepSessions: sleepSessions,
             napSessions: napSessions,
@@ -59,12 +50,11 @@ struct CoachIntelligenceService {
             checkIns: checkIns,
             sleepSettings: sleepSettings,
             hydrationTargetML: hydrationTargetML,
-            nutritionGoal: nutritionGoal,
-            sleepSummaries: sleepSummaries
+            nutritionGoal: nutritionGoal
         )
     }
 
-    private func readiness(
+    private func makeReadiness(
         for date: Date = .now,
         sleepSessions: [SleepSession],
         napSessions: [NapSession],
@@ -74,48 +64,47 @@ struct CoachIntelligenceService {
         checkIns: [DailyCoachCheckIn],
         sleepSettings: SleepSettings,
         hydrationTargetML: Int,
-        nutritionGoal: NutritionGoal,
-        sleepSummaries: [SleepSummary]?
+        nutritionGoal: NutritionGoal
     ) -> ReadinessScore {
-        let today = calendar.startOfDay(for: date)
-        let checkIn = todayCheckIn(from: checkIns, date: today)
-        let sleep = sleepSignal(
-            date: today,
+        let checkIn = todayCheckIn(from: checkIns, date: date)
+        let scoring = readinessScoringResult(
+            for: date,
             sleepSessions: sleepSessions,
             napSessions: napSessions,
-            workouts: completedWorkouts,
-            settings: sleepSettings,
-            sleepSummaries: sleepSummaries
+            hydrationEntries: hydrationEntries,
+            completedWorkouts: completedWorkouts,
+            foodLogs: foodLogs,
+            checkIns: checkIns,
+            sleepSettings: sleepSettings,
+            hydrationTargetML: hydrationTargetML,
+            nutritionGoal: nutritionGoal
         )
-        let training = trainingSignal(date: today, workouts: completedWorkouts)
-        let hydration = hydrationSignal(date: today, entries: hydrationEntries, targetML: hydrationTargetML)
-        let checkInSignal = subjectiveSignal(from: checkIn)
-        let nutrition = nutritionSignal(date: today, foodLogs: foodLogs, workouts: completedWorkouts, goal: nutritionGoal)
-
-        let signals = [sleep, training, hydration, checkInSignal, nutrition]
-        let weightedScore = signals.reduce(0.0) { $0 + Double($1.score) * $1.weight }
-        let totalWeight = max(signals.reduce(0.0) { $0 + $1.weight }, 1)
-        let value = min(100, max(0, Int((weightedScore / totalWeight).rounded())))
-        let category = ReadinessCategory(score: value)
-        let factors = signals.map(\.factor)
-        let confidence = confidence(for: signals, checkIn: checkIn)
+        let category = ReadinessCategory(score: scoring.value)
         let recommendation = recommendation(
-            value: value,
+            value: scoring.value,
             category: category,
-            confidence: confidence,
-            factors: factors
+            confidence: scoring.confidence,
+            factors: scoring.factors
         )
 
         return ReadinessScore(
-            value: value,
+            value: scoring.value,
             category: category,
-            confidence: confidence,
+            confidence: scoring.confidence,
             recommendation: recommendation,
-            factors: factors,
+            factors: scoring.factors,
             generatedAt: date,
-            checkIn: checkIn,
-            workoutAdjustment: workoutAdjustment(for: category, factors: factors),
-            recoveryNote: recoveryNote(for: confidence, factors: factors)
+            checkIn: checkIn.map(DailyCoachCheckInSnapshot.init),
+            workoutAdjustment: workoutAdjustment(
+                for: category,
+                factors: scoring.factors,
+                isProvisional: scoring.isProvisional
+            ),
+            recoveryNote: recoveryNote(
+                for: scoring.confidence,
+                factors: scoring.factors,
+                availableSignalCount: scoring.availableSignalCount
+            )
         )
     }
 
@@ -187,7 +176,7 @@ struct CoachIntelligenceService {
             naps: napSessions,
             workouts: completedWorkouts,
             settings: sleepSettings,
-            days: 14,
+            days: 43,
             endingOn: date,
             calendar: calendar
         )
@@ -201,8 +190,7 @@ struct CoachIntelligenceService {
             checkIns: checkIns,
             sleepSettings: sleepSettings,
             hydrationTargetML: hydrationTargetML,
-            nutritionGoal: nutritionGoal,
-            sleepSummaries: sleepSummaries
+            nutritionGoal: nutritionGoal
         )
         let readiness = readiness(
             for: date,
@@ -214,8 +202,7 @@ struct CoachIntelligenceService {
             checkIns: checkIns,
             sleepSettings: sleepSettings,
             hydrationTargetML: hydrationTargetML,
-            nutritionGoal: nutritionGoal,
-            sleepSummaries: sleepSummaries
+            nutritionGoal: nutritionGoal
         )
         let trends = trendSummary(
             date: date,
@@ -312,7 +299,7 @@ struct CoachIntelligenceService {
 
     private func todayCheckIn(from checkIns: [DailyCoachCheckIn], date: Date) -> DailyCoachCheckIn? {
         checkIns
-            .filter { calendar.isDate($0.date, inSameDayAs: date) }
+            .filter { $0.date <= date && calendar.isDate($0.date, inSameDayAs: date) }
             .sorted { $0.updatedAt > $1.updatedAt }
             .first
     }
@@ -427,7 +414,7 @@ struct CoachIntelligenceService {
 
         var factors: [String] = []
 
-        if readiness.value < 55 || trends.readiness.direction == .declining {
+        if (!readiness.isProvisional && readiness.value < 55) || trends.readiness.direction == .declining {
             factors.append("Readiness is low or trending down.")
         }
         if hardSessions >= 3 {
@@ -942,11 +929,18 @@ struct CoachIntelligenceService {
         }
 
         let mode: AdaptiveWorkoutMode
-        if readiness.category == .recovery || readiness.category == .low || fatigueRisk.level == .deloadWatch {
+        let readinessCanDriveGuidance = !readiness.isProvisional
+        if (readinessCanDriveGuidance && (readiness.category == .recovery || readiness.category == .low))
+            || fatigueRisk.level == .deloadWatch {
             mode = .recoveryFocus
-        } else if fatigueRisk.level == .high || !plannedFatiguedGroups.isEmpty || readiness.category == .cautious {
+        } else if fatigueRisk.level == .high
+            || !plannedFatiguedGroups.isEmpty
+            || (readinessCanDriveGuidance && readiness.category == .cautious) {
             mode = .reduce
-        } else if readiness.category == .peak, fatigueRisk.level == .low, plannedLoadedGroups.isEmpty {
+        } else if readinessCanDriveGuidance,
+                  readiness.category == .peak,
+                  fatigueRisk.level == .low,
+                  plannedLoadedGroups.isEmpty {
             mode = .push
         } else {
             mode = .maintain
@@ -1015,9 +1009,19 @@ struct CoachIntelligenceService {
         coachPreferences: CoachPreferencesSnapshot,
         splitMetadata: [CoachSplitMetadata]
     ) -> CoachDiagnostics {
-        let readinessInputs = readiness.factors.map { factor in
+        let weights = readiness.factors
+            .filter(\.isDataAvailable)
+            .map { "\($0.kind.rawValue)=\(Int(($0.effectiveWeight * 100).rounded()))%" }
+            .joined(separator: ", ")
+        let calibration = readiness.factors
+            .filter { $0.calibrationAdjustment != 0 }
+            .map { "\($0.kind.rawValue)=\($0.calibrationAdjustment > 0 ? "+" : "")\($0.calibrationAdjustment)" }
+            .joined(separator: ", ")
+        let readinessHeader = "\(ReadinessScoringService.version): coverage \(readiness.coverageSummary), effective evidence \(Int((readiness.effectiveEvidenceWeight * 100).rounded()))%, weights [\(weights)], calibration [\(calibration)]."
+        let readinessInputs = [readinessHeader] + readiness.factors.map { factor in
             let scoreText = factor.score.map { "\($0)" } ?? "n/a"
-            return "\(factor.kind.displayName): \(scoreText), \(factor.impact.rawValue)"
+            let rawText = factor.rawScore.map { "\($0)" } ?? "n/a"
+            return "\(factor.kind.displayName): raw \(rawText), calibrated \(scoreText), reliability \(Int((factor.reliability * 100).rounded()))%, \(factor.impact.rawValue)"
         }
         let missingReasons = readiness.factors
             .filter { !$0.isDataAvailable }
@@ -1101,7 +1105,7 @@ struct CoachIntelligenceService {
     private func missingDataReason(for kind: ReadinessFactorKind) -> String {
         switch kind {
         case .sleep:
-            return "No recent completed sleep log."
+            return "No completed overnight sleep ended on this day."
         case .training:
             return "No recent completed workout history."
         case .hydration:
@@ -1109,7 +1113,7 @@ struct CoachIntelligenceService {
         case .checkIn:
             return "Daily check-in is not completed."
         case .nutrition:
-            return "No recent food logs."
+            return "No enabled calorie/protein target or fewer than 3 qualified completed days."
         }
     }
 
@@ -1118,61 +1122,121 @@ struct CoachIntelligenceService {
         return (rank[lhs, default: 0] <= rank[rhs, default: 0]) ? lhs : rhs
     }
 
-    private func sleepSignal(
-        date: Date,
+    private func readinessScoringResult(
+        for date: Date,
         sleepSessions: [SleepSession],
         napSessions: [NapSession],
-        workouts: [WorkoutSession],
-        settings: SleepSettings,
-        sleepSummaries: [SleepSummary]?
-    ) -> ReadinessSignal {
-        let recentSleepSessions = sleepSessions.filter { session in
-            guard session.status == .completed else { return false }
-            return daysBetween(session.nightDate, and: date) <= 14
-        }
-        let recentNaps = napSessions.filter { daysBetween($0.startDate, and: date) <= 7 }
-        let recentWorkouts = workouts.filter { daysBetween($0.date, and: date) <= 14 }
-        let latest = sleepSummaries?.first { $0.primarySession != nil } ?? sleepScoring.latestSummary(
-            from: Array(recentSleepSessions.prefix(45)),
-            naps: recentNaps,
-            workouts: recentWorkouts,
-            settings: settings
+        hydrationEntries: [HydrationEntry],
+        completedWorkouts: [WorkoutSession],
+        foodLogs: [FoodLogEntry],
+        checkIns: [DailyCoachCheckIn],
+        sleepSettings: SleepSettings,
+        hydrationTargetML: Int,
+        nutritionGoal: NutritionGoal
+    ) -> ReadinessScoringResult {
+        let sleep = sleepEvidence(
+            evaluatedAt: date,
+            sleepSessions: sleepSessions,
+            napSessions: napSessions,
+            settings: sleepSettings
         )
-        let hasRecentSleep = latest.primarySession != nil && daysBetween(latest.date, and: date) <= 2
-        let todayNapMinutes = recentNaps
-            .filter { calendar.isDate($0.startDate, inSameDayAs: date) }
-            .reduce(0) { $0 + $1.durationMinutes }
+        let training = trainingEvidence(evaluatedAt: date, workouts: completedWorkouts)
+        let checkIn = checkInEvidence(from: todayCheckIn(from: checkIns, date: date))
+        let hydration = hydrationEvidence(evaluatedAt: date, entries: hydrationEntries, targetML: hydrationTargetML)
+        let nutrition = nutritionEvidence(
+            evaluatedAt: date,
+            foodLogs: foodLogs,
+            workouts: completedWorkouts,
+            goal: nutritionGoal
+        )
 
-        guard hasRecentSleep else {
-            let napSupport = min(todayNapMinutes, 45)
-            let score = todayNapMinutes > 0 ? 68 + min(7, napSupport / 10) : 70
-            let detail = todayNapMinutes > 0
-                ? "Nap logged today, but overnight sleep is missing."
-                : "No recent sleep log. Readiness uses a neutral baseline."
+        var history: [ReadinessFactorKind: [Int]] = [
+            .sleep: [],
+            .training: [],
+            .checkIn: []
+        ]
+        let evaluationDay = calendar.startOfDay(for: date)
+        for offset in 1...28 {
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: evaluationDay) else { continue }
+            let historicalDate = day.endOfDay(using: calendar)
+            let historicalSleep = sleepEvidence(
+                evaluatedAt: historicalDate,
+                sleepSessions: sleepSessions,
+                napSessions: napSessions,
+                settings: sleepSettings
+            )
+            let historicalTraining = trainingEvidence(evaluatedAt: historicalDate, workouts: completedWorkouts)
+            let historicalCheckIn = checkInEvidence(from: todayCheckIn(from: checkIns, date: historicalDate))
+            if let score = historicalSleep.rawScore { history[.sleep, default: []].append(score) }
+            if let score = historicalTraining.rawScore { history[.training, default: []].append(score) }
+            if let score = historicalCheckIn.rawScore { history[.checkIn, default: []].append(score) }
+        }
 
-            return signal(
+        return readinessScoring.score([
+            addingHistory(history[.sleep, default: []], to: sleep),
+            addingHistory(history[.training, default: []], to: training),
+            hydration,
+            addingHistory(history[.checkIn, default: []], to: checkIn),
+            nutrition
+        ])
+    }
+
+    private func addingHistory(_ scores: [Int], to evidence: ReadinessSignalEvidence) -> ReadinessSignalEvidence {
+        ReadinessSignalEvidence(
+            kind: evidence.kind,
+            title: evidence.title,
+            detail: evidence.detail,
+            rawScore: evidence.rawScore,
+            reliability: evidence.reliability,
+            historicalScores: scores
+        )
+    }
+
+    private func sleepEvidence(
+        evaluatedAt date: Date,
+        sleepSessions: [SleepSession],
+        napSessions: [NapSession],
+        settings: SleepSettings
+    ) -> ReadinessSignalEvidence {
+        let eligibleSessions = sleepSessions.filter { session in
+            session.status == .completed
+                && session.wakeAt <= date
+                && calendar.isDate(session.wakeAt, inSameDayAs: date)
+        }
+        let recentSessions = sleepSessions.filter { session in
+            let days = signedDays(from: session.wakeAt, to: date)
+            return session.status == .completed && session.wakeAt <= date && days >= 0 && days <= 28
+        }
+
+        guard let session = eligibleSessions.max(by: { lhs, rhs in
+            if sleepReliability(lhs.confidence) == sleepReliability(rhs.confidence) {
+                return lhs.durationMinutes < rhs.durationMinutes
+            }
+            return sleepReliability(lhs.confidence) < sleepReliability(rhs.confidence)
+        }) else {
+            let hasNap = napSessions.contains {
+                $0.endDate <= date && calendar.isDate($0.endDate, inSameDayAs: date)
+            }
+            return ReadinessSignalEvidence(
                 kind: .sleep,
-                title: "Sleep baseline building",
-                detail: detail,
-                score: score,
-                weight: 0.30,
-                isDataAvailable: todayNapMinutes > 0
+                title: "Sleep not included",
+                detail: hasNap
+                    ? "A nap is logged, but no completed overnight sleep ended today."
+                    : "No completed overnight sleep ended today.",
+                rawScore: nil,
+                reliability: 0
             )
         }
 
-        let baseScore = latest.sleepScore ?? sleepScoring.durationScore(
-            minutes: latest.totalSleepMinutes,
-            targetMinutes: settings.targetSleepMinutes
-        )
-        let napBonus = min(6, latest.napCreditMinutes / 10)
+        let baseScore = sleepScoring.score(for: session, recentSessions: recentSessions, settings: settings)
+        let napMinutes = napSessions
+            .filter { $0.endDate <= date && calendar.isDate($0.endDate, inSameDayAs: date) }
+            .reduce(0) { $0 + $1.durationMinutes }
+        let napBonus = min(6, napMinutes / 10)
         let score = min(100, baseScore + napBonus)
-        let duration = SleepScoringService.durationText(minutes: latest.totalSleepMinutes)
-        let quality = latest.qualityRating.map { "Quality \($0)/5" } ?? "No quality rating"
-        let napText = latest.napCreditMinutes > 0 ? " Nap recovery adds support." : ""
         let title: String
-
         switch score {
-        case 85...100:
+        case 85...:
             title = "Sleep supports training"
         case 70..<85:
             title = "Sleep is steady"
@@ -1181,43 +1245,62 @@ struct CoachIntelligenceService {
         default:
             title = "Sleep may limit recovery"
         }
+        let duration = SleepScoringService.durationText(minutes: session.durationMinutes)
+        let quality = session.qualityRating.map { "Quality \($0)/5" } ?? "No quality rating"
+        let napText = napBonus > 0 ? " Same-day nap recovery adds \(napBonus) points." : ""
 
-        return signal(
+        return ReadinessSignalEvidence(
             kind: .sleep,
             title: title,
-            detail: "\(duration) sleep. \(quality).\(napText)",
-            score: score,
-            weight: 0.30,
-            isDataAvailable: true
+            detail: "\(duration) overnight sleep. \(quality).\(napText)",
+            rawScore: score,
+            reliability: sleepReliability(session.confidence)
         )
     }
 
-    private func trainingSignal(date: Date, workouts: [WorkoutSession]) -> ReadinessSignal {
-        let recent = workouts
-            .filter { daysBetween($0.date, and: date) <= 7 }
+    private func sleepReliability(_ confidence: SleepConfidence) -> Double {
+        switch confidence {
+        case .high:
+            return 1
+        case .estimatedConfirmed:
+            return 0.90
+        case .medium:
+            return 0.75
+        case .low:
+            return 0.50
+        }
+    }
+
+    private func trainingEvidence(evaluatedAt date: Date, workouts: [WorkoutSession]) -> ReadinessSignalEvidence {
+        let eligible = workouts.filter { $0.completed && $0.date <= date }
+        let recent = eligible
+            .filter {
+                let days = signedDays(from: $0.date, to: date)
+                return days >= 0 && days <= 7
+            }
             .sorted { $0.date > $1.date }
-        let previousWeek = workouts.filter {
-            let days = daysBetween($0.date, and: date)
+        let previousWeek = eligible.filter {
+            let days = signedDays(from: $0.date, to: date)
             return days > 7 && days <= 14
         }
 
         guard !recent.isEmpty else {
-            return signal(
+            return ReadinessSignalEvidence(
                 kind: .training,
-                title: "Training baseline building",
-                detail: "No recent workouts logged. Fatigue is treated as neutral.",
-                score: 74,
-                weight: 0.25,
-                isDataAvailable: false
+                title: "Training not included",
+                detail: "No completed workouts in the preceding 7 days.",
+                rawScore: nil,
+                reliability: 0
             )
         }
 
         let recentSetCount = workingSetCount(in: recent)
         let previousSetCount = workingSetCount(in: previousWeek)
-        let consecutiveDays = consecutiveTrainingDays(endingOn: date, workouts: workouts)
-        let hardSessions = recent.filter { isHardSession($0) }.count
+        let consecutiveDays = consecutiveTrainingDays(endingOn: date, workouts: eligible)
+        let hardSessions = recent.filter(isHardSession).count
         let hardSessions48h = recent.filter {
-            abs($0.date.timeIntervalSince(date)) <= 48 * 60 * 60 && isHardSession($0)
+            let interval = date.timeIntervalSince($0.date)
+            return interval >= 0 && interval <= 48 * 60 * 60 && isHardSession($0)
         }.count
 
         var score = 88
@@ -1251,75 +1334,82 @@ struct CoachIntelligenceService {
             title = "Training fatigue is elevated"
         }
 
-        let detail = "\(recent.count) workouts and \(recentSetCount) working sets in 7 days. \(hardSessions) hard sessions."
-
-        return signal(
+        return ReadinessSignalEvidence(
             kind: .training,
             title: title,
-            detail: detail,
-            score: score,
-            weight: 0.25,
-            isDataAvailable: true
+            detail: "\(recent.count) workouts and \(recentSetCount) working sets in 7 days. \(hardSessions) hard sessions.",
+            rawScore: score
         )
     }
 
-    private func hydrationSignal(date: Date, entries: [HydrationEntry], targetML: Int) -> ReadinessSignal {
-        let summary = hydrationService.summary(for: date, entries: entries, targetML: targetML, calendar: calendar)
-        let expected = expectedHydrationProgress(on: date)
-        let progress = summary.progress
-        let score: Int
-        let title: String
-
-        if summary.totalML == 0 {
-            score = expected < 0.70 ? 70 : 64
-            title = expected < 0.38 ? "Hydration not logged yet" : "Hydration data is missing today"
-        } else if progress >= 0.95 {
-            score = 94
-            title = "Hydration is on track"
-        } else if progress >= expected {
-            score = 84
-            title = "Hydration is pacing well"
-        } else if progress >= expected * 0.70 {
-            score = 70
-            title = "Hydration is slightly behind"
-        } else {
-            score = 55
-            title = "Hydration is behind target"
+    private func hydrationEvidence(
+        evaluatedAt date: Date,
+        entries: [HydrationEntry],
+        targetML: Int
+    ) -> ReadinessSignalEvidence {
+        let eligibleEntries = entries.filter {
+            $0.loggedAt <= date && calendar.isDate($0.loggedAt, inSameDayAs: date)
         }
-
-        let detail = summary.totalML == 0
-            ? "No water logged today."
-            : "\(HydrationService.formatAmount(summary.totalML)) of \(HydrationService.formatAmount(summary.targetML)) logged today."
-
-        return signal(
-            kind: .hydration,
-            title: title,
-            detail: detail,
-            score: score,
-            weight: 0.20,
-            isDataAvailable: summary.totalML > 0
-        )
-    }
-
-    private func subjectiveSignal(from checkIn: DailyCoachCheckIn?) -> ReadinessSignal {
-        guard let checkIn else {
-            return signal(
-                kind: .checkIn,
-                title: "Check-in not completed",
-                detail: "Energy, soreness, stress, and motivation are unknown.",
-                score: 70,
-                weight: 0.15,
-                isDataAvailable: false
+        guard !eligibleEntries.isEmpty else {
+            return ReadinessSignalEvidence(
+                kind: .hydration,
+                title: "Hydration not included",
+                detail: "No water is logged for this day.",
+                rawScore: nil,
+                reliability: 0
             )
         }
 
-        let readinessTotal = checkIn.energy
-            + checkIn.motivation
-            + (6 - checkIn.soreness)
-            + (6 - checkIn.stress)
-        let score = min(100, max(20, Int((Double(readinessTotal) / 20.0 * 100).rounded())))
+        let summary = hydrationService.summary(for: date, entries: eligibleEntries, targetML: targetML, calendar: calendar)
+        let expected = expectedHydrationProgress(on: date)
+        let pace = expected > 0 ? summary.progress / expected : summary.progress
+        let score: Int
         let title: String
+        if summary.progress >= 0.95 {
+            score = 94
+            title = "Hydration is on track"
+        } else if pace >= 1 {
+            score = 90
+            title = "Hydration is pacing well"
+        } else if pace >= 0.75 {
+            score = 78
+            title = "Hydration is close to pace"
+        } else if pace >= 0.50 {
+            score = 62
+            title = "Hydration is slightly behind"
+        } else {
+            score = 50
+            title = "Hydration is behind target"
+        }
 
+        return ReadinessSignalEvidence(
+            kind: .hydration,
+            title: title,
+            detail: "\(HydrationService.formatAmount(summary.totalML)) of \(HydrationService.formatAmount(summary.targetML)) logged; \(hydrationPhaseName(on: date)) pacing applied.",
+            rawScore: score,
+            reliability: expected
+        )
+    }
+
+    private func checkInEvidence(from checkIn: DailyCoachCheckIn?) -> ReadinessSignalEvidence {
+        guard let checkIn else {
+            return ReadinessSignalEvidence(
+                kind: .checkIn,
+                title: "Check-in not included",
+                detail: "Energy, soreness, stress, and motivation are unknown.",
+                rawScore: nil,
+                reliability: 0
+            )
+        }
+
+        let readinessLevel = Double(
+            checkIn.energy
+                + checkIn.motivation
+                + (6 - checkIn.soreness)
+                + (6 - checkIn.stress)
+        ) / 4.0
+        let score = checkInScore(for: readinessLevel)
+        let title: String
         if score >= 82 {
             title = "Check-in supports training"
         } else if score >= 68 {
@@ -1330,69 +1420,95 @@ struct CoachIntelligenceService {
             title = "Check-in points to recovery"
         }
 
-        return signal(
+        return ReadinessSignalEvidence(
             kind: .checkIn,
             title: title,
             detail: "Energy \(checkIn.energy)/5, soreness \(checkIn.soreness)/5, stress \(checkIn.stress)/5, motivation \(checkIn.motivation)/5.",
-            score: score,
-            weight: 0.15,
-            isDataAvailable: true
+            rawScore: score
         )
     }
 
-    private func nutritionSignal(
-        date: Date,
+    private func checkInScore(for readinessLevel: Double) -> Int {
+        let bounded = min(5, max(1, readinessLevel))
+        let anchors = [20.0, 45.0, 70.0, 85.0, 100.0]
+        if bounded >= 5 { return 100 }
+        let lowerLevel = Int(floor(bounded))
+        let fraction = bounded - Double(lowerLevel)
+        let lower = anchors[lowerLevel - 1]
+        let upper = anchors[lowerLevel]
+        return Int((lower + (upper - lower) * fraction).rounded())
+    }
+
+    private func nutritionEvidence(
+        evaluatedAt date: Date,
         foodLogs: [FoodLogEntry],
         workouts: [WorkoutSession],
         goal: NutritionGoal
-    ) -> ReadinessSignal {
-        let summaries = nutritionSummaryService.dailySummaries(
-            endingOn: date,
-            days: 7,
-            foodLogs: foodLogs,
-            workouts: workouts,
-            calendar: calendar
-        )
-        let weekly = trendService.weeklySummary(dailySummaries: summaries, goal: goal, calendar: calendar)
-        let todaySummary = summaries.last
-
-        guard weekly.loggedDays > 0 else {
-            return signal(
+    ) -> ReadinessSignalEvidence {
+        let hasCalorieTarget = [
+            goal.dailyCaloriesTarget,
+            goal.trainingDayCaloriesTarget,
+            goal.restDayCaloriesTarget
+        ].contains { ($0 ?? 0) > 0 }
+        let hasProteinTarget = (goal.dailyProteinTarget ?? 0) > 0
+        guard goal.isEnabled, hasCalorieTarget || hasProteinTarget else {
+            return ReadinessSignalEvidence(
                 kind: .nutrition,
-                title: "Nutrition baseline building",
-                detail: "No recent food logs. Nutrition is treated as unknown.",
-                score: 70,
-                weight: 0.10,
-                isDataAvailable: false
+                title: "Nutrition not included",
+                detail: "Enable a calorie or protein target to qualify nutrition evidence.",
+                rawScore: nil,
+                reliability: 0
             )
         }
 
-        var score = 68 + min(12, weekly.loggedDays * 2)
-        var detailParts = ["\(weekly.loggedDays) of 7 days logged"]
-
-        if let proteinTarget = goal.dailyProteinTarget, proteinTarget > 0 {
-            let hitDays = summaries.filter { $0.protein >= proteinTarget * 0.85 }.count
-            score += min(10, hitDays * 2)
-            detailParts.append("\(hitDays) protein-supportive days")
-        } else if (todaySummary?.protein ?? 0) > 0 {
-            score += 4
-            detailParts.append("protein logged today")
+        let evaluationDay = calendar.startOfDay(for: date)
+        let summaries = (1...7).compactMap { offset -> DailyNutritionSummary? in
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: evaluationDay) else { return nil }
+            return nutritionSummaryService.dailySummary(
+                for: day,
+                foodLogs: foodLogs,
+                workouts: workouts.filter { $0.date <= day.endOfDay(using: calendar) },
+                calendar: calendar
+            )
+        }
+        let qualified = summaries.filter {
+            $0.loggedFoodCount >= 3 || $0.mealBreakdown.count >= 2
+        }
+        guard qualified.count >= 3 else {
+            return ReadinessSignalEvidence(
+                kind: .nutrition,
+                title: "Nutrition not included",
+                detail: "\(qualified.count) of 3 required completed food-log days qualify.",
+                rawScore: nil,
+                reliability: 0
+            )
         }
 
-        if goal.hasTargets {
-            score += min(8, weekly.calorieTargetHitDays * 2)
-            if weekly.loggedDays >= 3, weekly.averageCalories > 0 {
-                let target = goal.calorieTarget(isTrainingDay: todaySummary?.isTrainingDay ?? false) ?? goal.dailyCaloriesTarget
-                if let target, target > 0, weekly.averageCalories < target * 0.75 {
-                    score -= 12
-                    detailParts.append("recent calories look low")
-                }
+        let adequacy = qualified.compactMap { summary -> Double? in
+            var values: [Double] = []
+            if hasCalorieTarget,
+               let target = goal.calorieTarget(isTrainingDay: summary.isTrainingDay),
+               target > 0 {
+                values.append(min(1, max(0, summary.calories / target)))
             }
+            if hasProteinTarget, let target = goal.dailyProteinTarget, target > 0 {
+                values.append(min(1, max(0, summary.protein / target)))
+            }
+            guard !values.isEmpty else { return nil }
+            return values.reduce(0, +) / Double(values.count)
+        }
+        guard let averageAdequacy = adequacy.average else {
+            return ReadinessSignalEvidence(
+                kind: .nutrition,
+                title: "Nutrition not included",
+                detail: "Eligible targets could not be matched to completed days.",
+                rawScore: nil,
+                reliability: 0
+            )
         }
 
-        score = min(96, max(45, score))
+        let score = min(95, max(40, Int((40 + 55 * averageAdequacy).rounded())))
         let title: String
-
         if score >= 82 {
             title = "Nutrition supports recovery"
         } else if score >= 68 {
@@ -1401,62 +1517,13 @@ struct CoachIntelligenceService {
             title = "Nutrition may need attention"
         }
 
-        return signal(
+        return ReadinessSignalEvidence(
             kind: .nutrition,
             title: title,
-            detail: detailParts.joined(separator: ", ") + ".",
-            score: score,
-            weight: 0.10,
-            isDataAvailable: true
+            detail: "Calorie and protein adequacy across \(qualified.count) qualified completed days.",
+            rawScore: score,
+            reliability: min(1, Double(qualified.count) / 5.0)
         )
-    }
-
-    private func signal(
-        kind: ReadinessFactorKind,
-        title: String,
-        detail: String,
-        score: Int,
-        weight: Double,
-        isDataAvailable: Bool
-    ) -> ReadinessSignal {
-        let contribution = (Double(score) - 70.0) * weight
-        let impact: ReadinessImpact
-
-        if contribution >= 3 {
-            impact = .positive
-        } else if contribution <= -3 {
-            impact = .negative
-        } else {
-            impact = .neutral
-        }
-
-        return ReadinessSignal(
-            score: min(100, max(0, score)),
-            weight: weight,
-            factor: ReadinessFactor(
-                kind: kind,
-                title: title,
-                detail: detail,
-                impact: impact,
-                contribution: contribution,
-                score: min(100, max(0, score)),
-                isDataAvailable: isDataAvailable
-            )
-        )
-    }
-
-    private func confidence(for signals: [ReadinessSignal], checkIn: DailyCoachCheckIn?) -> ReadinessConfidence {
-        let availableCount = signals.filter(\.factor.isDataAvailable).count
-
-        if availableCount >= 4, checkIn != nil {
-            return .high
-        }
-
-        if availableCount >= 2 {
-            return .medium
-        }
-
-        return .low
     }
 
     private func recommendation(
@@ -1465,34 +1532,44 @@ struct CoachIntelligenceService {
         confidence: ReadinessConfidence,
         factors: [ReadinessFactor]
     ) -> ReadinessCoachRecommendation {
-        let negativeFactors = factors.filter { $0.impact == .negative }
-        let positiveFactors = factors.filter { $0.impact == .positive }
+        let availableFactors = factors.filter(\.isDataAvailable)
+        let negativeFactors = availableFactors.filter { $0.impact == .negative }
+        let positiveFactors = availableFactors.filter { $0.impact == .positive }
         let orderedReasons = factors
+            .filter(\.isDataAvailable)
             .sorted { abs($0.contribution) > abs($1.contribution) }
             .prefix(3)
             .map { reasonText(for: $0) }
         let reasons = orderedReasons.isEmpty ? ["Peakline is building your baseline from local logs."] : Array(orderedReasons)
-        let prefix = confidence == .low ? "Based on limited data, " : ""
+
+        if confidence == .low {
+            return ReadinessCoachRecommendation(
+                title: "Provisional readiness",
+                summary: "The current score is \(value), but there is not enough evidence for a strong training recommendation. Missing signals did not lower it.",
+                reasonBullets: reasons,
+                suggestedActions: ["Train by feel and keep the planned session flexible", "Add another recovery signal for a firmer recommendation"]
+            )
+        }
 
         switch category {
         case .peak:
             return ReadinessCoachRecommendation(
                 title: "Good day to push",
-                summary: "\(prefix)recovery signals are strong. Train as planned and consider progressing one key lift.",
+                summary: "Recovery signals are strong. Train as planned and consider progressing one key lift.",
                 reasonBullets: reasons,
                 suggestedActions: ["Progress one primary lift", "Keep accessories clean and controlled"]
             )
         case .ready:
             return ReadinessCoachRecommendation(
                 title: "Train as planned",
-                summary: "\(prefix)your recovery looks balanced. Keep the session focused and avoid unnecessary extra volume.",
+                summary: "Your recovery looks balanced. Keep the session focused and avoid unnecessary extra volume.",
                 reasonBullets: reasons,
                 suggestedActions: ["Follow the planned session", "Add reps only where execution feels solid"]
             )
         case .cautious:
             return ReadinessCoachRecommendation(
                 title: "Keep volume controlled",
-                summary: "\(prefix)readiness is slightly reduced. Train, but keep intensity and extra sets in check.",
+                summary: "Readiness is slightly reduced. Train, but keep intensity and extra sets in check.",
                 reasonBullets: reasons,
                 suggestedActions: ["Avoid adding extra top sets", "Leave 1-2 reps in reserve on compounds"]
             )
@@ -1502,7 +1579,7 @@ struct CoachIntelligenceService {
                 : "Reduce intensity slightly"
             return ReadinessCoachRecommendation(
                 title: "Keep it controlled",
-                summary: "\(prefix)recovery is below baseline. Reduce intensity slightly and prioritize clean reps.",
+                summary: "Recovery is below baseline. Reduce intensity slightly and prioritize clean reps.",
                 reasonBullets: reasons,
                 suggestedActions: [action, "Extend warm-ups before heavy work"]
             )
@@ -1510,7 +1587,7 @@ struct CoachIntelligenceService {
             let positiveText = positiveFactors.isEmpty ? "Use today to rebuild recovery signals." : "Keep the helpful habits in place."
             return ReadinessCoachRecommendation(
                 title: "Recovery-first day",
-                summary: "\(prefix)several readiness signals are low. Consider rest, mobility, or an easy session. \(positiveText)",
+                summary: "Several readiness signals are low. Consider rest, mobility, or an easy session. \(positiveText)",
                 reasonBullets: reasons,
                 suggestedActions: ["Consider rest or active recovery", "Avoid chasing failure today"]
             )
@@ -1528,7 +1605,15 @@ struct CoachIntelligenceService {
         }
     }
 
-    private func workoutAdjustment(for category: ReadinessCategory, factors: [ReadinessFactor]) -> String {
+    private func workoutAdjustment(
+        for category: ReadinessCategory,
+        factors: [ReadinessFactor],
+        isProvisional: Bool
+    ) -> String {
+        if isProvisional {
+            return "Keep the planned session flexible and use warm-ups to decide. The provisional score does not prescribe a push or recovery day."
+        }
+
         let trainingFatigue = factors.first { $0.kind == .training && $0.impact == .negative } != nil
         let poorSleep = factors.first { $0.kind == .sleep && $0.impact == .negative } != nil
         let lowHydration = factors.first { $0.kind == .hydration && $0.impact == .negative } != nil
@@ -1553,9 +1638,13 @@ struct CoachIntelligenceService {
         }
     }
 
-    private func recoveryNote(for confidence: ReadinessConfidence, factors: [ReadinessFactor]) -> String {
+    private func recoveryNote(
+        for confidence: ReadinessConfidence,
+        factors: [ReadinessFactor],
+        availableSignalCount: Int
+    ) -> String {
         if confidence == .low {
-            return "Peakline is building your baseline. A sleep log, hydration entry, and quick check-in will make the next brief more specific."
+            return "Provisional: \(availableSignalCount) of 5 signals are included. Missing signals do not lower your score; another eligible signal will make the brief more specific."
         }
 
         if let negative = factors.first(where: { $0.impact == .negative }) {
@@ -1566,19 +1655,19 @@ struct CoachIntelligenceService {
     }
 
     private func expectedHydrationProgress(on date: Date) -> Double {
-        let hour = calendar.component(.hour, from: date)
-        switch hour {
-        case ..<10:
-            return 0.25
-        case 10..<13:
-            return 0.45
-        case 13..<17:
-            return 0.70
-        case 17..<21:
-            return 0.90
-        default:
-            return 1.0
-        }
+        HydrationPacingPhase(date: date, calendar: calendar).reliability
+    }
+
+    private func hydrationPhaseName(on date: Date) -> String {
+        HydrationPacingPhase(date: date, calendar: calendar).displayName
+    }
+
+    private func signedDays(from earlier: Date, to later: Date) -> Int {
+        calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: earlier),
+            to: calendar.startOfDay(for: later)
+        ).day ?? 0
     }
 
     private func workingSetCount(in sessions: [WorkoutSession]) -> Int {
@@ -1673,124 +1762,26 @@ struct CoachIntelligenceService {
         hydrationTargetML: Int,
         nutritionGoal: NutritionGoal
     ) -> [(date: Date, value: Double)] {
-        let sleepSummaries = sleepScoring.summaries(
-            from: sleepSessions,
-            naps: napSessions,
-            workouts: completedWorkouts,
-            settings: sleepSettings,
-            days: 14,
-            calendar: calendar
-        )
-
-        return readinessProxySeries(
-            endingOn: date,
-            sleepSessions: sleepSessions,
-            napSessions: napSessions,
-            hydrationEntries: hydrationEntries,
-            completedWorkouts: completedWorkouts,
-            foodLogs: foodLogs,
-            checkIns: checkIns,
-            sleepSettings: sleepSettings,
-            hydrationTargetML: hydrationTargetML,
-            nutritionGoal: nutritionGoal,
-            sleepSummaries: sleepSummaries
-        )
-    }
-
-    private func readinessProxySeries(
-        endingOn date: Date,
-        sleepSessions: [SleepSession],
-        napSessions: [NapSession],
-        hydrationEntries: [HydrationEntry],
-        completedWorkouts: [WorkoutSession],
-        foodLogs: [FoodLogEntry],
-        checkIns: [DailyCoachCheckIn],
-        sleepSettings: SleepSettings,
-        hydrationTargetML: Int,
-        nutritionGoal: NutritionGoal,
-        sleepSummaries: [SleepSummary]
-    ) -> [(date: Date, value: Double)] {
         let dates = dateRange(endingOn: date, days: 14)
-        let sleepByDate = Dictionary(uniqueKeysWithValues: sleepSummaries.map { (calendar.startOfDay(for: $0.date), $0) })
-
-        return dates.map { day in
-            let sleepScore = sleepByDate[day]?.sleepScore ?? 70
-            let hydrationScore = hydrationScore(for: day, entries: hydrationEntries, targetML: hydrationTargetML)
-            let trainingScore = trainingFatigueScore(on: day, workouts: completedWorkouts)
-            let checkInScore = subjectiveScore(todayCheckIn(from: checkIns, date: day))
-            let nutritionScore = nutritionScore(for: day, foodLogs: foodLogs, workouts: completedWorkouts, goal: nutritionGoal)
-            let value = Double(sleepScore) * 0.30
-                + Double(trainingScore) * 0.25
-                + Double(hydrationScore) * 0.20
-                + Double(checkInScore) * 0.15
-                + Double(nutritionScore) * 0.10
-            return (date: day, value: value.rounded())
+        return dates.compactMap { day in
+            let evaluatedAt = calendar.isDate(day, inSameDayAs: date)
+                ? date
+                : day.endOfDay(using: calendar)
+            let result = readinessScoringResult(
+                for: evaluatedAt,
+                sleepSessions: sleepSessions,
+                napSessions: napSessions,
+                hydrationEntries: hydrationEntries,
+                completedWorkouts: completedWorkouts,
+                foodLogs: foodLogs,
+                checkIns: checkIns,
+                sleepSettings: sleepSettings,
+                hydrationTargetML: hydrationTargetML,
+                nutritionGoal: nutritionGoal
+            )
+            guard !result.isProvisional else { return nil }
+            return (date: day, value: Double(result.value))
         }
-    }
-
-    private func hydrationScore(for date: Date, entries: [HydrationEntry], targetML: Int) -> Int {
-        let summary = hydrationService.summary(for: date, entries: entries, targetML: targetML, calendar: calendar)
-        if summary.totalML == 0 {
-            return 70
-        }
-        switch summary.progress {
-        case 0.95...:
-            return 94
-        case 0.70..<0.95:
-            return 82
-        case 0.40..<0.70:
-            return 66
-        default:
-            return 54
-        }
-    }
-
-    private func trainingFatigueScore(on date: Date, workouts: [WorkoutSession]) -> Int {
-        let recent = workouts.filter { session in
-            guard session.completed, session.date <= date.endOfDay(using: calendar) else { return false }
-            let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: session.date), to: calendar.startOfDay(for: date)).day ?? 0
-            return days >= 0 && days <= 7
-        }
-        guard !recent.isEmpty else { return 74 }
-
-        let sets = workingSetCount(in: recent)
-        let hard = recent.filter(isHardSession).count
-        var score = 88 - max(0, recent.count - 3) * 6 - min(18, hard * 5)
-        if sets >= 60 {
-            score -= 15
-        } else if sets >= 42 {
-            score -= 8
-        }
-        return min(100, max(30, score))
-    }
-
-    private func subjectiveScore(_ checkIn: DailyCoachCheckIn?) -> Int {
-        guard let checkIn else { return 70 }
-        let total = checkIn.energy + checkIn.motivation + (6 - checkIn.soreness) + (6 - checkIn.stress)
-        return min(100, max(20, Int((Double(total) / 20.0 * 100).rounded())))
-    }
-
-    private func nutritionScore(for date: Date, foodLogs: [FoodLogEntry], workouts: [WorkoutSession], goal: NutritionGoal) -> Int {
-        let summary = nutritionSummaryService.dailySummary(for: date, foodLogs: foodLogs, workouts: workouts, calendar: calendar)
-        guard summary.loggedFoodCount > 0 else { return 70 }
-
-        var score = 78
-        if let proteinTarget = goal.dailyProteinTarget, proteinTarget > 0, summary.protein >= proteinTarget * 0.85 {
-            score += 10
-        } else if summary.protein > 0 {
-            score += 4
-        }
-
-        if let calorieTarget = goal.calorieTarget(isTrainingDay: summary.isTrainingDay), calorieTarget > 0 {
-            let adherence = abs(summary.calories - calorieTarget) / calorieTarget
-            if adherence <= 0.15 {
-                score += 8
-            } else if summary.calories < calorieTarget * 0.65 {
-                score -= 10
-            }
-        }
-
-        return min(96, max(45, score))
     }
 
     private func trend(
@@ -2005,12 +1996,6 @@ struct CoachIntelligenceService {
             relatedArea: relatedArea
         )
     }
-}
-
-private struct ReadinessSignal {
-    let score: Int
-    let weight: Double
-    let factor: ReadinessFactor
 }
 
 private extension Array where Element == Double {

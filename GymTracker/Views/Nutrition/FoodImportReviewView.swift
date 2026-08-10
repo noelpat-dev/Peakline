@@ -15,6 +15,7 @@ struct FoodImportReviewView: View {
     @State private var brand: String
     @State private var servingSize: String
     @State private var baseUnit: FoodAmountUnit
+    @State private var confirmedDetectedBasis: FoodAmountUnit?
     @State private var calories: String
     @State private var protein: String
     @State private var carbs: String
@@ -34,6 +35,11 @@ struct FoodImportReviewView: View {
         _brand = State(initialValue: draft.brand ?? "")
         _servingSize = State(initialValue: Self.fieldText(draft.servingSize))
         _baseUnit = State(initialValue: draft.baseUnit)
+        _confirmedDetectedBasis = State(
+            initialValue: draft.nutritionParseResult?.selectedBasis == .unknown
+                ? nil
+                : draft.baseUnit
+        )
         _calories = State(initialValue: Self.fieldText(draft.caloriesPer100g))
         _protein = State(initialValue: Self.fieldText(draft.proteinPer100g))
         _carbs = State(initialValue: Self.fieldText(draft.carbsPer100g))
@@ -75,12 +81,38 @@ struct FoodImportReviewView: View {
             DashboardSection(title: "Nutrition Basis") {
                 FitnessCard {
                     VStack(alignment: .leading, spacing: 14) {
-                        Picker("Base unit", selection: $baseUnit) {
-                            Text("g").tag(FoodAmountUnit.grams)
-                            Text("ml").tag(FoodAmountUnit.millilitres)
-                            Text("serving").tag(FoodAmountUnit.serving)
+                        if sourceNeedsBasisConfirmation {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("What do the detected values represent?")
+                                    .font(AppTypography.bodyEmphasis)
+                                    .foregroundStyle(appTheme.colors.textPrimary)
+
+                                Text("The screenshot does not state its measurement basis. Choose one once; Peakline has already filled the values it detected.")
+                                    .font(AppTypography.metadata)
+                                    .foregroundStyle(appTheme.colors.textSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
+                            Picker("Detected value basis", selection: $confirmedDetectedBasis) {
+                                Text("Per 100 g").tag(Optional(FoodAmountUnit.grams))
+                                Text("Per 100 mL").tag(Optional(FoodAmountUnit.millilitres))
+                                Text("Per serving").tag(Optional(FoodAmountUnit.serving))
+                            }
+                            .pickerStyle(.segmented)
+                            .onChange(of: confirmedDetectedBasis) { _, selection in
+                                guard let selection else { return }
+                                baseUnit = selection
+                                errorText = nil
+                            }
+                            .accessibilityIdentifier("ocr-basis-picker")
+                        } else {
+                            Picker("Base unit", selection: $baseUnit) {
+                                Text("g").tag(FoodAmountUnit.grams)
+                                Text("ml").tag(FoodAmountUnit.millilitres)
+                                Text("serving").tag(FoodAmountUnit.serving)
+                            }
+                            .pickerStyle(.segmented)
                         }
-                        .pickerStyle(.segmented)
 
                         ReviewTextField(
                             title: "Serving size",
@@ -374,7 +406,7 @@ struct FoodImportReviewView: View {
                                     .background(appTheme.colors.warning.opacity(0.14), in: Capsule())
                             }
 
-                            Text("OCR may misread numbers. Enter the per 100g or per 100ml values from the detected label text.")
+                            Text("OCR may misread numbers. Enter the per 100 g or per 100 mL values from the detected label text.")
                                 .font(.subheadline)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -615,6 +647,9 @@ struct FoodImportReviewView: View {
         if duplicateBarcodeText != nil {
             return "Barcode already saved"
         }
+        if needsBasisConfirmation {
+            return "Choose nutrition basis"
+        }
         if trimmedName.isEmpty {
             return "Name required"
         }
@@ -634,6 +669,9 @@ struct FoodImportReviewView: View {
         if duplicateBarcodeText != nil {
             return "This barcode already matches a saved food. Use the existing local food or change the barcode."
         }
+        if needsBasisConfirmation {
+            return "Choose whether the detected values are per 100 g, per 100 mL, or per serving."
+        }
         if trimmedName.isEmpty {
             return "Add a food name so the saved item is easy to find later."
         }
@@ -650,7 +688,11 @@ struct FoodImportReviewView: View {
     }
 
     private var saveCheckBadge: String {
-        if duplicateBarcodeText != nil || trimmedName.isEmpty || parsedValues == nil || parsedValues?.hasNutrition != true {
+        if duplicateBarcodeText != nil
+            || needsBasisConfirmation
+            || trimmedName.isEmpty
+            || parsedValues == nil
+            || parsedValues?.hasNutrition != true {
             return "Blocked"
         }
         if warningText != nil {
@@ -675,6 +717,9 @@ struct FoodImportReviewView: View {
     }
 
     private var nutritionReviewSummary: String {
+        if needsBasisConfirmation {
+            return "Detected values are filled. Confirm their measurement basis before saving."
+        }
         guard let values = parsedValues else {
             return "Numbers must be zero or positive."
         }
@@ -694,9 +739,9 @@ struct FoodImportReviewView: View {
     private var nutritionBasisText: String {
         switch baseUnit {
         case .grams:
-            return "100g"
+            return "100 g"
         case .millilitres:
-            return "100ml"
+            return "100 mL"
         case .serving:
             return "serving"
         }
@@ -728,11 +773,14 @@ struct FoodImportReviewView: View {
     }
 
     private var macroSectionTitle: String {
+        if needsBasisConfirmation {
+            return "Detected Macros - Choose Basis"
+        }
         switch baseUnit {
         case .grams:
-            return "Macros per 100g"
+            return "Macros per 100 g"
         case .millilitres:
-            return "Macros per 100ml"
+            return "Macros per 100 mL"
         case .serving:
             return "Macros per serving"
         }
@@ -784,6 +832,10 @@ struct FoodImportReviewView: View {
 
     private func save(shouldLog: Bool) {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needsBasisConfirmation else {
+            errorText = "Choose whether the detected values are per 100 g, per 100 mL, or per serving."
+            return
+        }
         guard !trimmedName.isEmpty else {
             errorText = "Enter a food name."
             return
@@ -829,6 +881,7 @@ struct FoodImportReviewView: View {
         modelContext.insert(food)
         do {
             try modelContext.save()
+            SavedFoodWarmStartStore.shared.upsert(SavedFoodSnapshot(food))
         } catch {
             modelContext.delete(food)
             errorText = "Couldn't save this food locally. Try again."
@@ -865,6 +918,15 @@ struct FoodImportReviewView: View {
             || sugar != Self.fieldText(draft.sugarPer100g)
             || fibre != Self.fieldText(draft.fibrePer100g)
             || salt != Self.fieldText(draft.saltPer100g)
+    }
+
+    private var sourceNeedsBasisConfirmation: Bool {
+        draft.nutritionParseResult?.selectedBasis == .unknown
+            && draft.nutritionParseResult?.values.isEmpty == false
+    }
+
+    private var needsBasisConfirmation: Bool {
+        sourceNeedsBasisConfirmation && confirmedDetectedBasis == nil
     }
 
     private func parseOptionalNonNegative(_ text: String) -> Double?? {

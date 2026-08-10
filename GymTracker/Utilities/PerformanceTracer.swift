@@ -3,6 +3,15 @@ import os
 
 enum PerformanceMetric: String {
     case appLaunchPreparation = "app.launch.preparation"
+    case startupAccountCheck = "startup.account_check"
+    case startupBackupMetadata = "startup.backup_metadata"
+    case startupLocalPreparation = "startup.local_preparation"
+    case startupSnapshotPreparation = "startup.snapshot_preparation"
+    case startupCriticalReady = "startup.critical_ready"
+    case startupPresentationStart = "startup.presentation.start"
+    case startupPresentationSlow = "startup.presentation.slow"
+    case startupRevealStart = "startup.reveal.start"
+    case startupRevealEnd = "startup.reveal.end"
     case rootNotificationRefresh = "root.notification.refresh"
     case rootNotificationInputSignature = "root.notification.input_signature"
     case rootNotificationSettingsLoad = "root.notification.settings_load"
@@ -14,6 +23,11 @@ enum PerformanceMetric: String {
     case rootNotificationScheduling = "root.notification.scheduling"
     case rootNotificationMainState = "root.notification.main_state"
     case appLifecycle = "app.lifecycle"
+    case warmStartLoad = "warm_start.load"
+    case warmStartCacheHit = "warm_start.cache_hit"
+    case warmStartCacheMiss = "warm_start.cache_miss"
+    case warmStartDecodeFailed = "warm_start.decode_failed"
+    case warmStartPersist = "warm_start.persist"
     case toolbarBreadcrumb = "toolbar.breadcrumb"
     case splitsDashboard = "splits.dashboard"
     case todayRouteSelection = "today.route.selection"
@@ -37,28 +51,28 @@ enum PerformanceMetric: String {
     case workoutLoggerAddExercise = "workout_logger.add_exercise"
     case workoutLoggerFinish = "workout_logger.finish"
     case workoutPreviewRenderSnapshot = "workout_preview.render_snapshot"
+    case workoutPreviewWarmCache = "workout_preview.warm_cache"
     case previewRouteTap = "preview.route.tap"
-    case previewRouteShellVisible = "preview.route.shell_visible"
     case previewRouteStartButtonVisible = "preview.route.start_button_visible"
     case previewHydrationBegin = "preview.hydration.begin"
-    case previewHydrationBasicPlanReady = "preview.hydration.basic_plan_ready"
     case previewHydrationExerciseRowsReady = "preview.hydration.exercise_rows_ready"
     case previewHydrationTargetSuggestionsReady = "preview.hydration.target_suggestions_ready"
     case previewHydrationCoachGuidanceReady = "preview.hydration.coach_guidance_ready"
     case previewHydrationFullContentReady = "preview.hydration.full_content_ready"
-    case previewHydrationCancelled = "preview.hydration.cancelled"
-    case previewHydrationFailed = "preview.hydration.failed"
     case previewOnAppearRefresh = "preview.onAppear.refresh"
     case motionTapFeedback = "motion.tap.feedback"
     case motionChipSelect = "motion.chip.select"
     case motionRatingSelect = "motion.rating.select"
     case motionCheckInSelect = "motion.checkin.select"
+    case checkInSheetPresentation = "checkin.sheet.presentation"
     case motionPreviewModeChange = "motion.preview.mode_change"
     case motionHistoryRowOpen = "motion.history.row_open"
     case motionRoutePush = "motion.route.push"
     case motionTabSelect = "motion.tab.select"
     case motionLoadingReveal = "motion.loading.reveal"
     case motionSetCompletion = "motion.set_completion"
+    case navigationInteraction = "navigation.interaction"
+    case navigationPersistence = "navigation.persistence"
     case sleepAnalyticsCache = "sleep.analytics.cache"
     case sleepReadinessCache = "sleep_readiness.cache"
     case coachSleepAnalytics = "coach.sleep_analytics"
@@ -66,6 +80,8 @@ enum PerformanceMetric: String {
     case coachDerivedMetrics = "coach.derived_metrics"
     case coachWeeklyReview = "coach.weekly_review"
     case nutritionDashboardSnapshot = "nutrition.dashboard_snapshot"
+    case savedFoodsSnapshot = "saved_foods.snapshot"
+    case swipeRevealInteraction = "swipe_reveal.interaction"
     case nutritionInsightsSnapshot = "nutrition.insights_snapshot"
     case nutritionHealthKitRowStatus = "nutrition.healthkit_row_status"
     case nutritionHealthKitSync = "nutrition.healthkit_sync"
@@ -78,6 +94,7 @@ enum PerformanceMetric: String {
     case exerciseProgressEntries = "progress.exercise_entries"
     case prTimelineAnalytics = "pr_timeline.analytics"
     case historyDisplaySnapshot = "history.display_snapshot"
+    case historyScroll = "history.scroll"
     case sleepSessionQuality = "sleep.session_quality"
 }
 
@@ -145,7 +162,8 @@ enum PerformanceTracer {
 #if DEBUG
 enum PerformanceAcceptanceState {
     static var isEnabled: Bool {
-        ProcessInfo.processInfo.arguments.contains("-PerformanceAcceptanceMode")
+        ProcessInfo.processInfo.arguments.contains("-PerformanceAcceptanceMode") ||
+            ProcessInfo.processInfo.environment["PERFORMANCE_ACCEPTANCE_MODE"] == "1"
     }
 
     static var summary: String {
@@ -157,7 +175,10 @@ enum PerformanceAcceptanceState {
         return [
             "performance_acceptance=\(status)",
             "todayCoachMax=\(todayCoachMaxMilliseconds)",
+            "coachPreviewMax=\(coachPreviewMaxMilliseconds)",
+            "rootTabMax=\(rootTabMaxMilliseconds)",
             "rootNotificationMax=\(rootNotificationMaxMilliseconds)",
+            "previewWarmCacheHits=\(workoutPreviewWarmCacheHits)",
             "previewOnAppearRefreshes=\(workoutPreviewOnAppearRefreshes)",
             "failures=\(failureText)"
         ].joined(separator: " | ")
@@ -186,6 +207,8 @@ enum PerformanceAcceptanceState {
             if workoutPreviewOnAppearRefreshes > 1 {
                 addFailureLocked("workout_preview.render_snapshot refresh onAppear repeated \(workoutPreviewOnAppearRefreshes)x")
             }
+        case .workoutPreviewWarmCache where message.hasPrefix("hit"):
+            workoutPreviewWarmCacheHits += 1
         case .workoutRouteNavigation where message.contains("appended route=coach"):
             if pendingWorkoutCoachAppend {
                 addFailureLocked("workout.route.navigation duplicate appended route=coach without depth=0")
@@ -193,6 +216,47 @@ enum PerformanceAcceptanceState {
             pendingWorkoutCoachAppend = true
         case .workoutRouteNavigation where message.contains("path_changed depth=0"):
             pendingWorkoutCoachAppend = false
+        case .checkInSheetPresentation where message.contains("requested"):
+            if pendingCheckInPresentation {
+                addFailureLocked("checkin.sheet.presentation duplicate request")
+            }
+            pendingCheckInPresentation = true
+        case .checkInSheetPresentation where message.contains("stable_frame elapsed_ms="):
+            pendingCheckInPresentation = false
+            if let milliseconds = firstInteger(after: "stable_frame elapsed_ms=", in: message),
+               milliseconds > 500 {
+                addFailureLocked("checkin.sheet.presentation stable frame in \(milliseconds)ms")
+            }
+        case .checkInSheetPresentation where message.contains("dismissed"):
+            pendingCheckInPresentation = false
+        case .motionCheckInSelect where message.contains("response_ms="):
+            if let milliseconds = firstInteger(after: "response_ms=", in: message),
+               milliseconds > 100 {
+                addFailureLocked("motion.checkin.select response in \(milliseconds)ms")
+            }
+        case .motionTabSelect where message.contains("stable_frame"):
+            if let milliseconds = firstInteger(after: "elapsed_ms=", in: message) {
+                rootTabMaxMilliseconds = max(rootTabMaxMilliseconds, milliseconds)
+                if milliseconds > 300 {
+                    let tab = firstToken(after: "tab=", in: message) ?? "unknown"
+                    addFailureLocked("motion.tab.select \(tab) stable frame in \(milliseconds)ms")
+                }
+            }
+        case .navigationInteraction where message.contains("duplicate_mutation"):
+            addFailureLocked("navigation.interaction duplicate mutation")
+        case .navigationInteraction where message.contains("stable_frame"):
+            if let milliseconds = firstInteger(after: "elapsed_ms=", in: message),
+               let threshold = firstInteger(after: "threshold_ms=", in: message) {
+                let key = firstToken(after: "key=", in: message) ?? "unknown"
+                if key.hasPrefix("coach.preview.") {
+                    coachPreviewMaxMilliseconds = max(coachPreviewMaxMilliseconds, milliseconds)
+                }
+                if milliseconds > threshold {
+                    addFailureLocked(
+                        "navigation.interaction \(key) stable frame in \(milliseconds)ms above \(threshold)ms"
+                    )
+                }
+            }
         default:
             break
         }
@@ -221,9 +285,13 @@ enum PerformanceAcceptanceState {
     private static var failures: [String] = []
     private static var failureSet = Set<String>()
     private static var todayCoachMaxMilliseconds = 0
+    private static var coachPreviewMaxMilliseconds = 0
+    private static var rootTabMaxMilliseconds = 0
     private static var rootNotificationMaxMilliseconds = 0
+    private static var workoutPreviewWarmCacheHits = 0
     private static var workoutPreviewOnAppearRefreshes = 0
     private static var pendingWorkoutCoachAppend = false
+    private static var pendingCheckInPresentation = false
 
     private static let failureStrings = [
         "Potential Structural Swift Concurrency Issue: unsafeForcedSync",
@@ -257,6 +325,13 @@ enum PerformanceAcceptanceState {
         let suffix = text[range.upperBound...]
         let digits = suffix.prefix { $0.isNumber }
         return Int(digits)
+    }
+
+    private static func firstToken(after needle: String, in text: String) -> String? {
+        guard let range = text.range(of: needle) else { return nil }
+        let suffix = text[range.upperBound...]
+        let token = suffix.prefix { !$0.isWhitespace }
+        return token.isEmpty ? nil : String(token)
     }
 }
 #endif

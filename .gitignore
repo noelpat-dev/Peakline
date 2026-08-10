@@ -15,3 +15,7 @@ build/
 
 # Local notes and generated files
 *.swp
+tmp/
+
+# Local service configuration
+GymTracker/GoogleService-Info.plist

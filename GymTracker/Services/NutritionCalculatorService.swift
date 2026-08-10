@@ -12,6 +12,10 @@ struct NutritionMacroSnapshot {
 
 struct NutritionCalculatorService {
     func calculate(for food: FoodItem, consumedAmount: Double, unit: FoodAmountUnit) -> NutritionMacroSnapshot {
+        calculate(for: SavedFoodSnapshot(food), consumedAmount: consumedAmount, unit: unit)
+    }
+
+    func calculate(for food: SavedFoodSnapshot, consumedAmount: Double, unit: FoodAmountUnit) -> NutritionMacroSnapshot {
         let clampedAmount = max(consumedAmount, 0)
         let multiplier: Double
 
@@ -41,7 +45,7 @@ struct NutritionCalculatorService {
         )
     }
 
-    private func usesServingBasedNutrition(_ food: FoodItem) -> Bool {
+    private func usesServingBasedNutrition(_ food: SavedFoodSnapshot) -> Bool {
         if food.baseUnit == .serving {
             return true
         }
@@ -61,7 +65,7 @@ struct NutritionCalculatorService {
         return food.source == .manual && food.verificationStatus == .edited
     }
 
-    private func servingMultiplier(for food: FoodItem, consumedAmount: Double, unit: FoodAmountUnit) -> Double {
+    private func servingMultiplier(for food: SavedFoodSnapshot, consumedAmount: Double, unit: FoodAmountUnit) -> Double {
         switch unit {
         case .serving:
             return consumedAmount

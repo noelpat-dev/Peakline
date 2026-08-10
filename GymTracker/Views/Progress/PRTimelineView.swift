@@ -84,11 +84,16 @@ struct PRTimelineView: View {
                                         .font(.headline)
                                     Text(record.improvementDescription)
                                         .font(.subheadline.weight(.semibold))
-                                    Text("\(record.prType.displayName) - \(record.date.formatted(date: .abbreviated, time: .omitted))")
+                                    Text(
+                                        PeaklineText.joinedMetadata([
+                                            record.prType.displayName,
+                                            record.date.formatted(date: .abbreviated, time: .omitted)
+                                        ])
+                                    )
                                         .font(.caption)
                                         .foregroundStyle(appTheme.colors.textSecondary)
                                     if let previous = record.previousDisplayValue {
-                                        Text("Previous: \(previous) -> New: \(record.displayValue)")
+                                        Text("Previous: \(previous) → New: \(record.displayValue)")
                                             .font(.caption)
                                             .foregroundStyle(appTheme.colors.textSecondary)
                                     }

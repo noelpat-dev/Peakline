@@ -24,9 +24,15 @@ final class HistoryUITests: XCTestCase {
 
         let firstRow = firstSessionRow()
         XCTAssertTrue(firstRow.waitForExistence(timeout: 8), "Expected at least one History session row")
+        scrollIntoHittableRegion(firstRow)
         XCTAssertTrue(firstRow.isHittable, "Expected first History session row to be tappable above the tab bar")
 
-        app.swipeUp()
+        for _ in 0..<4 {
+            app.swipeUp()
+        }
+        for _ in 0..<3 {
+            app.swipeDown()
+        }
         XCTAssertTrue(firstSessionRow().waitForExistence(timeout: 5), "Expected History list to remain scrollable")
     }
 
@@ -37,9 +43,10 @@ final class HistoryUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["history-calendar-card"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.descendants(matching: .any)["history-filter-chips"].waitForExistence(timeout: 5))
 
-        let filterButton = app.buttons["history-filter-button"]
-        XCTAssertTrue(filterButton.waitForExistence(timeout: 5))
-        filterButton.tap()
+        XCTAssertFalse(app.buttons["history-filter-button"].exists)
+        let ratingFilterChip = app.buttons["Rating"].firstMatch
+        XCTAssertTrue(ratingFilterChip.waitForExistence(timeout: 5))
+        ratingFilterChip.tap()
         XCTAssertTrue(app.navigationBars["Filters"].waitForExistence(timeout: 5))
         let pushFilter = app.buttons.matching(identifier: "Push").firstMatch
         if pushFilter.waitForExistence(timeout: 3) {
@@ -49,9 +56,20 @@ final class HistoryUITests: XCTestCase {
 
         let firstRow = firstSessionRow()
         XCTAssertTrue(firstRow.waitForExistence(timeout: 8), "Expected a filtered History session row")
+        scrollIntoHittableRegion(firstRow)
         XCTAssertTrue(firstRow.isHittable, "Expected filtered History row to be tappable")
         firstRow.tap()
 
+        XCTAssertTrue(app.descendants(matching: .any)["history-detail-hero"].waitForExistence(timeout: 8))
+        let editButton = app.buttons["history-workout-edit"]
+        XCTAssertTrue(editButton.waitForExistence(timeout: 5), "Expected the History workout Edit action")
+        XCTAssertTrue(editButton.isHittable, "Expected Edit to remain tappable after opening a workout")
+        editButton.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["workout-logger-screen"].waitForExistence(timeout: 8),
+            "Expected History Edit to reach the completed-workout editor without freezing"
+        )
+        tapBackButton()
         XCTAssertTrue(app.descendants(matching: .any)["history-detail-hero"].waitForExistence(timeout: 8))
         tapBackButton()
         XCTAssertTrue(app.descendants(matching: .any)["history-screen"].waitForExistence(timeout: 8))
@@ -74,6 +92,14 @@ final class HistoryUITests: XCTestCase {
 
     private func firstSessionRow() -> XCUIElement {
         app.buttons.matching(identifier: "history-session-row").firstMatch
+    }
+
+    private func scrollIntoHittableRegion(_ element: XCUIElement, maxSwipes: Int = 8) {
+        var swipes = 0
+        while element.exists && !element.isHittable && swipes < maxSwipes {
+            app.swipeUp()
+            swipes += 1
+        }
     }
 
     private func tapBackButton() {

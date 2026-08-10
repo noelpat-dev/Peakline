@@ -5,27 +5,12 @@ struct SubstitutionPickerSheet: View {
     @Environment(\.appTheme) private var appTheme
 
     let title: String
-    let candidatesProvider: (ExerciseSubstitutionReason) -> [ExerciseSubstitutionCandidate]
-    let select: (ExerciseSubstitutionCandidate, ExerciseSubstitutionReason) -> Void
-
-    @State private var selectedReason: ExerciseSubstitutionReason = .equipmentBusy
-
-    private var candidates: [ExerciseSubstitutionCandidate] {
-        candidatesProvider(selectedReason)
-    }
+    let candidates: [ExerciseSubstitutionCandidate]
+    let select: (ExerciseSubstitutionCandidate) -> Void
 
     var body: some View {
         NavigationStack {
             List {
-                Section("Reason") {
-                    Picker("Reason", selection: $selectedReason) {
-                        ForEach(ExerciseSubstitutionReason.allCases) { reason in
-                            Text(reason.displayName).tag(reason)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
-
                 Section("Alternatives") {
                     if candidates.isEmpty {
                         Text("No close alternatives found.")
@@ -33,7 +18,7 @@ struct SubstitutionPickerSheet: View {
                     } else {
                         ForEach(candidates) { candidate in
                             Button {
-                                select(candidate, selectedReason)
+                                select(candidate)
                                 dismiss()
                             } label: {
                                 HStack(alignment: .top, spacing: 12) {
@@ -51,17 +36,19 @@ struct SubstitutionPickerSheet: View {
                                         Text(candidate.reason)
                                             .font(.subheadline)
                                             .foregroundStyle(appTheme.colors.textSecondary)
-                                        Text([candidate.primaryMuscle, candidate.movementPattern, candidate.equipment].compactMap { $0 }.joined(separator: " - "))
+                                        Text(PeaklineText.joinedMetadata([candidate.primaryMuscle, candidate.movementPattern, candidate.equipment].compactMap { $0 }))
                                             .font(.caption)
                                             .foregroundStyle(appTheme.colors.textTertiary)
                                     }
                                 }
                             }
                             .buttonStyle(.plain)
+                            .accessibilityIdentifier("workout-substitution-candidate-\(candidate.exerciseId.uuidString)")
                         }
                     }
                 }
             }
+            .peaklineGroupedContent()
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -73,5 +60,6 @@ struct SubstitutionPickerSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .accessibilityIdentifier("workout-substitution-sheet")
     }
 }

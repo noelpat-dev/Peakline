@@ -4,6 +4,7 @@ import SwiftUI
 struct NutritionDashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var readinessRefreshClock = ReadinessRefreshClock.shared
 
     @Query(sort: \FoodItem.name)
     private var foodItems: [FoodItem]
@@ -30,6 +31,7 @@ struct NutritionDashboardView: View {
     @State private var healthPreferences = HealthKitPreferenceStore().load()
     @State private var hydrationTargetML = HydrationSettingsStore().dailyTargetML()
     @State private var nutritionGoal = NutritionGoalService().loadGoal()
+    @State private var selectedDate = Calendar.current.startOfDay(for: .now)
 
     private let coachIntelligence = CoachIntelligenceService()
     private let calculator = NutritionCalculatorService()
@@ -40,6 +42,7 @@ struct NutritionDashboardView: View {
     @State private var dashboardSnapshot = NutritionDashboardSnapshot.empty
     @State private var lastDashboardSignature: String?
     @State private var selectedRoute: NutritionRoute?
+    @State private var activeFoodLogSwipeID: UUID?
     @State private var didRequestInitialRefresh = false
     @State private var deferredDashboardRefreshWorkItem: DispatchWorkItem?
 
@@ -102,16 +105,7 @@ struct NutritionDashboardView: View {
     }
 
     private var currentDashboardSnapshot: NutritionDashboardSnapshot {
-        guard lastDashboardSignature != nil else {
-            return dashboardSnapshot
-        }
-
-        let signature = dashboardSignature
-        if signature == lastDashboardSignature {
-            return dashboardSnapshot
-        }
-
-        return dashboardSnapshot
+        dashboardSnapshot
     }
 
     private var dashboardSignature: String {
@@ -137,7 +131,9 @@ struct NutritionDashboardView: View {
             sleepSettingsSignature,
             hydrationTargetSignature,
             nutritionGoalSignature,
-            healthKitSignature
+            healthKitSignature,
+            String(selectedDate.timeIntervalSince1970),
+            readinessRefreshClock.token.signature
         ]
         return parts.joined(separator: "|")
     }
@@ -171,22 +167,6 @@ struct NutritionDashboardView: View {
         "\(checkIn.id.uuidString):\(checkIn.updatedAt.timeIntervalSince1970)"
     }
 
-    private var todaysEntries: [FoodLogEntry] {
-        currentDashboardSnapshot.todaysEntries
-    }
-
-    private var totals: NutritionMacroSnapshot {
-        currentDashboardSnapshot.totals
-    }
-
-    private var readinessScore: ReadinessScore {
-        currentDashboardSnapshot.readiness
-    }
-
-    private var recentlyLoggedFoods: [FoodItem] {
-        currentDashboardSnapshot.recentlyLoggedFoods
-    }
-
     private func refreshDashboardSnapshot(force: Bool = false) {
         let signature = dashboardSignature
         guard force || signature != lastDashboardSignature else { return }
@@ -200,9 +180,9 @@ struct NutritionDashboardView: View {
     }
 
     private func makeDashboardSnapshot() -> NutritionDashboardSnapshot {
-        let todaysEntries = logEntries.filter { Calendar.current.isDateInToday($0.loggedAt) }
+        let dayEntries = foodLogs(on: selectedDate)
         let recentFoods = recentlyLoggedFoods(from: logEntries, foodItems: foodItems)
-        let mealEntries = Dictionary(grouping: todaysEntries.sorted { $0.loggedAt < $1.loggedAt }, by: \.mealType)
+        let mealEntries = Dictionary(grouping: dayEntries.sorted { $0.loggedAt < $1.loggedAt }, by: \.mealType)
         let readiness = coachIntelligence.readiness(
             sleepSessions: Array(sleepSessions.prefix(60)),
             napSessions: Array(napSessions.prefix(30)),
@@ -214,17 +194,44 @@ struct NutritionDashboardView: View {
             hydrationTargetML: hydrationTargetML,
             nutritionGoal: nutritionGoal
         )
-        let healthKitSyncRecords = healthKitSyncRecordsByEntryId(for: todaysEntries)
+        let healthKitSyncRecords = healthKitSyncRecordsByEntryId(for: dayEntries)
 
         return NutritionDashboardSnapshot(
-            todaysEntries: todaysEntries,
-            totals: calculator.totals(from: todaysEntries),
+            dayEntries: dayEntries,
+            totals: calculator.totals(from: dayEntries),
             readiness: readiness,
             recentlyLoggedFoods: recentFoods,
             mealEntries: mealEntries,
+            isTrainingDay: hasCompletedWorkout(on: selectedDate),
             shouldShowHealthKitStatus: healthPreferences.isHealthKitEnabled,
             healthKitSyncRecordsByEntryId: healthKitSyncRecords
         )
+    }
+
+    private func foodLogs(on date: Date) -> [FoodLogEntry] {
+        guard let interval = Calendar.current.dateInterval(of: .day, for: date) else { return [] }
+        let start = interval.start
+        let end = interval.end
+        let descriptor = FetchDescriptor<FoodLogEntry>(
+            predicate: #Predicate<FoodLogEntry> { entry in
+                entry.loggedAt >= start && entry.loggedAt < end
+            },
+            sortBy: [SortDescriptor(\.loggedAt)]
+        )
+        return (try? modelContext.fetch(descriptor)) ?? []
+    }
+
+    private func hasCompletedWorkout(on date: Date) -> Bool {
+        guard let interval = Calendar.current.dateInterval(of: .day, for: date) else { return false }
+        let start = interval.start
+        let end = interval.end
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { session in
+                session.completed && session.date >= start && session.date < end
+            }
+        )
+        descriptor.fetchLimit = 1
+        return ((try? modelContext.fetchCount(descriptor)) ?? 0) > 0
     }
 
     private func healthKitSyncRecordsByEntryId(for entries: [FoodLogEntry]) -> [UUID: HealthKitFoodLogSyncRecord] {
@@ -262,75 +269,88 @@ struct NutritionDashboardView: View {
         let snapshot = currentDashboardSnapshot
 
         FitnessScreen(title: nil) {
-            DashboardHeaderView(
-                dateText: todayDateText,
-                title: "Nutrition",
-                subtitle: "Fuel today and keep macros visible"
+            NutritionDayNavigator(
+                selectedDate: $selectedDate,
+                canMoveForward: !isToday,
+                moveBackward: { moveSelectedDay(by: -1) },
+                moveForward: { moveSelectedDay(by: 1) }
             )
 
-            NutritionHeroCard(totals: snapshot.totals, entryCount: snapshot.todaysEntries.count)
+            NutritionHeroCard(
+                totals: snapshot.totals,
+                entryCount: snapshot.dayEntries.count,
+                isToday: isToday
+            )
 
-            DashboardSection(title: "Coach Context") {
-                ReadinessContextCard(
-                    readiness: snapshot.readiness,
-                    focus: .nutrition,
-                    title: "Nutrition in today's readiness"
-                )
+            if isToday {
+                DashboardSection(title: "Coach Context") {
+                    ReadinessContextCard(
+                        readiness: snapshot.readiness,
+                        focus: .nutrition,
+                        title: "Nutrition in today's readiness"
+                    )
+                }
+            } else {
+                DashboardSection(title: "Day Context") {
+                    HistoricalNutritionContextCard(isTrainingDay: snapshot.isTrainingDay)
+                }
             }
 
             DashboardSection(title: "Macros") {
                 MacroSummaryGrid(totals: snapshot.totals)
             }
 
-            DashboardSection(title: "Quick Actions") {
-                LazyVGrid(columns: actionColumns, spacing: 12) {
-                    Button {
-                        navigate(to: .addFood)
-                    } label: {
-                        NutritionActionCard(
-                            title: "Add Food",
-                            subtitle: "Create or log local foods",
-                            systemImage: "plus.circle.fill"
-                        )
-                    }
-                    .buttonStyle(PressableCardButtonStyle())
+            if isToday {
+                DashboardSection(title: "Quick Actions") {
+                    LazyVGrid(columns: actionColumns, spacing: 12) {
+                        Button {
+                            navigate(to: .addFood)
+                        } label: {
+                            NutritionActionCard(
+                                title: "Add Food",
+                                subtitle: "Create or log local foods",
+                                systemImage: "plus.circle.fill"
+                            )
+                        }
+                        .buttonStyle(PressableCardButtonStyle())
 
-                    Button {
-                        navigate(to: .savedFoods)
-                    } label: {
-                        NutritionActionCard(
-                            title: "Saved Foods",
-                            subtitle: "\(foodItems.count) verified local items",
-                            systemImage: "tray.full.fill"
-                        )
-                    }
-                    .buttonStyle(PressableCardButtonStyle())
+                        Button {
+                            navigateToSavedFoods()
+                        } label: {
+                            NutritionActionCard(
+                                title: "Saved Foods",
+                                subtitle: "\(foodItems.count) verified local items",
+                                systemImage: "tray.full.fill"
+                            )
+                        }
+                        .buttonStyle(PressableCardButtonStyle())
 
-                    Button {
-                        navigate(to: .insights)
-                    } label: {
-                        NutritionActionCard(
-                            title: "Insights",
-                            subtitle: "Targets, trends, and training context",
-                            systemImage: "sparkles"
-                        )
-                    }
-                    .buttonStyle(PressableCardButtonStyle())
+                        Button {
+                            navigate(to: .insights)
+                        } label: {
+                            NutritionActionCard(
+                                title: "Insights",
+                                subtitle: "Targets, trends, and training context",
+                                systemImage: "sparkles"
+                            )
+                        }
+                        .buttonStyle(PressableCardButtonStyle())
 
-                    Button {
-                        navigate(to: .targets)
-                    } label: {
-                        NutritionActionCard(
-                            title: "Targets",
-                            subtitle: "Set calories and macro goals",
-                            systemImage: "target"
-                        )
+                        Button {
+                            navigate(to: .targets)
+                        } label: {
+                            NutritionActionCard(
+                                title: "Targets",
+                                subtitle: "Set calories and macro goals",
+                                systemImage: "target"
+                            )
+                        }
+                        .buttonStyle(PressableCardButtonStyle())
                     }
-                    .buttonStyle(PressableCardButtonStyle())
                 }
             }
 
-            if !snapshot.recentlyLoggedFoods.isEmpty {
+            if isToday && !snapshot.recentlyLoggedFoods.isEmpty {
                 DashboardSection(title: "Quick Log") {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
@@ -349,21 +369,30 @@ struct NutritionDashboardView: View {
                 }
             }
 
-            DashboardSection(title: "Today") {
-                if snapshot.todaysEntries.isEmpty {
-                    Button {
-                        navigate(to: .addFood)
-                    } label: {
+            DashboardSection(title: isToday ? "Today" : "Meals") {
+                if snapshot.dayEntries.isEmpty {
+                    if isToday {
+                        Button {
+                            navigate(to: .addFood)
+                        } label: {
+                            NutritionEmptyState(
+                                title: "Nothing logged today",
+                                message: foodItems.isEmpty
+                                    ? "Create your first verified food manually, then reuse it whenever it appears in your routine."
+                                    : "Log a saved food to start today's nutrition summary.",
+                                systemImage: "fork.knife.circle",
+                                actionTitle: foodItems.isEmpty ? "Create Food" : "Log Food"
+                            )
+                        }
+                        .buttonStyle(PressableCardButtonStyle())
+                    } else {
                         NutritionEmptyState(
-                            title: "Nothing logged today",
-                            message: foodItems.isEmpty
-                                ? "Create your first verified food manually, then reuse it whenever it appears in your routine."
-                                : "Log a saved food to start today's nutrition summary.",
+                            title: "Nothing logged",
+                            message: "No food was recorded on this day.",
                             systemImage: "fork.knife.circle",
-                            actionTitle: foodItems.isEmpty ? "Create Food" : "Log Food"
+                            actionTitle: nil
                         )
                     }
-                    .buttonStyle(PressableCardButtonStyle())
                 } else {
                     LazyVStack(spacing: 12) {
                         ForEach(MealType.allCases) { mealType in
@@ -375,6 +404,8 @@ struct NutritionDashboardView: View {
                                     entries: entries,
                                     shouldShowHealthKitStatus: snapshot.shouldShowHealthKitStatus,
                                     syncRecordsByEntryId: snapshot.healthKitSyncRecordsByEntryId,
+                                    allowsDeletion: isToday,
+                                    activeSwipeID: $activeFoodLogSwipeID,
                                     requestDelete: { pendingDeleteLogEntry = $0 }
                                 )
                             }
@@ -387,19 +418,26 @@ struct NutritionDashboardView: View {
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("nutrition-screen")
         .navigationDestination(item: $selectedRoute) { route in
-            switch route {
-            case .addFood:
-                AddFoodHubView()
-            case .savedFoods:
-                FoodDatabaseView()
-            case .insights:
-                NutritionInsightsDashboardView()
-            case .targets:
-                NutritionTargetsView()
-            case .barcode:
-                BarcodeScannerView()
-            case .labelScan:
-                NutritionLabelScanView()
+            Group {
+                switch route {
+                case .addFood:
+                    AddFoodHubView()
+                case .savedFoods(let preparedRoute):
+                    FoodDatabaseView(route: preparedRoute)
+                case .insights:
+                    NutritionInsightsDashboardView()
+                case .targets:
+                    NutritionTargetsView()
+                case .barcode:
+                    BarcodeScannerView()
+                case .labelScan:
+                    NutritionLabelScanView()
+                }
+            }
+            .onAppear {
+                NavigationInteraction.destinationDidAppear(
+                    key: "nutrition.\(route.analyticsName)"
+                )
             }
         }
         .alert("Remove food log?", isPresented: deleteLogAlertBinding) {
@@ -413,6 +451,7 @@ struct NutritionDashboardView: View {
             Text("This removes the logged entry from your daily totals. The saved food stays in your food database.")
         }
         .onAppear {
+            readinessRefreshClock.start()
             sleepSettings = sleepSettingsStore.load()
             healthPreferences = HealthKitPreferenceStore().load()
             hydrationTargetML = hydrationSettingsStore.dailyTargetML()
@@ -432,6 +471,14 @@ struct NutritionDashboardView: View {
         .onChange(of: dashboardSignature) { _, _ in
             refreshDashboardSnapshot()
         }
+        .onChange(of: selectedDate) { _, newDate in
+            selectedDate = min(
+                Calendar.current.startOfDay(for: newDate),
+                Calendar.current.startOfDay(for: .now)
+            )
+            pendingDeleteLogEntry = nil
+            refreshDashboardSnapshot(force: true)
+        }
     }
 
     private var actionColumns: [GridItem] {
@@ -442,13 +489,32 @@ struct NutritionDashboardView: View {
     }
 
     private func navigate(to route: NutritionRoute) {
-        AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
+        NavigationInteraction.perform(
+            key: "nutrition.\(route.analyticsName)",
+            destinationClass: route.destinationClass,
+            haptic: .selection
+        ) {
             selectedRoute = route
         }
     }
 
-    private var todayDateText: String {
-        Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide))
+    private func navigateToSavedFoods() {
+        let catalog = SavedFoodCatalogSnapshot(foods: foodItems.map(SavedFoodSnapshot.init))
+        SavedFoodWarmStartStore.shared.update(catalog)
+        guard let preparedRoute = SavedFoodWarmStartStore.shared.preparedRoute() else { return }
+        navigate(to: .savedFoods(preparedRoute))
+    }
+
+    private var isToday: Bool {
+        Calendar.current.isDateInToday(selectedDate)
+    }
+
+    private func moveSelectedDay(by value: Int) {
+        guard let date = Calendar.current.date(byAdding: .day, value: value, to: selectedDate) else { return }
+        selectedDate = min(
+            Calendar.current.startOfDay(for: date),
+            Calendar.current.startOfDay(for: .now)
+        )
     }
 
     private var deleteLogAlertBinding: Binding<Bool> {
@@ -471,32 +537,155 @@ struct NutritionDashboardView: View {
     }
 }
 
+private struct NutritionDayNavigator: View {
+    @Environment(\.appTheme) private var appTheme
+
+    @Binding var selectedDate: Date
+    let canMoveForward: Bool
+    let moveBackward: () -> Void
+    let moveForward: () -> Void
+
+    private var today: Date {
+        Calendar.current.startOfDay(for: .now)
+    }
+
+    var body: some View {
+        FitnessCard(style: .compact, padding: 14) {
+            HStack(spacing: 10) {
+                navigationButton(
+                    systemImage: "chevron.left",
+                    accessibilityLabel: "Previous nutrition day",
+                    action: moveBackward
+                )
+
+                DatePicker(
+                    "Nutrition date",
+                    selection: $selectedDate,
+                    in: Date.distantPast...today,
+                    displayedComponents: .date
+                )
+                .datePickerStyle(.compact)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
+                .accessibilityIdentifier("nutrition-date-picker")
+
+                navigationButton(
+                    systemImage: "chevron.right",
+                    accessibilityLabel: "Next nutrition day",
+                    isDisabled: !canMoveForward,
+                    action: moveForward
+                )
+            }
+        }
+    }
+
+    private func navigationButton(
+        systemImage: String,
+        accessibilityLabel: String,
+        isDisabled: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.subheadline.weight(.bold))
+                .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
+                .background(
+                    appTheme.elevatedCardBackground,
+                    in: RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
+                        .stroke(appTheme.colors.cardBorder.opacity(0.56), lineWidth: 0.75)
+                }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isDisabled ? appTheme.colors.textTertiary : appTheme.colors.textPrimary)
+        .disabled(isDisabled)
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+private struct HistoricalNutritionContextCard: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let isTrainingDay: Bool
+
+    var body: some View {
+        FitnessCard(style: .compact) {
+            HStack(spacing: 14) {
+                FitnessIconBadge(
+                    systemImage: isTrainingDay ? "figure.strengthtraining.traditional" : "moon.zzz.fill",
+                    size: 44
+                )
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(isTrainingDay ? "Training Day" : "Rest Day")
+                        .font(.headline)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                    Text(
+                        isTrainingDay
+                            ? "A completed workout was logged on this date."
+                            : "No completed workout was logged on this date."
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                }
+
+                Spacer(minLength: 0)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 fileprivate enum NutritionRoute: Hashable, Identifiable {
     case addFood
-    case savedFoods
+    case savedFoods(SavedFoodPreparedRoute)
     case insights
     case targets
     case barcode
     case labelScan
 
     var id: Self { self }
+
+    var analyticsName: String {
+        switch self {
+        case .addFood: return "add-food"
+        case .savedFoods: return "saved-foods"
+        case .insights: return "insights"
+        case .targets: return "targets"
+        case .barcode: return "barcode"
+        case .labelScan: return "label-scan"
+        }
+    }
+
+    var destinationClass: NavigationDestinationClass {
+        switch self {
+        case .addFood, .savedFoods, .targets:
+            return .warm
+        case .insights, .barcode, .labelScan:
+            return .deep
+        }
+    }
 }
 
 private struct NutritionDashboardSnapshot {
-    var todaysEntries: [FoodLogEntry]
+    var dayEntries: [FoodLogEntry]
     var totals: NutritionMacroSnapshot
     var readiness: ReadinessScore
     var recentlyLoggedFoods: [FoodItem]
     var mealEntries: [MealType: [FoodLogEntry]]
+    var isTrainingDay: Bool
     var shouldShowHealthKitStatus: Bool
     var healthKitSyncRecordsByEntryId: [UUID: HealthKitFoodLogSyncRecord]
 
     static let empty = NutritionDashboardSnapshot(
-        todaysEntries: [],
+        dayEntries: [],
         totals: NutritionMacroSnapshot(calories: 0, protein: 0, carbs: 0, fat: 0, sugar: nil, fibre: nil, salt: nil),
         readiness: CoachIntelligenceService.emptySnapshot().readiness,
         recentlyLoggedFoods: [],
         mealEntries: [:],
+        isTrainingDay: false,
         shouldShowHealthKitStatus: false,
         healthKitSyncRecordsByEntryId: [:]
     )
@@ -543,13 +732,20 @@ struct AddFoodHubView: View {
         .navigationTitle("Add Food")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $selectedRoute) { route in
-            switch route {
-            case .barcode:
-                BarcodeScannerView()
-            case .labelScan:
-                NutritionLabelScanView()
-            case .savedFoods:
-                FoodDatabaseView()
+            Group {
+                switch route {
+                case .barcode:
+                    BarcodeScannerView()
+                case .labelScan:
+                    NutritionLabelScanView()
+                case .savedFoods(let preparedRoute):
+                    FoodDatabaseView(route: preparedRoute)
+                }
+            }
+            .onAppear {
+                NavigationInteraction.destinationDidAppear(
+                    key: "add-food.\(route.analyticsName)"
+                )
             }
         }
         .sheet(isPresented: $showingManualEntry) {
@@ -580,7 +776,7 @@ struct AddFoodHubView: View {
     @ViewBuilder
     private var savedFoodsAction: some View {
         Button {
-            navigate(to: .savedFoods)
+            navigateToSavedFoods()
         } label: {
             savedFoodsActionCard
         }
@@ -588,9 +784,20 @@ struct AddFoodHubView: View {
     }
 
     private func navigate(to route: AddFoodHubRoute) {
-        AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
+        NavigationInteraction.perform(
+            key: "add-food.\(route.analyticsName)",
+            destinationClass: .deep,
+            haptic: .selection
+        ) {
             selectedRoute = route
         }
+    }
+
+    private func navigateToSavedFoods() {
+        let catalog = SavedFoodCatalogSnapshot(foods: foodItems.map(SavedFoodSnapshot.init))
+        SavedFoodWarmStartStore.shared.update(catalog)
+        guard let preparedRoute = SavedFoodWarmStartStore.shared.preparedRoute() else { return }
+        navigate(to: .savedFoods(preparedRoute))
     }
 
     private var barcodeActionCard: some View {
@@ -606,9 +813,9 @@ struct AddFoodHubView: View {
     private var labelScanActionCard: some View {
         NutritionHubActionCard(
             title: "Scan Label",
-            subtitle: "Read a nutrition label from a photo, then confirm values.",
+            subtitle: "Read a nutrition table from a photo or screenshot, then confirm values.",
             systemImage: "text.viewfinder",
-            status: "OCR MVP",
+            status: "On-device OCR",
             isEnabled: true
         )
     }
@@ -627,44 +834,41 @@ struct AddFoodHubView: View {
 private enum AddFoodHubRoute: Hashable, Identifiable {
     case barcode
     case labelScan
-    case savedFoods
+    case savedFoods(SavedFoodPreparedRoute)
 
     var id: Self { self }
+
+    var analyticsName: String {
+        switch self {
+        case .barcode: return "barcode"
+        case .labelScan: return "label-scan"
+        case .savedFoods: return "saved-foods"
+        }
+    }
 }
 
 struct FoodDatabaseView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
 
-    @Query(sort: \FoodItem.name)
-    private var foodItems: [FoodItem]
-
+    @State private var catalog: SavedFoodCatalogSnapshot
     @State private var searchText = ""
     @State private var showingManualEntry = false
-    @State private var editingFood: FoodItem?
-    @State private var pendingDelete: FoodItem?
+    @State private var editingFood: SavedFoodSnapshot?
+    @State private var pendingDelete: SavedFoodSnapshot?
 
-    private var filteredFoods: [FoodItem] {
-        let trimmedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedSearch.isEmpty else { return foodItems }
-
-        return foodItems.filter { food in
-            food.name.localizedCaseInsensitiveContains(trimmedSearch)
-                || (food.brand?.localizedCaseInsensitiveContains(trimmedSearch) ?? false)
-        }
+    init(route: SavedFoodPreparedRoute) {
+        let prepared = SavedFoodWarmStartStore.shared.snapshot(for: route)
+            ?? .empty
+        _catalog = State(initialValue: prepared)
     }
 
     var body: some View {
-        List {
-            FitnessScreenHeader(
-                title: "Saved Foods",
-                subtitle: "Your user-confirmed local food database.",
-                systemImage: "tray.full"
-            )
-            .savedFoodsListRowStyle(rowInsets(top: appTheme.metrics.screenPadding, bottom: appTheme.metrics.screenContentSpacing))
+        let visibleFoods = catalog.filtered(by: searchText)
 
-            FoodDatabaseSummaryCard(foodCount: foodItems.count)
-                .savedFoodsListRowStyle(rowInsets(bottom: appTheme.metrics.screenContentSpacing))
+        List {
+            FoodDatabaseSummaryCard(foodCount: catalog.foods.count)
+                .savedFoodsListRowStyle(rowInsets(top: appTheme.metrics.screenPadding, bottom: appTheme.metrics.screenContentSpacing))
 
             Button {
                 showingManualEntry = true
@@ -678,27 +882,27 @@ struct FoodDatabaseView: View {
             NutritionSearchField(searchText: $searchText)
                 .savedFoodsListRowStyle(rowInsets(bottom: appTheme.metrics.screenContentSpacing))
 
-            if filteredFoods.isEmpty {
+            if visibleFoods.isEmpty {
                 Button {
-                    if foodItems.isEmpty {
+                    if catalog.foods.isEmpty {
                         showingManualEntry = true
                     }
                 } label: {
                     NutritionEmptyState(
-                        title: foodItems.isEmpty ? "No saved foods yet" : "No matching foods",
-                        message: foodItems.isEmpty
+                        title: catalog.foods.isEmpty ? "No saved foods yet" : "No matching foods",
+                        message: catalog.foods.isEmpty
                             ? "Create your first manual food so it can be logged again in seconds."
                             : "Try another food or brand name.",
-                        systemImage: foodItems.isEmpty ? "tray" : "magnifyingglass",
-                        actionTitle: foodItems.isEmpty ? "Create Food" : nil
+                        systemImage: catalog.foods.isEmpty ? "tray" : "magnifyingglass",
+                        actionTitle: catalog.foods.isEmpty ? "Create Food" : nil
                     )
                 }
                 .buttonStyle(.plain)
-                .disabled(!foodItems.isEmpty)
+                .disabled(!catalog.foods.isEmpty)
                 .savedFoodsListRowStyle(rowInsets(bottom: appTheme.metrics.screenBottomPadding))
             } else {
-                ForEach(filteredFoods) { food in
-                    let isLastFood = food.id == filteredFoods.last?.id
+                ForEach(visibleFoods) { food in
+                    let isLastFood = food.id == visibleFoods.last?.id
 
                     SavedFoodCard(
                         food: food,
@@ -721,15 +925,14 @@ struct FoodDatabaseView: View {
             }
         }
         .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
+        .peaklineGroupedContent()
         .navigationTitle("Saved Foods")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingManualEntry) {
-            ManualFoodEntryView()
+            ManualFoodEntryView(onSave: applySavedFood)
         }
         .sheet(item: $editingFood) { food in
-            ManualFoodEntryView(food: food)
+            ManualFoodEntryView(foodSnapshot: food, onSave: applySavedFood)
         }
         .alert("Delete food?", isPresented: deleteAlertBinding) {
             Button("Cancel", role: .cancel) {
@@ -764,10 +967,29 @@ struct FoodDatabaseView: View {
 
     private func deletePendingFood() {
         guard let pendingDelete else { return }
-        modelContext.delete(pendingDelete)
-        try? modelContext.save()
-        AppHaptics.warning()
-        self.pendingDelete = nil
+        let foodID = pendingDelete.id
+        let descriptor = FetchDescriptor<FoodItem>(
+            predicate: #Predicate<FoodItem> { $0.id == foodID }
+        )
+        guard let food = try? modelContext.fetch(descriptor).first else {
+            self.pendingDelete = nil
+            return
+        }
+        modelContext.delete(food)
+        do {
+            try modelContext.save()
+            catalog = catalog.removing(id: foodID)
+            SavedFoodWarmStartStore.shared.remove(id: foodID)
+            AppHaptics.warning()
+            self.pendingDelete = nil
+        } catch {
+            AppHaptics.error()
+        }
+    }
+
+    private func applySavedFood(_ food: SavedFoodSnapshot) {
+        catalog = catalog.upserting(food)
+        SavedFoodWarmStartStore.shared.update(catalog)
     }
 }
 
@@ -784,7 +1006,8 @@ struct ManualFoodEntryView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
 
-    private let food: FoodItem?
+    private let foodSnapshot: SavedFoodSnapshot?
+    private let onSave: ((SavedFoodSnapshot) -> Void)?
 
     @State private var name: String
     @State private var brand: String
@@ -799,29 +1022,34 @@ struct ManualFoodEntryView: View {
     @State private var salt: String
     @State private var errorText: String?
 
-    init(food: FoodItem? = nil) {
-        self.food = food
-        _name = State(initialValue: food?.name ?? "")
-        _brand = State(initialValue: food?.brand ?? "")
-        _servingSize = State(initialValue: Self.fieldText(food?.servingSize))
-        _baseUnit = State(initialValue: food?.baseUnit ?? .grams)
-        _calories = State(initialValue: Self.fieldText(food?.caloriesPer100g))
-        _protein = State(initialValue: Self.fieldText(food?.proteinPer100g))
-        _carbs = State(initialValue: Self.fieldText(food?.carbsPer100g))
-        _fat = State(initialValue: Self.fieldText(food?.fatPer100g))
-        _sugar = State(initialValue: Self.fieldText(food?.sugarPer100g))
-        _fibre = State(initialValue: Self.fieldText(food?.fibrePer100g))
-        _salt = State(initialValue: Self.fieldText(food?.saltPer100g))
+    init(food: FoodItem? = nil, onSave: ((SavedFoodSnapshot) -> Void)? = nil) {
+        self.init(foodSnapshot: food.map(SavedFoodSnapshot.init), onSave: onSave)
+    }
+
+    init(foodSnapshot: SavedFoodSnapshot?, onSave: ((SavedFoodSnapshot) -> Void)? = nil) {
+        self.foodSnapshot = foodSnapshot
+        self.onSave = onSave
+        _name = State(initialValue: foodSnapshot?.name ?? "")
+        _brand = State(initialValue: foodSnapshot?.brand ?? "")
+        _servingSize = State(initialValue: Self.fieldText(foodSnapshot?.servingSize))
+        _baseUnit = State(initialValue: foodSnapshot?.baseUnit ?? .grams)
+        _calories = State(initialValue: Self.fieldText(foodSnapshot?.caloriesPer100g))
+        _protein = State(initialValue: Self.fieldText(foodSnapshot?.proteinPer100g))
+        _carbs = State(initialValue: Self.fieldText(foodSnapshot?.carbsPer100g))
+        _fat = State(initialValue: Self.fieldText(foodSnapshot?.fatPer100g))
+        _sugar = State(initialValue: Self.fieldText(foodSnapshot?.sugarPer100g))
+        _fibre = State(initialValue: Self.fieldText(foodSnapshot?.fibrePer100g))
+        _salt = State(initialValue: Self.fieldText(foodSnapshot?.saltPer100g))
     }
 
     var body: some View {
         NavigationStack {
             FitnessScreen(
-                title: food == nil ? "Manual Food" : "Edit Food",
+                title: foodSnapshot == nil ? "Manual Food" : "Edit Food",
                 subtitle: "User-confirmed nutrition stays local and reusable.",
                 systemImage: "square.and.pencil"
             ) {
-                ManualFoodTrustCard(isEditing: food != nil)
+                ManualFoodTrustCard(isEditing: foodSnapshot != nil)
 
                 DashboardSection(title: "Food Identity") {
                     FitnessCard {
@@ -890,12 +1118,12 @@ struct ManualFoodEntryView: View {
                 Button {
                     save()
                 } label: {
-                    Label(food == nil ? "Save Food" : "Update Food", systemImage: "checkmark")
+                    Label(foodSnapshot == nil ? "Save Food" : "Update Food", systemImage: "checkmark")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(PrimaryFitnessButtonStyle())
             }
-            .navigationTitle(food == nil ? "Manual Food" : "Edit Food")
+            .navigationTitle(foodSnapshot == nil ? "Manual Food" : "Edit Food")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -910,9 +1138,9 @@ struct ManualFoodEntryView: View {
     private var macroSectionTitle: String {
         switch baseUnit {
         case .grams:
-            return "Macros per 100g"
+            return "Macros per 100 g"
         case .millilitres:
-            return "Macros per 100ml"
+            return "Macros per 100 mL"
         case .serving:
             return "Macros per serving"
         }
@@ -952,7 +1180,16 @@ struct ManualFoodEntryView: View {
         let trimmedBrand = brand.trimmingCharacters(in: .whitespacesAndNewlines)
         let now = Date.now
 
-        if let food {
+        let savedFood: FoodItem
+        if let foodSnapshot {
+            let foodID = foodSnapshot.id
+            let descriptor = FetchDescriptor<FoodItem>(
+                predicate: #Predicate<FoodItem> { $0.id == foodID }
+            )
+            guard let food = try? modelContext.fetch(descriptor).first else {
+                errorText = "This saved food is no longer available."
+                return
+            }
             food.name = trimmedName
             food.brand = trimmedBrand.isEmpty ? nil : trimmedBrand
             food.servingSize = values.servingSize
@@ -967,9 +1204,9 @@ struct ManualFoodEntryView: View {
             food.source = .manual
             food.verificationStatus = .edited
             food.updatedAt = now
+            savedFood = food
         } else {
-            modelContext.insert(
-                FoodItem(
+            let food = FoodItem(
                     name: trimmedName,
                     brand: trimmedBrand.isEmpty ? nil : trimmedBrand,
                     servingSize: values.servingSize,
@@ -986,12 +1223,21 @@ struct ManualFoodEntryView: View {
                     createdAt: now,
                     updatedAt: now
                 )
-            )
+            modelContext.insert(food)
+            savedFood = food
         }
 
-        try? modelContext.save()
-        AppHaptics.success()
-        dismiss()
+        do {
+            try modelContext.save()
+            let snapshot = SavedFoodSnapshot(savedFood)
+            SavedFoodWarmStartStore.shared.upsert(snapshot)
+            onSave?(snapshot)
+            AppHaptics.success()
+            dismiss()
+        } catch {
+            AppHaptics.error()
+            errorText = "Could not save this food."
+        }
     }
 
     private var parsedValues: ParsedFoodValues? {
@@ -1035,7 +1281,7 @@ struct LogFoodView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
 
-    let food: FoodItem
+    let food: SavedFoodSnapshot
 
     @State private var consumedAmount: String
     @State private var amountUnit: FoodAmountUnit
@@ -1046,9 +1292,13 @@ struct LogFoodView: View {
     private let calculator = NutritionCalculatorService()
 
     init(food: FoodItem) {
-        self.food = food
-        _consumedAmount = State(initialValue: Self.defaultAmountText(for: food))
-        _amountUnit = State(initialValue: food.baseUnit)
+        self.init(snapshot: SavedFoodSnapshot(food))
+    }
+
+    init(snapshot: SavedFoodSnapshot) {
+        food = snapshot
+        _consumedAmount = State(initialValue: Self.defaultAmountText(for: snapshot))
+        _amountUnit = State(initialValue: snapshot.baseUnit)
     }
 
     private var parsedAmount: Double? {
@@ -1101,7 +1351,7 @@ struct LogFoodView: View {
 
             if amountUnit == .serving && food.baseUnit != .serving && food.servingSize == nil {
                 NutritionNoticeCard(
-                    message: "Serving logs use 100g unless this food has a serving size.",
+                    message: "Serving logs use 100 g unless this food has a serving size.",
                     systemImage: "info.circle",
                     tone: .neutral
                 )
@@ -1176,7 +1426,7 @@ struct LogFoodView: View {
         dismiss()
     }
 
-    private static func defaultAmountText(for food: FoodItem) -> String {
+    private static func defaultAmountText(for food: SavedFoodSnapshot) -> String {
         if food.baseUnit == .serving {
             return "1"
         }
@@ -1205,6 +1455,7 @@ private struct NutritionHeroCard: View {
 
     let totals: NutritionMacroSnapshot
     let entryCount: Int
+    let isToday: Bool
 
     var body: some View {
         FitnessCard(style: .hero) {
@@ -1212,13 +1463,13 @@ private struct NutritionHeroCard: View {
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 7) {
                         Text("Today's Intake")
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.eyebrow)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .textCase(.uppercase)
 
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text(kcalText(totals.calories))
-                                .font(.system(size: 44, weight: .bold, design: .rounded))
+                                .font(AppTypography.heroMetric)
                                 .foregroundStyle(appTheme.colors.textPrimary)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.65)
@@ -1235,24 +1486,35 @@ private struct NutritionHeroCard: View {
                 }
 
                 Text(heroMessage)
-                    .font(.headline)
+                    .font(AppTypography.bodyEmphasis)
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                HStack(spacing: 8) {
-                    NutritionMiniMacroPill(label: "Protein", value: "\(gramsText(totals.protein))g", systemImage: "bolt.heart.fill")
-                    NutritionMiniMacroPill(label: "Carbs", value: "\(gramsText(totals.carbs))g", systemImage: "leaf.fill")
-                    NutritionMiniMacroPill(label: "Fat", value: "\(gramsText(totals.fat))g", systemImage: "drop.fill")
-                }
+                Text(
+                    PeaklineText.joinedMetadata([
+                        "Protein \(gramsText(totals.protein)) g",
+                        "Carbs \(gramsText(totals.carbs)) g",
+                        "Fat \(gramsText(totals.fat)) g"
+                    ])
+                )
+                    .font(AppTypography.metadataEmphasis)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Today's intake, \(kcalText(totals.calories)) calories, \(gramsText(totals.protein)) grams protein")
+        .accessibilityLabel("\(isToday ? "Today's" : "Selected day") intake, \(kcalText(totals.calories)) calories, \(gramsText(totals.protein)) grams protein")
     }
 
     private var heroMessage: String {
         if entryCount == 0 {
-            return "Log a meal to connect today's food with your training."
+            return isToday
+                ? "Log a meal to connect today's food with your training."
+                : "No nutrition was recorded on this day."
+        }
+
+        if !isToday {
+            return "Recorded meals and macros for this day."
         }
 
         if totals.protein >= 100 {
@@ -1264,19 +1526,27 @@ private struct NutritionHeroCard: View {
 }
 
 private struct MacroSummaryGrid: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let totals: NutritionMacroSnapshot
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 10),
-        GridItem(.flexible(), spacing: 10)
-    ]
+    private var columns: [GridItem] {
+        if dynamicTypeSize.isAccessibilitySize {
+            return [GridItem(.flexible())]
+        }
+
+        return [
+            GridItem(.flexible(), spacing: 10),
+            GridItem(.flexible(), spacing: 10)
+        ]
+    }
 
     var body: some View {
         LazyVGrid(columns: columns, spacing: 10) {
-            NutritionMetricCard(label: "Calories", value: kcalText(totals.calories), caption: "kcal logged", systemImage: "flame.fill")
-            NutritionMetricCard(label: "Protein", value: "\(gramsText(totals.protein))g", caption: "recovery focus", systemImage: "bolt.heart.fill")
-            NutritionMetricCard(label: "Carbs", value: "\(gramsText(totals.carbs))g", caption: "training fuel", systemImage: "leaf.fill")
-            NutritionMetricCard(label: "Fibre", value: "\(gramsText(totals.fibre ?? 0))g", caption: "daily target", systemImage: "chart.bar.fill")
+            NutritionMetricCard(label: "Protein", value: "\(gramsText(totals.protein)) g", caption: "recovery focus", systemImage: "bolt.heart.fill")
+            NutritionMetricCard(label: "Carbs", value: "\(gramsText(totals.carbs)) g", caption: "training fuel", systemImage: "leaf.fill")
+            NutritionMetricCard(label: "Fat", value: "\(gramsText(totals.fat)) g", caption: "daily intake", systemImage: "drop.fill")
+            NutritionMetricCard(label: "Fibre", value: "\(gramsText(totals.fibre ?? 0)) g", caption: "daily target", systemImage: "chart.bar.fill")
         }
     }
 }
@@ -1333,6 +1603,8 @@ private struct MealSectionCard: View {
     let entries: [FoodLogEntry]
     let shouldShowHealthKitStatus: Bool
     let syncRecordsByEntryId: [UUID: HealthKitFoodLogSyncRecord]
+    let allowsDeletion: Bool
+    @Binding var activeSwipeID: UUID?
     let requestDelete: (FoodLogEntry) -> Void
 
     private let calculator = NutritionCalculatorService()
@@ -1345,18 +1617,21 @@ private struct MealSectionCard: View {
         FitnessCard(padding: 16) {
             VStack(alignment: .leading, spacing: 13) {
                 HStack(alignment: .center, spacing: 10) {
-                    Image(systemName: mealType.systemImage)
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.accent)
-                        .frame(width: 36, height: 36)
-                        .background(appTheme.colors.accentSurface, in: Circle())
+                    FitnessIconBadge(systemImage: mealType.systemImage, size: 36)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(mealType.displayName)
                             .font(.headline)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
-                        Text("\(entries.count) item\(entries.count == 1 ? "" : "s") - P \(gramsText(totals.protein))g C \(gramsText(totals.carbs))g F \(gramsText(totals.fat))g")
+                        Text(
+                            PeaklineText.joinedMetadata([
+                                PeaklineText.count(entries.count, singular: "item"),
+                                "P \(gramsText(totals.protein)) g",
+                                "C \(gramsText(totals.carbs)) g",
+                                "F \(gramsText(totals.fat)) g"
+                            ])
+                        )
                             .font(.caption)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .lineLimit(1)
@@ -1377,6 +1652,8 @@ private struct MealSectionCard: View {
                             entry: entry,
                             shouldShowHealthKitStatus: shouldShowHealthKitStatus,
                             syncRecord: syncRecordsByEntryId[entry.id],
+                            allowsDeletion: allowsDeletion,
+                            activeSwipeID: $activeSwipeID,
                             requestDelete: { requestDelete(entry) }
                         )
                     }
@@ -1388,39 +1665,29 @@ private struct MealSectionCard: View {
 
 private struct FoodLogRow: View {
     @Environment(\.appTheme) private var appTheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let entry: FoodLogEntry
     let shouldShowHealthKitStatus: Bool
     let syncRecord: HealthKitFoodLogSyncRecord?
+    let allowsDeletion: Bool
+    @Binding var activeSwipeID: UUID?
     let requestDelete: () -> Void
 
-    @State private var horizontalOffset: CGFloat = 0
-    @GestureState private var dragTranslation: CGFloat = 0
-
     var body: some View {
-        ZStack(alignment: .trailing) {
-            deleteAction
-                .padding(.trailing, appTheme.metrics.swipeRevealActionTrailingPadding)
-                .opacity(deleteRevealProgress)
-
+        SwipeRevealRow(
+            id: entry.id,
+            activeID: $activeSwipeID,
+            isEnabled: allowsDeletion
+        ) {
             rowContent
-                .offset(x: visibleOffset)
-                .simultaneousGesture(swipeGesture)
-                .onTapGesture {
-                    guard horizontalOffset != 0 else { return }
-                    closeSwipe()
-                }
+        } action: {
+            deleteAction
         }
-        .contextMenu {
-            Button(role: .destructive) {
-                AppHaptics.selection()
-                requestDelete()
-            } label: {
-                Label("Remove Log", systemImage: "trash")
+        .accessibilityActions {
+            if allowsDeletion {
+                Button("Remove Log", action: requestDelete)
             }
         }
-        .accessibilityAction(named: "Remove Log", requestDelete)
     }
 
     private var rowContent: some View {
@@ -1432,7 +1699,14 @@ private struct FoodLogRow: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
 
-                Text("\(amountText) - P \(gramsText(entry.proteinSnapshot))g C \(gramsText(entry.carbsSnapshot))g F \(gramsText(entry.fatSnapshot))g")
+                Text(
+                    PeaklineText.joinedMetadata([
+                        amountText,
+                        "P \(gramsText(entry.proteinSnapshot)) g",
+                        "C \(gramsText(entry.carbsSnapshot)) g",
+                        "F \(gramsText(entry.fatSnapshot)) g"
+                    ])
+                )
                     .font(AppTypography.metadata)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .lineLimit(1)
@@ -1476,138 +1750,86 @@ private struct FoodLogRow: View {
         "\(entry.consumedAmount.formatted(.number.precision(.fractionLength(0...1)))) \(entry.amountUnit.shortName)"
     }
 
-    private var visibleOffset: CGFloat {
-        clampedOffset(horizontalOffset + dragTranslation)
-    }
-
-    private var deleteRevealWidth: CGFloat {
-        appTheme.metrics.swipeRevealWidth
-    }
-
-    private var deleteRevealProgress: CGFloat {
-        min(1, abs(visibleOffset) / deleteRevealWidth)
-    }
-
-    private var swipeGesture: some Gesture {
-        DragGesture(minimumDistance: 14, coordinateSpace: .local)
-            .updating($dragTranslation) { value, state, _ in
-                guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                state = value.translation.width
-            }
-            .onEnded { value in
-                guard abs(value.translation.width) > abs(value.translation.height) else {
-                    closeSwipe()
-                    return
-                }
-
-                let projectedOffset = horizontalOffset + value.predictedEndTranslation.width
-                let shouldOpen = projectedOffset < -(deleteRevealWidth * 0.45) || value.translation.width < -36
-
-                withAnimation(AppMotion.swipeRevealSnap(reduceMotion: reduceMotion)) {
-                    horizontalOffset = shouldOpen ? -deleteRevealWidth : 0
-                }
-            }
-    }
-
-    private func clampedOffset(_ offset: CGFloat) -> CGFloat {
-        min(0, max(-deleteRevealWidth, offset))
-    }
-
-    private func closeSwipe() {
-        withAnimation(AppMotion.swipeRevealSnap(reduceMotion: reduceMotion)) {
-            horizontalOffset = 0
-        }
-    }
 }
 
 private struct SavedFoodCard: View {
     @Environment(\.appTheme) private var appTheme
 
-    let food: FoodItem
+    let food: SavedFoodSnapshot
     let edit: () -> Void
     let delete: () -> Void
 
     var body: some View {
         cardContent
-            .contextMenu {
-                Button {
-                    AppHaptics.selection()
-                    edit()
-                } label: {
-                    Label("Edit Food", systemImage: "pencil")
-                }
-
-                Button(role: .destructive) {
-                    AppHaptics.warning()
-                    delete()
-                } label: {
-                    Label("Delete Food", systemImage: "trash")
-                }
-            }
             .accessibilityAction(named: "Delete Food") {
                 delete()
             }
     }
 
     private var cardContent: some View {
-        FitnessCard(padding: 16) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 12) {
-                    NutritionFoodIcon(systemImage: "fork.knife")
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                NutritionFoodIcon(systemImage: "fork.knife")
 
-                    VStack(alignment: .leading, spacing: 7) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(food.name)
-                                .font(.headline)
-                                .foregroundStyle(appTheme.colors.textPrimary)
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.84)
+                VStack(alignment: .leading, spacing: 7) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(food.name)
+                            .font(.headline)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.84)
 
-                            if let brand = food.brand, !brand.isEmpty {
-                                Text(brand)
-                                    .font(.caption)
-                                    .foregroundStyle(appTheme.colors.textSecondary)
-                                    .lineLimit(1)
-                            }
-                        }
-
-                        HStack(spacing: 6) {
-                            FoodSourceBadge(source: food.source)
-                            VerificationStatusBadge(status: food.verificationStatus)
+                        if let brand = food.brand, !brand.isEmpty {
+                            Text(brand)
+                                .font(.caption)
+                                .foregroundStyle(appTheme.colors.textSecondary)
+                                .lineLimit(1)
                         }
                     }
 
-                    Spacer(minLength: 8)
-                }
-
-                HStack(spacing: 8) {
-                    NutritionMacroChip(title: "kcal", value: kcalText(food.caloriesPer100g ?? 0))
-                    NutritionMacroChip(title: "P", value: "\(gramsText(food.proteinPer100g ?? 0))g")
-                    NutritionMacroChip(title: "C", value: "\(gramsText(food.carbsPer100g ?? 0))g")
-                    NutritionMacroChip(title: "F", value: "\(gramsText(food.fatPer100g ?? 0))g")
-                }
-
-                HStack(spacing: 8) {
-                    NavigationLink {
-                        LogFoodView(food: food)
-                    } label: {
-                        Label("Log", systemImage: "plus")
-                            .frame(maxWidth: .infinity)
+                    HStack(spacing: 6) {
+                        FoodSourceBadge(source: food.source)
+                        VerificationStatusBadge(status: food.verificationStatus)
                     }
-                    .buttonStyle(SecondaryFitnessButtonStyle())
-                    .accessibilityIdentifier("log-saved-food-\(food.name)")
-
-                    Button(action: edit) {
-                        Image(systemName: "pencil")
-                            .frame(width: 46, height: 46)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(appTheme.colors.textPrimary)
-                    .background(appTheme.colors.cardBackgroundElevated, in: Circle())
-                    .accessibilityLabel("Edit \(food.name)")
-                    .accessibilityIdentifier("edit-saved-food-\(food.name)")
                 }
+
+                Spacer(minLength: 8)
             }
+
+            HStack(spacing: 8) {
+                NutritionMacroChip(title: "kcal", value: kcalText(food.caloriesPer100g ?? 0))
+                NutritionMacroChip(title: "P", value: "\(gramsText(food.proteinPer100g ?? 0)) g")
+                NutritionMacroChip(title: "C", value: "\(gramsText(food.carbsPer100g ?? 0)) g")
+                NutritionMacroChip(title: "F", value: "\(gramsText(food.fatPer100g ?? 0)) g")
+            }
+
+            HStack(spacing: 8) {
+                NavigationLink {
+                    LogFoodView(snapshot: food)
+                } label: {
+                    Label("Log", systemImage: "plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(SecondaryFitnessButtonStyle())
+                .accessibilityIdentifier("log-saved-food-\(food.name)")
+
+                Button(action: edit) {
+                    Image(systemName: "pencil")
+                        .frame(width: 46, height: 46)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(appTheme.colors.textPrimary)
+                .background(appTheme.colors.cardBackgroundElevated, in: Circle())
+                .accessibilityLabel("Edit \(food.name)")
+                .accessibilityIdentifier("edit-saved-food-\(food.name)")
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(appTheme.cardBackground, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: appTheme.metrics.radius20, style: .continuous)
+                .stroke(appTheme.cardBorder.opacity(0.58), lineWidth: 1)
         }
     }
 }
@@ -1640,7 +1862,7 @@ private struct FoodDatabaseSummaryCard: View {
 private struct SelectedFoodSummaryCard: View {
     @Environment(\.appTheme) private var appTheme
 
-    let food: FoodItem
+    let food: SavedFoodSnapshot
 
     var body: some View {
         FitnessCard {
@@ -1706,7 +1928,7 @@ private struct QuickLogFoodCard: View {
     var body: some View {
         DashboardActionTile(
             title: food.name,
-            subtitle: "\(kcalText(food.caloriesPer100g ?? 0)) kcal - \(gramsText(food.proteinPer100g ?? 0))g protein",
+            subtitle: "\(kcalText(food.caloriesPer100g ?? 0)) kcal · \(gramsText(food.proteinPer100g ?? 0)) g protein",
             systemImage: "fork.knife",
             showsChevron: false,
             width: 168,
@@ -1836,38 +2058,6 @@ private struct MealTypePicker: View {
             }
             .scrollClipDisabled()
         }
-    }
-}
-
-private struct NutritionMiniMacroPill: View {
-    @Environment(\.appTheme) private var appTheme
-
-    let label: String
-    let value: String
-    let systemImage: String
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: systemImage)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(appTheme.colors.accent)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(value)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(appTheme.colors.textPrimary)
-                    .lineLimit(1)
-
-                Text(label)
-                    .font(.caption2)
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .lineLimit(1)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(appTheme.colors.cardBackgroundElevated, in: Capsule())
     }
 }
 

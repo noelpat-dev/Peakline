@@ -13,13 +13,17 @@ struct SplitsView: View {
     private var completedSessions: [WorkoutSession]
 
     @State private var showingAddSplit = false
+    @State private var showingEditRotation = false
     @State private var showingOtherSplits = false
     @State private var pendingDeleteSplitID: UUID?
     @State private var dashboardSnapshot = SplitsDashboardSnapshot.empty
     @State private var lastDashboardSignature: String?
+    @State private var dashboardRefreshTask: Task<Void, Never>?
+    @State private var isDashboardVisible = false
 
     private let coachEngine = CoachRecommendationEngine()
     private let targetService = TargetSuggestionService()
+    private let rotationService = TrainingRotationService()
 
     init() {
         _splits = Query(Self.splitsDescriptor)
@@ -41,8 +45,8 @@ struct SplitsView: View {
         return descriptor
     }
 
-    private var pplSplits: [TrainingSplit] {
-        currentDashboardSnapshot.pplSplits
+    private var activeProgrammeSplits: [TrainingSplit] {
+        currentDashboardSnapshot.activeProgrammeSplits
     }
 
     private var otherSplits: [TrainingSplit] {
@@ -53,28 +57,22 @@ struct SplitsView: View {
         currentDashboardSnapshot.recommendedSplitName
     }
 
-    private var splitStatuses: [String: SplitStatus] {
-        currentDashboardSnapshot.statusesBySplitName
-    }
-
     var body: some View {
         let snapshot = currentDashboardSnapshot
 
         NavigationStack {
-            FitnessScreen(
-                title: "Splits",
-                subtitle: "Manage your training programme and open each day.",
-                systemImage: "list.bullet.rectangle"
-            ) {
-                if !snapshot.pplSplits.isEmpty {
+            FitnessScreen {
+                if !snapshot.activeProgrammeSplits.isEmpty {
                     SplitProgrammeCard(
-                        splits: snapshot.pplSplits,
-                        statuses: snapshot.statusesBySplitName,
-                        trainingCall: snapshot.trainingCall
+                        splits: snapshot.activeProgrammeSplits,
+                        trainingCall: snapshot.trainingCall,
+                        onEditRotation: {
+                            presentEditRotation()
+                        }
                     )
 
                     DashboardSection(title: "Training Days") {
-                        ForEach(snapshot.pplSplits) { split in
+                        ForEach(snapshot.activeProgrammeSplits) { split in
                             NavigationLink(value: split.id) {
                                 SplitTrainingDayCard(
                                     split: split,
@@ -90,9 +88,18 @@ struct SplitsView: View {
                 } else {
                     DashboardEmptyStateCard(
                         title: "No active programme",
-                        message: "Create or activate Push, Pull, and Legs splits to build your programme dashboard.",
+                        message: "Create training days or edit the rotation to build your programme dashboard.",
                         systemImage: "list.bullet.rectangle"
                     )
+
+                    Button {
+                        presentEditRotation()
+                    } label: {
+                        Label("Edit Rotation", systemImage: "slider.horizontal.3")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryFitnessButtonStyle())
+                    .accessibilityIdentifier("edit-empty-rotation-button")
                 }
 
                 if !snapshot.otherSplits.isEmpty {
@@ -151,16 +158,30 @@ struct SplitsView: View {
                                         Divider()
                                             .padding(.leading, 66)
 
-                                        NavigationLink(value: split.id) {
-                                            inactiveSplitRow(split)
-                                        }
-                                        .buttonStyle(PeaklineButtonPressStyle())
-                                        .contextMenu {
-                                            Button(role: .destructive) {
-                                                pendingDeleteSplitID = split.id
-                                            } label: {
-                                                Label("Delete Split", systemImage: "trash")
+                                        HStack(spacing: 0) {
+                                            NavigationLink(value: split.id) {
+                                                inactiveSplitRow(split)
                                             }
+                                            .buttonStyle(PeaklineButtonPressStyle())
+
+                                            Menu {
+                                                Button(role: .destructive) {
+                                                    pendingDeleteSplitID = split.id
+                                                } label: {
+                                                    Label("Delete Split", systemImage: "trash")
+                                                }
+                                            } label: {
+                                                Image(systemName: "ellipsis")
+                                                    .font(.headline.weight(.semibold))
+                                                    .foregroundStyle(appTheme.colors.textSecondary)
+                                                    .frame(
+                                                        width: appTheme.metrics.minimumHitTarget,
+                                                        height: appTheme.metrics.minimumHitTarget
+                                                    )
+                                                    .background(appTheme.elevatedCardBackground, in: Circle())
+                                            }
+                                            .accessibilityLabel("Actions for \(split.name)")
+                                            .padding(.trailing, appTheme.metrics.spacing12)
                                         }
                                     }
                                 }
@@ -180,7 +201,13 @@ struct SplitsView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Add split", systemImage: "plus.circle.fill") {
                         PerformanceTracer.mark(.toolbarBreadcrumb, "splits.add_split tapped")
-                        showingAddSplit = true
+                        NavigationInteraction.perform(
+                            key: "splits.add",
+                            destinationClass: .deep,
+                            haptic: .selection
+                        ) {
+                            showingAddSplit = true
+                        }
                     }
                     .accessibilityLabel("Add split")
                     .accessibilityIdentifier("add-split-button")
@@ -188,6 +215,15 @@ struct SplitsView: View {
             }
             .sheet(isPresented: $showingAddSplit) {
                 AddSplitView()
+                    .onAppear {
+                        NavigationInteraction.destinationDidAppear(key: "splits.add")
+                    }
+            }
+            .sheet(isPresented: $showingEditRotation) {
+                EditActiveRotationView(splits: splits)
+                    .onAppear {
+                        NavigationInteraction.destinationDidAppear(key: "splits.rotation")
+                    }
             }
             .alert("Delete split?", isPresented: deleteAlertBinding) {
                 Button("Cancel", role: .cancel) {
@@ -201,13 +237,27 @@ struct SplitsView: View {
             }
         }
         .onAppear {
-            DispatchQueue.main.async {
-                PerformanceTracer.mark(.unsafeBreadcrumb, "splits.dashboard deferred_refresh")
-                refreshDashboardSnapshot(force: true)
-            }
+            isDashboardVisible = true
+            scheduleDashboardSnapshotRefresh(force: lastDashboardSignature == nil)
         }
-        .onChange(of: dashboardSignature) { _, _ in
-            refreshDashboardSnapshot()
+        .onChange(of: dashboardSignatureForObservation) { oldSignature, newSignature in
+            guard oldSignature != nil, newSignature != nil else { return }
+            scheduleDashboardSnapshotRefresh()
+        }
+        .onDisappear {
+            isDashboardVisible = false
+            dashboardRefreshTask?.cancel()
+            dashboardRefreshTask = nil
+        }
+    }
+
+    private func presentEditRotation() {
+        NavigationInteraction.perform(
+            key: "splits.rotation",
+            destinationClass: .deep,
+            haptic: .selection
+        ) {
+            showingEditRotation = true
         }
     }
 
@@ -227,16 +277,7 @@ struct SplitsView: View {
     }
 
     private var currentDashboardSnapshot: SplitsDashboardSnapshot {
-        guard lastDashboardSignature != nil else {
-            return dashboardSnapshot
-        }
-
-        let signature = dashboardSignature
-        if signature == lastDashboardSignature {
-            return dashboardSnapshot
-        }
-
-        return dashboardSnapshot
+        dashboardSnapshot
     }
 
     private var dashboardSignature: String {
@@ -246,7 +287,7 @@ struct SplitsView: View {
                     .map { "\($0.id.uuidString):\($0.exerciseId.uuidString):\($0.orderIndex):\($0.targetSets):\($0.minReps):\($0.maxReps):\($0.notes ?? "")" }
                     .sorted()
                     .joined(separator: ";")
-                return "\(split.id.uuidString):\(split.name):\(split.isActive):\(split.updatedAt.timeIntervalSince1970):\(exerciseSignature)"
+                return "\(split.id.uuidString):\(split.name):\(split.isActive):\(split.activeRotationIndex ?? -1):\(split.updatedAt.timeIntervalSince1970):\(exerciseSignature)"
             }
             .joined(separator: "|"),
             completedSessions.prefix(40).map { session in
@@ -266,6 +307,20 @@ struct SplitsView: View {
         ].joined(separator: "||")
     }
 
+    private var dashboardSignatureForObservation: String? {
+        isDashboardVisible ? dashboardSignature : nil
+    }
+
+    private func scheduleDashboardSnapshotRefresh(force: Bool = false) {
+        dashboardRefreshTask?.cancel()
+        dashboardRefreshTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled, isDashboardVisible else { return }
+            PerformanceTracer.mark(.unsafeBreadcrumb, "splits.dashboard deferred_refresh")
+            refreshDashboardSnapshot(force: force)
+        }
+    }
+
     private func refreshDashboardSnapshot(force: Bool = false) {
         let signature = dashboardSignature
         guard force || signature != lastDashboardSignature else { return }
@@ -276,14 +331,12 @@ struct SplitsView: View {
     }
 
     private func makeDashboardSnapshot() -> SplitsDashboardSnapshot {
-        let pplSplits = PPLRotation.names.compactMap { name in
-            splits.first { $0.name == name && $0.isActive }
-        }
-        let otherSplits = splits.filter { !PPLRotation.names.contains($0.name) || !$0.isActive }
+        let activeProgrammeSplits = rotationService.orderedActiveSplits(splits)
+        let otherSplits = splits.filter { !$0.isActive }
         let analyticsSessions = completedSessions.map(WorkoutAnalyticsSession.init)
-        let splitSnapshots = pplSplits.map(TrainingSplitSnapshot.init)
+        let splitSnapshots = activeProgrammeSplits.map(TrainingSplitSnapshot.init)
         let targetSuggestionsByExerciseID = makeTargetSuggestions(
-            for: pplSplits.flatMap(\.exercises),
+            for: activeProgrammeSplits.flatMap(\.exercises),
             completedSessions: analyticsSessions,
             targetService: targetService
         )
@@ -301,7 +354,7 @@ struct SplitsView: View {
         var lastTrainedTextBySplitName: [String: String] = [:]
         var focusTextBySplitName: [String: String] = [:]
 
-        for split in pplSplits {
+        for split in activeProgrammeSplits {
             statusesBySplitName[split.name] = status(
                 for: split,
                 recommendedSplitName: recommendedSplitName,
@@ -312,7 +365,7 @@ struct SplitsView: View {
         }
 
         return SplitsDashboardSnapshot(
-            pplSplits: pplSplits,
+            activeProgrammeSplits: activeProgrammeSplits,
             otherSplits: otherSplits,
             recommendedSplitName: recommendedSplitName,
             trainingCall: trainingCall,
@@ -336,7 +389,7 @@ struct SplitsView: View {
                 Text(split.name)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(appTheme.colors.textPrimary)
-                Text("\(split.exercises.count) exercises")
+                Text(PeaklineText.count(split.exercises.count, singular: "exercise"))
                     .font(.caption)
                     .foregroundStyle(appTheme.colors.textSecondary)
             }
@@ -353,21 +406,10 @@ struct SplitsView: View {
         .padding(.vertical, 12)
     }
 
-    private func deleteOtherSplits(at offsets: IndexSet) {
-        let deletableSplits = offsets.map { otherSplits[$0] }
-        for split in deletableSplits {
-            delete(split)
-        }
-    }
-
-    private func deleteSplits(at offsets: IndexSet) {
-        for index in offsets {
-            delete(splits[index])
-        }
-    }
-
     private func delete(_ split: TrainingSplit) {
         modelContext.delete(split)
+        try? modelContext.save()
+        try? rotationService.normalizePersistedRotation(in: modelContext)
         try? modelContext.save()
     }
 
@@ -403,7 +445,7 @@ struct SplitsView: View {
             return .ready
         }
 
-        return PPLRotation.names.contains(split.name) ? .ready : .custom
+        return .ready
     }
 
     private func wasTrainedRecently(_ split: TrainingSplit) -> Bool {
@@ -454,11 +496,11 @@ struct SplitsView: View {
     private func focusDescription(for split: TrainingSplit) -> String {
         switch split.name {
         case "Push":
-            return "Chest - Shoulders - Triceps"
+            return PeaklineText.joinedMetadata(["Chest", "Shoulders", "Triceps"])
         case "Pull":
-            return "Back - Biceps - Rear delts"
+            return PeaklineText.joinedMetadata(["Back", "Biceps", "Rear delts"])
         case "Legs":
-            return "Quads - Hamstrings - Calves"
+            return PeaklineText.joinedMetadata(["Quads", "Hamstrings", "Calves"])
         default:
             return split.splitType.displayName
         }
@@ -502,12 +544,8 @@ private func makeTargetSuggestions(
     )
 }
 
-private enum PPLRotation {
-    static let names = ["Push", "Pull", "Legs"]
-}
-
 private struct SplitsDashboardSnapshot {
-    let pplSplits: [TrainingSplit]
+    let activeProgrammeSplits: [TrainingSplit]
     let otherSplits: [TrainingSplit]
     let recommendedSplitName: String?
     let trainingCall: TrainingCallSnapshot
@@ -516,7 +554,7 @@ private struct SplitsDashboardSnapshot {
     let focusTextBySplitName: [String: String]
 
     static let empty = SplitsDashboardSnapshot(
-        pplSplits: [],
+        activeProgrammeSplits: [],
         otherSplits: [],
         recommendedSplitName: nil,
         trainingCall: .placeholder,
@@ -708,24 +746,30 @@ private struct SplitDetailView: View {
                     ExerciseIconTile(
                         iconKey: ExerciseIconMapper.splitIconKey(for: split.name),
                         title: nil,
-                        size: 68,
+                        size: 54,
                         style: .compact,
                         tint: split.isActive ? appTheme.colors.accent : appTheme.colors.textSecondary
                     )
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(split.isActive ? "PPL Training Day" : "Inactive Template")
-                            .font(.caption.weight(.semibold))
+                        Text(split.isActive ? "Active Training Day" : "Inactive Template")
+                            .font(AppTypography.eyebrow)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .textCase(.uppercase)
                         Text(split.name)
-                            .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                            .font(AppTypography.heroTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
-                            .lineLimit(1)
+                            .lineLimit(2)
                             .minimumScaleFactor(0.7)
+                            .layoutPriority(1)
                             .accessibilityIdentifier("split-detail-title-\(split.name.peaklineAccessibilityIdentifierFragment)")
-                        Text("\(orderedExercises.count) exercises - \(split.daysPerWeek) days/week")
-                            .font(.subheadline)
+                        Text(
+                            PeaklineText.joinedMetadata([
+                                PeaklineText.count(orderedExercises.count, singular: "exercise"),
+                                "\(split.daysPerWeek) days/week"
+                            ])
+                        )
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
 
@@ -734,9 +778,16 @@ private struct SplitDetailView: View {
                     SplitStatusBadge(status: detailStatus)
                 }
 
-                HStack(spacing: 10) {
-                    MetricTile(label: "Last trained", value: compactLastTrainedText, caption: nil, systemImage: "clock.arrow.circlepath")
-                    MetricTile(label: "Focus", value: focusDescription, caption: split.splitType.displayName, systemImage: "scope")
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        MetricTile(label: "Last trained", value: compactLastTrainedText, caption: nil, systemImage: "clock.arrow.circlepath")
+                        MetricTile(label: "Focus", value: focusDescription, caption: split.splitType.displayName, systemImage: "scope")
+                    }
+
+                    VStack(spacing: 10) {
+                        MetricTile(label: "Last trained", value: compactLastTrainedText, caption: nil, systemImage: "clock.arrow.circlepath")
+                        MetricTile(label: "Focus", value: focusDescription, caption: split.splitType.displayName, systemImage: "scope")
+                    }
                 }
             }
         }
@@ -788,6 +839,7 @@ private struct AddSplitView: View {
     @State private var name = ""
     @State private var splitType = SplitType.custom
     @State private var daysPerWeek = 3
+    @State private var addToActiveRotation = true
 
     var body: some View {
         NavigationStack {
@@ -802,8 +854,11 @@ private struct AddSplitView: View {
                     }
 
                     Stepper("Days per week: \(daysPerWeek)", value: $daysPerWeek, in: 1...7)
+                    Toggle("Add to active rotation", isOn: $addToActiveRotation)
                 }
             }
+            .peaklineGroupedContent()
+            .peaklineKeyboardDismissal()
             .accessibilityIdentifier("add-split-screen")
             .navigationTitle("New Split")
             .toolbar {
@@ -824,13 +879,147 @@ private struct AddSplitView: View {
     }
 
     private func createSplit() {
+        let existingSplits = (try? modelContext.fetch(FetchDescriptor<TrainingSplit>())) ?? []
+        let nextRotationIndex = existingSplits
+            .filter(\.isActive)
+            .compactMap(\.activeRotationIndex)
+            .max()
+            .map { $0 + 1 } ?? existingSplits.filter(\.isActive).count
         let split = TrainingSplit(
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             splitType: splitType,
+            isActive: addToActiveRotation,
+            activeRotationIndex: addToActiveRotation ? nextRotationIndex : nil,
             daysPerWeek: daysPerWeek
         )
         modelContext.insert(split)
         try? modelContext.save()
+        dismiss()
+    }
+}
+
+private struct EditActiveRotationView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.appTheme) private var appTheme
+
+    let splits: [TrainingSplit]
+
+    @State private var orderedSplitIDs: [UUID]
+
+    private let rotationService = TrainingRotationService()
+
+    init(splits: [TrainingSplit]) {
+        self.splits = splits
+        _orderedSplitIDs = State(
+            initialValue: TrainingRotationService()
+                .orderedActiveSplits(splits)
+                .map(\.id)
+        )
+    }
+
+    private var orderedSplits: [TrainingSplit] {
+        orderedSplitIDs.compactMap { id in
+            splits.first { $0.id == id }
+        }
+    }
+
+    private var availableSplits: [TrainingSplit] {
+        let activeIDs = Set(orderedSplitIDs)
+        return splits
+            .filter { !activeIDs.contains($0.id) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    if orderedSplits.isEmpty {
+                        Text("No training days are active. You can save an empty rotation or add a template below.")
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                    } else {
+                        ForEach(orderedSplits) { split in
+                            HStack(spacing: 12) {
+                                ExerciseIconView(
+                                    iconKey: ExerciseIconMapper.splitIconKey(for: split.name),
+                                    size: 34,
+                                    tint: appTheme.colors.accent,
+                                    showBackground: false,
+                                    isDecorative: true
+                                )
+
+                                Text(split.name)
+                                    .font(.body.weight(.semibold))
+                            }
+                        }
+                        .onMove { source, destination in
+                            orderedSplitIDs.move(fromOffsets: source, toOffset: destination)
+                        }
+                        .onDelete { offsets in
+                            orderedSplitIDs.remove(atOffsets: offsets)
+                        }
+                    }
+                } header: {
+                    Text("Active Rotation")
+                } footer: {
+                    Text("Drag training days into the order Peakline should recommend them.")
+                }
+
+                if !availableSplits.isEmpty {
+                    Section("Available Training Days") {
+                        ForEach(availableSplits) { split in
+                            Button {
+                                orderedSplitIDs.append(split.id)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    ExerciseIconView(
+                                        iconKey: ExerciseIconMapper.splitIconKey(for: split.name),
+                                        size: 34,
+                                        tint: appTheme.colors.textSecondary,
+                                        showBackground: false,
+                                        isDecorative: true
+                                    )
+                                    Text(split.name)
+                                        .foregroundStyle(appTheme.colors.textPrimary)
+                                    Spacer()
+                                    Image(systemName: "plus.circle.fill")
+                                        .foregroundStyle(appTheme.colors.accent)
+                                }
+                            }
+                            .accessibilityLabel("Add \(split.name) to active rotation")
+                        }
+                    }
+                }
+            }
+            .peaklineGroupedContent()
+            .environment(\.editMode, .constant(.active))
+            .accessibilityIdentifier("edit-active-rotation-screen")
+            .navigationTitle("Edit Rotation")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        save()
+                    }
+                    .accessibilityIdentifier("save-active-rotation-button")
+                }
+            }
+        }
+    }
+
+    private func save() {
+        try? rotationService.applyRotation(
+            orderedSplitIDs: orderedSplitIDs,
+            to: splits,
+            in: modelContext
+        )
         dismiss()
     }
 }
@@ -861,7 +1050,7 @@ private struct SplitEditorView: View {
                 }
 
                 Stepper("Days per week: \(split.daysPerWeek)", value: $split.daysPerWeek, in: 1...7)
-                Toggle("Active", isOn: $split.isActive)
+                Toggle("In Active Rotation", isOn: activeRotationBinding)
             }
 
             Section("Add Exercise") {
@@ -893,12 +1082,35 @@ private struct SplitEditorView: View {
                 }
             }
         }
+        .peaklineGroupedContent()
+        .peaklineKeyboardDismissal()
         .navigationTitle("Edit Split")
         .toolbar {
             EditButton()
         }
         .onDisappear {
             split.updatedAt = .now
+            try? modelContext.save()
+        }
+    }
+
+    private var activeRotationBinding: Binding<Bool> {
+        Binding {
+            split.isActive
+        } set: { isActive in
+            split.isActive = isActive
+            if isActive {
+                let allSplits = (try? modelContext.fetch(FetchDescriptor<TrainingSplit>())) ?? []
+                split.activeRotationIndex = allSplits
+                    .filter { $0.isActive && $0.id != split.id }
+                    .compactMap(\.activeRotationIndex)
+                    .max()
+                    .map { $0 + 1 } ?? allSplits.filter { $0.isActive && $0.id != split.id }.count
+            } else {
+                split.activeRotationIndex = nil
+            }
+            split.updatedAt = .now
+            try? TrainingRotationService().normalizePersistedRotation(in: modelContext)
             try? modelContext.save()
         }
     }

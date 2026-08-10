@@ -6,7 +6,7 @@ final class SplitsPageUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments = ["-UITestInMemoryStore"]
+        app.launchArguments = ["-UITestInMemoryStore", "-UITestSplitsFixture"]
         app.launch()
     }
 
@@ -16,7 +16,7 @@ final class SplitsPageUITests: XCTestCase {
         tapTab(at: 2, expectedTitle: "Splits")
         XCTAssertTrue(app.descendants(matching: .any)["splits-screen"].waitForExistence(timeout: 5))
 
-        for splitName in ["Push", "Pull", "Legs"] {
+        for splitName in ["Push", "Pull", "Legs", "Upper", "Lower"] {
             XCTAssertTrue(
                 app.descendants(matching: .any)["split-card-\(splitName)"].waitForExistence(timeout: 5),
                 "Expected seeded \(splitName) split card"
@@ -33,6 +33,23 @@ final class SplitsPageUITests: XCTestCase {
         app.buttons["add-split-button"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["add-split-screen"].waitForExistence(timeout: 5))
         app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["splits-screen"].waitForExistence(timeout: 5))
+    }
+
+    func testFiveDayRotationCanBeOpenedAndSaved() throws {
+        XCTAssertTrue(app.staticTexts["Today"].waitForExistence(timeout: 10))
+        tapTab(at: 2, expectedTitle: "Splits")
+
+        let editButton = app.buttons["edit-rotation-button"]
+        XCTAssertTrue(editButton.waitForExistence(timeout: 5))
+        editButton.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["edit-active-rotation-screen"].waitForExistence(timeout: 5))
+
+        for splitName in ["Push", "Pull", "Legs", "Upper", "Lower"] {
+            XCTAssertTrue(app.staticTexts[splitName].firstMatch.waitForExistence(timeout: 3))
+        }
+
+        app.buttons["save-active-rotation-button"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["splits-screen"].waitForExistence(timeout: 5))
     }
 

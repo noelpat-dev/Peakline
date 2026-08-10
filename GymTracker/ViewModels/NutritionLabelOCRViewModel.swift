@@ -69,8 +69,12 @@ final class NutritionLabelOCRViewModel: ObservableObject {
                     try await ocrService.recognizeText(from: image)
                 }
                 guard !Task.isCancelled else { return }
-                let parseResult = PerformanceTracer.trace(.nutritionOCRParse) {
-                    parser.parse(lines: result.lines.map(\.text))
+                let lines = result.lines.map(\.text)
+                let parser = self.parser
+                let parseResult = await PerformanceTracer.traceAsync(.nutritionOCRParse) {
+                    await Task.detached(priority: .userInitiated) {
+                        parser.parse(lines: lines)
+                    }.value
                 }
                 guard !Task.isCancelled else { return }
                 state = .result(result, parseResult)

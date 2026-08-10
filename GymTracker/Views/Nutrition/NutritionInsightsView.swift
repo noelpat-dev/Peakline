@@ -172,15 +172,22 @@ struct NutritionInsightsDashboardView: View {
         .navigationTitle("Insights")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $selectedRoute) { route in
-            switch route {
-            case .logFood:
-                AddFoodHubView()
-            case .targets:
-                NutritionTargetsView()
-            case .weekly:
-                WeeklyNutritionTrendsView()
-            case .foodLog:
-                NutritionDashboardView()
+            Group {
+                switch route {
+                case .logFood:
+                    AddFoodHubView()
+                case .targets:
+                    NutritionTargetsView()
+                case .weekly:
+                    WeeklyNutritionTrendsView()
+                case .foodLog:
+                    NutritionDashboardView()
+                }
+            }
+            .onAppear {
+                NavigationInteraction.destinationDidAppear(
+                    key: "nutrition-insights.\(route.analyticsName)"
+                )
             }
         }
         .onAppear {
@@ -247,7 +254,11 @@ struct NutritionInsightsDashboardView: View {
     }
 
     private func navigate(to route: NutritionInsightsRoute) {
-        AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
+        NavigationInteraction.perform(
+            key: "nutrition-insights.\(route.analyticsName)",
+            destinationClass: route == .weekly ? .deep : .warm,
+            haptic: .selection
+        ) {
             selectedRoute = route
         }
     }
@@ -398,6 +409,15 @@ private enum NutritionInsightsRoute: Hashable, Identifiable {
     case foodLog
 
     var id: Self { self }
+
+    var analyticsName: String {
+        switch self {
+        case .logFood: return "log-food"
+        case .targets: return "targets"
+        case .weekly: return "weekly"
+        case .foodLog: return "food-log"
+        }
+    }
 }
 
 private struct NutritionInsightsSnapshot {
@@ -470,6 +490,7 @@ struct NutritionTargetsView: View {
     @State private var protein = ""
     @State private var carbs = ""
     @State private var fat = ""
+    @State private var fibre = ""
     @State private var trainingCalories = ""
     @State private var restCalories = ""
     @State private var errorText: String?
@@ -504,6 +525,7 @@ struct NutritionTargetsView: View {
                         TargetTextField(title: "Protein", text: $protein, placeholder: "Optional", suffix: "g")
                         TargetTextField(title: "Carbs", text: $carbs, placeholder: "Optional", suffix: "g")
                         TargetTextField(title: "Fat", text: $fat, placeholder: "Optional", suffix: "g")
+                        TargetTextField(title: "Fibre", text: $fibre, placeholder: "Optional", suffix: "g")
                     }
                 }
             }
@@ -554,6 +576,7 @@ struct NutritionTargetsView: View {
         protein = fieldText(goal.dailyProteinTarget)
         carbs = fieldText(goal.dailyCarbsTarget)
         fat = fieldText(goal.dailyFatTarget)
+        fibre = fieldText(goal.dailyFibreTarget)
         trainingCalories = fieldText(goal.trainingDayCaloriesTarget)
         restCalories = fieldText(goal.restDayCaloriesTarget)
         mode = (goal.trainingDayCaloriesTarget != nil || goal.restDayCaloriesTarget != nil) ? .trainingAndRestDay : .daily
@@ -565,6 +588,7 @@ struct NutritionTargetsView: View {
             let proteinValue = parseOptionalPositive(protein),
             let carbsValue = parseOptionalPositive(carbs),
             let fatValue = parseOptionalPositive(fat),
+            let fibreValue = parseOptionalPositive(fibre),
             let trainingValue = parseOptionalPositive(trainingCalories),
             let restValue = parseOptionalPositive(restCalories)
         else {
@@ -577,6 +601,7 @@ struct NutritionTargetsView: View {
             dailyProteinTarget: proteinValue,
             dailyCarbsTarget: carbsValue,
             dailyFatTarget: fatValue,
+            dailyFibreTarget: fibreValue,
             trainingDayCaloriesTarget: mode == .trainingAndRestDay ? trainingValue : nil,
             restDayCaloriesTarget: mode == .trainingAndRestDay ? restValue : nil,
             isEnabled: isEnabled,
@@ -603,10 +628,10 @@ struct NutritionTargetsView: View {
 struct WeeklyNutritionTrendsView: View {
     @Environment(\.appTheme) private var appTheme
 
-    @Query(sort: \FoodLogEntry.loggedAt, order: .reverse)
+    @Query
     private var foodLogs: [FoodLogEntry]
 
-    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    @Query
     private var completedSessions: [WorkoutSession]
 
     @State private var goal = NutritionGoal.empty
@@ -614,6 +639,21 @@ struct WeeklyNutritionTrendsView: View {
     private let goalService = NutritionGoalService()
     private let summaryService = NutritionSummaryService()
     private let trendService = NutritionTrendService()
+
+    init() {
+        var foodDescriptor = FetchDescriptor<FoodLogEntry>(
+            sortBy: [SortDescriptor(\.loggedAt, order: .reverse)]
+        )
+        foodDescriptor.fetchLimit = 300
+        _foodLogs = Query(foodDescriptor)
+
+        var workoutDescriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        workoutDescriptor.fetchLimit = 30
+        _completedSessions = Query(workoutDescriptor)
+    }
 
     private var weeklySummary: WeeklyNutritionSummary {
         trendService.weeklySummary(
@@ -656,38 +696,53 @@ struct WeeklyNutritionTrendsView: View {
     }
 }
 
-struct NutritionHomeSummaryCard: View {
-    @Environment(\.appTheme) private var appTheme
+struct NutritionHomeSummarySnapshot {
+    let today: DailyNutritionSummary
+    let goal: NutritionGoal
+    let topInsight: NutritionInsight?
 
-    @Query(sort: \FoodLogEntry.loggedAt, order: .reverse)
-    private var foodLogs: [FoodLogEntry]
-
-    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
-    private var completedSessions: [WorkoutSession]
-
-    @State private var goal = NutritionGoal.empty
-
-    private let goalService = NutritionGoalService()
-    private let summaryService = NutritionSummaryService()
-    private let trendService = NutritionTrendService()
-    private let contextService = TrainingNutritionContextService()
-    private let insightService = NutritionInsightService()
-
-    private var today: DailyNutritionSummary {
-        summaryService.dailySummary(for: .now, foodLogs: foodLogs, workouts: completedSessions)
-    }
-
-    private var weekly: WeeklyNutritionSummary {
-        trendService.weeklySummary(
-            dailySummaries: summaryService.dailySummaries(endingOn: .now, days: 7, foodLogs: foodLogs, workouts: completedSessions),
+    static func make(
+        foodLogs: [FoodLogEntry],
+        completedSessions: [WorkoutSession],
+        goal: NutritionGoal
+    ) -> NutritionHomeSummarySnapshot {
+        let summaryService = NutritionSummaryService()
+        let daily = summaryService.dailySummary(
+            for: .now,
+            foodLogs: foodLogs,
+            workouts: completedSessions
+        )
+        let weekly = NutritionTrendService().weeklySummary(
+            dailySummaries: summaryService.dailySummaries(
+                endingOn: .now,
+                days: 7,
+                foodLogs: foodLogs,
+                workouts: completedSessions
+            ),
             goal: goal
         )
+        let context = TrainingNutritionContextService().context(
+            for: .now,
+            foodLogs: foodLogs,
+            workouts: completedSessions
+        )
+        return NutritionHomeSummarySnapshot(
+            today: daily,
+            goal: goal,
+            topInsight: NutritionInsightService().insights(
+                today: daily,
+                weekly: weekly,
+                goal: goal,
+                context: context,
+                limit: 1
+            ).first
+        )
     }
+}
 
-    private var topInsight: NutritionInsight? {
-        let context = contextService.context(for: .now, foodLogs: foodLogs, workouts: completedSessions)
-        return insightService.insights(today: today, weekly: weekly, goal: goal, context: context, limit: 1).first
-    }
+struct NutritionHomeSummaryCard: View {
+    @Environment(\.appTheme) private var appTheme
+    let snapshot: NutritionHomeSummarySnapshot
 
     var body: some View {
         FitnessCard {
@@ -705,7 +760,7 @@ struct NutritionHomeSummaryCard: View {
                                 .font(.headline)
                                 .foregroundStyle(appTheme.colors.textPrimary)
 
-                            Text(today.isTrainingDay ? "Training" : "Rest")
+                            Text(snapshot.today.isTrainingDay ? "Training" : "Rest")
                                 .font(.caption2.weight(.bold))
                                 .foregroundStyle(appTheme.colors.accent)
                                 .padding(.horizontal, 8)
@@ -713,7 +768,7 @@ struct NutritionHomeSummaryCard: View {
                                 .background(appTheme.colors.accentSurface, in: Capsule())
                         }
 
-                        Text(topInsight?.title ?? "Log food to unlock training-aware insights")
+                        Text(snapshot.topInsight?.title ?? "Log food to unlock training-aware insights")
                             .font(.subheadline)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .lineLimit(2)
@@ -727,17 +782,14 @@ struct NutritionHomeSummaryCard: View {
                 }
 
                 HStack(spacing: 8) {
-                    compactMetric(title: "kcal", value: phase7Kcal(today.calories), target: goal.calorieTarget(isTrainingDay: today.isTrainingDay).map(phase7Kcal))
-                    compactMetric(title: "Protein", value: "\(phase7Grams(today.protein))g", target: goal.dailyProteinTarget.map { "\(phase7Grams($0))g" })
+                    compactMetric(title: "kcal", value: phase7Kcal(snapshot.today.calories), target: snapshot.goal.calorieTarget(isTrainingDay: snapshot.today.isTrainingDay).map(phase7Kcal))
+                    compactMetric(title: "Protein", value: "\(phase7Grams(snapshot.today.protein))g", target: snapshot.goal.dailyProteinTarget.map { "\(phase7Grams($0))g" })
                 }
             }
         }
-        .onAppear {
-            goal = goalService.loadGoal()
-        }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("today-nutrition-summary")
-        .accessibilityLabel("Nutrition today, \(phase7Kcal(today.calories)) calories, \(phase7Grams(today.protein)) grams protein")
+        .accessibilityLabel("Nutrition today, \(phase7Kcal(snapshot.today.calories)) calories, \(phase7Grams(snapshot.today.protein)) grams protein")
     }
 
     private func compactMetric(title: String, value: String, target: String?) -> some View {
@@ -771,6 +823,15 @@ private struct MacroTargetGrid: View {
             MacroTargetProgressCard(title: "Carbs", current: summary.carbs, target: goal.dailyCarbsTarget, unit: "g", systemImage: "leaf.fill")
             MacroTargetProgressCard(title: "Fat", current: summary.fat, target: goal.dailyFatTarget, unit: "g", systemImage: "drop.fill")
         }
+
+        MacroTargetProgressCard(
+            title: "Fibre",
+            current: summary.fibre ?? 0,
+            target: goal.dailyFibreTarget,
+            unit: "g",
+            systemImage: "leaf.circle.fill"
+        )
+        .padding(.top, 10)
     }
 }
 
@@ -1065,6 +1126,7 @@ private struct TargetTextField: View {
                 TextField(placeholder, text: $text)
                     .keyboardType(.decimalPad)
                     .foregroundStyle(appTheme.colors.textPrimary)
+                    .accessibilityIdentifier("nutrition-target-\(title.lowercased().replacingOccurrences(of: " ", with: "-"))")
 
                 Text(suffix)
                     .font(.subheadline.weight(.semibold))

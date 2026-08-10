@@ -27,6 +27,13 @@ enum ExerciseIconMapper {
         if normalized == "push" || normalized.hasPrefix("push ") { return .genericPush }
         if normalized == "pull" || normalized.hasPrefix("pull ") { return .genericPull }
         if normalized == "legs" || normalized.hasPrefix("legs ") { return .legs }
+        if normalized == "lower" || normalized.hasPrefix("lower ") { return .legs }
+        if normalized == "upper"
+            || normalized.hasPrefix("upper -")
+            || normalized == "upper body"
+            || normalized.hasPrefix("upper body ") {
+            return .upperBody
+        }
         return .genericExercise
     }
 

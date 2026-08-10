@@ -4,6 +4,7 @@ import SwiftUI
 struct SleepDashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
+    @ObservedObject private var readinessRefreshClock = ReadinessRefreshClock.shared
 
     @Query
     private var sessions: [SleepSession]
@@ -47,14 +48,29 @@ struct SleepDashboardView: View {
     private let analyticsStore = SleepAnalyticsSnapshotStore.shared
     private let hydrationSettingsStore = HydrationSettingsStore()
     private let nutritionGoalStore = NutritionGoalService()
+    private let hasInitialSnapshot: Bool
 
-    init() {
+    init(
+        initialSnapshot: SleepAnalyticsSnapshot? = nil,
+        initialReadinessScore: ReadinessScore? = nil
+    ) {
+        hasInitialSnapshot = initialSnapshot != nil
         _sessions = Query(Self.sessionsDescriptor)
         _workouts = Query(Self.workoutsDescriptor)
         _naps = Query(Self.napsDescriptor)
         _hydrationEntries = Query(Self.hydrationEntriesDescriptor)
         _foodLogEntries = Query(Self.foodLogEntriesDescriptor)
         _coachCheckIns = Query(Self.coachCheckInsDescriptor)
+        _summaries = State(initialValue: initialSnapshot?.summaries ?? [])
+        _latestSummary = State(
+            initialValue: initialSnapshot?.latestSummary ?? SleepScoringService.emptySummary()
+        )
+        _dashboardSummary = State(
+            initialValue: initialSnapshot?.dashboardSummary ?? SleepAnalyticsService.emptyDashboardSummary()
+        )
+        _readinessScore = State(
+            initialValue: initialReadinessScore ?? CoachIntelligenceService.emptySnapshot().readiness
+        )
     }
 
     private static var sessionsDescriptor: FetchDescriptor<SleepSession> {
@@ -134,7 +150,8 @@ struct SleepDashboardView: View {
             signature(coachCheckIns, limit: 30) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
             "\(settings.targetSleepMinutes):\(settings.recoveryCoachingEnabled):\(settings.preferredSource.rawValue)",
             "\(hydrationTargetML)",
-            "\(nutritionGoal.updatedAt.timeIntervalSince1970)"
+            "\(nutritionGoal.updatedAt.timeIntervalSince1970)",
+            readinessRefreshClock.token.signature
         ].joined(separator: "|")
     }
 
@@ -149,11 +166,7 @@ struct SleepDashboardView: View {
     }
 
     var body: some View {
-        FitnessScreen(
-            title: "Sleep",
-            subtitle: "Recovery & readiness.",
-            systemImage: "moon.zzz.fill"
-        ) {
+        FitnessScreen {
             if let activeSession {
                 activeSleepCard(activeSession)
             } else {
@@ -179,6 +192,8 @@ struct SleepDashboardView: View {
         }
         .navigationTitle("Sleep")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(false)
+        .toolbar(.visible, for: .navigationBar)
         .accessibilityIdentifier("sleep-screen")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -208,12 +223,17 @@ struct SleepDashboardView: View {
             Text("This removes the unfinished Sleep Mode session.")
         }
         .onAppear {
+            readinessRefreshClock.start()
             settings = settingsStore.load()
             hydrationTargetML = hydrationSettingsStore.dailyTargetML()
             nutritionGoal = nutritionGoalStore.loadGoal()
             maybePromptForWakeTime()
-            let shouldForceRefresh = !didRequestInitialDashboardRefresh
+            let shouldForceRefresh = !didRequestInitialDashboardRefresh && !hasInitialSnapshot
             didRequestInitialDashboardRefresh = true
+            if hasInitialSnapshot {
+                lastAnalyticsSignature = currentAnalyticsSignature
+                lastReadinessSignature = currentReadinessSignature
+            }
             DispatchQueue.main.async {
                 refreshSleepAnalytics(force: shouldForceRefresh)
                 refreshReadinessScore(force: shouldForceRefresh)
@@ -395,13 +415,10 @@ struct SleepDashboardView: View {
 
                     Spacer(minLength: 8)
 
-                    if let score = latestSummary.sleepScore {
-                        SleepScoreBadge(score: score)
-                    }
                 }
 
                 Text(latestSummary.primarySession == nil ? "No sleep data yet" : SleepScoringService.durationText(minutes: latestSummary.totalSleepMinutes))
-                    .font(.system(size: 44, weight: .bold, design: .rounded))
+                    .font(AppTypography.heroMetric)
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
@@ -410,17 +427,11 @@ struct SleepDashboardView: View {
                     SleepStatusChip(title: recoveryActionTitle, state: latestSummary.recoveryState)
 
                     Text(dashboardSummary.recommendation)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(appTheme.metrics.compactCardPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.compactCardRadius, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: appTheme.metrics.compactCardRadius, style: .continuous)
-                        .stroke(appTheme.colors.cardBorder, lineWidth: 1)
-                }
 
                 if latestSummary.napCreditMinutes > 0 {
                     Label("Nap added \(SleepScoringService.durationText(minutes: latestSummary.napCreditMinutes)) recovery credit", systemImage: "moonphase.first.quarter")
@@ -494,7 +505,7 @@ struct SleepDashboardView: View {
 
         let quality = latestSummary.qualityRating.map { SleepQualityPicker.label(for: $0) } ?? "No quality rating"
         let source = latestSummary.source?.displayName ?? "Sleep"
-        return "\(quality) quality - \(source)"
+        return PeaklineText.joinedMetadata(["\(quality) quality", source])
     }
 
     private var startCard: some View {
@@ -1018,8 +1029,12 @@ private struct NapSummaryCard: View {
     }
 
     private var napSubtitle: String {
-        let quality = nap.qualityRating.map { " - \(SleepQualityPicker.label(for: $0)) quality" } ?? ""
-        return "\(SleepScoringService.durationText(minutes: nap.durationMinutes)) - \(nap.timingCategory.displayName)\(quality). \(creditMinutes)"
+        let metadata = PeaklineText.joinedMetadata([
+            SleepScoringService.durationText(minutes: nap.durationMinutes),
+            nap.timingCategory.displayName,
+            nap.qualityRating.map { "\(SleepQualityPicker.label(for: $0)) quality" } ?? ""
+        ])
+        return "\(metadata). \(creditMinutes)"
     }
 }
 
@@ -1136,7 +1151,7 @@ struct NapTimerView: View {
                         SleepGlassIcon(systemImage: startedAt == nil ? "timer" : "moon.zzz.fill", size: 66)
 
                         Text(timerText)
-                            .font(.system(size: 58, weight: .bold, design: .rounded))
+                            .font(AppTypography.heroMetric)
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .monospacedDigit()
 
@@ -1327,7 +1342,7 @@ struct SleepModeView: View {
                             .textCase(.uppercase)
 
                         Text(durationHeadline)
-                            .font(.system(size: 68, weight: .bold, design: .rounded))
+                            .font(AppTypography.heroMetric)
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.78)
@@ -1337,11 +1352,12 @@ struct SleepModeView: View {
                     Spacer(minLength: 12)
 
                     VStack(alignment: .trailing, spacing: 5) {
-                        Image(systemName: "bed.double.fill")
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                            .frame(width: 44, height: 44)
-                            .background(appTheme.colors.cardBackgroundElevated, in: Circle())
+                        FitnessIconBadge(
+                            systemImage: "bed.double.fill",
+                            size: 44,
+                            tint: appTheme.colors.textPrimary,
+                            background: appTheme.colors.cardBackgroundElevated
+                        )
 
                         Text(selectedMinutes == 0 ? "Tracking now" : "Tracking later")
                             .font(.caption.weight(.semibold))
@@ -1581,11 +1597,30 @@ struct SleepMorningConfirmationView: View {
 
     init(session: SleepSession) {
         self.session = session
+        self._sessions = Query(Self.sessionsDescriptor)
+        self._workouts = Query(Self.workoutsDescriptor)
         let start = session.estimatedSleepStartAt ?? session.confirmedSleepStartAt
         self._sleepStart = State(initialValue: min(start, Date.now))
         self._wakeAt = State(initialValue: Date.now)
         self._qualityRating = State(initialValue: session.qualityRating ?? 3)
         self._tags = State(initialValue: Set(session.tags))
+    }
+
+    private static var sessionsDescriptor: FetchDescriptor<SleepSession> {
+        var descriptor = FetchDescriptor<SleepSession>(
+            sortBy: [SortDescriptor(\SleepSession.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 90
+        return descriptor
+    }
+
+    private static var workoutsDescriptor: FetchDescriptor<WorkoutSession> {
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\WorkoutSession.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 40
+        return descriptor
     }
 
     var body: some View {
@@ -1603,7 +1638,7 @@ struct SleepMorningConfirmationView: View {
                             .textCase(.uppercase)
 
                         Text(SleepScoringService.durationText(minutes: repository.durationMinutes(start: sleepStart, wake: wakeAt)))
-                            .font(.system(size: 44, weight: .bold, design: .rounded))
+                            .font(AppTypography.heroMetric)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         DatePicker("Sleep start", selection: $sleepStart, displayedComponents: [.date, .hourAndMinute])
@@ -1889,13 +1924,13 @@ struct SleepSessionDetailView: View {
     var body: some View {
         FitnessScreen(
             title: SleepCalendar.displayTitle(for: session.nightDate),
-            subtitle: "\(session.source.displayName) - \(session.confidence.displayName)",
+            subtitle: PeaklineText.joinedMetadata([session.source.displayName, session.confidence.displayName]),
             systemImage: "moon.stars.fill"
         ) {
             SleepGlassCard {
                 VStack(alignment: .leading, spacing: 14) {
                     Text(SleepScoringService.durationText(minutes: session.durationMinutes))
-                        .font(.system(size: 46, weight: .bold, design: .rounded))
+                        .font(AppTypography.heroMetric)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     HStack(spacing: 10) {
@@ -2406,34 +2441,6 @@ private struct SleepGlassIcon: View {
 
 private typealias SleepIconTile = SleepGlassIcon
 
-private struct SleepScoreBadge: View {
-    @Environment(\.appTheme) private var appTheme
-
-    let score: Int
-
-    var body: some View {
-        VStack(spacing: 1) {
-            Text("\(score)")
-                .font(.system(.headline, design: .rounded).weight(.bold))
-                .foregroundStyle(appTheme.colors.accent)
-                .monospacedDigit()
-
-            Text("Score")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(appTheme.colors.textSecondary)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(appTheme.colors.accent.opacity(0.22), lineWidth: 1)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Sleep recovery score, \(score) out of 100")
-    }
-}
-
 private struct SleepStatusChip: View {
     @Environment(\.appTheme) private var appTheme
 
@@ -2442,15 +2449,8 @@ private struct SleepStatusChip: View {
 
     var body: some View {
         Text(title)
-            .font(.caption.weight(.semibold))
+            .font(.subheadline.weight(.semibold))
             .foregroundStyle(tint)
-            .padding(.horizontal, appTheme.metrics.chipHorizontalPadding)
-            .padding(.vertical, appTheme.metrics.chipVerticalPadding)
-            .background(tint.opacity(0.14), in: Capsule())
-            .overlay {
-                Capsule()
-                    .stroke(tint.opacity(0.24), lineWidth: 1)
-            }
     }
 
     private var tint: Color {
@@ -2719,7 +2719,7 @@ private struct SleepHistoryRow: View {
         SleepGlassCard(style: .compact, padding: 16) {
             SleepGlassRow(
                 title: SleepCalendar.displayTitle(for: session.nightDate),
-                subtitle: "\(SleepScoringService.durationText(minutes: session.durationMinutes)) - \(session.qualityRating.map { SleepQualityPicker.label(for: $0) } ?? "No quality") - \(session.source.displayName). Estimated training support: \(SleepCoachingService().historyImpact(for: qualityScore))",
+                subtitle: "\(PeaklineText.joinedMetadata([SleepScoringService.durationText(minutes: session.durationMinutes), session.qualityRating.map { SleepQualityPicker.label(for: $0) } ?? "No quality", session.source.displayName])). Estimated training support: \(SleepCoachingService().historyImpact(for: qualityScore))",
                 systemImage: session.source == .appleHealth ? "heart.text.square.fill" : "moon.zzz.fill",
                 showsChevron: true
             ) {
@@ -2746,78 +2746,6 @@ private struct SleepMiniMetric: View {
 
     var body: some View {
         SleepGlassMetricTile(title: title, value: value)
-    }
-}
-
-private struct SleepAdaptiveRecommendationCard: View {
-    @Environment(\.appTheme) private var appTheme
-
-    let recommendation: AdaptiveTrainingRecommendation
-
-    var body: some View {
-        SleepGlassCard(style: .compact) {
-            VStack(alignment: .leading, spacing: 12) {
-                SleepGlassRow(
-                    title: recommendation.title,
-                    subtitle: recommendation.message,
-                    systemImage: systemImage,
-                    tint: tint
-                ) {
-                    Text(recommendation.level.displayName)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(tint)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .background(tint.opacity(0.14), in: Capsule())
-                }
-
-                FlowLayout(spacing: 8) {
-                    ForEach(recommendation.suggestedActions) { action in
-                        Text(action.displayName)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                            .background(appTheme.colors.cardBackgroundElevated, in: Capsule())
-                    }
-                }
-
-                Text("Based on: \(recommendation.basedOn.map(\.displayName).joined(separator: ", ")).")
-                    .font(.caption)
-                    .foregroundStyle(appTheme.colors.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private var tint: Color {
-        switch recommendation.level {
-        case .push, .normal:
-            return appTheme.colors.success
-        case .moderate:
-            return appTheme.colors.accent
-        case .light, .recovery:
-            return appTheme.colors.warning
-        case .rest:
-            return appTheme.colors.danger
-        }
-    }
-
-    private var systemImage: String {
-        switch recommendation.level {
-        case .push:
-            return "bolt.fill"
-        case .normal:
-            return "checkmark.seal.fill"
-        case .moderate:
-            return "dial.medium.fill"
-        case .light:
-            return "arrow.down.forward.circle.fill"
-        case .recovery:
-            return "figure.cooldown"
-        case .rest:
-            return "moon.fill"
-        }
     }
 }
 

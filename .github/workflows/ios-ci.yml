@@ -1,0 +1,93 @@
+name: iOS CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ios-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Validate project and dependency lockfile
+        run: |
+          plutil -lint GymTracker.xcodeproj/project.pbxproj
+          test -f GymTracker.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          xcodebuild \
+            -project GymTracker.xcodeproj \
+            -scheme GymTracker \
+            -resolvePackageDependencies
+
+      - name: Select an available iPhone simulator
+        run: |
+          simulator_udid="$(xcrun simctl list devices available -j | ruby -rjson -e '
+            devices = JSON.parse(STDIN.read).fetch("devices").values.flatten
+            phone = devices.find { |device| device.fetch("name", "").start_with?("iPhone") }
+            abort "No available iPhone simulator" unless phone
+            puts phone.fetch("udid")
+          ')"
+          echo "SIMULATOR_UDID=${simulator_udid}" >> "${GITHUB_ENV}"
+
+      - name: Build and run unit tests without Firebase configuration
+        run: |
+          xcodebuild \
+            -project GymTracker.xcodeproj \
+            -scheme GymTracker \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}" \
+            -resultBundlePath "${RUNNER_TEMP}/PeaklineTests.xcresult" \
+            CODE_SIGNING_ALLOWED=NO \
+            -only-testing:GymTrackerTests \
+            test
+
+      - name: Strict-concurrency diagnostics lane
+        continue-on-error: true
+        run: |
+          strict_log="${RUNNER_TEMP}/strict-concurrency.log"
+          if ! xcodebuild \
+              -project GymTracker.xcodeproj \
+              -scheme GymTracker \
+              -configuration Debug \
+              -destination "generic/platform=iOS Simulator" \
+              CODE_SIGNING_ALLOWED=NO \
+              PEAKLINE_STRICT_CONCURRENCY=complete \
+              build > "${strict_log}" 2>&1; then
+            cat "${strict_log}"
+            exit 1
+          fi
+
+          warning_count="$(grep -c ' warning:' "${strict_log}" || true)"
+          echo "Strict-concurrency warning lines: ${warning_count}"
+          grep ' warning:' "${strict_log}" | sort -u | head -100 || true
+
+      - name: Upload strict-concurrency diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Peakline-strict-concurrency-log
+          path: ${{ runner.temp }}/strict-concurrency.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PeaklineTests-xcresult
+          path: ${{ runner.temp }}/PeaklineTests.xcresult
+          if-no-files-found: ignore
+          retention-days: 7

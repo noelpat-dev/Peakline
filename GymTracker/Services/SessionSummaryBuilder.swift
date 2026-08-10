@@ -1,6 +1,6 @@
 import Foundation
 
-struct SessionSummary {
+struct SessionSummary: Equatable, Sendable {
     let splitName: String
     let durationText: String
     let completedExerciseCount: Int
@@ -64,15 +64,12 @@ struct SessionSummaryBuilder {
     }
 
     private func suggestedNextSplit(after session: WorkoutSession, activeSplits: [TrainingSplit]) -> String? {
-        let names = ["Push", "Pull", "Legs"]
-        let splitName = session.splitNameSnapshot.components(separatedBy: " - ").first ?? session.splitNameSnapshot
-
-        guard let currentIndex = names.firstIndex(of: splitName) else {
-            return activeSplits.first?.name
-        }
-
-        let nextName = names[(currentIndex + 1) % names.count]
-        return activeSplits.first { $0.name == nextName }?.name ?? nextName
+        TrainingRotationService()
+            .nextSplit(
+                activeSplits: activeSplits.map(TrainingSplitSnapshot.init),
+                completedSessions: [WorkoutAnalyticsSession(session: session)]
+            )?
+            .name
     }
 
     private func takeaway(improvements: [String], workingSetCount: Int, rating: Int?) -> String {

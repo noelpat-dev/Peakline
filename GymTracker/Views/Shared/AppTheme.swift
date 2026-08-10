@@ -77,16 +77,18 @@ struct AppThemeMetrics {
 enum AppTypography {
     static let screenTitle = Font.system(.largeTitle, design: .rounded).weight(.bold)
     static let screenSubtitle = Font.subheadline
-    static let heroTitle = Font.system(size: 46, weight: .bold, design: .rounded)
-    static let heroMetric = Font.system(size: 44, weight: .bold, design: .rounded)
-    static let largeMetric = Font.system(.title2, design: .rounded).weight(.bold)
+    static let heroTitle = Font.system(.largeTitle, design: .rounded).weight(.heavy)
+    static let heroMetric = Font.system(.largeTitle, design: .rounded).monospacedDigit().weight(.heavy)
+    static let largeMetric = Font.system(.title2, design: .rounded).monospacedDigit().weight(.bold)
     static let sectionTitle = Font.headline
+    static let sectionSubtitle = Font.subheadline
     static let cardTitle = Font.title3.bold()
     static let compactCardTitle = Font.headline.weight(.semibold)
     static let body = Font.subheadline
     static let bodyEmphasis = Font.subheadline.weight(.semibold)
     static let metadata = Font.caption
     static let metadataEmphasis = Font.caption.weight(.semibold)
+    static let eyebrow = Font.caption.weight(.bold)
     static let badge = Font.caption2.weight(.bold)
     static let chip = Font.caption.weight(.semibold)
     static let button = Font.headline.weight(.semibold)
@@ -95,6 +97,36 @@ enum AppTypography {
 
     static func rounded(size: CGFloat, weight: Font.Weight = .semibold) -> Font {
         .system(size: size, weight: weight, design: .rounded)
+    }
+}
+
+enum PeaklineText {
+    static let metadataSeparator = " · "
+
+    static func count(_ value: Int, singular: String, plural: String? = nil) -> String {
+        "\(value) \(value == 1 ? singular : (plural ?? singular + "s"))"
+    }
+
+    static func joinedMetadata(_ values: [String]) -> String {
+        values.filter { !$0.isEmpty }.joined(separator: metadataSeparator)
+    }
+
+    static func setRepSummary(sets: Int, minimumReps: Int, maximumReps: Int) -> String {
+        joinedMetadata([
+            count(sets, singular: "set"),
+            repRange(minimum: minimumReps, maximum: maximumReps)
+        ])
+    }
+
+    static func repRange(minimum: Int, maximum: Int) -> String {
+        if minimum == maximum {
+            return count(minimum, singular: "rep")
+        }
+        return "\(minimum)–\(maximum) reps"
+    }
+
+    static func loadReps(weight: String, reps: Int, unit: String = "kg") -> String {
+        "\(weight) \(unit) × \(reps)"
     }
 }
 
@@ -158,16 +190,16 @@ enum AppTheme: String, CaseIterable, Identifiable {
             accent: accent,
             accentForeground: accentForeground,
             accentHighlight: accentHighlight(for: accent),
-            accentSurface: accent.opacity(0.16),
-            accentSurfaceStrong: accent.opacity(0.26),
-            backgroundPrimary: Color(light: 0xF7F7F9, dark: 0x000000),
-            backgroundSecondary: Color(light: 0xFFFFFF, dark: 0x0B0B0D),
-            cardBackground: Color(light: 0xFFFFFF, dark: 0x1C1C1E),
-            cardBackgroundElevated: Color(light: 0xF0F0F5, dark: 0x242426),
-            cardBorder: Color(light: 0xDEDEE6, dark: 0x2F2F33),
+            accentSurface: accent.opacity(0.12),
+            accentSurfaceStrong: accent.opacity(0.20),
+            backgroundPrimary: Color(light: 0xF4F4F7, dark: 0x08080A),
+            backgroundSecondary: Color(light: 0xECECF1, dark: 0x101013),
+            cardBackground: Color(light: 0xFFFFFF, dark: 0x18181B),
+            cardBackgroundElevated: Color(light: 0xF1F1F5, dark: 0x222226),
+            cardBorder: Color(light: 0xDEDEE6, dark: 0x303036),
             textPrimary: Color(light: 0x111114, dark: 0xFFFFFF),
-            textSecondary: Color(light: 0x66666D, dark: 0xA1A1A6),
-            textTertiary: Color(light: 0x8B8B92, dark: 0x6E6E73),
+            textSecondary: Color(light: 0x606067, dark: 0xB0B0B7),
+            textTertiary: Color(light: 0x85858D, dark: 0x7D7D86),
             success: Color(hex: 0x30D158),
             warning: Color(hex: 0xFF9F0A),
             hydration: self == .black ? accent : Color(hex: 0x0A84FF),
@@ -227,6 +259,20 @@ enum AppAppearance: String, CaseIterable, Identifiable {
         case .dark:
             return .dark
         }
+    }
+}
+
+extension AppAppearance {
+    static var launchArgumentOverride: AppAppearance? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("-UITestInMemoryStore"),
+              let argumentIndex = arguments.firstIndex(of: "-UITestAppearance"),
+              arguments.indices.contains(argumentIndex + 1)
+        else {
+            return nil
+        }
+
+        return AppAppearance(rawValue: arguments[argumentIndex + 1].lowercased())
     }
 }
 
@@ -318,11 +364,13 @@ struct AppThemeProvider<Content: View>: View {
     }
 
     private var theme: AppTheme {
-        .black
+        AppTheme(rawValue: storedTheme) ?? .black
     }
 
     private var appearance: AppAppearance {
-        AppAppearance(rawValue: storedAppearance) ?? .system
+        AppAppearance.launchArgumentOverride
+            ?? AppAppearance(rawValue: storedAppearance)
+            ?? .system
     }
 
     var body: some View {
@@ -332,7 +380,9 @@ struct AppThemeProvider<Content: View>: View {
             .toggleStyle(AppSwitchToggleStyle(theme: theme))
             .preferredColorScheme(appearance.colorScheme)
             .onAppear {
-                storedTheme = AppTheme.black.rawValue
+                if AppTheme(rawValue: storedTheme) == nil {
+                    storedTheme = AppTheme.black.rawValue
+                }
             }
     }
 }

@@ -46,6 +46,12 @@ struct ProgressContentView: View {
         return descriptor
     }
 
+    private static var activeSplitsDescriptor: FetchDescriptor<TrainingSplit> {
+        FetchDescriptor<TrainingSplit>(
+            predicate: #Predicate<TrainingSplit> { $0.isActive }
+        )
+    }
+
     private var displayedWeeklySummary: WeeklyTrainingSummary {
         weeklySummary ?? analytics.weeklySummary(from: [WorkoutAnalyticsSession]())
     }
@@ -55,31 +61,8 @@ struct ProgressContentView: View {
     }
 
     var body: some View {
-        FitnessScreen(
-            title: "Progress",
-            subtitle: "Lift trends, PRs, and weekly training balance.",
-            systemImage: "chart.xyaxis.line"
-        ) {
-            DashboardSection(title: "This Week") {
-                VStack(alignment: .leading, spacing: 12) {
-                    progressSignalCard
-
-                    HStack(spacing: 10) {
-                        MetricTile(label: "Workouts", value: "\(displayedWeeklySummary.completedWorkouts)", caption: "Completed", systemImage: "figure.strengthtraining.traditional")
-                        MetricTile(label: "Sets", value: "\(displayedWeeklySummary.workingSets)", caption: "Working", systemImage: "checkmark.circle")
-                    }
-                    HStack(spacing: 10) {
-                        MetricTile(label: "Best-set vol", value: format(displayedWeeklySummary.bestSetVolumeTotal), caption: "kg total", systemImage: "chart.bar")
-                        MetricTile(label: "Tonnage", value: format(displayedWeeklySummary.totalTonnage), caption: "kg total", systemImage: "sum")
-                    }
-                    FitnessCard(style: .compact, padding: 16) {
-                        Text("Push \(displayedSplitConsistency.pushCount) - Pull \(displayedSplitConsistency.pullCount) - Legs \(displayedSplitConsistency.legsCount). \(displayedSplitConsistency.balanceDescription)")
-                            .font(.subheadline)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
+        FitnessScreen {
+            progressWeekCard
 
             DashboardSection(title: "Progress Charts") {
                 if !exercisesLoaded {
@@ -91,21 +74,16 @@ struct ProgressContentView: View {
                         systemImage: "chart.xyaxis.line"
                     )
                 } else {
-                    HStack(spacing: 12) {
-                        Button {
-                            isExerciseChartsPresented = true
-                        } label: {
-                            ProgressActionCard(title: "Exercise Charts", subtitle: "Open lazy-loaded trends", systemImage: "chart.xyaxis.line")
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 12) {
+                            exerciseChartsButton
+                            prTimelineButton
                         }
-                        .buttonStyle(PressableCardButtonStyle())
 
-                        Button {
-                            isPRTimelinePresented = true
-                        } label: {
-                            ProgressActionCard(title: "PR Timeline", subtitle: "Review best-set jumps", systemImage: "trophy.fill")
+                        VStack(spacing: 12) {
+                            exerciseChartsButton
+                            prTimelineButton
                         }
-                        .buttonStyle(PressableCardButtonStyle())
-                        .accessibilityIdentifier("progress-pr-timeline-open")
                     }
                 }
             }
@@ -123,7 +101,12 @@ struct ProgressContentView: View {
                     LazyVStack(spacing: 12) {
                         ForEach(exercises) { exercise in
                             Button {
-                                selectedExercise = exercise
+                                navigate(
+                                    key: "progress.exercise.\(exercise.id.uuidString)",
+                                    destinationClass: .deep
+                                ) {
+                                    selectedExercise = exercise
+                                }
                             } label: {
                                 FitnessCard(padding: 16) {
                                     HStack(alignment: .top, spacing: 12) {
@@ -165,12 +148,23 @@ struct ProgressContentView: View {
         .accessibilityIdentifier("progress-screen")
         .navigationDestination(isPresented: $isExerciseChartsPresented) {
             ExerciseProgressChartsIndexView(exercises: exercises, selectedExercise: $selectedExercise)
+                .onAppear {
+                    NavigationInteraction.destinationDidAppear(key: "progress.exercise-charts")
+                }
         }
         .navigationDestination(isPresented: $isPRTimelinePresented) {
             PRTimelineView()
+                .onAppear {
+                    NavigationInteraction.destinationDidAppear(key: "progress.pr-timeline")
+                }
         }
         .navigationDestination(item: $selectedExercise) { exercise in
             ExerciseProgressDetailView(exercise: exercise)
+                .onAppear {
+                    NavigationInteraction.destinationDidAppear(
+                        key: "progress.exercise.\(exercise.id.uuidString)"
+                    )
+                }
         }
         .onAppear {
             guard !didRequestInitialRefresh else { return }
@@ -183,36 +177,119 @@ struct ProgressContentView: View {
         }
     }
 
-    private var progressSignalCard: some View {
-        FitnessCard {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: progressSignalSystemImage)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(progressSignalTint)
-                    .frame(width: 42, height: 42)
-                    .background(progressSignalTint.opacity(0.14), in: Circle())
+    private func navigate(
+        key: String,
+        destinationClass: NavigationDestinationClass,
+        action: @escaping @MainActor () -> Void
+    ) {
+        NavigationInteraction.perform(
+            key: key,
+            destinationClass: destinationClass,
+            haptic: .selection,
+            action: action
+        )
+    }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
+    private var exerciseChartsButton: some View {
+        Button {
+            navigate(key: "progress.exercise-charts", destinationClass: .deep) {
+                isExerciseChartsPresented = true
+            }
+        } label: {
+            ProgressActionCard(title: "Exercise Charts", subtitle: "Open lift trends", systemImage: "chart.xyaxis.line")
+        }
+        .buttonStyle(PressableCardButtonStyle())
+    }
+
+    private var prTimelineButton: some View {
+        Button {
+            navigate(key: "progress.pr-timeline", destinationClass: .deep) {
+                isPRTimelinePresented = true
+            }
+        } label: {
+            ProgressActionCard(title: "PR Timeline", subtitle: "Review new bests", systemImage: "trophy.fill")
+        }
+        .buttonStyle(PressableCardButtonStyle())
+        .accessibilityIdentifier("progress-pr-timeline-open")
+    }
+
+    private var progressWeekCard: some View {
+        FitnessCard(style: .hero) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 12) {
+                    FitnessIconBadge(
+                        systemImage: progressSignalSystemImage,
+                        size: 42,
+                        tint: progressSignalTint,
+                        background: progressSignalTint.opacity(0.14)
+                    )
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("This Week")
+                            .font(AppTypography.eyebrow)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .textCase(.uppercase)
+
                         Text(progressSignalTitle)
-                            .font(.headline)
+                            .font(AppTypography.cardTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
-
-                        Text(progressSignalBadge)
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(progressSignalTint)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background(progressSignalTint.opacity(0.14), in: Capsule())
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    Text(progressSignalMessage)
-                        .font(.subheadline)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+
+                    Text(progressSignalBadge)
+                        .font(AppTypography.badge)
+                        .foregroundStyle(progressSignalTint)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                        .background(progressSignalTint.opacity(0.14), in: Capsule())
                 }
 
-                Spacer(minLength: 0)
+                Text(progressSignalMessage)
+                    .font(AppTypography.body)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .bottom, spacing: 16) {
+                        ProgressWeekPrimaryMetric(value: "\(displayedWeeklySummary.completedWorkouts)")
+
+                        Divider()
+                            .overlay(appTheme.colors.cardBorder)
+                            .frame(height: 62)
+
+                        HStack(alignment: .bottom, spacing: 16) {
+                            ProgressWeekSupportingMetric(label: "Working sets", value: "\(displayedWeeklySummary.workingSets)")
+                            ProgressWeekSupportingMetric(label: "PRs", value: "\(displayedWeeklySummary.prCount)")
+                        }
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        ProgressWeekPrimaryMetric(value: "\(displayedWeeklySummary.completedWorkouts)")
+                        HStack(alignment: .bottom, spacing: 16) {
+                            ProgressWeekSupportingMetric(label: "Working sets", value: "\(displayedWeeklySummary.workingSets)")
+                            ProgressWeekSupportingMetric(label: "PRs", value: "\(displayedWeeklySummary.prCount)")
+                        }
+                    }
+                }
+
+                Text(
+                    PeaklineText.joinedMetadata([
+                        "\(format(displayedWeeklySummary.totalTonnage)) kg tonnage",
+                        "\(format(displayedWeeklySummary.bestSetVolumeTotal)) kg best-set volume",
+                        displayedSplitConsistency.countDescription()
+                    ])
+                )
+                    .font(AppTypography.metadata)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(displayedSplitConsistency.balanceDescription)
+                    .font(AppTypography.metadataEmphasis)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -238,15 +315,15 @@ struct ProgressContentView: View {
             return "Finish a workout to start this week's progress signal."
         }
         if let missedSplitName = displayedSplitConsistency.missedSplitName {
-            return "Push \(displayedSplitConsistency.pushCount) - Pull \(displayedSplitConsistency.pullCount) - Legs \(displayedSplitConsistency.legsCount). Prioritise \(missedSplitName) to rebalance the week."
+            return "\(displayedSplitConsistency.countDescription()). Prioritise \(missedSplitName) to rebalance the week."
         }
         if displayedWeeklySummary.prCount > 0 {
-            return "\(displayedWeeklySummary.prCount) PRs logged this week. Open the PR timeline to review what moved."
+            return "\(PeaklineText.count(displayedWeeklySummary.prCount, singular: "PR")) logged this week. Open the PR timeline to review what moved."
         }
         if displayedWeeklySummary.workingSets >= 12 {
-            return "\(displayedWeeklySummary.workingSets) working sets are logged. Check exercise charts for lift-specific changes."
+            return "\(PeaklineText.count(displayedWeeklySummary.workingSets, singular: "working set")) logged. Check exercise charts for lift-specific changes."
         }
-        return "\(displayedWeeklySummary.completedWorkouts) workouts logged. Add more working sets to make trends clearer."
+        return "\(PeaklineText.count(displayedWeeklySummary.completedWorkouts, singular: "workout")) logged. Add more working sets to make trends clearer."
     }
 
     private var progressSignalBadge: String {
@@ -322,8 +399,12 @@ struct ProgressContentView: View {
         summaryTask?.cancel()
 
         let recentSessions: [WorkoutSession]
+        let activeSplitNames: [String]
         do {
             recentSessions = try modelContext.fetch(Self.completedSessionsDescriptor)
+            activeSplitNames = TrainingRotationService()
+                .orderedActiveSplits(try modelContext.fetch(Self.activeSplitsDescriptor))
+                .map(\.name)
         } catch {
             weeklySummary = nil
             splitConsistency = nil
@@ -331,6 +412,8 @@ struct ProgressContentView: View {
         }
 
         let signature = Self.summarySignature(for: recentSessions)
+            + "||"
+            + activeSplitNames.joined(separator: "|")
         guard force || signature != lastSummarySignature else { return }
 
         let snapshots: [WorkoutAnalyticsSession]
@@ -349,7 +432,10 @@ struct ProgressContentView: View {
                     let analytics = TrainingAnalyticsService()
                     let records = analytics.prTimeline(from: snapshots)
                     let weekly = analytics.weeklySummary(from: snapshots, prRecords: records)
-                    let consistency = analytics.splitConsistency(from: snapshots)
+                    let consistency = analytics.splitConsistency(
+                        from: snapshots,
+                        activeSplitNames: activeSplitNames
+                    )
                     return (weekly, consistency)
                 }
             }.value
@@ -371,6 +457,48 @@ struct ProgressContentView: View {
 
     private func format(_ value: Double) -> String {
         value.formatted(.number.precision(.fractionLength(value.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1)))
+    }
+}
+
+private struct ProgressWeekPrimaryMetric: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(value)
+                .font(AppTypography.heroMetric)
+                .foregroundStyle(appTheme.colors.textPrimary)
+                .lineLimit(1)
+            Text("Workouts")
+                .font(AppTypography.metadataEmphasis)
+                .foregroundStyle(appTheme.colors.textSecondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct ProgressWeekSupportingMetric: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(value)
+                .font(AppTypography.largeMetric)
+                .foregroundStyle(appTheme.colors.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+            Text(label)
+                .font(AppTypography.metadata)
+                .foregroundStyle(appTheme.colors.textSecondary)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -489,7 +617,7 @@ private struct ExerciseProgressDetailView: View {
                                         .font(.subheadline)
                                         .foregroundStyle(appTheme.colors.textSecondary)
                                         .lineLimit(2)
-                                    Text("Best-set volume \(entry.bestSetVolumeText) - est. 1RM \(entry.estimatedOneRepMaxText)")
+                                    Text("Best-set volume \(entry.bestSetVolumeText) · est. 1RM \(entry.estimatedOneRepMaxText)")
                                         .font(.caption)
                                         .foregroundStyle(appTheme.colors.textSecondary)
                                 }
@@ -551,7 +679,13 @@ private struct ExerciseProgressChartsIndexView: View {
             LazyVStack(spacing: 12) {
                 ForEach(exercises) { exercise in
                     Button {
-                        selectedExercise = exercise
+                        NavigationInteraction.perform(
+                            key: "progress.exercise.\(exercise.id.uuidString)",
+                            destinationClass: .deep,
+                            haptic: .selection
+                        ) {
+                            selectedExercise = exercise
+                        }
                     } label: {
                         FitnessCard(padding: 16) {
                             HStack(spacing: 12) {
@@ -646,7 +780,7 @@ private struct ExerciseProgressEntry: Identifiable {
     }
 
     var bestSetText: String {
-        "\(format(bestSet.weight))kg x \(bestSet.reps)"
+        PeaklineText.loadReps(weight: format(bestSet.weight), reps: bestSet.reps)
     }
 
     var estimatedOneRepMaxText: String {
@@ -666,7 +800,7 @@ private struct ExerciseProgressEntry: Identifiable {
     }
 
     var setsText: String {
-        sets.map { "\(format($0.weight))kg x \($0.reps)" }.joined(separator: ", ")
+        sets.map { PeaklineText.loadReps(weight: format($0.weight), reps: $0.reps) }.joined(separator: ", ")
     }
 
     private func estimatedOneRepMax(for set: SetLog) -> Double {

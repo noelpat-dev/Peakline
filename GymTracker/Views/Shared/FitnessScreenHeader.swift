@@ -16,11 +16,7 @@ struct FitnessScreenHeader: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             if let systemImage {
-                Image(systemName: systemImage)
-                    .font(AppTypography.largeMetric)
-                    .foregroundStyle(appTheme.colors.accent)
-                    .frame(width: 34, height: 34)
-                    .background(appTheme.colors.accentSurface, in: Circle())
+                FitnessIconBadge(systemImage: systemImage, size: 38)
             }
 
             VStack(alignment: .leading, spacing: 5) {

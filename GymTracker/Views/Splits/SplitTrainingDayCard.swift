@@ -9,40 +9,38 @@ struct SplitTrainingDayCard: View {
     let focusDescription: String
 
     var body: some View {
-        FitnessCard(padding: 18) {
-            HStack(alignment: .top, spacing: 14) {
+        FitnessCard(style: .compact) {
+            HStack(alignment: .center, spacing: 14) {
                 ExerciseIconTile(
                     iconKey: ExerciseIconMapper.splitIconKey(for: split.name),
                     title: nil,
-                    size: 58,
+                    size: 48,
                     style: .compact,
                     tint: iconTint
                 )
 
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(split.name)
-                            .font(.system(.title2, design: .rounded).weight(.bold))
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                            .lineLimit(1)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(split.name)
+                        .font(AppTypography.cardTitle)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .lineLimit(2)
 
-                        Spacer(minLength: 8)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 8) {
+                            SplitStatusBadge(status: status)
+                            trainingMetadata
+                        }
 
-                        SplitStatusBadge(status: status)
+                        VStack(alignment: .leading, spacing: 5) {
+                            SplitStatusBadge(status: status)
+                            trainingMetadata
+                        }
                     }
 
-                    Text("\(split.exercises.count) exercises")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.textPrimary)
-
-                    Text(lastTrainedText)
-                        .font(.subheadline)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-
                     Text(focusDescription)
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textSecondary)
-                        .lineLimit(1)
+                        .lineLimit(2)
                 }
 
                 Image(systemName: "chevron.right")
@@ -52,6 +50,19 @@ struct SplitTrainingDayCard: View {
             }
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private var trainingMetadata: some View {
+        Text(
+            PeaklineText.joinedMetadata([
+                PeaklineText.count(split.exercises.count, singular: "exercise"),
+                lastTrainedText
+            ])
+        )
+            .font(AppTypography.metadataEmphasis)
+            .foregroundStyle(appTheme.colors.textSecondary)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var iconTint: Color {

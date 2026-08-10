@@ -3,7 +3,6 @@ import SwiftUI
 struct LiveWorkoutHeader: View {
     @Environment(\.appTheme) private var appTheme
 
-    let title: String
     let startedAt: Date
     let endedAt: Date?
     let pausedAt: Date?
@@ -21,11 +20,13 @@ struct LiveWorkoutHeader: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(title)
-                            .font(AppTypography.sectionTitle)
+                        Text(isPaused ? "Workout paused" : "Live workout")
+                            .font(AppTypography.eyebrow)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .textCase(.uppercase)
                         Text(totalExercises == 0 ? "No exercises selected" : "Exercise \(min(currentExerciseIndex + 1, totalExercises)) of \(totalExercises)")
-                            .font(AppTypography.metadata)
-                            .foregroundStyle(appTheme.mutedText)
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(appTheme.colors.textPrimary)
                     }
 
                     Spacer()
@@ -38,32 +39,45 @@ struct LiveWorkoutHeader: View {
                 SwiftUI.ProgressView(value: totalExercises == 0 ? 0 : Double(min(currentExerciseIndex + 1, totalExercises)), total: Double(max(totalExercises, 1)))
                     .tint(appTheme.colors.accentHighlight)
 
-                HStack(spacing: 10) {
-                    Button {
-                        AppHaptics.selection()
-                        togglePause()
-                    } label: {
-                        Label(isPaused ? "Resume" : "Pause", systemImage: isPaused ? "play.fill" : "pause.fill")
-                            .frame(maxWidth: .infinity)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        pauseButton(isPaused: isPaused)
+                        finishButton
                     }
-                    .buttonStyle(NeutralFitnessButtonStyle())
-                    .disabled(endedAt != nil)
-                    .accessibilityIdentifier(isPaused ? "workout-logger-resume" : "workout-logger-pause")
 
-                    Button {
-                        AppHaptics.success()
-                        finish()
-                    } label: {
-                        Label("Finish", systemImage: "checkmark.circle.fill")
-                            .frame(maxWidth: .infinity)
+                    VStack(spacing: 10) {
+                        pauseButton(isPaused: isPaused)
+                        finishButton
                     }
-                    .buttonStyle(PrimaryFitnessButtonStyle())
-                    .accessibilityIdentifier("workout-logger-finish")
                 }
-                .font(AppTypography.bodyEmphasis)
             }
             .padding(.vertical, 2)
         }
+    }
+
+    private func pauseButton(isPaused: Bool) -> some View {
+        Button {
+            AppHaptics.selection()
+            togglePause()
+        } label: {
+            Label(isPaused ? "Resume" : "Pause", systemImage: isPaused ? "play.fill" : "pause.fill")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(NeutralFitnessButtonStyle())
+        .disabled(endedAt != nil)
+        .accessibilityIdentifier(isPaused ? "workout-logger-resume" : "workout-logger-pause")
+    }
+
+    private var finishButton: some View {
+        Button {
+            AppHaptics.success()
+            finish()
+        } label: {
+            Label("Finish", systemImage: "checkmark.circle.fill")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(PrimaryFitnessButtonStyle())
+        .accessibilityIdentifier("workout-logger-finish")
     }
 
     private func elapsedText(at date: Date) -> String {

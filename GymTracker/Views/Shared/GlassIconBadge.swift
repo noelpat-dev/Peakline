@@ -23,7 +23,7 @@ struct GlassIconBadge: View {
                 Circle()
                     .stroke(borderColor, lineWidth: 1)
             }
-            .shadow(color: (tint ?? appTheme.colors.accent).opacity(0.16), radius: 14, y: 7)
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.18 : 0.08), radius: 10, y: 6)
             .accessibilityHidden(true)
     }
 

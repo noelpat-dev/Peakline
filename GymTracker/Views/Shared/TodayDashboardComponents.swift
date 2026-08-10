@@ -4,41 +4,28 @@ struct DashboardHeaderView: View {
     @Environment(\.appTheme) private var appTheme
 
     let dateText: String
-    let title: String
+    let title: String?
     let subtitle: String
 
     var body: some View {
-        HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(dateText)
-                    .font(AppTypography.bodyEmphasis)
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .lineLimit(1)
+        VStack(alignment: .leading, spacing: 5) {
+            Text(dateText)
+                .font(AppTypography.bodyEmphasis)
+                .foregroundStyle(appTheme.colors.textSecondary)
+                .lineLimit(1)
 
+            if let title, !title.isEmpty {
                 Text(title)
                     .font(AppTypography.screenTitle)
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
-
-                Text(subtitle)
-                    .font(AppTypography.screenSubtitle)
-                    .foregroundStyle(appTheme.colors.textTertiary)
-                    .lineLimit(1)
             }
 
-            Spacer(minLength: 12)
-
-            Image(systemName: "person.crop.circle.fill")
-                .font(AppTypography.rounded(size: 25, weight: .semibold))
-                .foregroundStyle(appTheme.colors.accent)
-                .frame(width: 48, height: 48)
-                .background(appTheme.colors.cardBackgroundElevated, in: Circle())
-                .overlay {
-                    Circle()
-                        .stroke(appTheme.colors.cardBorder, lineWidth: 1)
-                }
-                .accessibilityHidden(true)
+            Text(subtitle)
+                .font(AppTypography.screenSubtitle)
+                .foregroundStyle(appTheme.colors.textTertiary)
+                .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 4)
@@ -66,10 +53,7 @@ struct HeroRecommendationCard: View {
     let splitName: String
     let reason: String
     let context: String?
-    let iconKey: ExerciseIconKey
     let chips: [DashboardChip]
-    let nextActionTitle: String
-    let nextActionDetail: String
     let primaryTitle: String
     let secondaryTitle: String
     let primarySystemImage: String
@@ -81,35 +65,24 @@ struct HeroRecommendationCard: View {
 
     var body: some View {
         FitnessCard(style: .hero) {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .top, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 9) {
-                        Text(eyebrow)
-                            .font(AppTypography.metadataEmphasis)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .textCase(.uppercase)
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(eyebrow)
+                        .font(AppTypography.eyebrow)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .textCase(.uppercase)
 
-                        Text(splitName)
-                            .font(AppTypography.heroTitle)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.68)
-                            .accessibilityIdentifier("today-suggested-split")
-                    }
-
-                    Spacer(minLength: 12)
-
-                    ExerciseIconView(
-                        iconKey: iconKey,
-                        size: 62,
-                        showBackground: true,
-                        isDecorative: true
-                    )
+                    Text(splitName)
+                        .font(AppTypography.heroTitle)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.68)
+                        .accessibilityIdentifier("today-suggested-split")
                 }
 
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(reason)
-                        .font(AppTypography.sectionTitle)
+                        .font(AppTypography.bodyEmphasis)
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -117,56 +90,19 @@ struct HeroRecommendationCard: View {
                         Text(context)
                             .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
+                            .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                }
-
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: primarySystemImage)
-                        .font(AppTypography.metadataEmphasis)
-                        .frame(width: 30, height: 30)
-                        .foregroundStyle(appTheme.colors.accent)
-                        .background(appTheme.colors.accentSurface, in: Circle())
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Now")
-                            .font(AppTypography.metadataEmphasis)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .textCase(.uppercase)
-
-                        Text(nextActionTitle)
-                            .font(AppTypography.bodyEmphasis)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        Text(nextActionDetail)
-                            .font(AppTypography.metadata)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer(minLength: 0)
-                }
-                .padding(.leading, appTheme.metrics.spacing12)
-                .overlay(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(appTheme.colors.accent)
-                        .frame(width: 3)
                 }
 
                 if !chips.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(chips) { chip in
-                                DashboardMetadataChip(chip: chip)
-                            }
-                        }
-                        .padding(.vertical, 1)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .clipped()
-                    .mask(Rectangle())
-                    .accessibilityIdentifier("today-suggested-chips")
+                    Text(chips.map(\.title).joined(separator: PeaklineText.metadataSeparator))
+                        .font(AppTypography.metadataEmphasis)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("today-suggested-chips")
                 }
 
                 ViewThatFits(in: .horizontal) {
@@ -186,7 +122,6 @@ struct HeroRecommendationCard: View {
 
     private var heroPrimaryButton: some View {
         Button {
-            AppHaptics.mediumImpact()
             primaryAction()
         } label: {
             Label(primaryTitle, systemImage: primarySystemImage)
@@ -198,7 +133,6 @@ struct HeroRecommendationCard: View {
 
     private var heroSecondaryButton: some View {
         Button {
-            AppHaptics.selection()
             secondaryAction()
         } label: {
             Label(secondaryTitle, systemImage: secondarySystemImage)
@@ -247,12 +181,20 @@ enum QuickActionStyle {
 }
 
 struct QuickActionsGrid: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let actions: [QuickAction]
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12)
-    ]
+    private var columns: [GridItem] {
+        if dynamicTypeSize.isAccessibilitySize {
+            return [GridItem(.flexible())]
+        }
+
+        return [
+            GridItem(.flexible(), spacing: 12),
+            GridItem(.flexible(), spacing: 12)
+        ]
+    }
 
     var body: some View {
         LazyVGrid(columns: columns, spacing: 12) {
@@ -277,11 +219,12 @@ struct QuickActionTile: View {
             FitnessCard(style: .compact) {
                 VStack(alignment: .leading, spacing: 13) {
                     HStack {
-                        Image(systemName: action.systemImage)
-                            .font(AppTypography.cardTitle)
-                            .foregroundStyle(iconColor)
-                            .frame(width: appTheme.metrics.rowIconSize, height: appTheme.metrics.rowIconSize)
-                            .background(iconBackground, in: Circle())
+                        FitnessIconBadge(
+                            systemImage: action.systemImage,
+                            size: appTheme.metrics.rowIconSize,
+                            tint: iconColor,
+                            background: iconBackground
+                        )
 
                         Spacer(minLength: 8)
 
@@ -304,7 +247,7 @@ struct QuickActionTile: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .frame(maxWidth: .infinity, minHeight: 136, alignment: .topLeading)
+                .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
             }
         }
         .buttonStyle(PressableCardButtonStyle())
@@ -409,40 +352,18 @@ struct CoachInsightCard: View {
 }
 
 struct WeekMetricTile: View {
-    @Environment(\.appTheme) private var appTheme
-
     let label: String
     let value: String
     let caption: String
     let systemImage: String
 
     var body: some View {
-        FitnessCard(style: .compact) {
-            VStack(alignment: .leading, spacing: 8) {
-                Image(systemName: systemImage)
-                    .font(AppTypography.metadataEmphasis)
-                    .foregroundStyle(appTheme.colors.accent)
-
-                Text(value)
-                    .font(AppTypography.largeMetric)
-                    .foregroundStyle(appTheme.colors.textPrimary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(label)
-                        .font(AppTypography.metadataEmphasis)
-                        .foregroundStyle(appTheme.colors.textPrimary)
-                        .lineLimit(1)
-
-                    Text(caption)
-                        .font(AppTypography.badge)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                        .lineLimit(2)
-                }
-            }
-            .frame(maxWidth: .infinity, minHeight: 84, alignment: .topLeading)
-        }
+        MetricTile(
+            label: label,
+            value: value,
+            caption: caption,
+            systemImage: systemImage
+        )
     }
 }
 
@@ -563,9 +484,11 @@ struct DashboardSection<Content: View>: View {
                         action()
                     } label: {
                         Text(actionTitle)
+                            .frame(minHeight: appTheme.metrics.minimumHitTarget)
+                            .contentShape(Rectangle())
                     }
-                        .font(AppTypography.bodyEmphasis)
-                        .foregroundStyle(appTheme.colors.accent)
+                    .font(AppTypography.bodyEmphasis)
+                    .foregroundStyle(appTheme.colors.accent)
                 }
             }
 
@@ -597,33 +520,6 @@ struct DashboardEmptyStateCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-        }
-    }
-}
-
-private struct DashboardMetadataChip: View {
-    @Environment(\.appTheme) private var appTheme
-
-    let chip: DashboardChip
-
-    var body: some View {
-        HStack(spacing: 6) {
-            if let systemImage = chip.systemImage {
-                Image(systemName: systemImage)
-                    .font(AppTypography.badge)
-            }
-
-            Text(chip.title)
-                .font(AppTypography.chip)
-                .lineLimit(1)
-        }
-        .foregroundStyle(appTheme.colors.textPrimary)
-        .padding(.horizontal, appTheme.metrics.chipHorizontalPadding)
-        .padding(.vertical, appTheme.metrics.chipVerticalPadding)
-        .background(appTheme.colors.cardBackgroundElevated, in: Capsule())
-        .overlay {
-            Capsule()
-                .stroke(appTheme.colors.cardBorder, lineWidth: 1)
         }
     }
 }

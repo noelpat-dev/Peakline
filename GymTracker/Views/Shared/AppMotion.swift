@@ -45,10 +45,15 @@ enum AppMotion {
     static let popupContentRevealDelay: UInt64 = 70_000_000
     static let popupSecondaryRevealDelay: UInt64 = 80_000_000
     static let celebrationIconPulseDuration: TimeInterval = 0.58
+    static let prCelebrationSparkDuration: TimeInterval = 0.74
+    static let prCelebrationRingDuration: TimeInterval = 0.88
+    static let prCelebrationSparkStagger: TimeInterval = 0.018
     static let cardPressScale: CGFloat = 0.985
     static let selectedControlScale: CGFloat = 1.02
     static let emphasizedControlScale: CGFloat = 1.035
     static let cardAppearOffset: CGFloat = 10
+    static let navigationPressDownDuration: TimeInterval = 0.08
+    static let navigationPressReleaseDuration: TimeInterval = 0.12
 
     static func instantOr(_ animation: Animation, reduceMotion: Bool) -> Animation {
         reduceMotion ? .easeOut(duration: 0.01) : animation
@@ -95,7 +100,7 @@ enum AppMotion {
         case .destructiveConfirm:
             return RoleSpec(duration: 0.12...0.20, feel: "fast explicit confirmation")
         case .celebration:
-            return RoleSpec(duration: 0.30...0.55, feel: "more personality, never blocking")
+            return RoleSpec(duration: 0.30...0.90, feel: "one-shot earned emphasis, never blocking")
         case .swipeSnap:
             return RoleSpec(duration: 0.18...0.28, feel: "interactive snap")
         case .reduceMotionFallback:
@@ -208,6 +213,29 @@ enum AppMotion {
         animation(for: .celebration, reduceMotion: reduceMotion)
     }
 
+    static func prCelebrationSpark(index: Int, reduceMotion: Bool) -> Animation {
+        instantOr(
+            .easeOut(duration: prCelebrationSparkDuration)
+                .delay(Double(index % 4) * prCelebrationSparkStagger),
+            reduceMotion: reduceMotion
+        )
+    }
+
+    static func prCelebrationRing(index: Int, reduceMotion: Bool) -> Animation {
+        instantOr(
+            .easeOut(duration: prCelebrationRingDuration)
+                .delay(Double(index) * 0.08),
+            reduceMotion: reduceMotion
+        )
+    }
+
+    static func prCelebrationIconPop(reduceMotion: Bool) -> Animation {
+        instantOr(
+            .spring(response: 0.44, dampingFraction: 0.58, blendDuration: 0.04),
+            reduceMotion: reduceMotion
+        )
+    }
+
     static func navigation(reduceMotion: Bool) -> Animation {
         animation(for: .routePush, reduceMotion: reduceMotion)
     }
@@ -274,6 +302,24 @@ enum AppMotion {
 
     static func reorderSpring(reduceMotion: Bool) -> Animation {
         listChange(reduceMotion: reduceMotion)
+    }
+
+    static func previewReorderLift(reduceMotion: Bool) -> Animation {
+        instantOr(
+            .spring(response: 0.22, dampingFraction: 0.92, blendDuration: 0.02),
+            reduceMotion: reduceMotion
+        )
+    }
+
+    static func previewReorderTarget(reduceMotion: Bool) -> Animation {
+        instantOr(.easeOut(duration: 0.12), reduceMotion: reduceMotion)
+    }
+
+    static func previewReorderCommit(reduceMotion: Bool) -> Animation {
+        instantOr(
+            .spring(response: 0.30, dampingFraction: 0.94, blendDuration: 0.02),
+            reduceMotion: reduceMotion
+        )
     }
 
     static func progressFill(reduceMotion: Bool) -> Animation {
@@ -344,7 +390,122 @@ enum AppMotion {
     }
 }
 
+enum NavigationInteractionHaptic {
+    case none
+    case selection
+    case light
+    case medium
+
+    @MainActor
+    func prepare() {
+        switch self {
+        case .none:
+            break
+        case .selection:
+            AppHaptics.prepareSelection()
+        case .light:
+            AppHaptics.prepareImpact(.light)
+        case .medium:
+            AppHaptics.prepareImpact(.medium)
+        }
+    }
+
+    @MainActor
+    func play() {
+        switch self {
+        case .none:
+            break
+        case .selection:
+            AppHaptics.selection()
+        case .light:
+            AppHaptics.lightImpact()
+        case .medium:
+            AppHaptics.mediumImpact()
+        }
+    }
+}
+
+enum NavigationDestinationClass {
+    case warm
+    case deep
+
+    var thresholdMilliseconds: Int {
+        switch self {
+        case .warm: 300
+        case .deep: 500
+        }
+    }
+}
+
+@MainActor
+enum NavigationInteraction {
+    private struct PendingRequest {
+        let requestedAt: Date
+        let destinationClass: NavigationDestinationClass
+    }
+
+    private static var pendingRequests: [String: PendingRequest] = [:]
+
+    @discardableResult
+    static func perform(
+        key: String,
+        destinationClass: NavigationDestinationClass = .warm,
+        haptic: NavigationInteractionHaptic = .selection,
+        action: () -> Void
+    ) -> Bool {
+        guard pendingRequests[key] == nil else {
+            PerformanceTracer.mark(.navigationInteraction, "request_deduplicated key=\(key)")
+            return false
+        }
+
+        let request = PendingRequest(
+            requestedAt: .now,
+            destinationClass: destinationClass
+        )
+        pendingRequests[key] = request
+        haptic.prepare()
+        haptic.play()
+
+        PerformanceTracer.mark(
+            .navigationInteraction,
+            "requested key=\(key) threshold_ms=\(destinationClass.thresholdMilliseconds)"
+        )
+        PerformanceTracer.trace(.motionRoutePush) {
+            action()
+        }
+        return true
+    }
+
+    static func destinationDidAppear(key: String) {
+        guard let request = pendingRequests.removeValue(forKey: key) else { return }
+        let elapsedMilliseconds = max(
+            0,
+            Int(Date.now.timeIntervalSince(request.requestedAt) * 1_000)
+        )
+        PerformanceTracer.mark(
+            .navigationInteraction,
+            "stable_frame key=\(key) elapsed_ms=\(elapsedMilliseconds) threshold_ms=\(request.destinationClass.thresholdMilliseconds)"
+        )
+    }
+
+    static func cancel(key: String, reason: String) {
+        guard pendingRequests.removeValue(forKey: key) != nil else { return }
+        PerformanceTracer.mark(
+            .navigationInteraction,
+            "cancelled key=\(key) reason=\(reason)"
+        )
+    }
+
+    static func resetForTesting() {
+        pendingRequests.removeAll()
+    }
+}
+
 enum AppHaptics {
+    private static let selectionGenerator = UISelectionFeedbackGenerator()
+    private static let lightImpactGenerator = UIImpactFeedbackGenerator(style: .light)
+    private static let mediumImpactGenerator = UIImpactFeedbackGenerator(style: .medium)
+    private static let notificationGenerator = UINotificationFeedbackGenerator()
     private static var lastSelectionAt = Date.distantPast
     private static var lastImpactAt = Date.distantPast
     private static var lastNotificationAt = Date.distantPast
@@ -355,16 +516,27 @@ enum AppHaptics {
     static func selection() {
         perform {
             guard shouldPlay(since: &lastSelectionAt, minimumInterval: selectionInterval) else { return }
-            let selectionGenerator = UISelectionFeedbackGenerator()
-            selectionGenerator.prepare()
             selectionGenerator.selectionChanged()
+            selectionGenerator.prepare()
+        }
+    }
+
+    static func prepareSelection() {
+        perform {
+            selectionGenerator.prepare()
+        }
+    }
+
+    static func prepareImpact(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
+        perform {
+            impactGenerator(for: style).prepare()
         }
     }
 
     static func impact(_ style: UIImpactFeedbackGenerator.FeedbackStyle = .light) {
         perform {
             guard shouldPlay(since: &lastImpactAt, minimumInterval: impactInterval) else { return }
-            let impactGenerator = UIImpactFeedbackGenerator(style: style)
+            let impactGenerator = impactGenerator(for: style)
             impactGenerator.prepare()
             impactGenerator.impactOccurred()
         }
@@ -393,10 +565,15 @@ enum AppHaptics {
     private static func notify(_ type: UINotificationFeedbackGenerator.FeedbackType) {
         perform {
             guard shouldPlay(since: &lastNotificationAt, minimumInterval: notificationInterval) else { return }
-            let notificationGenerator = UINotificationFeedbackGenerator()
-            notificationGenerator.prepare()
             notificationGenerator.notificationOccurred(type)
+            notificationGenerator.prepare()
         }
+    }
+
+    private static func impactGenerator(
+        for style: UIImpactFeedbackGenerator.FeedbackStyle
+    ) -> UIImpactFeedbackGenerator {
+        style == .medium ? mediumImpactGenerator : lightImpactGenerator
     }
 
     private static func perform(_ feedback: @escaping () -> Void) {
@@ -435,14 +612,15 @@ private struct SmoothPopupCardMotion: ViewModifier {
 struct PeaklineButtonPressStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var pressedScale: CGFloat = AppMotion.cardPressScale
     var pressedOpacity: Double = 0.94
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .opacity(configuration.isPressed ? pressedOpacity : 1)
-            .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? pressedScale : 1))
-            .animation(AppMotion.buttonPress(reduceMotion: reduceMotion), value: configuration.isPressed)
+            .navigationPressFeedback(
+                isPressed: configuration.isPressed,
+                reduceMotion: reduceMotion,
+                pressedOpacity: pressedOpacity
+            )
     }
 }
 
@@ -459,6 +637,28 @@ private struct SelectionMotionModifier: ViewModifier {
     }
 }
 
+private struct NavigationPressFeedbackModifier: ViewModifier {
+    let isPressed: Bool
+    let reduceMotion: Bool
+    let pressedOpacity: Double
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(isPressed ? pressedOpacity : 1)
+            .scaleEffect(
+                reduceMotion ? 1 : (isPressed ? AppMotion.cardPressScale : 1)
+            )
+            .animation(
+                .easeOut(
+                    duration: isPressed
+                        ? AppMotion.navigationPressDownDuration
+                        : AppMotion.navigationPressReleaseDuration
+                ),
+                value: isPressed
+            )
+    }
+}
+
 private struct LoadingRevealModifier: ViewModifier {
     let isVisible: Bool
     let reduceMotion: Bool
@@ -472,6 +672,20 @@ private struct LoadingRevealModifier: ViewModifier {
 }
 
 extension View {
+    func navigationPressFeedback(
+        isPressed: Bool,
+        reduceMotion: Bool,
+        pressedOpacity: Double = 0.94
+    ) -> some View {
+        modifier(
+            NavigationPressFeedbackModifier(
+                isPressed: isPressed,
+                reduceMotion: reduceMotion,
+                pressedOpacity: pressedOpacity
+            )
+        )
+    }
+
     func smoothPopupCardMotion(
         isVisible: Bool,
         reduceMotion: Bool,
@@ -520,7 +734,7 @@ extension View {
     }
 }
 
-struct LiquidGlassPopupBackdrop: View {
+struct PeaklinePopupBackdrop: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -533,8 +747,8 @@ struct LiquidGlassPopupBackdrop: View {
                     .opacity(colorScheme == .dark ? 0.58 : 0.24)
             } else {
                 Rectangle()
-                    .fill(.ultraThinMaterial)
-                    .opacity(colorScheme == .dark ? 0.18 : 0.26)
+                    .fill(.regularMaterial)
+                    .opacity(colorScheme == .dark ? 0.16 : 0.22)
 
                 Color.black
                     .opacity(colorScheme == .dark ? 0.34 : 0.16)
@@ -545,7 +759,7 @@ struct LiquidGlassPopupBackdrop: View {
     }
 }
 
-struct LiquidGlassPopupCard<Content: View>: View {
+struct PeaklinePopupCard<Content: View>: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -564,75 +778,22 @@ struct LiquidGlassPopupCard<Content: View>: View {
             .frame(maxWidth: .infinity)
             .background {
                 if reduceTransparency {
-                    shape.fill(appTheme.colors.cardBackground.opacity(colorScheme == .dark ? 0.96 : 0.94))
+                    shape.fill(appTheme.colors.cardBackground)
                 } else {
-                    shape.fill(.ultraThinMaterial)
+                    shape.fill(.regularMaterial)
                 }
             }
             .overlay {
                 shape
-                    .fill(appTheme.colors.accent.opacity(colorScheme == .dark ? 0.08 : 0.05))
+                    .fill(appTheme.colors.cardBackground.opacity(colorScheme == .dark ? 0.74 : 0.82))
                     .allowsHitTesting(false)
             }
             .overlay {
                 shape
-                    .fill(Color.white.opacity(colorScheme == .dark ? 0.035 : 0.10))
-                    .blendMode(.screen)
-                    .allowsHitTesting(false)
-            }
-            .overlay(alignment: .topLeading) {
-                shape
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                .white.opacity(colorScheme == .dark ? 0.18 : 0.28),
-                                .white.opacity(0.045),
-                                .clear
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-                    .allowsHitTesting(false)
-            }
-            .overlay(alignment: .topLeading) {
-                Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: [.white.opacity(0.22), .white.opacity(0.04), .clear],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 220, height: 86)
-                    .blur(radius: 28)
-                    .rotationEffect(.degrees(-18))
-                    .offset(x: -42, y: -28)
+                    .stroke(appTheme.colors.cardBorder.opacity(0.92), lineWidth: 1)
                     .allowsHitTesting(false)
             }
             .clipShape(shape)
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0.34 : 0.16), radius: 26, x: 0, y: 18)
-    }
-}
-
-struct GlassPrimaryButtonStyle: ButtonStyle {
-    @Environment(\.appTheme) private var appTheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(AppTypography.button)
-            .foregroundStyle(appTheme.colors.accentForeground)
-            .padding(.horizontal, 18)
-            .frame(minHeight: 54)
-            .background(appTheme.colors.accent.opacity(configuration.isPressed ? 0.78 : 1), in: Capsule())
-            .overlay {
-                Capsule()
-                    .stroke(.white.opacity(0.24), lineWidth: 1)
-                    .allowsHitTesting(false)
-            }
-            .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? AppMotion.cardPressScale : 1))
-            .animation(AppMotion.buttonPress(reduceMotion: reduceMotion), value: configuration.isPressed)
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.26 : 0.12), radius: 18, x: 0, y: 12)
     }
 }

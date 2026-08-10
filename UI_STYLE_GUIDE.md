@@ -1,122 +1,357 @@
-# UI Style Guide
+# Peakline UI Style Guide
 
 Current file: `UI_STYLE_GUIDE.md`
 
-## Direction
+Status: canonical implemented standard
 
-Peakline should feel dark-first, metric-led, compact, and motivating. It can be inspired by the broad feel of Apple Fitness and Workout apps, but it must not copy Apple's exact Activity Rings, screen layouts, icons, colors, or branded identity.
+Taste baseline: 9 August 2026
 
-The active design language is a lifting-focused system: clear cards, strong metrics, restrained glass, exact exercise imagery where available, and fast controls that work in the gym.
+Implementation baseline: shared system and major app surfaces migrated on 9 August 2026
 
-## Principles
+Platform baseline: iOS 17+, with native adaptation on newer iOS releases
 
-- Dark-first: dark mode should feel like the primary product identity.
-- Metrics first: lead with the number, target, split, duration, or action.
-- Fast gym use: large tap targets, short copy, minimal forms, no friction-heavy pre-workout questions.
-- Explainable coaching: every recommendation needs a short reason.
-- Original visual identity: use platform conventions, not copied Apple assets or layouts.
-- Consistency over decoration: shared cards, chips, buttons, motion, and theme tokens should carry the interface.
+This guide is the active visual and interaction reference for Peakline. The shared theme and major Today, Workout, Splits, History, Settings, Coach, Progress, Nutrition, Sleep, Preview, Logger, completion, and Summary surfaces now use this baseline. New work and any remaining deep-screen polish must preserve it. The guide supersedes archived UI prompts, including older glass-heavy directions; archived material can explain history but must not overrule this file.
 
-## Theme Tokens
+Peakline follows current Apple platform principles of hierarchy, harmony, consistency, restrained materials, and accessible interaction without copying Apple's layouts, Activity Rings, brand assets, or visual identity:
 
-Use semantic theme values from `AppTheme` rather than hardcoded colors.
+- [Apple Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines)
+- [Apple materials guidance](https://developer.apple.com/design/human-interface-guidelines/materials)
+- [Apple accessibility guidance](https://developer.apple.com/design/human-interface-guidelines/accessibility)
 
-Important token groups:
+## Start Here
 
-- Backgrounds: primary screen, secondary surface, card surface.
-- Borders: subtle card and divider strokes.
-- Text: primary, secondary, muted.
-- Accent: selected theme color.
-- States: success, warning, danger.
-- Materials: glass and elevated surfaces where appropriate.
+When design concerns compete, decide in this order:
 
-Destructive actions must stay system red or semantic danger. Do not tint delete actions with the selected accent.
+1. **Usability and accessibility** — can someone understand and operate it quickly, including with accessibility settings enabled?
+2. **Hierarchy** — is the current task, metric, or decision unmistakable?
+3. **Consistency** — does it reuse Peakline tokens, components, wording, and interaction patterns?
+4. **Brand** — does it feel calm, premium, athletic, and motivating?
+5. **Decoration** — add polish only after the first four are resolved.
 
-## Cards, Buttons, And Chips
+Decoration never earns permission to obscure content, slow an action, reduce contrast, or create another interaction model.
 
-- Use `FitnessCard` for primary dashboard cards, compact rows, and repeated content.
-- Use shared metrics from `appTheme.metrics` for radius, spacing, icon size, button height, and chip padding.
-- Avoid stacking cards inside cards.
-- Use `DashboardSection` for repeated screen sections.
-- Use filled primary buttons for the main action on a screen.
-- Use chips for mode/filter/selection states.
-- Use native or shared swipe-reveal patterns for delete actions.
+### The 30-Second Screen Recipe
 
-Delete behavior:
+For a normal Peakline screen:
 
-- Do not show permanent red trash controls on normal dashboard rows.
-- Prefer native trailing swipe actions for `List` rows.
-- For card rows in `ScrollView`, slide the row left and reveal a red circular delete action.
-- Use confirmation dialogs for costly deletes such as workouts, sleep sessions, split templates, or saved foods.
+1. Use one native navigation title; do not repeat it as a large content heading.
+2. Lead with one dominant task, recommendation, or metric. Not every screen needs a hero.
+3. Order supporting content by immediate usefulness, not by data availability.
+4. Use the semantic screen background, then quiet content cards, then native or transient chrome. Stop at three visual layers.
+5. Give the current decision one obvious primary action; make alternatives visibly secondary.
+6. Verify Light, Dark, large Dynamic Type, VoiceOver, Reduce Motion, and Reduce Transparency before calling the screen finished.
 
-## Typography
+## Visual North Star
 
-Use system fonts and Dynamic Type where practical.
+Peakline is **premium athletic**: calm enough to trust, strong enough to motivate, and quick enough to use between sets.
 
-- Screen title: bold title or shared screen header.
-- Hero metric: large rounded bold type where space allows.
-- Card title: headline or title3 bold.
-- Body details: subheadline.
-- Reasons, labels, and helper text: footnote or caption.
+- **Metric-led:** the useful number, target, status, or next action leads.
+- **Dark-first identity:** Dark Mode is the strongest expression of the brand, while Light Mode remains fully designed rather than inverted as an afterthought.
+- **Compact, not cramped:** layouts favour scan speed and comfortable reach without squeezing copy or controls.
+- **High contrast:** clear type, semantic states, and disciplined accent use beat decorative effects.
+- **Purposeful energy:** strong colour and expressive motion are earned by important states such as a genuine PR.
+- **Original:** use platform conventions and Peakline's lifting focus; do not imitate Apple Fitness screens.
 
-Text should remain readable in light and dark mode and should not rely on color alone for meaning.
+| Aim for | Avoid |
+|---|---|
+| One clear visual lead | Grids where every card shouts equally |
+| Solid, quiet content surfaces | Glass or blur on every card |
+| Strong metrics with short context | Dense analytics without a decision |
+| One accent plus semantic states | Rainbow category colour without meaning |
+| Native controls with Peakline styling | Custom replacements for familiar iOS behaviour |
+| Sparse earned celebration | Ambient glow, constant bounce, or decorative motion |
 
-## Motion
+## Screen Anatomy
 
-Motion should communicate state, not decoration. Use shared `AppMotion` roles so interaction feedback stays immediate, scoped, and Reduce Motion-aware.
+Default vertical order:
 
-Motion roles:
+1. Native navigation title and genuine toolbar actions.
+2. Optional hero for the screen's primary decision, status, or metric.
+3. Clearly named sections containing related cards or rows.
+4. Primary action placed beside the information needed to choose it.
+5. Secondary context, history, and explanation below the main task.
 
-- `tapDown`, `tapRelease`, `cardPress`, and `buttonPress`: acknowledge touch within about 100ms with tiny scale or opacity only.
-- `chipSelect`, `modeChange`, `ratingSelect`, and `checkInSelect`: animate only the selected control, not the whole screen or list.
-- `rowInsert`, `rowRemove`, and `rowReorder`: use only for small local Preview/order changes, never for full-list refreshes.
-- `sheetPresent`, `sheetDismiss`, `modalPresent`, and `modalDismiss`: keep native-feeling presentation; do not wait for heavy data before showing the shell.
-- `routePush` and `routePop`: mutate route state immediately and let native navigation carry the transition.
-- `loadingReveal`: show the route or shell first, then reveal hydrated coach/target data progressively.
-- `metricChange`: reserve numeric transitions for small metric values that do not relayout their container.
-- `successConfirm`, `destructiveConfirm`, and `celebration`: use for completed sets, saves, deletes, and workout completion; never block logging or dismissal.
+Hierarchy rules:
+
+- Use at most one hero card on a screen.
+- Use spacing, alignment, typography, and dividers before adding another container.
+- Do not stack cards inside cards. A bordered tile may sit inside a hero only when it represents a distinct metric or control and does not create a third content-card shell.
+- Keep dashboard headers naturally left-aligned. Do not reserve trailing space for decorative profile or account glyphs.
+- Keep the main action near its decision context. Do not strand the only CTA above or far below the information it depends on.
+- Prefer a short, scannable vertical story over a dense mosaic of equal-weight widgets.
+
+Core layout values come from `appTheme.metrics`:
+
+| Role | Current baseline |
+|---|---:|
+| Screen horizontal inset | 16 pt |
+| Screen content spacing | 18 pt |
+| Section spacing | 10 pt |
+| Card spacing | 12 pt |
+| Compact / standard / hero radius | 20 / 24 / 30 pt |
+| Minimum interactive target | 44 × 44 pt |
+
+The code token remains the numeric source of truth. Do not reproduce these values as local magic numbers.
+
+## Foundations
+
+### Colour and Theme
+
+Use semantic values from `AppTheme`; never hardcode a colour that already has a theme role.
+
+- Backgrounds: primary screen, secondary surface, card, and elevated card.
+- Text: primary, secondary, and tertiary.
+- Accent: the selected theme colour for selection, focus, and primary actions.
+- States: success, warning, hydration, and danger.
+- Borders: subtle separation, not a decorative outline around every element.
 
 Rules:
 
-- Prefer `PressableCardButtonStyle`, `PeaklineButtonPressStyle`, shared fitness button styles, and `AppMotion` helpers over local one-off animation curves.
-- Card and button press feedback should use scale around `0.985` plus subtle opacity; do not bounce large containers.
-- Chips, filters, ratings, and check-in controls can use haptics sparingly on selection.
-- Live workout logging stays restrained: no slow steppers, no full-card transitions for weight/reps edits, and no noisy haptics for every tiny update.
-- Loading follows `tap -> feedback -> route shell -> content -> progressive hydration`.
-- Reduce Motion removes movement and keeps opacity or instant state changes.
+- Let one accent colour carry the screen. Use semantic colours only when they communicate a real state.
+- Destructive actions stay system red or semantic danger; never recolour deletion with the selected accent.
+- Do not rely on colour alone for readiness, fatigue, progress, danger, or success.
+- Avoid decorative gradients. A gradient is acceptable only when it clarifies a meaningful visual state and remains legible in both appearances.
+- Check accent foreground contrast for every theme, including Black, in Light and Dark Mode.
 
-Banned patterns:
+### Materials, Surfaces, and Depth
+
+Treat material as hierarchy, not ornament:
+
+- **Content layer:** use solid semantic `AppTheme` backgrounds and `FitnessCard` surfaces for dashboards, rows, metrics, and forms.
+- **Functional layer:** let native navigation bars, tab bars, toolbars, menus, popovers, and sheets adopt the appearance supplied by the running iOS version.
+- **Transient layer:** standard material is allowed for a focused overlay, floating control, or isolated hero badge when seeing context behind it is useful.
+
+Do not imitate a newer system material on older iOS releases. Prefer native components and availability-aware enhancement so iOS 17 remains coherent and newer releases adapt naturally.
+
+- Use `GlassIconBadge` only as an isolated hero or transient emblem, not as the default icon treatment for every row.
+- With Reduce Transparency, replace translucent custom surfaces with an opaque semantic surface and retain a visible border.
+- Keep shadows soft and subordinate. Scrolling lists should not repeat expensive or prominent shadows row after row.
+- Do not place Liquid Glass-style treatment throughout the content layer, combine several translucent shells, animate blur, or add permanent glow.
+
+### Shape and Density
+
+- Continuous rounded rectangles and capsules are the default geometry.
+- Use the component's defined radius rather than introducing nearly identical local variants.
+- Hero radius signals emphasis; it is not a licence for oversized empty space.
+- Compact rows still preserve readable labels and a 44-point interaction target.
+- Avoid repeated pills for passive metadata. A pill should communicate selection, status, or a compact action.
+
+### Typography, Copy, and Measurements
+
+Use the system font through `AppTypography` and built-in text styles. Rounded, bold, or monospaced numeric styles provide Peakline's athletic character; body copy stays quiet and highly legible.
+
+| Content | Preferred treatment |
+|---|---|
+| Native screen title | System navigation title |
+| Hero metric | `heroMetric` or `heroTitle`, tested at large text sizes |
+| Card title | `cardTitle` or `compactCardTitle` |
+| Body and reason | `body` or `bodyEmphasis` |
+| Metadata and helper copy | `metadata` or `metadataEmphasis` |
+| Live workout number | `workoutNumber` or `workoutLargeNumber` |
+
+Copy rules:
+
+- Use one native screen title. Never repeat it as both navigation title and content header.
+- Lead with the outcome or action; explain only what changes the decision.
+- Prefer short sentence-case labels over title-heavy interfaces.
+- Use `PeaklineText` for plural counts, ranges, metadata joining, set/rep summaries, and load notation.
+- Use a multiplication sign for load and reps (`60 kg × 8`), a middle dot for compact metadata, and a space before units (`350 mL`, `100 g`).
+- Keep `mL` capitalisation consistent. Avoid `100ml`, `60kg x 8`, `1 sets`, unexplained abbreviations, and false coaching certainty.
+- Long labels and values may wrap or reflow; do not solve ordinary localisation or Dynamic Type pressure with aggressive scaling.
+
+### Icons and Exercise Imagery
+
+- Prefer familiar SF Symbols for system actions and exact exercise artwork where the asset pipeline provides it.
+- An icon must identify an action, state, or subject. Remove it if it only fills space.
+- Use one outer border for exercise icon tiles with a smaller background-free glyph centred inside; never add a second nested tile border.
+- Icon-only controls require a label, an appropriate hint where needed, and a 44-point hit area even when the visible glyph is smaller.
+- Do not mix several unrelated symbol weights or container shapes in one control group.
+
+## Component Choices
+
+Choose the smallest existing primitive that expresses the hierarchy.
+
+| Need | Use | Do not use it for |
+|---|---|---|
+| Screen scaffold | `FitnessScreen`; `FitnessScreenHeader` only when a content header is genuinely required | Duplicating a native navigation title |
+| Dominant decision or metric | `FitnessCard(style: .hero)` | More than one hero on the same screen |
+| Normal grouped content | `FitnessCard(style: .standard)` | Wrapping every individual row |
+| Dense repeated content | `FitnessCard(style: .compact)` | Shrinking tap targets or copy below comfort |
+| Comparable statistic | `MetricTile` | Passive decoration or a single isolated label |
+| Repeated section | `DashboardSection` | Adding another card shell around its children |
+| Standard row/action icon | `FitnessIconBadge` | Pure decoration |
+| Isolated material emblem | `GlassIconBadge` | Repeated list or dashboard-row icons |
+| Main action | `PrimaryFitnessButtonStyle` | Multiple equal-priority actions in one decision |
+| Alternative action | `SecondaryFitnessButtonStyle` | Destructive actions |
+| Quiet utility action | `NeutralFitnessButtonStyle` | Hiding the main CTA |
+| Tappable card feedback | `PressableCardButtonStyle` or `PeaklineButtonPressStyle` | Adding a second gesture to the same action |
+| Weight, reps, or bounded values | `StepperValueControl` | Slow animated value entry or tiny controls |
+| Scroll-view deletion | `SwipeRevealRow` | Rows already using native `List` swipe actions |
+| Exercise identity | `ExerciseIconView` or `ExerciseIconTile` | A nested decorative icon tile |
+
+### Buttons, Chips, Menus, and Sheets
+
+- A decision context has one filled primary action. Secondary and neutral actions must look quieter.
+- Use chips for modes, filters, and mutually exclusive compact choices. Do not use them as passive labels when plain metadata is clearer.
+- Row-level secondary actions belong in an anchored `Menu` attached to the row that owns them.
+- Use native sheets with normal detents and drag indicators. Present the usable shell immediately and keep the primary dismissal or completion action available.
+- Informational action cards place explanation first and the embedded CTA after the final relevant information.
+- Fully tappable cards, menus, steppers, filters, date arrows, Undo, and reorder handles retain their specialised layouts rather than being forced into the informational-card pattern.
+
+Deletion rules:
+
+- Do not show permanent red trash controls on ordinary dashboard rows.
+- Prefer native trailing swipe actions for `List` rows.
+- For card rows in a `ScrollView`, use `SwipeRevealRow`. Own one active-row ID at page level so opening a row closes its sibling with one settled animation.
+- Do not combine swipe deletion with a redundant row context menu. Keep an accessibility delete action available.
+- Confirm costly deletion such as a workout, sleep session, split template, or saved food.
+
+Keyboard rules:
+
+- Input screens dismiss the keyboard interactively while scrolling.
+- Text keyboards may use native Done or Next when focus can advance.
+- Do not add a custom keyboard toolbar or a page-wide tap recogniser that competes with buttons, scrolling, sheets, or accessibility gestures.
+
+## Interaction and Motion
+
+The experience contract is:
+
+```text
+immediate acknowledgement -> one state mutation -> native presentation -> stable useful first frame
+```
+
+- Show press feedback within about 100 ms.
+- A tap produces one route mutation. Use `NavigationInteraction` for programmatic routes, reject duplicate requests, and clear the request when the destination's first stable frame appears.
+- Mutate route state immediately and let native navigation or sheet presentation carry the transition; do not wrap route changes in custom `withAnimation`.
+- Prepared Coach and Workout Preview routes show their real actionable value-backed hero first. Do not replace known content with a fake shell, spinner, or delayed progress label.
+- Deep scanners, charts, and unbounded history may hydrate after stable navigation chrome and the primary task are available.
+- Root `TabView` selection is immediate and preserves each tab's navigation state. Never add a whole-screen fade, scale, slide, or broad animation transaction.
+
+Implementation and latency ownership live in [ARCHITECTURE.md](ARCHITECTURE.md) and [PERFORMANCE_ACCEPTANCE_GOAL.md](PERFORMANCE_ACCEPTANCE_GOAL.md). This guide owns what the interaction must feel like.
+
+### Motion Roles
+
+Use `AppMotion`; do not create local curves for an existing role.
+
+| Behaviour | Roles | Expected feel |
+|---|---|---|
+| Touch acknowledgement | `tapDown`, `tapRelease`, `cardPress`, `buttonPress`, `primaryAction`, `secondaryAction` | Immediate, tiny scale or opacity, no bounce |
+| Selection | `chipSelect`, `tabSelect`, `modeChange`, `ratingSelect`, `checkInSelect` | Animate only the control whose state changed |
+| Local structure | `cardAppear`, `cardDisappear`, `rowInsert`, `rowRemove`, `rowReorder`, `swipeSnap` | Small local movement; never animate a refreshed full list |
+| Presentation | `sheetPresent`, `sheetDismiss`, `modalPresent`, `modalDismiss`, `routePush`, `routePop`, `loadingReveal` | Native-feeling, opacity-led, and non-blocking |
+| Feedback | `metricChange`, `successConfirm`, `destructiveConfirm`, `celebration` | Brief confirmation proportional to importance |
+
+Rules:
+
+- Card and button feedback uses roughly `0.985` scale with subtle opacity, 80 ms press-down, and 120 ms release. Reduce Motion keeps opacity only.
+- Chips, filters, ratings, and check-ins may use one restrained selection haptic.
+- Live workout logging stays quiet: no slow steppers, whole-card transitions for weight/reps edits, or haptics for every tiny update.
+- Success, deletion, and completion feedback never delay logging, saving, dismissal, Done, or navigation.
+- Reduce Motion removes spatial movement, scale, peripheral sparks, and bounce; retain opacity or instant state change.
+
+Earned celebration:
+
+- A genuine newly detected workout PR is the only flashy Logger completion.
+- Use exactly 12 deterministic gold/accent sparks, two expanding rings, and one spring-driven trophy pop over roughly 0.75–0.9 seconds.
+- The burst plays once around the trophy. It ignores hit testing and accessibility and never blocks Done or Summary.
+- Ordinary completions do not use the burst.
+- With Reduce Motion, omit sparks, rings, and trophy movement while retaining the static gold trophy, PR copy, success haptic, and immediately usable Done action.
+- Do not add full-screen confetti, loops, timers, heavy blur, or ambient celebration.
+
+Startup motion:
+
+- Show only the centred Peakline wordmark on the semantic primary background.
+- Use the existing restrained one-shot ascending-letter sequence with a small rise, tiny scale, and no bounce.
+- Readiness always wins and begins the 280 ms opacity-led exit immediately. Five seconds is a ceiling, never an artificial minimum.
+- Reduce Motion keeps the wordmark static and removes exit scale.
+- Do not add a logo, blur, gradient, sound, haptic, repeating animation, or animated tracking.
+
+Banned motion patterns:
 
 - Broad root `.animation` modifiers.
-- Animating long lists on every render or filter refresh.
-- Heavy blur, shadow, or material animation inside scrolling hot paths.
-- Delaying navigation, save, dismissal, or route mutation for an animation.
-- Using animation to hide slow data retrieval.
+- Animating long lists during every render, query, or filter refresh.
+- Heavy blur, shadow, or material animation in scrolling hot paths.
+- Delaying navigation, save, route mutation, dismissal, or user input for animation.
+- Using motion or a loading shell to hide slow data retrieval.
+
+## Accessibility and Adaptation
+
+Accessibility is part of the visual standard, not a later QA pass.
+
+- **Light and Dark:** verify hierarchy, contrast, accent foregrounds, borders, materials, shadows, and semantic states in both.
+- **Dynamic Type:** prefer text styles, allow copy to wrap, and let horizontal layouts stack or use `ViewThatFits` at accessibility sizes.
+- **VoiceOver:** label icon-only controls, keep reading order aligned with visual order, combine elements only when the result remains meaningful, and announce value plus unit.
+- **Touch:** keep every interaction at least 44 × 44 points and give tired hands forgiving spacing during a workout.
+- **Colour:** pair state colour with text, iconography, shape, or value.
+- **Reduce Motion:** remove nonessential movement and preserve the state change.
+- **Reduce Transparency:** replace custom translucent surfaces with opaque semantic backgrounds and retain separation.
+- **Increase Contrast:** ensure controls, borders, and selected states remain distinguishable without depending on subtle opacity alone.
+- **Gestures:** core actions need a visible or accessibility alternative; a swipe or drag cannot be the only way to complete an essential task.
+- **Small screens:** smoke test the smallest supported iPhone for clipped rows, crowded controls, horizontal scrolling, and hidden actions.
 
 ## Feature Patterns
 
-- Today: quick status, next action, and compact recovery/nutrition/sleep context.
-- Quick Actions: route immediately to usable screens with stable accessibility IDs and value snapshots; Start Workout -> Preview must never wait on heavy SwiftData, coach, history, sleep, hydration, or nutrition hydration before showing the Preview navigation bar and start controls.
-- Workout Preview: split, mode, exercise order, last best, target, remove/reorder, and start. Preview routes should show an immediate shell with `workout-preview-start` and basic exercise rows available, then hydrate richer targets and coach guidance in the background. Preserve stable IDs such as `quick-action-workout`, `workout-recommended-preview`, `workout-preview-basic-exercise-rows`, `workout-preview-guidance-chips`, and `workout-preview-start`.
-- Live Logger: timer, current exercise, set controls, rest timer, quick complete, finish.
-- Session Summary: completed work, duration, rating, improvements, next suggestion.
-- Splits: training-day cards, last trained state, target rows, progression badges.
-- Coach: recommendation, action, reason, confidence/status; avoid walls of analytics.
-- History: calendar remains a compact orientation tool, not the dominant dashboard. Lead with a small overview, compact filters, context-rich scannable rows, and a detail hero that explains what happened in the selected workout. Avoid heavy chart/dashboard layouts unless the product direction explicitly calls for them.
-- Nutrition/Sleep/Hydration: reviewable local data, compact summaries, and clear permission/unavailable states.
+These patterns define composition and behaviour. Architecture and performance detail remains in the linked canonical documents.
 
-## Accessibility
+- **Today:** lead with current status and the next useful action, followed by compact recovery, nutrition, sleep, and hydration context.
+- **Quick Actions:** route immediately to a usable value-backed screen. Start Workout must expose Preview navigation and start controls without waiting for unrelated data.
+- **Workout Preview:** show split, mode, Coach Brief, Start, one eager full-detail exercise order, last best, targets, and adjustments from one pinned prepared generation. Use handle-only reordering with row geometry ready before the first drag. Lift only the active row, let it follow vertical finger movement, mark the exact landing edge with a thin accent insertion cue, and apply the order once on release with one damped settle. Avoid hard full-row target outlines, continuously reshuffling siblings during the drag, or clipping the lifted row. Under Reduce Motion, keep the source row spatially still while retaining the static insertion cue and immediate reorder; always preserve Move Up and Move Down accessibility actions. Keep row actions in the tapped row's anchored menu. Do not add bootstrap sleeps, temporary shells, live queries, or whole-screen replacement animation. Preserve existing identifiers including `quick-action-workout`, `workout-recommended-preview`, `workout-preview-hydrated-content`, `workout-preview-basic-exercise-rows`, `workout-preview-guidance-chips`, `workout-preview-reorder-handle`, and `workout-preview-start`.
+- **Check-In:** present the prepared draft from Today's page-level native sheet, use one large detent and native drag indicator, and animate only the changed rating. Do not duplicate Check-In in Coach or Weekly Review.
+- **Live Logger:** prioritise timer, current exercise, weight/reps controls, complete-set action, rest timer, and finish. Show Warm-up or Logged when meaningful; do not label an ordinary incomplete set Draft. Continue overlays use the session's nonrepeating motivational rotation. Final completion follows the PR-only celebration rule.
+- **Session Summary:** lead with completed work, duration, rating, genuine improvements, and one practical next suggestion.
+- **Splits:** show the active programme, readable adaptive day chips, explicit Edit Rotation, training-day cards, last-trained state, target rows, and progression badges.
+- **Coach:** lead with the real snapshot-backed Today's Call, its short reason or status, and an immediately usable Preview action. When readiness evidence is sparse, keep the numeric estimate but label it `Provisional`, show “X of 5 signals included”, state that missing signals do not lower the score, and render unavailable factors as `Not included`; included factors show their signed point contribution. Do not let a provisional category colour or message imply a Push or Recovery prescription. Supporting analytics may follow; avoid a wall of equal-weight insight cards or false precision.
+- **History:** keep the calendar as compact orientation rather than the dominant dashboard. Workout days use one consistent 44 × 44 token without split abbreviations. Put selected-day detail below the calendar and lead detail with a hero that explains what happened.
+- **Settings:** keep Profile compact and adaptive with `ViewThatFits`, and expose only truthful preferences. Use the user-facing names Workout Tools and Appearance; do not restore Gym Utilities or label Appearance as Themes.
+- **Nutrition, Sleep, and Hydration:** use compact reviewable summaries, honest permission or unavailable states, and clear editing boundaries. Nutrition provides previous/next day controls, a native date picker, optional fibre progress, and visibly read-only past days.
 
-- Keep contrast high in dark mode.
-- Support Dynamic Type where practical.
-- Use labels for icon-only controls.
-- Do not communicate fatigue, danger, success, or progress by color alone.
-- Keep workout controls large enough for tired hands during a session.
-- Smoke test smaller iPhone layouts for clipped rows or crowded controls.
+## Worked Decisions
 
-## Implementation Notes
+### Dashboard Hero
 
-Prefer shared primitives in `GymTracker/Views/Shared/`:
+Use one `FitnessCard(style: .hero)` containing the current decision, its strongest metric or status, one short reason, and one primary action. Follow it with quieter `DashboardSection` content. Do not build a top grid of equally elevated cards or add glass to make the hero stand out.
+
+### Live Logger Control
+
+Use `StepperValueControl` or the existing logging control with a 44-point target, monospaced workout numbers, immediate press feedback, and no whole-card animation. Completing a set may use a short success confirmation; editing one value should not shake, glow, or reflow the screen.
+
+### Workout Completion Overlay
+
+Treat the overlay as a transient layer over the frozen completed Logger. Done is available on the first frame. An ordinary completion stays restrained. A completion backed by prepared genuine PR records may use the single focused trophy burst; its decoration is noninteractive, hidden from accessibility, one-shot, and absent under Reduce Motion.
+
+## Do and Avoid
+
+| Do | Avoid |
+|---|---|
+| Use one hero and clear section order | Promote every card to hero styling |
+| Use solid cards beneath native chrome | Recreate Liquid Glass across scrolling content |
+| Write `60 kg × 8 · 3 sets` | Write `60kg x 8, 3 set` |
+| Put one filled CTA beside its context | Scatter several equal filled buttons |
+| Use an anchored row menu | Present a detached screen-level action dialog |
+| Reveal prepared real content immediately | Insert a fake loading shell for known data |
+| Celebrate an earned PR once | Add confetti or ambient looping motion |
+
+## Final UI Review Checklist
+
+Before merging a new or polished screen, confirm:
+
+- [ ] The screen's purpose is understandable within a few seconds.
+- [ ] One task, decision, or metric leads; there is at most one hero.
+- [ ] One primary action is obvious and alternatives are quieter.
+- [ ] The screen uses no more than three visual layers and contains no nested card stack.
+- [ ] Colours, spacing, radii, typography, and motion come from shared tokens or primitives.
+- [ ] Content cards are solid semantic surfaces; material is functional, isolated, or transient.
+- [ ] Copy is short, modest, correctly pluralised, and uses standard unit formatting.
+- [ ] Tap targets, menus, sheets, swipe actions, keyboard behaviour, and navigation use established patterns.
+- [ ] Light, Dark, small-screen, and large Dynamic Type layouts remain clear.
+- [ ] VoiceOver labels and order communicate the same hierarchy as the visual layout.
+- [ ] Reduce Motion and Reduce Transparency retain meaning, contrast, and immediate actions.
+- [ ] No animation, query, or hydration work blocks a tap, route, save, dismissal, or logging control.
+- [ ] The result feels premium athletic and recognisably Peakline, not like an Apple Fitness copy or a generic analytics dashboard.
+
+## Implementation References
+
+Prefer and extend shared primitives in `GymTracker/Views/Shared/`:
 
 ```text
 AppTheme.swift
@@ -124,17 +359,17 @@ AppMotion.swift
 FitnessCard.swift
 FitnessScreenHeader.swift
 MetricTile.swift
-MetricPill.swift
+TodayDashboardComponents.swift
 CoachBadgeView.swift
 ExerciseTargetRow.swift
 ExerciseIconView.swift
 ExerciseIconTile.swift
-GlassCard.swift
 GlassIconBadge.swift
+LiveWorkoutHeader.swift
 ProgressArcView.swift
 SplitCardView.swift
 StepperValueControl.swift
 WorkoutModePicker.swift
 ```
 
-If a feature needs a new visual pattern, first check whether it can be expressed as a small extension of an existing shared component.
+Before adding a foundational visual primitive, confirm that an existing component cannot express the need with a small extension. A genuinely new primitive must use semantic theme tokens, support relevant accessibility settings, preserve performance-sensitive interactions, and be added to this guide.

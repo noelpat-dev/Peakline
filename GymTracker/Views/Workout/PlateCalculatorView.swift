@@ -18,9 +18,22 @@ struct PlateCalculatorView: View {
 
     var body: some View {
         Form {
-            Section("Weights") {
-                Stepper("Target: \(format(targetWeight))kg", value: $targetWeight, in: 20...400, step: 2.5)
-                Stepper("Bar: \(format(barWeight))kg", value: $barWeight, in: 5...30, step: 1)
+            Section {
+                Text("Metric only. Enter the total barbell weight in kilograms. During a live workout, open this calculator beside a set to prefill that set's load.")
+                    .font(.subheadline)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+
+                Stepper("Target: \(format(targetWeight)) kg", value: $targetWeight, in: 20...400, step: 2.5)
+                    .accessibilityLabel("Target weight")
+                    .accessibilityValue("\(format(targetWeight)) kilograms")
+                    .accessibilityIdentifier("plate-calculator-target")
+
+                Stepper("Bar: \(format(barWeight)) kg", value: $barWeight, in: 5...30, step: 1)
+                    .accessibilityLabel("Bar weight")
+                    .accessibilityValue("\(format(barWeight)) kilograms")
+                    .accessibilityIdentifier("plate-calculator-bar")
+            } header: {
+                Text("Metric Weights")
             }
 
             Section {
@@ -29,15 +42,19 @@ struct PlateCalculatorView: View {
                         .foregroundStyle(appTheme.colors.textSecondary)
                 } else {
                     ForEach(Array(plateCounts.keys.sorted(by: >)), id: \.self) { plate in
-                        LabeledContent("\(format(plate))kg", value: "x\(plateCounts[plate, default: 0])")
+                        LabeledContent("\(format(plate)) kg", value: "× \(plateCounts[plate, default: 0])")
                     }
                 }
+            } header: {
+                Text("Plates Per Side")
             } footer: {
-                Text("Load this plate stack on each side of a \(format(barWeight))kg bar.")
+                Text("Load this plate stack on each side of a \(format(barWeight)) kg bar.")
             }
         }
+        .peaklineGroupedContent()
         .navigationTitle("Plate Calculator")
         .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("plate-calculator-screen")
     }
 
     private func format(_ value: Double) -> String {

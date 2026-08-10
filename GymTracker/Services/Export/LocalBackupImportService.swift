@@ -38,6 +38,8 @@ struct LocalBackupImportService {
         try importSplits(envelope.splits, into: context)
         try importWorkouts(envelope.workouts, into: context)
         try context.save()
+        try TrainingRotationService().normalizePersistedRotation(in: context)
+        try context.save()
 
         return LocalBackupImportSummary(
             workoutCount: envelope.workouts.count,
@@ -104,6 +106,7 @@ struct LocalBackupImportService {
                 createdAt: dto.createdAt,
                 updatedAt: dto.updatedAt,
                 isActive: dto.isActive,
+                activeRotationIndex: dto.activeRotationIndex,
                 daysPerWeek: dto.daysPerWeek
             )
 
@@ -112,6 +115,7 @@ struct LocalBackupImportService {
             split.createdAt = dto.createdAt
             split.updatedAt = dto.updatedAt
             split.isActive = dto.isActive
+            split.activeRotationIndex = dto.activeRotationIndex
             split.daysPerWeek = dto.daysPerWeek
 
             let existingChildrenByID = Dictionary(uniqueKeysWithValues: split.exercises.map { ($0.id, $0) })

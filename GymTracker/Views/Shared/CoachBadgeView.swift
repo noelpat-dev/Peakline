@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum CoachBadgeState: String, CaseIterable {
+enum CoachBadgeState: String, CaseIterable, Sendable {
     case baseline
     case addReps
     case repeatTarget

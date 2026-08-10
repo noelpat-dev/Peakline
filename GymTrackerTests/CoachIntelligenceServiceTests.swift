@@ -29,6 +29,245 @@ final class CoachIntelligenceServiceTests: XCTestCase {
         XCTAssertEqual(ReadinessCategory(score: 39), .recovery)
     }
 
+    func testReadinessRefreshClockStartIsIdempotent() {
+        let clock = ReadinessRefreshClock.shared
+
+        clock.start()
+        let firstToken = clock.token
+        clock.start()
+
+        XCTAssertEqual(clock.token, firstToken)
+    }
+
+    func testReadinessV2LockedAggregationFixtures() {
+        let scorer = ReadinessScoringService()
+        let signal: (ReadinessFactorKind, Int) -> ReadinessSignalEvidence = { kind, score in
+            ReadinessSignalEvidence(kind: kind, detail: "Fixture", rawScore: score)
+        }
+
+        let noInputs = scorer.score([])
+        let strongCheckInOnly = scorer.score([signal(.checkIn, 100)])
+        let lowSleepOnly = scorer.score([signal(.sleep, 45)])
+        let strongTrainingAndCheckIn = scorer.score([signal(.training, 86), signal(.checkIn, 100)])
+        let lowTrainingAndCheckIn = scorer.score([signal(.training, 30), signal(.checkIn, 45)])
+        let poorSleepWithNeutralCore = scorer.score([
+            signal(.sleep, 45),
+            signal(.training, 70),
+            signal(.checkIn, 70)
+        ])
+        let allStrong = scorer.score(ReadinessFactorKind.allCases.map { signal($0, 91) })
+
+        XCTAssertEqual(noInputs.value, 70)
+        XCTAssertTrue(noInputs.isProvisional)
+        XCTAssertEqual(strongCheckInOnly.value, 82)
+        XCTAssertTrue(strongCheckInOnly.isProvisional)
+        XCTAssertEqual(lowSleepOnly.value, 60)
+        XCTAssertTrue(lowSleepOnly.isProvisional)
+        XCTAssertEqual(strongTrainingAndCheckIn.value, 88)
+        XCTAssertEqual(lowTrainingAndCheckIn.value, 43)
+        XCTAssertEqual(poorSleepWithNeutralCore.value, 62)
+        XCTAssertEqual(allStrong.value, 91)
+        XCTAssertEqual(allStrong.confidence, .high)
+        XCTAssertTrue(allStrong.diagnosticSummary.contains("readiness-v2"))
+    }
+
+    func testReadinessV2CapsSingleSignalAndKeepsMissingDataNeutral() throws {
+        let scorer = ReadinessScoringService()
+        let checkIn = ReadinessSignalEvidence(kind: .checkIn, detail: "Strong", rawScore: 100)
+        let missingSleep = ReadinessSignalEvidence(kind: .sleep, detail: "Missing", rawScore: nil, reliability: 0)
+
+        let single = scorer.score([checkIn])
+        let explicitMissing = scorer.score([checkIn, missingSleep])
+        let factor = try XCTUnwrap(single.factors.first { $0.kind == .checkIn })
+        let sleepFactor = try XCTUnwrap(explicitMissing.factors.first { $0.kind == .sleep })
+
+        XCTAssertEqual(factor.effectiveWeight, 0.40, accuracy: 0.0001)
+        XCTAssertEqual(single.value, explicitMissing.value)
+        XCTAssertNil(sleepFactor.score)
+        XCTAssertEqual(sleepFactor.contribution, 0)
+        XCTAssertFalse(sleepFactor.isDataAvailable)
+    }
+
+    func testReadinessV2CapsNutritionAggregateInfluenceAtTenPercent() throws {
+        let scorer = ReadinessScoringService()
+        let result = scorer.score([
+            ReadinessSignalEvidence(
+                kind: .nutrition,
+                detail: "Qualified nutrition modifier",
+                rawScore: 95,
+                reliability: 1
+            )
+        ])
+        let factor = try XCTUnwrap(result.factors.first { $0.kind == .nutrition })
+
+        XCTAssertEqual(factor.effectiveWeight, 0.10, accuracy: 0.0001)
+        XCTAssertEqual(factor.contribution, 2.5, accuracy: 0.0001)
+        XCTAssertEqual(result.value, 73)
+        XCTAssertTrue(result.isProvisional)
+    }
+
+    func testReadinessV2ConfidenceBoundaries() {
+        let scorer = ReadinessScoringService()
+        let signal: (ReadinessFactorKind, Int, Double) -> ReadinessSignalEvidence = { kind, score, reliability in
+            ReadinessSignalEvidence(kind: kind, detail: "Fixture", rawScore: score, reliability: reliability)
+        }
+
+        XCTAssertEqual(scorer.score([signal(.sleep, 80, 1)]).confidence, .low)
+        XCTAssertEqual(
+            scorer.score([signal(.sleep, 80, 1), signal(.training, 80, 1)]).confidence,
+            .medium
+        )
+        XCTAssertEqual(
+            scorer.score([
+                signal(.sleep, 80, 1),
+                signal(.training, 80, 1),
+                signal(.checkIn, 80, 1),
+                signal(.nutrition, 80, 1)
+            ]).confidence,
+            .high
+        )
+        XCTAssertEqual(
+            scorer.score([signal(.sleep, 80, 0.50), signal(.hydration, 80, 0.25)]).confidence,
+            .low
+        )
+    }
+
+    func testReadinessV2PersonalCalibrationActivatesAtFiveSamplesAndCapsAtEightPoints() throws {
+        let scorer = ReadinessScoringService()
+        let fourSamples = scorer.score([
+            ReadinessSignalEvidence(
+                kind: .sleep,
+                detail: "Four samples",
+                rawScore: 80,
+                historicalScores: [20, 20, 20, 20]
+            )
+        ])
+        let fiveLowSamples = scorer.score([
+            ReadinessSignalEvidence(
+                kind: .sleep,
+                detail: "Five samples",
+                rawScore: 80,
+                historicalScores: [20, 20, 20, 20, 20]
+            )
+        ])
+        let fiveHighSamples = scorer.score([
+            ReadinessSignalEvidence(
+                kind: .training,
+                detail: "Five samples",
+                rawScore: 20,
+                historicalScores: [100, 100, 100, 100, 100]
+            )
+        ])
+
+        XCTAssertEqual(try XCTUnwrap(fourSamples.factors.first { $0.kind == .sleep }).calibrationAdjustment, 0)
+        XCTAssertEqual(try XCTUnwrap(fiveLowSamples.factors.first { $0.kind == .sleep }).calibrationAdjustment, 8)
+        XCTAssertEqual(try XCTUnwrap(fiveLowSamples.factors.first { $0.kind == .sleep }).score, 88)
+        XCTAssertEqual(try XCTUnwrap(fiveHighSamples.factors.first { $0.kind == .training }).calibrationAdjustment, -8)
+        XCTAssertEqual(try XCTUnwrap(fiveHighSamples.factors.first { $0.kind == .training }).score, 12)
+    }
+
+    func testReadinessV2UsesNeutralCentredCheckInAnchors() throws {
+        let readiness = makeReadiness(
+            checkIns: [checkIn(daysAgo: 0, energy: 3, soreness: 3, stress: 3, motivation: 3)]
+        )
+        let factor = try XCTUnwrap(readiness.factors.first { $0.kind == .checkIn })
+
+        XCTAssertEqual(factor.rawScore, 70)
+        XCTAssertEqual(readiness.value, 70)
+        XCTAssertTrue(readiness.isProvisional)
+    }
+
+    func testReadinessV2ExcludesStaleSleepAndNapOnlyEvidence() throws {
+        let napStart = date(daysAgo: 0, hour: 10)
+        let readiness = makeReadiness(
+            sleepSessions: [sleep(daysAgo: 1, minutes: 480, quality: 4)],
+            napSessions: [NapSession(startDate: napStart, endDate: napStart.addingTimeInterval(30 * 60), source: .manual)]
+        )
+        let factor = try XCTUnwrap(readiness.factors.first { $0.kind == .sleep })
+
+        XCTAssertNil(factor.score)
+        XCTAssertFalse(factor.isDataAvailable)
+        XCTAssertTrue(factor.detail.localizedCaseInsensitiveContains("nap"))
+    }
+
+    func testReadinessV2HydrationReliabilityFollowsPacingPhase() throws {
+        let entry = HydrationEntry(amountML: 500, loggedAt: date(daysAgo: 0, hour: 8))
+        let morning = makeReadiness(for: date(daysAgo: 0, hour: 9), hydrationEntries: [entry])
+        let evening = makeReadiness(for: date(daysAgo: 0, hour: 18), hydrationEntries: [entry])
+        let morningFactor = try XCTUnwrap(morning.factors.first { $0.kind == .hydration })
+        let eveningFactor = try XCTUnwrap(evening.factors.first { $0.kind == .hydration })
+
+        XCTAssertEqual(morningFactor.reliability, 0.25, accuracy: 0.0001)
+        XCTAssertEqual(eveningFactor.reliability, 0.90, accuracy: 0.0001)
+        XCTAssertLessThan(morningFactor.effectiveWeight, 0.40)
+        XCTAssertGreaterThan(morningFactor.score ?? 0, eveningFactor.score ?? 100)
+    }
+
+    func testReadinessV2NutritionRequiresThreeQualifiedCompletedDaysAndExcludesToday() throws {
+        let goal = NutritionGoal(
+            dailyCaloriesTarget: 2_500,
+            dailyProteinTarget: 160,
+            dailyCarbsTarget: nil,
+            dailyFatTarget: nil,
+            trainingDayCaloriesTarget: nil,
+            restDayCaloriesTarget: nil,
+            isEnabled: true,
+            updatedAt: today
+        )
+        let twoCompletedDays = [1, 2].flatMap { day in
+            (0..<3).map { _ in food(daysAgo: day, calories: 800, protein: 55) }
+        }
+        let todayLogs = (0..<3).map { _ in food(daysAgo: 0, calories: 800, protein: 55) }
+        let unqualified = makeReadiness(foodLogs: twoCompletedDays + todayLogs, nutritionGoal: goal)
+        let qualified = makeReadiness(
+            foodLogs: twoCompletedDays + (0..<3).map { _ in food(daysAgo: 3, calories: 800, protein: 55) },
+            nutritionGoal: goal
+        )
+        let unqualifiedFactor = try XCTUnwrap(unqualified.factors.first { $0.kind == .nutrition })
+        let qualifiedFactor = try XCTUnwrap(qualified.factors.first { $0.kind == .nutrition })
+
+        XCTAssertNil(unqualifiedFactor.score)
+        XCTAssertNotNil(qualifiedFactor.score)
+        XCTAssertLessThanOrEqual(qualifiedFactor.rawScore ?? 100, 95)
+        XCTAssertEqual(qualifiedFactor.reliability, 0.60, accuracy: 0.0001)
+    }
+
+    func testReadinessV2RejectsFutureWorkoutData() throws {
+        let exercise = exercise(name: "Future Press", primary: .chest, compound: true)
+        let futureWorkout = workout(daysAgo: 0, exercise: exercise, setCount: 3, weight: 80, reps: 8, rpe: 7, difficulty: 3)
+        let readiness = makeReadiness(completedWorkouts: [futureWorkout])
+        let factor = try XCTUnwrap(readiness.factors.first { $0.kind == .training })
+
+        XCTAssertNil(factor.score)
+        XCTAssertEqual(readiness.value, 70)
+    }
+
+    func testProvisionalReadinessCannotDrivePushRecoveryOrLowReadinessWarning() {
+        let strong = makeSnapshot(
+            checkIns: [checkIn(daysAgo: 0, energy: 5, soreness: 1, stress: 1, motivation: 5)]
+        )
+        let low = makeSnapshot(
+            checkIns: [checkIn(daysAgo: 0, energy: 1, soreness: 5, stress: 5, motivation: 1)]
+        )
+
+        XCTAssertTrue(strong.readiness.isProvisional)
+        XCTAssertEqual(strong.readiness.recommendation.title, "Provisional readiness")
+        XCTAssertNotEqual(strong.adaptiveGuidance.mode, .push)
+        XCTAssertTrue(low.readiness.isProvisional)
+        XCTAssertNotEqual(low.adaptiveGuidance.mode, .recoveryFocus)
+        XCTAssertFalse(low.fatigueRisk.factors.contains("Readiness is low or trending down."))
+    }
+
+    func testWeeklyReadinessTrendOmitsProvisionalDays() {
+        let snapshot = makeSnapshot(
+            checkIns: [checkIn(daysAgo: 0, energy: 4, soreness: 2, stress: 2, motivation: 4)]
+        )
+
+        XCTAssertEqual(snapshot.trends.readiness.direction, .insufficientData)
+        XCTAssertNil(snapshot.trends.readiness.currentValue)
+        XCTAssertNil(snapshot.trends.readiness.previousValue)
+    }
+
     func testMissingDataProducesLowConfidenceNewUserGuidance() {
         let snapshot = makeSnapshot()
 
@@ -37,6 +276,68 @@ final class CoachIntelligenceServiceTests: XCTestCase {
         XCTAssertTrue(snapshot.readiness.factors.contains { !$0.isDataAvailable })
         XCTAssertEqual(snapshot.insights.first?.id, "baseline-building")
         XCTAssertEqual(snapshot.fatigueRisk.level, .low)
+    }
+
+    func testReadinessScorerUsesNeutralPriorWhenNoEvidenceIsAvailable() {
+        let result = ReadinessScoringService().score([])
+
+        XCTAssertEqual(result.value, ReadinessScoringService.neutralPrior)
+        XCTAssertEqual(result.confidence, .low)
+        XCTAssertEqual(result.availableSignalCount, 0)
+        XCTAssertEqual(result.effectiveEvidenceWeight, 0, accuracy: 0.001)
+        XCTAssertEqual(result.factors.count, ReadinessFactorKind.allCases.count)
+        XCTAssertTrue(result.factors.allSatisfy { !$0.isDataAvailable })
+    }
+
+    func testReadinessScorerCapsSingleSignalInfluence() throws {
+        let result = ReadinessScoringService().score([
+            ReadinessSignalEvidence(
+                kind: .sleep,
+                detail: "Excellent sleep.",
+                rawScore: 100
+            )
+        ])
+
+        let sleep = try XCTUnwrap(result.factors.first { $0.kind == .sleep })
+        XCTAssertEqual(result.value, 82)
+        XCTAssertEqual(result.confidence, .low)
+        XCTAssertEqual(result.availableSignalCount, 1)
+        XCTAssertEqual(result.effectiveEvidenceWeight, 0.4, accuracy: 0.001)
+        XCTAssertEqual(sleep.effectiveWeight, 0.4, accuracy: 0.001)
+        XCTAssertEqual(sleep.impact, .positive)
+    }
+
+    func testReadinessScorerReachesHighConfidenceOnlyWithBroadReliableCoverage() {
+        let evidence = ReadinessFactorKind.allCases.map {
+            ReadinessSignalEvidence(kind: $0, detail: "Available.", rawScore: 80)
+        }
+
+        let result = ReadinessScoringService().score(evidence)
+
+        XCTAssertEqual(result.value, 80)
+        XCTAssertEqual(result.confidence, .high)
+        XCTAssertEqual(result.availableSignalCount, ReadinessFactorKind.allCases.count)
+        XCTAssertEqual(result.effectiveEvidenceWeight, 1, accuracy: 0.001)
+        XCTAssertTrue(result.diagnosticSummary.contains(ReadinessScoringService.version))
+    }
+
+    func testReadinessScorerClampsInputsAndAppliesBoundedPersonalCalibration() throws {
+        let result = ReadinessScoringService().score([
+            ReadinessSignalEvidence(
+                kind: .sleep,
+                detail: "Above personal baseline.",
+                rawScore: 120,
+                reliability: 2,
+                historicalScores: [40, 45, 50, 55, 60]
+            )
+        ])
+
+        let sleep = try XCTUnwrap(result.factors.first { $0.kind == .sleep })
+        XCTAssertEqual(sleep.rawScore, 100)
+        XCTAssertEqual(sleep.reliability, 1, accuracy: 0.001)
+        XCTAssertEqual(sleep.calibrationAdjustment, 8)
+        XCTAssertEqual(sleep.score, 100)
+        XCTAssertEqual(result.value, 82)
     }
 
     func testWeeklyCheckInTrendDetectsImprovingEnergy() {
@@ -874,6 +1175,30 @@ final class CoachIntelligenceServiceTests: XCTestCase {
         XCTAssertTrue(snapshot.diagnostics.coachPreferenceInfluence.contains { $0.localizedCaseInsensitiveContains("conservative") })
         XCTAssertTrue(snapshot.diagnostics.splitMetadataInfluence.contains { $0.localizedCaseInsensitiveContains("Legs") })
         XCTAssertTrue(snapshot.diagnostics.urgencyAdjustmentReasons.contains { $0.localizedCaseInsensitiveContains("conservative") })
+    }
+
+    private func makeReadiness(
+        for date: Date? = nil,
+        sleepSessions: [SleepSession] = [],
+        napSessions: [NapSession] = [],
+        hydrationEntries: [HydrationEntry] = [],
+        completedWorkouts: [WorkoutSession] = [],
+        foodLogs: [FoodLogEntry] = [],
+        checkIns: [DailyCoachCheckIn] = [],
+        nutritionGoal: NutritionGoal = .empty
+    ) -> ReadinessScore {
+        service.readiness(
+            for: date ?? today,
+            sleepSessions: sleepSessions,
+            napSessions: napSessions,
+            hydrationEntries: hydrationEntries,
+            completedWorkouts: completedWorkouts,
+            foodLogs: foodLogs,
+            checkIns: checkIns,
+            sleepSettings: .default,
+            hydrationTargetML: 2_500,
+            nutritionGoal: nutritionGoal
+        )
     }
 
     private func makeSnapshot(

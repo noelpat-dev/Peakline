@@ -104,7 +104,7 @@ struct NutritionLabelScanView: View {
                             .background(appTheme.colors.accentSurface, in: Capsule())
                     }
 
-                    Text("Take a clear photo of the nutrition table. GymTracker reads the text on-device and keeps the final save under your control.")
+                    Text("Take a clear photo or choose a nutrition screenshot. Peakline reads the table on-device and keeps the final save under your control.")
                         .font(.subheadline)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -171,6 +171,7 @@ struct NutritionLabelScanView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     labelTip("Keep the label flat", systemImage: "rectangle.compress.vertical")
                     labelTip("Capture the full nutrition table", systemImage: "tablecells")
+                    labelTip("Include the food name and per-100 g or serving heading when possible", systemImage: "text.badge.checkmark")
                     labelTip("Avoid glare and shadows", systemImage: "sun.min")
                     labelTip("Make sure the text is sharp", systemImage: "text.magnifyingglass")
                 }
@@ -423,7 +424,7 @@ struct NutritionLabelScanView: View {
     }
 }
 
-private struct ParsedNutritionDraftValues {
+struct ParsedNutritionDraftValues {
     let baseUnit: FoodAmountUnit
     let calories: Double?
     let protein: Double?
@@ -436,11 +437,7 @@ private struct ParsedNutritionDraftValues {
     init(parseResult: NutritionParseResult) {
         baseUnit = parseResult.selectedBasis == .per100ml ? .millilitres : .grams
 
-        let canMapToPer100 = parseResult.selectedBasis == .per100g
-            || parseResult.selectedBasis == .per100ml
-            || parseResult.values.contains { $0.basis == .per100g || $0.basis == .per100ml }
-
-        guard canMapToPer100 else {
+        guard !parseResult.values.isEmpty else {
             calories = nil
             protein = nil
             carbs = nil

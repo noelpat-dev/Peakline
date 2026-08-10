@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum CelebrationStyle {
+enum CelebrationStyle: Equatable {
     case nextExercise
     case completedWorkout
     case pr
@@ -21,21 +21,20 @@ struct WorkoutCelebrationOverlay: View {
     var isPrimaryActionDisabled = false
     let primaryAction: () -> Void
 
-    @State private var iconPulse = false
-    @State private var contentRevealed = false
-    @State private var buttonRevealed = false
+    @State private var prBurstActive = false
+    @State private var hasPlayedPRBurst = false
 
     var body: some View {
         ZStack {
             backdrop
 
-            LiquidGlassPopupCard(cornerRadius: appTheme.metrics.radius32, padding: appTheme.metrics.spacing24) {
-                VStack(spacing: 18) {
-                    celebrationIcon
+            VStack(spacing: 18) {
+                celebrationIcon
 
+                VStack(spacing: 18) {
                     VStack(spacing: 8) {
                         Text(title)
-                            .font(AppTypography.rounded(size: 34, weight: .bold))
+                            .font(AppTypography.heroTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .multilineTextAlignment(.center)
                             .lineLimit(3)
@@ -47,12 +46,8 @@ struct WorkoutCelebrationOverlay: View {
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    .scaleEffect(reduceMotion ? 1 : (contentRevealed ? 1 : 0.98))
-                    .opacity(contentRevealed ? 1 : 0)
-                    .offset(y: reduceMotion ? 0 : (contentRevealed ? 0 : 6))
 
                     Button {
-                        AppHaptics.success()
                         primaryAction()
                     } label: {
                         Label {
@@ -62,19 +57,24 @@ struct WorkoutCelebrationOverlay: View {
                                 Image(systemName: primaryActionIcon)
                             }
                         }
-                        .font(AppTypography.button)
                         .frame(maxWidth: .infinity)
-                        .contentShape(Capsule())
                     }
-                    .buttonStyle(GlassPrimaryButtonStyle())
+                    .buttonStyle(PrimaryFitnessButtonStyle())
                     .disabled(isPrimaryActionDisabled)
-                    .accessibilityElement(children: .combine)
                     .accessibilityLabel(primaryActionTitle)
                     .accessibilityIdentifier("workout-celebration-primary")
-                    .scaleEffect(reduceMotion ? 1 : (buttonRevealed ? 1 : 0.96))
-                    .opacity(buttonRevealed ? 1 : 0)
-                    .offset(y: reduceMotion ? 0 : (buttonRevealed ? 0 : 8))
                 }
+            }
+            .padding(appTheme.metrics.spacing24)
+            .frame(maxWidth: .infinity)
+            .background(
+                appTheme.colors.cardBackground,
+                in: RoundedRectangle(cornerRadius: appTheme.metrics.radius32, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: appTheme.metrics.radius32, style: .continuous)
+                    .stroke(cardBorderColor, lineWidth: style == .pr ? 1.5 : 1)
+                    .allowsHitTesting(false)
             }
             .frame(maxWidth: 430)
             .padding(.horizontal, 20)
@@ -86,35 +86,75 @@ struct WorkoutCelebrationOverlay: View {
             )
         }
         .ignoresSafeArea()
-        .onAppear {
-            updateContentVisibility(isVisible)
-        }
-        .onChange(of: isVisible) { _, newValue in
-            updateContentVisibility(newValue)
+        .task(id: isVisible) {
+            if !isVisible {
+                AppMotion.withoutAnimation {
+                    prBurstActive = false
+                    hasPlayedPRBurst = false
+                }
+                return
+            }
+
+            guard style == .pr, !reduceMotion, !hasPlayedPRBurst else { return }
+            hasPlayedPRBurst = true
+            AppMotion.withoutAnimation {
+                prBurstActive = false
+            }
+            await Task.yield()
+            guard !Task.isCancelled, isVisible else { return }
+            prBurstActive = true
         }
     }
 
+    @ViewBuilder
     private var celebrationIcon: some View {
+        if style == .pr {
+            ZStack {
+                if !reduceMotion {
+                    PRCelebrationStarburst(
+                        isActive: prBurstActive,
+                        primaryColor: appTheme.warningColor,
+                        secondaryColor: appTheme.colors.accent,
+                        reduceMotion: reduceMotion
+                    )
+                }
+
+                baseCelebrationIcon
+                    .scaleEffect(reduceMotion ? 1 : (prBurstActive ? 1 : 0.72))
+                    .animation(
+                        AppMotion.prCelebrationIconPop(reduceMotion: reduceMotion),
+                        value: prBurstActive
+                    )
+            }
+            .frame(height: 136)
+            .accessibilityHidden(true)
+        } else {
+            baseCelebrationIcon
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var baseCelebrationIcon: some View {
         ZStack {
             Circle()
                 .stroke(iconTint.opacity(0.28), lineWidth: 1.5)
                 .frame(width: 92, height: 92)
-                .scaleEffect(reduceMotion ? 1 : (iconPulse ? 1.45 : 0.72))
-                .opacity(reduceMotion ? 0.24 : (iconPulse ? 0 : 0.62))
+                .opacity(0.24)
 
             Circle()
                 .fill(iconTint.opacity(0.10))
                 .frame(width: 88, height: 88)
                 .scaleEffect(reduceMotion ? 1 : (isVisible ? 1 : 0.82))
 
-            GlassIconBadge(systemName: iconName, size: 70)
+            GlassIconBadge(systemName: iconName, size: 70, tint: iconTint)
                 .scaleEffect(reduceMotion ? 1 : (isVisible ? 1 : 0.78))
         }
-        .accessibilityHidden(true)
     }
 
     private var backdrop: some View {
-        LiquidGlassPopupBackdrop(isVisible: isVisible)
+        Color.black
+            .opacity(isVisible ? 0.18 : 0)
+            .accessibilityHidden(true)
     }
 
     private var iconTint: Color {
@@ -128,6 +168,10 @@ struct WorkoutCelebrationOverlay: View {
         case .nextExercise:
             return appTheme.colors.accent
         }
+    }
+
+    private var cardBorderColor: Color {
+        style == .pr ? iconTint.opacity(0.58) : appTheme.colors.cardBorder
     }
 
     private var iconName: String {
@@ -147,40 +191,49 @@ struct WorkoutCelebrationOverlay: View {
         }
     }
 
-    private func updateContentVisibility(_ visible: Bool) {
-        if reduceMotion {
-            iconPulse = visible
-            contentRevealed = visible
-            buttonRevealed = visible
-            return
+}
+
+private struct PRCelebrationStarburst: View {
+    let isActive: Bool
+    let primaryColor: Color
+    let secondaryColor: Color
+    let reduceMotion: Bool
+
+    private let sparkCount = 12
+
+    var body: some View {
+        ZStack {
+            ForEach(0..<2, id: \.self) { index in
+                Circle()
+                    .stroke(primaryColor.opacity(index == 0 ? 0.72 : 0.42), lineWidth: index == 0 ? 2 : 1.5)
+                    .frame(width: 92, height: 92)
+                    .scaleEffect(isActive ? (index == 0 ? 1.50 : 1.72) : 0.66)
+                    .opacity(isActive ? 0 : (index == 0 ? 0.78 : 0.54))
+                    .animation(
+                        AppMotion.prCelebrationRing(index: index, reduceMotion: reduceMotion),
+                        value: isActive
+                    )
+            }
+
+            ForEach(0..<sparkCount, id: \.self) { index in
+                Capsule()
+                    .fill(index.isMultiple(of: 2) ? primaryColor : secondaryColor)
+                    .frame(
+                        width: index.isMultiple(of: 3) ? 4 : 3,
+                        height: index.isMultiple(of: 3) ? 17 : 12
+                    )
+                    .offset(y: isActive ? -72 : -40)
+                    .rotationEffect(.degrees((Double(index) * 30) - 90))
+                    .scaleEffect(isActive ? 1 : 0.38)
+                    .opacity(isActive ? 0 : 0.92)
+                    .animation(
+                        AppMotion.prCelebrationSpark(index: index, reduceMotion: reduceMotion),
+                        value: isActive
+                    )
+            }
         }
-
-        if visible {
-            withAnimation(AppMotion.workoutCompletion(reduceMotion: reduceMotion)) {
-                iconPulse = true
-            }
-
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: AppMotion.popupContentRevealDelay)
-                guard isVisible else { return }
-
-                withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
-                    contentRevealed = true
-                }
-
-                try? await Task.sleep(nanoseconds: AppMotion.popupSecondaryRevealDelay)
-                guard isVisible else { return }
-
-                withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
-                    buttonRevealed = true
-                }
-            }
-        } else {
-            withAnimation(AppMotion.popupExit(reduceMotion: reduceMotion)) {
-                iconPulse = false
-                contentRevealed = false
-                buttonRevealed = false
-            }
-        }
+        .frame(width: 164, height: 136)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }

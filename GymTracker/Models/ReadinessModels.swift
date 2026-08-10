@@ -135,6 +135,36 @@ struct ReadinessFactor: Identifiable, Hashable {
     let contribution: Double
     let score: Int?
     let isDataAvailable: Bool
+    let rawScore: Int?
+    let reliability: Double
+    let effectiveWeight: Double
+    let calibrationAdjustment: Int
+
+    init(
+        kind: ReadinessFactorKind,
+        title: String,
+        detail: String,
+        impact: ReadinessImpact,
+        contribution: Double,
+        score: Int?,
+        isDataAvailable: Bool,
+        rawScore: Int? = nil,
+        reliability: Double = 0,
+        effectiveWeight: Double = 0,
+        calibrationAdjustment: Int = 0
+    ) {
+        self.kind = kind
+        self.title = title
+        self.detail = detail
+        self.impact = impact
+        self.contribution = contribution
+        self.score = score
+        self.isDataAvailable = isDataAvailable
+        self.rawScore = rawScore
+        self.reliability = reliability
+        self.effectiveWeight = effectiveWeight
+        self.calibrationAdjustment = calibrationAdjustment
+    }
 }
 
 struct ReadinessCoachRecommendation: Hashable {
@@ -152,7 +182,7 @@ struct ReadinessScore: Identifiable {
     let recommendation: ReadinessCoachRecommendation
     let factors: [ReadinessFactor]
     let generatedAt: Date
-    let checkIn: DailyCoachCheckIn?
+    let checkIn: DailyCoachCheckInSnapshot?
     let workoutAdjustment: String
     let recoveryNote: String
 
@@ -163,6 +193,7 @@ struct ReadinessScore: Identifiable {
     var topFactors: [ReadinessFactor] {
         Array(
             factors
+                .filter(\.isDataAvailable)
                 .sorted {
                     abs($0.contribution) == abs($1.contribution)
                         ? $0.kind.rawValue < $1.kind.rawValue
@@ -170,6 +201,65 @@ struct ReadinessScore: Identifiable {
                 }
                 .prefix(3)
         )
+    }
+
+    var availableSignalCount: Int {
+        factors.filter(\.isDataAvailable).count
+    }
+
+    var totalSignalCount: Int {
+        ReadinessFactorKind.allCases.count
+    }
+
+    var effectiveEvidenceWeight: Double {
+        factors.reduce(0) { $0 + $1.effectiveWeight }
+    }
+
+    var isProvisional: Bool {
+        confidence == .low
+    }
+
+    var coverageSummary: String {
+        "\(availableSignalCount) of \(totalSignalCount) signals included"
+    }
+
+    var confidenceNote: String {
+        if isProvisional {
+            return "Provisional — \(coverageSummary). Missing signals do not lower your score."
+        }
+
+        switch confidence {
+        case .high:
+            return "\(coverageSummary). Core recovery signals and a qualified daily modifier are included."
+        case .medium:
+            return "\(coverageSummary). Missing signals do not lower your score."
+        case .low:
+            return "Provisional — \(coverageSummary). Missing signals do not lower your score."
+        }
+    }
+}
+
+struct DailyCoachCheckInSnapshot: Identifiable, Hashable, Sendable {
+    let id: UUID
+    let date: Date
+    let energy: Int
+    let soreness: Int
+    let stress: Int
+    let motivation: Int
+    let note: String?
+    let createdAt: Date
+    let updatedAt: Date
+
+    init(_ checkIn: DailyCoachCheckIn) {
+        id = checkIn.id
+        date = checkIn.date
+        energy = checkIn.energy
+        soreness = checkIn.soreness
+        stress = checkIn.stress
+        motivation = checkIn.motivation
+        note = checkIn.note
+        createdAt = checkIn.createdAt
+        updatedAt = checkIn.updatedAt
     }
 }
 

@@ -296,7 +296,7 @@ struct NutritionComparisonView: View {
     }
 
     private var finalMacroSummary: some View {
-        DashboardSection(title: baseUnit == .millilitres ? "Final per 100ml" : "Final per 100g") {
+        DashboardSection(title: baseUnit == .millilitres ? "Final per 100 mL" : "Final per 100 g") {
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                 ComparisonMetricCard(title: "Calories", value: parsedValue(for: .calories), unit: "kcal")
                 ComparisonMetricCard(title: "Protein", value: parsedValue(for: .protein), unit: "g")
@@ -484,6 +484,7 @@ struct NutritionComparisonView: View {
 
         do {
             try modelContext.save()
+            SavedFoodWarmStartStore.shared.upsert(SavedFoodSnapshot(food))
         } catch {
             if localFood == nil {
                 modelContext.delete(food)

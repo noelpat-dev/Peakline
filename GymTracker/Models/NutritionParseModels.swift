@@ -119,6 +119,7 @@ enum NutritionParseWarning: String, Codable, CaseIterable, Hashable, Identifiabl
     case ambiguousColumn
     case ambiguousNutrient
     case ocrLikelyMisread
+    case basisInferredFromComposition
 
     var id: String { rawValue }
 
@@ -158,6 +159,8 @@ enum NutritionParseWarning: String, Codable, CaseIterable, Hashable, Identifiabl
             return "A nutrient label was ambiguous. Check the detected value."
         case .ocrLikelyMisread:
             return "Some common OCR corrections were applied. Please review the numbers."
+        case .basisInferredFromComposition:
+            return "The values appear to be per 100g because the food composition adds up to approximately 100g. Please confirm before saving."
         }
     }
 }

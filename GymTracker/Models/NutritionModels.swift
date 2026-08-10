@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-enum FoodAmountUnit: String, Codable, DisplayableEnum {
+enum FoodAmountUnit: String, Codable, DisplayableEnum, Sendable {
     case grams
     case millilitres
     case serving
@@ -44,7 +44,7 @@ enum MealType: String, Codable, DisplayableEnum, Sendable {
     }
 }
 
-enum FoodDataSource: String, Codable, DisplayableEnum {
+enum FoodDataSource: String, Codable, DisplayableEnum, Sendable {
     case manual
     case openFoodFacts
     case editedOpenFoodFacts
@@ -210,14 +210,14 @@ struct HydrationService {
 
     static func formatAmount(_ amountML: Int) -> String {
         if amountML < 1_000 {
-            return "\(amountML)ml"
+            return "\(amountML) mL"
         }
 
         let litres = Double(amountML) / 1_000
         if amountML % 1_000 == 0 {
-            return "\(Int(litres))L"
+            return "\(Int(litres)) L"
         }
-        return "\(litres.formatted(.number.precision(.fractionLength(1))))L"
+        return "\(litres.formatted(.number.precision(.fractionLength(1)))) L"
     }
 }
 

@@ -6,61 +6,65 @@ struct CoachBriefCard: View {
 
     let readiness: ReadinessScore
     let viewBrief: () -> Void
-    @State private var showingCheckIn = false
+    let editCheckIn: () -> Void
 
     var body: some View {
-        FitnessCard {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .top, spacing: 14) {
-                    readinessScoreBlock
+        FitnessInformationalActionCard {
+            HStack(alignment: .top, spacing: 14) {
+                readinessScoreBlock
 
-                    Spacer(minLength: 10)
+                Spacer(minLength: 10)
 
-                    VStack(alignment: .trailing, spacing: 8) {
-                        readinessBadge
-                        Text(readiness.confidence.displayName)
-                            .font(.caption.weight(.semibold))
+                VStack(alignment: .trailing, spacing: 8) {
+                    readinessBadge
+                    Text(readiness.isProvisional ? "Provisional" : readiness.confidence.displayName)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(appTheme.colors.textTertiary)
+                        .accessibilityIdentifier("readiness-provisional-status")
+
+                    if readiness.isProvisional {
+                        Text(readiness.coverageSummary)
+                            .font(.caption2.weight(.medium))
                             .foregroundStyle(appTheme.colors.textTertiary)
+                            .multilineTextAlignment(.trailing)
+                            .accessibilityIdentifier("readiness-signal-coverage")
                     }
                 }
+            }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(readiness.recommendation.title)
-                        .font(.headline)
-                        .foregroundStyle(appTheme.colors.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(readiness.recommendation.title)
+                    .font(.headline)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                    Text(readiness.recommendation.summary)
-                        .font(.subheadline)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .lineLimit(3)
+                Text(readiness.recommendation.summary)
+                    .font(.subheadline)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(3)
+            }
+
+            VStack(alignment: .leading, spacing: 7) {
+                ForEach(readiness.topFactors) { factor in
+                    ReadinessMiniFactorRow(factor: factor)
+                }
+            }
+        } action: {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    viewBriefButton
+                    checkInButton
                 }
 
-                VStack(alignment: .leading, spacing: 7) {
-                    ForEach(readiness.topFactors) { factor in
-                        ReadinessMiniFactorRow(factor: factor)
-                    }
-                }
-
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 10) {
-                        viewBriefButton
-                        checkInButton
-                    }
-
-                    VStack(spacing: 10) {
-                        viewBriefButton
-                        checkInButton
-                    }
+                VStack(spacing: 10) {
+                    viewBriefButton
+                    checkInButton
                 }
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Daily Coach Brief. Readiness \(readiness.value), \(readiness.category.displayName). \(readiness.recommendation.title).")
-        .sheet(isPresented: $showingCheckIn) {
-            DailyCheckInSheet(existingCheckIn: readiness.checkIn)
-        }
+        .accessibilityLabel("Daily Coach Brief. Readiness \(readiness.value), \(readiness.isProvisional ? "provisional" : readiness.category.displayName). \(readiness.recommendation.title).")
     }
 
     private var readinessScoreBlock: some View {
@@ -70,6 +74,7 @@ struct CoachBriefCard: View {
                 .foregroundStyle(scoreColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
+                .accessibilityIdentifier("today-readiness-score-value")
 
             Text("/100")
                 .font(AppTypography.bodyEmphasis)
@@ -78,18 +83,17 @@ struct CoachBriefCard: View {
     }
 
     private var readinessBadge: some View {
-        Label(readiness.category.displayName, systemImage: readinessCategoryImage)
+        Label(readiness.isProvisional ? "Provisional" : readiness.category.displayName, systemImage: readinessCategoryImage)
             .font(AppTypography.chip)
             .foregroundStyle(scoreColor)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(scoreColor.opacity(0.14), in: Capsule())
-            .accessibilityLabel("Readiness category \(readiness.category.displayName)")
+            .accessibilityLabel(readiness.isProvisional ? "Provisional readiness" : "Readiness category \(readiness.category.displayName)")
     }
 
     private var viewBriefButton: some View {
         Button {
-            AppHaptics.selection()
             viewBrief()
         } label: {
             Label("View brief", systemImage: "doc.text.magnifyingglass")
@@ -109,6 +113,7 @@ struct CoachBriefCard: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(NeutralFitnessButtonStyle())
+            .accessibilityIdentifier("today-check-in-open")
         } else {
             Button {
                 presentCheckIn()
@@ -117,20 +122,23 @@ struct CoachBriefCard: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(PrimaryFitnessButtonStyle())
+            .accessibilityIdentifier("today-check-in-open")
         }
     }
 
     private func presentCheckIn() {
+        AppHaptics.prepareSelection()
+        AppHaptics.selection()
+        PerformanceTracer.mark(.checkInSheetPresentation, "requested source=today")
         PerformanceTracer.trace(.motionTapFeedback) {
-            showingCheckIn = true
-        }
-        DispatchQueue.main.async {
-            AppHaptics.selection()
+            editCheckIn()
         }
     }
 
     private var scoreColor: Color {
-        readinessColor(for: readiness.category, theme: appTheme)
+        readiness.isProvisional
+            ? appTheme.colors.accent
+            : readinessColor(for: readiness.category, theme: appTheme)
     }
 
     private var readinessCategoryImage: String {
@@ -286,10 +294,11 @@ struct ReadinessDetailHeaderCard: View {
                     }
                 }
 
-                Text(readiness.confidence.note)
+                Text(readiness.confidenceNote)
                     .font(.footnote)
                     .foregroundStyle(appTheme.colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("readiness-provisional-status")
             }
         }
     }
@@ -310,7 +319,11 @@ struct ReadinessDetailHeaderCard: View {
                 .foregroundStyle(appTheme.colors.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text(readiness.category.meaning)
+            Text(
+                readiness.isProvisional
+                    ? "\(readiness.category.displayName) score range; training guidance waits for more evidence."
+                    : readiness.category.meaning
+            )
                 .font(AppTypography.bodyEmphasis)
                 .foregroundStyle(readinessColor(for: readiness.category, theme: appTheme))
 
@@ -395,6 +408,16 @@ struct ReadinessFactorCard: View {
                             Text("\(score)")
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(impactColor)
+
+                            Text(contributionText)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(impactColor)
+                                .accessibilityIdentifier("readiness-factor-\(factor.kind.rawValue)-contribution")
+                        } else {
+                            Text("Not included")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(appTheme.colors.textTertiary)
+                                .accessibilityIdentifier("readiness-factor-\(factor.kind.rawValue)-availability")
                         }
                     }
 
@@ -413,124 +436,16 @@ struct ReadinessFactorCard: View {
             }
         }
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("readiness-factor-\(factor.kind.rawValue)")
     }
 
     private var impactColor: Color {
         color(for: factor.impact, theme: appTheme)
     }
-}
 
-struct CheckInStatusCard: View {
-    @Environment(\.appTheme) private var appTheme
-    @State private var showingCheckIn = false
-
-    let checkIn: DailyCoachCheckIn?
-
-    var body: some View {
-        FitnessCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .center, spacing: 12) {
-                    FitnessIconBadge(
-                        systemImage: checkIn == nil ? "slider.horizontal.3" : "checkmark.circle.fill",
-                        size: 42
-                    )
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(checkIn == nil ? "No check-in yet" : "Today's check-in complete")
-                            .font(.headline)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-
-                        Text(checkIn == nil ? "Add energy, soreness, stress, and motivation to sharpen the coach brief." : checkInSummary)
-                            .font(.subheadline)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-
-                if let note = checkIn?.note {
-                    Text(note)
-                        .font(.footnote)
-                        .foregroundStyle(appTheme.colors.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if checkIn == nil {
-                    Button {
-                        presentCheckIn()
-                    } label: {
-                        Label("Check in", systemImage: "plus.circle")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(PrimaryFitnessButtonStyle())
-                    .accessibilityIdentifier("coach-check-in-open")
-                } else {
-                    Button {
-                        presentCheckIn()
-                    } label: {
-                        Label("Edit check-in", systemImage: "pencil")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(SecondaryFitnessButtonStyle())
-                    .accessibilityIdentifier("coach-check-in-open")
-                }
-            }
-        }
-        .sheet(isPresented: $showingCheckIn) {
-            DailyCheckInSheet(existingCheckIn: checkIn)
-        }
-    }
-
-    private var checkInSummary: String {
-        guard let checkIn else { return "" }
-        return "Energy \(checkIn.energy)/5, soreness \(checkIn.soreness)/5, stress \(checkIn.stress)/5, motivation \(checkIn.motivation)/5."
-    }
-
-    private func presentCheckIn() {
-        showingCheckIn = true
-        DispatchQueue.main.async {
-            AppHaptics.selection()
-        }
-    }
-}
-
-struct WorkoutReadinessBriefCard: View {
-    @Environment(\.appTheme) private var appTheme
-
-    let readiness: ReadinessScore
-
-    var body: some View {
-        FitnessCard {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text("Readiness: \(readiness.value)")
-                        .font(.headline)
-                        .foregroundStyle(appTheme.colors.textPrimary)
-
-                    Text(readiness.category.displayName)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(readinessColor(for: readiness.category, theme: appTheme))
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .background(readinessColor(for: readiness.category, theme: appTheme).opacity(0.14), in: Capsule())
-
-                    Spacer(minLength: 8)
-                }
-
-                Text(readiness.workoutAdjustment)
-                    .font(.subheadline)
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if let top = readiness.topFactors.first {
-                    Label(top.title, systemImage: top.kind.systemImage)
-                        .font(.caption)
-                        .foregroundStyle(color(for: top.impact, theme: appTheme))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Workout readiness \(readiness.value), \(readiness.category.displayName). \(readiness.workoutAdjustment)")
+    private var contributionText: String {
+        let value = factor.contribution.formatted(.number.precision(.fractionLength(1)))
+        return "\(factor.contribution > 0 ? "+" : "")\(value) pts"
     }
 }
 
@@ -560,7 +475,11 @@ struct ReadinessContextCard: View {
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Text("Daily readiness \(readiness.value) - \(readiness.category.displayName)")
+                    Text(
+                        readiness.isProvisional
+                            ? "Daily readiness \(readiness.value) - Provisional"
+                            : "Daily readiness \(readiness.value) - \(readiness.category.displayName)"
+                    )
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(readinessColor(for: readiness.category, theme: appTheme))
                 }
@@ -992,99 +911,6 @@ struct LiftProgressInsightsCard: View {
     }
 }
 
-struct AdaptiveWorkoutGuidanceCard: View {
-    @Environment(\.appTheme) private var appTheme
-
-    let guidance: AdaptiveWorkoutGuidance
-
-    var body: some View {
-        FitnessCard {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 12) {
-                    FitnessIconBadge(
-                        systemImage: icon,
-                        size: 42,
-                        tint: modeColor,
-                        background: modeColor.opacity(0.14)
-                    )
-
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(guidance.title)
-                            .font(.headline)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        Text("\(guidance.readinessCategory.displayName) readiness - \(guidance.mode.displayName)")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(modeColor)
-                    }
-
-                    Spacer(minLength: 8)
-                }
-
-                Text(guidance.summary)
-                    .font(.subheadline)
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text(guidance.fatigueContext)
-                    .font(.caption)
-                    .foregroundStyle(appTheme.colors.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(guidance.adjustmentChips, id: \.self) { chip in
-                            Text(chip)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(appTheme.colors.textPrimary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 7)
-                                .background(appTheme.colors.cardBackgroundElevated, in: Capsule())
-                        }
-                    }
-                    .padding(.vertical, 1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .clipped()
-                .mask(Rectangle())
-                .accessibilityIdentifier("workout-preview-guidance-chips")
-
-                Label("Advisory only. Workout plan stays unchanged.", systemImage: "hand.raised.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.textTertiary)
-            }
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private var icon: String {
-        switch guidance.mode {
-        case .push:
-            return "arrow.up.circle.fill"
-        case .maintain:
-            return "checkmark.circle.fill"
-        case .reduce:
-            return "arrow.down.circle.fill"
-        case .recoveryFocus:
-            return "leaf.fill"
-        }
-    }
-
-    private var modeColor: Color {
-        switch guidance.mode {
-        case .push:
-            return appTheme.colors.success
-        case .maintain:
-            return appTheme.colors.accent
-        case .reduce:
-            return appTheme.colors.warning
-        case .recoveryFocus:
-            return appTheme.colors.danger
-        }
-    }
-}
-
 struct CoachHabitContributorsCard: View {
     @Environment(\.appTheme) private var appTheme
 
@@ -1155,13 +981,35 @@ struct CoachHabitContributorsCard: View {
     }
 }
 
+struct DailyCheckInDraft: Identifiable, Hashable, Sendable {
+    let id = UUID()
+    let presentationRequestedAt: Date
+    let existingCheckInID: UUID?
+    let date: Date
+    let energy: Int
+    let soreness: Int
+    let stress: Int
+    let motivation: Int
+    let note: String
+
+    init(date: Date = .now, existingCheckIn: DailyCoachCheckInSnapshot?) {
+        presentationRequestedAt = .now
+        existingCheckInID = existingCheckIn?.id
+        self.date = existingCheckIn?.date ?? Calendar.current.startOfDay(for: date)
+        energy = existingCheckIn?.energy ?? 3
+        soreness = existingCheckIn?.soreness ?? 3
+        stress = existingCheckIn?.stress ?? 3
+        motivation = existingCheckIn?.motivation ?? 3
+        note = existingCheckIn?.note ?? ""
+    }
+}
+
 struct DailyCheckInSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
 
-    let date: Date
-    let existingCheckIn: DailyCoachCheckIn?
+    let draft: DailyCheckInDraft
 
     @State private var energy: Int
     @State private var soreness: Int
@@ -1169,21 +1017,24 @@ struct DailyCheckInSheet: View {
     @State private var motivation: Int
     @State private var note: String
     @State private var errorText: String?
+    @State private var hasAppeared = false
 
-    init(date: Date = .now, existingCheckIn: DailyCoachCheckIn?) {
-        self.date = date
-        self.existingCheckIn = existingCheckIn
-        _energy = State(initialValue: existingCheckIn?.energy ?? 3)
-        _soreness = State(initialValue: existingCheckIn?.soreness ?? 3)
-        _stress = State(initialValue: existingCheckIn?.stress ?? 3)
-        _motivation = State(initialValue: existingCheckIn?.motivation ?? 3)
-        _note = State(initialValue: existingCheckIn?.note ?? "")
+    init(draft: DailyCheckInDraft) {
+        self.draft = draft
+        _energy = State(initialValue: draft.energy)
+        _soreness = State(initialValue: draft.soreness)
+        _stress = State(initialValue: draft.stress)
+        _motivation = State(initialValue: draft.motivation)
+        _note = State(initialValue: draft.note)
     }
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            fixedHeader
+            checkInDivider
+
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                LazyVStack(alignment: .leading, spacing: 16) {
                     sheetHeader
                     ratingsCard
                     noteCard
@@ -1195,10 +1046,9 @@ struct DailyCheckInSheet: View {
                     }
 
                     Button {
-                        AppHaptics.success()
                         save()
                     } label: {
-                        Label(existingCheckIn == nil ? "Save check-in" : "Update check-in", systemImage: "checkmark.circle.fill")
+                        Label(draft.existingCheckInID == nil ? "Save check-in" : "Update check-in", systemImage: "checkmark.circle.fill")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(PrimaryFitnessButtonStyle())
@@ -1207,18 +1057,51 @@ struct DailyCheckInSheet: View {
                 .padding(.top, 18)
                 .padding(.bottom, appTheme.metrics.screenBottomPadding)
             }
-            .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle("Check-In")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
+        }
+        .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
+        .peaklineKeyboardDismissal()
+        .onAppear {
+            hasAppeared = true
+        }
+        .task {
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            let elapsedMilliseconds = max(
+                0,
+                Int(Date.now.timeIntervalSince(draft.presentationRequestedAt) * 1_000)
+            )
+            PerformanceTracer.mark(
+                .checkInSheetPresentation,
+                "stable_frame elapsed_ms=\(elapsedMilliseconds)"
+            )
+        }
+        .accessibilityIdentifier("check-in-sheet")
+    }
+
+    private var fixedHeader: some View {
+        ZStack {
+            Text("Check-In")
+                .font(AppTypography.cardTitle)
+                .foregroundStyle(appTheme.colors.textPrimary)
+                .accessibilityIdentifier("check-in-sheet-title")
+
+            HStack {
+                Spacer()
+
+                Button("Done") {
+                    PerformanceTracer.mark(.checkInSheetPresentation, "dismissed action=done")
+                    dismiss()
                 }
+                .font(AppTypography.bodyEmphasis)
+                .foregroundStyle(appTheme.colors.accent)
+                .frame(minWidth: 44, minHeight: 44)
+                .accessibilityIdentifier("check-in-done")
             }
         }
+        .padding(.horizontal, appTheme.metrics.screenPadding)
+        .padding(.vertical, 8)
+        .background(appTheme.colors.backgroundPrimary)
     }
 
     private var sheetHeader: some View {
@@ -1240,21 +1123,21 @@ struct DailyCheckInSheet: View {
     }
 
     private var ratingsCard: some View {
-        FitnessCard(style: .compact) {
+        CheckInFlatCard {
             VStack(alignment: .leading, spacing: 14) {
-                CheckInRatingRow(title: "Energy", lowLabel: "Low", highLabel: "High", value: $energy)
+                CheckInRatingRow(title: "Energy", lowLabel: "Low", highLabel: "High", value: $energy, animationsEnabled: hasAppeared)
                 checkInDivider
-                CheckInRatingRow(title: "Soreness", lowLabel: "Low", highLabel: "High", value: $soreness)
+                CheckInRatingRow(title: "Soreness", lowLabel: "Low", highLabel: "High", value: $soreness, animationsEnabled: hasAppeared)
                 checkInDivider
-                CheckInRatingRow(title: "Stress", lowLabel: "Low", highLabel: "High", value: $stress)
+                CheckInRatingRow(title: "Stress", lowLabel: "Low", highLabel: "High", value: $stress, animationsEnabled: hasAppeared)
                 checkInDivider
-                CheckInRatingRow(title: "Motivation", lowLabel: "Low", highLabel: "High", value: $motivation)
+                CheckInRatingRow(title: "Motivation", lowLabel: "Low", highLabel: "High", value: $motivation, animationsEnabled: hasAppeared)
             }
         }
     }
 
     private var noteCard: some View {
-        FitnessCard(style: .compact) {
+        CheckInFlatCard {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Optional note")
                     .font(AppTypography.sectionTitle)
@@ -1280,7 +1163,7 @@ struct DailyCheckInSheet: View {
     private func save() {
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if let existingCheckIn {
+        if let existingCheckIn = existingCheckInModel() {
             existingCheckIn.update(
                 energy: energy,
                 soreness: soreness,
@@ -1291,7 +1174,8 @@ struct DailyCheckInSheet: View {
         } else {
             modelContext.insert(
                 DailyCoachCheckIn(
-                    date: date,
+                    id: draft.existingCheckInID ?? UUID(),
+                    date: draft.date,
                     energy: energy,
                     soreness: soreness,
                     stress: stress,
@@ -1303,10 +1187,49 @@ struct DailyCheckInSheet: View {
 
         do {
             try modelContext.save()
+            AppHaptics.success()
+            PerformanceTracer.mark(.checkInSheetPresentation, "dismissed action=save")
             dismiss()
         } catch {
             errorText = "Could not save today's check-in."
         }
+    }
+
+    private func existingCheckInModel() -> DailyCoachCheckIn? {
+        guard let existingCheckInID = draft.existingCheckInID else { return nil }
+        let descriptor = FetchDescriptor<DailyCoachCheckIn>(
+            predicate: #Predicate<DailyCoachCheckIn> { checkIn in
+                checkIn.id == existingCheckInID
+            }
+        )
+        return (try? modelContext.fetch(descriptor))?.first
+    }
+}
+
+private struct CheckInFlatCard<Content: View>: View {
+    @Environment(\.appTheme) private var appTheme
+
+    @ViewBuilder let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        let shape = RoundedRectangle(
+            cornerRadius: appTheme.metrics.compactCardRadius,
+            style: .continuous
+        )
+
+        content
+            .padding(appTheme.metrics.compactCardPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(appTheme.cardBackground, in: shape)
+            .overlay {
+                shape
+                    .stroke(appTheme.cardBorder.opacity(0.54), lineWidth: 1)
+            }
+            .contentShape(shape)
     }
 }
 
@@ -1318,6 +1241,7 @@ private struct CheckInRatingRow: View {
     let lowLabel: String
     let highLabel: String
     @Binding var value: Int
+    let animationsEnabled: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1346,15 +1270,35 @@ private struct CheckInRatingRow: View {
             ForEach(1...5, id: \.self) { rating in
                 Button {
                     AppHaptics.selection()
-                    PerformanceTracer.trace(.motionCheckInSelect) {
-                        withAnimation(AppMotion.checkInSelect(reduceMotion: reduceMotion)) {
-                            value = rating
-                        }
+                    let responseStartedAt = Date.now
+                    PerformanceTracer.mark(
+                        .motionCheckInSelect,
+                        "requested row=\(identifierSuffix) value=\(rating)"
+                    )
+                    value = rating
+                    DispatchQueue.main.async {
+                        let elapsedMilliseconds = max(
+                            0,
+                            Int(Date.now.timeIntervalSince(responseStartedAt) * 1_000)
+                        )
+                        PerformanceTracer.mark(
+                            .motionCheckInSelect,
+                            "response_ms=\(elapsedMilliseconds) row=\(identifierSuffix) value=\(rating)"
+                        )
                     }
                 } label: {
                     ZStack {
                         Circle()
                             .fill(rating <= value ? appTheme.colors.accent : appTheme.colors.cardBackgroundElevated)
+                            .overlay {
+                                Circle()
+                                    .stroke(
+                                        rating <= value
+                                            ? appTheme.colors.accent.opacity(0.55)
+                                            : appTheme.colors.cardBorder,
+                                        lineWidth: 1
+                                    )
+                            }
                             .frame(width: 44, height: 44)
 
                         Text("\(rating)")
@@ -1366,18 +1310,20 @@ private struct CheckInRatingRow: View {
                     }
                     .frame(width: 48, height: 48)
                     .contentShape(Rectangle())
-                    .peaklineSelectionMotion(
-                        isSelected: rating == value,
-                        reduceMotion: reduceMotion,
-                        role: .checkInSelect
-                    )
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("check-in-rating-\(identifierSuffix)-\(rating)")
                 .accessibilityLabel("\(title) \(rating) of 5")
+                .accessibilityValue(rating == value ? "Selected" : "Not selected")
                 .accessibilityAddTraits(rating == value ? .isSelected : [])
             }
         }
+        .animation(selectionAnimation, value: value)
+    }
+
+    private var selectionAnimation: Animation? {
+        guard animationsEnabled, !reduceMotion else { return nil }
+        return .easeOut(duration: 0.18)
     }
 
     private var identifierSuffix: String {

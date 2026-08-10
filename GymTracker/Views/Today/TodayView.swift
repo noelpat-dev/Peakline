@@ -5,6 +5,7 @@ struct TodayView: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var readinessRefreshClock = ReadinessRefreshClock.shared
 
     @Query
     private var activeSplits: [TrainingSplit]
@@ -35,8 +36,8 @@ struct TodayView: View {
 
     @State private var selectedRoute: TodayRoute?
     @State private var showingRestDayConfirmation = false
-    @State private var previewSplit: WorkoutPreviewSplit?
-    @State private var previewMode: WorkoutMode = .full
+    @State private var previewRoute: WorkoutPreviewPreparedRoute?
+    @State private var previewNavigationKey: String?
     @State private var startWorkoutRoute: StartWorkoutRoute?
     @State private var sleepSettings = SleepSettingsStore().load()
     @State private var sleepReadinessSnapshot = SleepAnalyticsService.emptyReadinessSnapshot()
@@ -44,29 +45,40 @@ struct TodayView: View {
     @State private var coachSnapshot = CoachIntelligenceService.emptySnapshot()
     @State private var lastCoachSnapshotSignature: String?
     @State private var todaySnapshot = TodayDashboardSnapshot.empty
+    @State private var trainingCallSnapshot = TrainingCallSnapshot.placeholder
     @State private var lastTodaySnapshotSignature: String?
     @State private var hydrationTargetML = HydrationSettingsStore().dailyTargetML()
     @State private var nutritionGoal = NutritionGoalService().loadGoal()
     @State private var didRequestInitialRefresh = false
     @State private var pendingRouteNavigation: TodayRouteNavigationStart?
+    @State private var backupWarning: String?
+    @State private var checkInDraft: DailyCheckInDraft?
+    @State private var isWorkoutCompletionPresentationActive = false
+    @State private var isDashboardVisible = false
 
+    private let initialStartupSnapshot: StartupSnapshotBundle?
     private let coachIntelligence = CoachIntelligenceService()
     private let decisionService = TrainingDecisionService()
+    private let rotationService = TrainingRotationService()
     private let trainingCallBuilder = TrainingCallSnapshotBuilder()
     private let modePlanner = WorkoutModePlanner()
     private let sleepCoaching = SleepCoachingService()
     private let sleepSettingsStore = SleepSettingsStore()
     private let sleepReadinessStore = SleepWorkoutReadinessSnapshotStore.shared
+    private let workoutDashboardWarmStartStore = WorkoutDashboardWarmStartStore.shared
     private let hydrationService = HydrationService()
     private let hydrationSettingsStore = HydrationSettingsStore()
     private let nutritionGoalStore = NutritionGoalService()
+    private let accountService = FirebaseAccountService()
+    private let backupCoordinator = BackupCoordinator()
 
     private let weekColumns = [
         GridItem(.flexible(), spacing: 12),
         GridItem(.flexible(), spacing: 12)
     ]
 
-    init() {
+    init(startupSnapshot: StartupSnapshotBundle? = nil) {
+        initialStartupSnapshot = startupSnapshot
         _activeSplits = Query(Self.activeSplitsDescriptor)
         _exercises = Query(Self.exercisesDescriptor)
         _completedSessions = Query(Self.completedSessionsDescriptor)
@@ -76,6 +88,19 @@ struct TodayView: View {
         _hydrationEntries = Query(Self.hydrationEntriesDescriptor)
         _foodLogEntries = Query(Self.foodLogEntriesDescriptor)
         _coachCheckIns = Query(Self.coachCheckInsDescriptor)
+        _sleepReadinessSnapshot = State(
+            initialValue: startupSnapshot?.sleepReadinessSnapshot
+                ?? SleepAnalyticsService.emptyReadinessSnapshot()
+        )
+        _coachSnapshot = State(
+            initialValue: startupSnapshot?.coachSnapshot
+                ?? CoachIntelligenceService.emptySnapshot()
+        )
+        _trainingCallSnapshot = State(
+            initialValue: startupSnapshot?.trainingCall
+                ?? WorkoutDashboardWarmStartStore.shared.trainingCall
+                ?? .placeholder
+        )
     }
 
     private static var activeSplitsDescriptor: FetchDescriptor<TrainingSplit> {
@@ -155,20 +180,13 @@ struct TodayView: View {
     }
 
     private var currentTodaySnapshot: TodayDashboardSnapshot {
-        guard lastTodaySnapshotSignature != nil else {
-            return todaySnapshot
-        }
-
-        let signature = todaySnapshotSignature
-        if signature == lastTodaySnapshotSignature {
-            return todaySnapshot
-        }
-
-        return todaySnapshot
+        todaySnapshot
     }
 
     private var todaySnapshotSignature: String {
-        let splitSignature = signature(activeSplits, limit: 12) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970):\($0.exercises.count)" }
+        let splitSignature = signature(activeSplits, limit: 12) {
+            "\($0.id.uuidString):\($0.activeRotationIndex ?? -1):\($0.updatedAt.timeIntervalSince1970):\($0.exercises.count)"
+        }
         let sessionSignature = signature(completedSessions, limit: 40) { session in
             let setSignature = session.exerciseLogs
                 .flatMap(\.setLogs)
@@ -187,22 +205,24 @@ struct TodayView: View {
         ].joined(separator: "|")
     }
 
+    private var todaySnapshotSignatureForObservation: String? {
+        isWorkoutCompletionPresentationActive || !isDashboardVisible ? nil : todaySnapshotSignature
+    }
+
     private var trainingDecision: TrainingDecision {
         currentTodaySnapshot.trainingDecision
     }
 
     private var trainingCall: TrainingCallSnapshot {
-        trainingCallBuilder.make(
-            decision: trainingDecision,
-            activeSplits: activeSplits,
-            completedSessions: Array(completedSessions.prefix(40)),
-            readiness: readinessScore,
-            fatigueRisk: currentCoachSnapshot.fatigueRisk
-        )
+        trainingCallSnapshot
     }
 
     private var currentSleepReadinessSignature: SleepAnalyticsInputSignature {
         SleepAnalyticsInputSignature(sessions: sleepSessions, naps: napSessions, workouts: Array(completedSessions.prefix(12)), settings: sleepSettings, sessionLimit: 45, workoutLimit: 12)
+    }
+
+    private var sleepReadinessSignatureForObservation: SleepAnalyticsInputSignature? {
+        isWorkoutCompletionPresentationActive || !isDashboardVisible ? nil : currentSleepReadinessSignature
     }
 
     private var hydrationSummary: DailyHydrationSummary {
@@ -214,34 +234,18 @@ struct TodayView: View {
     }
 
     private var currentSleepReadinessSnapshot: SleepWorkoutReadinessSnapshot {
-        guard lastSleepReadinessSignature != nil else {
-            return sleepReadinessSnapshot
-        }
-
-        let signature = currentSleepReadinessSignature
-        if signature == lastSleepReadinessSignature {
-            return sleepReadinessSnapshot
-        }
-
-        return sleepReadinessSnapshot
+        sleepReadinessSnapshot
     }
 
     private var currentCoachSnapshot: CoachIntelligenceSnapshot {
-        guard lastCoachSnapshotSignature != nil else {
-            return coachSnapshot
-        }
-
-        let signature = currentCoachSnapshotSignature
-        if signature == lastCoachSnapshotSignature {
-            return coachSnapshot
-        }
-
-        return coachSnapshot
+        coachSnapshot
     }
 
     private var currentCoachSnapshotSignature: String {
         [
-            signature(activeSplits, limit: 12) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(activeSplits, limit: 12) {
+                "\($0.id.uuidString):\($0.activeRotationIndex ?? -1):\($0.updatedAt.timeIntervalSince1970)"
+            },
             signature(exercises, limit: 120) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
             signature(completedSessions, limit: 40) { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.endedAt?.timeIntervalSince1970 ?? 0)" },
             signature(sleepSessions, limit: 45) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
@@ -251,8 +255,13 @@ struct TodayView: View {
             signature(coachCheckIns, limit: 14) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
             sleepSettingsSignature,
             "\(hydrationTargetML)",
-            "\(nutritionGoal.updatedAt.timeIntervalSince1970)"
+            "\(nutritionGoal.updatedAt.timeIntervalSince1970)",
+            readinessRefreshClock.token.signature
         ].joined(separator: "|")
+    }
+
+    private var coachSnapshotSignatureForObservation: String? {
+        isWorkoutCompletionPresentationActive || !isDashboardVisible ? nil : currentCoachSnapshotSignature
     }
 
     private var sleepSettingsSignature: String {
@@ -291,28 +300,39 @@ struct TodayView: View {
         let nextSnapshot = PerformanceTracer.trace(.todaySnapshot) {
             makeTodaySnapshot()
         }
+        let nextTrainingCall = makeTrainingCall(
+            decision: nextSnapshot.trainingDecision,
+            coachSnapshot: currentCoachSnapshot
+        )
         AppMotion.withoutAnimation {
             todaySnapshot = nextSnapshot
+            trainingCallSnapshot = nextTrainingCall
             lastTodaySnapshotSignature = signature
         }
+        workoutDashboardWarmStartStore.update(
+            trainingCall: nextTrainingCall,
+            sourceSignature: signature
+        )
     }
 
     private func makeTodaySnapshot() -> TodayDashboardSnapshot {
         let sessionSnapshots = completedSessions.prefix(40).map(makeWorkoutSessionSnapshot)
+        let orderedActiveSplits = rotationService.orderedActiveSplits(activeSplits)
         let decision = decisionService.decision(
-            activeSplits: activeSplits,
+            activeSplits: orderedActiveSplits,
             completedSessions: Array(completedSessions.prefix(40))
         )
-        let recentCycleNames = makeRecentPPLCycleNames(from: sessionSnapshots)
-        let suggested = activeSplits.first { $0.name == decision.recommendedSplitName } ?? makeSuggestedSplit(
-            recentPPLCycleNames: recentCycleNames,
-            sessionSnapshots: sessionSnapshots
-        )
+        let recentCycleNames = makeRecentProgrammeCycleNames(from: sessionSnapshots)
+        let suggested = orderedActiveSplits.first { $0.name == decision.recommendedSplitName }
+            ?? orderedActiveSplits.first
         let weekSessionSnapshots = makeWeeklySessionSnapshots(from: sessionSnapshots)
         let workingSets = weekSessionSnapshots.reduce(0) { $0 + $1.workingSetCount }
         let volume = weekSessionSnapshots.reduce(0) { $0 + $1.workingSetVolume }
         let latestWorkoutSummaryText = sessionSnapshots.first.map {
-            "\($0.exerciseCount) exercises - \($0.workingSetCount) working sets"
+            PeaklineText.joinedMetadata([
+                PeaklineText.count($0.exerciseCount, singular: "exercise"),
+                PeaklineText.count($0.workingSetCount, singular: "working set")
+            ])
         } ?? ""
         let coverageNames = makeSplitCoverageNames(from: activeSplits)
         let trainedNames = Set(weekSessionSnapshots.map(\.baseSplitName))
@@ -327,7 +347,7 @@ struct TodayView: View {
                 targetML: hydrationTargetML
             ),
             suggestedSplit: suggested,
-            recentPPLCycleNames: recentCycleNames,
+            recentProgrammeCycleNames: recentCycleNames,
             weeklySessions: weekSessionSnapshots.map(\.session),
             latestWorkoutSummaryText: latestWorkoutSummaryText,
             workoutsThisWeek: weekSessionSnapshots.count,
@@ -342,26 +362,25 @@ struct TodayView: View {
 
     var body: some View {
         let intelligence = currentCoachSnapshot
+        let nutritionSummary = NutritionHomeSummarySnapshot.make(
+            foodLogs: foodLogEntries,
+            completedSessions: completedSessions,
+            goal: nutritionGoal
+        )
 
         NavigationStack {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: appTheme.metrics.screenContentSpacing) {
-                    DashboardHeaderView(
-                        dateText: todayDateText,
-                        title: "Today",
-                        subtitle: "Your lifting dashboard"
-                    )
-                    .padding(.bottom, 2)
+                    if let backupWarning {
+                        BackupHealthWarningCard(message: backupWarning)
+                    }
 
                     HeroRecommendationCard(
                         eyebrow: "Suggested today",
                         splitName: suggestedSplit?.name ?? "Create a split",
                         reason: trainingCall.reason,
                         context: trainingCall.targetSummary ?? recommendationContext,
-                        iconKey: ExerciseIconMapper.splitIconKey(for: suggestedSplit?.name ?? ""),
                         chips: heroChips,
-                        nextActionTitle: todayNextActionTitle,
-                        nextActionDetail: todayNextActionDetail,
                         primaryTitle: unfinishedSessions.isEmpty ? "Start Workout" : "Resume Workout",
                         secondaryTitle: "Preview Split",
                         primarySystemImage: unfinishedSessions.isEmpty ? "play.fill" : "arrow.clockwise.circle.fill",
@@ -375,7 +394,16 @@ struct TodayView: View {
                     DashboardSection(title: "Daily Coach Brief") {
                         CoachBriefCard(
                             readiness: intelligence.readiness,
-                            viewBrief: openCoachRoute
+                            viewBrief: openCoachRoute,
+                            editCheckIn: {
+                                guard checkInDraft == nil else {
+                                    PerformanceTracer.mark(.checkInSheetPresentation, "duplicate_request_ignored source=today")
+                                    return
+                                }
+                                checkInDraft = DailyCheckInDraft(
+                                    existingCheckIn: intelligence.readiness.checkIn
+                                )
+                            }
                         )
                     }
 
@@ -402,7 +430,7 @@ struct TodayView: View {
                         Button {
                             openRoute(.nutrition)
                         } label: {
-                            NutritionHomeSummaryCard()
+                            NutritionHomeSummaryCard(snapshot: nutritionSummary)
                         }
                         .buttonStyle(PressableCardButtonStyle())
                     }
@@ -436,7 +464,7 @@ struct TodayView: View {
                             WeekMetricTile(
                                 label: "Volume",
                                 value: volumeThisWeekText,
-                                caption: "Load x reps",
+                                caption: "Load × reps",
                                 systemImage: "scalemass"
                             )
                             WeekMetricTile(
@@ -467,8 +495,23 @@ struct TodayView: View {
             .navigationDestination(item: $selectedRoute) { route in
                 destination(for: route)
             }
-            .navigationDestination(item: $previewSplit) { split in
-                WorkoutPreviewRouteView(split: split, initialMode: previewMode)
+            .navigationDestination(item: $previewRoute) { route in
+                WorkoutPreviewRouteView(preparedRoute: route) {
+                    previewRoute = nil
+                }
+                .onAppear {
+                    if let previewNavigationKey {
+                        NavigationInteraction.destinationDidAppear(
+                            key: previewNavigationKey
+                        )
+                        self.previewNavigationKey = nil
+                    }
+                }
+            }
+            .sheet(item: $checkInDraft) { draft in
+                DailyCheckInSheet(draft: draft)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
             }
             .alert("Rest day noted", isPresented: $showingRestDayConfirmation) {
                 Button("OK", role: .cancel) {}
@@ -476,6 +519,8 @@ struct TodayView: View {
                 Text("Persistent rest-day logging is still on the roadmap. For now, your workout history remains unchanged.")
             }
             .onAppear {
+                isDashboardVisible = true
+                readinessRefreshClock.start()
                 sleepSettings = sleepSettingsStore.load()
                 hydrationTargetML = hydrationSettingsStore.dailyTargetML()
                 nutritionGoal = nutritionGoalStore.loadGoal()
@@ -483,19 +528,62 @@ struct TodayView: View {
                 didRequestInitialRefresh = true
                 DispatchQueue.main.async {
                     refreshTodaySnapshot(force: shouldForceRefresh)
-                    refreshSleepReadiness(force: shouldForceRefresh)
-                    refreshCoachSnapshot(force: shouldForceRefresh)
+                    if initialStartupSnapshot == nil {
+                        refreshSleepReadiness(force: shouldForceRefresh)
+                        refreshCoachSnapshot(force: shouldForceRefresh)
+                    } else {
+                        lastSleepReadinessSignature = currentSleepReadinessSignature
+                        lastCoachSnapshotSignature = currentCoachSnapshotSignature
+                    }
                 }
+                Task { await refreshBackupWarning() }
             }
-            .onChange(of: todaySnapshotSignature) { _, _ in
+            .onChange(of: todaySnapshotSignatureForObservation) { _, signature in
+                guard signature != nil else { return }
                 refreshTodaySnapshot()
             }
-            .onChange(of: currentSleepReadinessSignature) { _, _ in
+            .onChange(of: sleepReadinessSignatureForObservation) { _, signature in
+                guard signature != nil else { return }
                 refreshSleepReadiness()
             }
-            .onChange(of: currentCoachSnapshotSignature) { _, _ in
+            .onChange(of: coachSnapshotSignatureForObservation) { _, signature in
+                guard signature != nil else { return }
                 refreshCoachSnapshot()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .workoutCompletionPresentationBegan)) { _ in
+                isWorkoutCompletionPresentationActive = true
+                PerformanceTracer.mark(.workoutLoggerFinish, "today_refresh_suspended")
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .workoutCompletionPresentationEnded)) { _ in
+                isWorkoutCompletionPresentationActive = false
+                PerformanceTracer.mark(.workoutLoggerFinish, "today_refresh_resumed")
+            }
+            .onDisappear {
+                isDashboardVisible = false
+            }
+        }
+    }
+
+    private func refreshBackupWarning() async {
+        guard !ProcessInfo.processInfo.arguments.contains("-UITestInMemoryStore")
+                && !ProcessInfo.processInfo.arguments.contains("-SkipAccountGate") else {
+            backupWarning = nil
+            return
+        }
+
+        let readiness = await accountService.readiness()
+        guard readiness.isReady else {
+            backupWarning = readiness.message
+            return
+        }
+
+        switch await backupCoordinator.latestMetadata() {
+        case .available:
+            backupWarning = nil
+        case .noBackup:
+            backupWarning = "No encrypted Firebase backup has been saved yet. Open Settings -> Account & Backup and save one before deleting the app."
+        case .unavailable(let message), .failed(let message):
+            backupWarning = message
         }
     }
 
@@ -567,10 +655,17 @@ struct TodayView: View {
 
         PerformanceTracer.mark(.todayRouteSelection, "\(route.analyticsName) requested")
         PerformanceTracer.mark(.todayRouteSelectionState, "before selectedRoute=\(route.analyticsName)")
-        AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
+        let navigationKey = "today.\(route.analyticsName)"
+        guard NavigationInteraction.perform(
+            key: navigationKey,
+            destinationClass: route.destinationClass,
+            haptic: route == .workout ? .medium : .selection,
+            action: {
             PerformanceTracer.trace(.todayRouteSelection) {
                 selectedRoute = route
             }
+        }) else {
+            return
         }
         PerformanceTracer.mark(.todayRouteSelectionState, "after selectedRoute=\(route.analyticsName)")
         pendingRouteNavigation = TodayRouteNavigationStart(route: route, startedAt: ContinuousClock.now)
@@ -589,10 +684,21 @@ struct TodayView: View {
             case .workout:
                 StartWorkoutContentView { route in
                     guard startWorkoutRoute != route else { return }
-                    startWorkoutRoute = route
+                    NavigationInteraction.perform(
+                        key: "today.workout.\(route.analyticsName)",
+                        destinationClass: route.destinationClass,
+                        haptic: .selection
+                    ) {
+                        startWorkoutRoute = route
+                    }
                 }
                 .navigationDestination(item: $startWorkoutRoute) { route in
                     startWorkoutDestination(for: route)
+                        .onAppear {
+                            NavigationInteraction.destinationDidAppear(
+                                key: "today.workout.\(route.analyticsName)"
+                            )
+                        }
                 }
             case .coach:
                 CoachRouteDestinationView(
@@ -607,7 +713,10 @@ struct TodayView: View {
             case .nutrition:
                 NutritionDashboardView()
             case .sleep:
-                SleepDashboardView()
+                SleepDashboardView(
+                    initialSnapshot: initialStartupSnapshot?.sleepAnalyticsSnapshot,
+                    initialReadinessScore: initialStartupSnapshot?.coachSnapshot.readiness
+                )
             case .hydration:
                 HydrationView()
             }
@@ -619,6 +728,9 @@ struct TodayView: View {
         }
         .onAppear {
             PerformanceTracer.mark(.todayRouteDestination, "onAppear route=\(route.analyticsName)")
+            NavigationInteraction.destinationDidAppear(
+                key: "today.\(route.analyticsName)"
+            )
             markRouteAppeared(route)
         }
     }
@@ -631,7 +743,9 @@ struct TodayView: View {
         case .templates:
             WorkoutTemplateLibraryView()
         case let .preview(route):
-            WorkoutPreviewRouteView(split: route.split, initialMode: route.mode)
+            WorkoutPreviewRouteView(preparedRoute: route.preparedRoute) {
+                startWorkoutRoute = nil
+            }
         }
     }
 
@@ -706,18 +820,14 @@ struct TodayView: View {
 
     private var recommendationReason: String {
         guard let split = suggestedSplit else {
-            return "Starter Push/Pull/Legs templates will appear after seed data is created."
+            return "Add training days to create an active programme rotation."
         }
 
-        if recentPPLCycleNames.isEmpty {
-            return "Start your Push/Pull/Legs rotation with \(split.name)."
+        if recentProgrammeCycleNames.isEmpty {
+            return "Start your active programme rotation with \(split.name)."
         }
 
-        if recentPPLCycleNames.contains(split.name) {
-            return "You have completed this PPL round. \(split.name) starts the next rotation."
-        }
-
-        return "\(split.name) is next because it has not been completed in your current Push/Pull/Legs rotation."
+        return "\(split.name) follows your most recent completed programme day."
     }
 
     private var recommendationContext: String? {
@@ -725,16 +835,16 @@ struct TodayView: View {
             return "Create active templates to unlock daily training guidance."
         }
 
-        if recentPPLCycleNames.isEmpty {
+        if recentProgrammeCycleNames.isEmpty {
             return "Baseline week: log each split once so Peakline can calibrate targets."
         }
 
-        if recentPPLCycleNames.count == PPLRotation.names.count {
-            return "Full PPL round logged. Begin the next pass with a clean target."
+        if recentProgrammeCycleNames.count == programmeOrderedSplits.count {
+            return "Full programme rotation logged. Begin the next pass with a clean target."
         }
 
-        let completed = recentPPLCycleNames.reversed().joined(separator: " / ")
-        return "Current round logged: \(completed)."
+        let completed = recentProgrammeCycleNames.reversed().joined(separator: " / ")
+        return "Recent rotation: \(completed)."
     }
 
     private var heroChips: [DashboardChip] {
@@ -750,37 +860,13 @@ struct TodayView: View {
         ]
     }
 
-    private var todayNextActionTitle: String {
-        if !unfinishedSessions.isEmpty {
-            return "Resume the active log"
-        }
-
-        guard let splitName = suggestedSplit?.name else {
-            return "Create your first split"
-        }
-
-        return "Start \(trainingCall.recommendedMode.displayName) \(splitName)"
-    }
-
-    private var todayNextActionDetail: String {
-        if !unfinishedSessions.isEmpty {
-            return "Finish the workout in progress before starting a new session."
-        }
-
-        guard let split = suggestedSplit else {
-            return "Create or activate a split to unlock workout recommendations."
-        }
-
-        return "\(estimatedDurationText(for: split)) - preview if you want to adjust exercises first."
-    }
-
     private var rotationChipText: String {
-        guard !recentPPLCycleNames.isEmpty else { return "First Round" }
-        return recentPPLCycleNames.count == PPLRotation.names.count ? "Next Rotation" : "In Rotation"
+        guard !recentProgrammeCycleNames.isEmpty else { return "First Round" }
+        return recentProgrammeCycleNames.count == programmeOrderedSplits.count ? "Next Rotation" : "In Rotation"
     }
 
     private var coachRecommendationTitle: String {
-        "Next: \(trainingCall.recommendedSplitName ?? "Any split") - \(trainingCall.recommendedMode.displayName)"
+        "Next: \(trainingCall.recommendedSplitName ?? "Any split") · \(trainingCall.recommendedMode.displayName)"
     }
 
     private var coachButtonTitle: String {
@@ -801,11 +887,14 @@ struct TodayView: View {
             return "Preparing coach brief"
         }
 
-        return "\(readinessScore.value) - \(readinessScore.category.displayName)"
+        return "\(readinessScore.value) · \(readinessScore.category.displayName)"
     }
 
-    private var coachNavigationSnapshot: CoachIntelligenceSnapshot? {
-        lastCoachSnapshotSignature == nil ? nil : coachSnapshot
+    private var coachNavigationSnapshot: CoachRouteRenderSnapshot? {
+        if let initialStartupSnapshot {
+            return initialStartupSnapshot.coachRouteSnapshot
+        }
+        return CoachRouteSnapshotStore.shared.snapshot
     }
 
     private func refreshSleepReadiness(force: Bool = false) {
@@ -836,6 +925,17 @@ struct TodayView: View {
             coachSnapshot = nextSnapshot
             lastCoachSnapshotSignature = signature
         }
+        let nextTrainingCall = makeTrainingCall(
+            decision: trainingDecision,
+            coachSnapshot: nextSnapshot
+        )
+        AppMotion.withoutAnimation {
+            trainingCallSnapshot = nextTrainingCall
+        }
+        workoutDashboardWarmStartStore.update(
+            trainingCall: nextTrainingCall,
+            sourceSignature: "\(lastTodaySnapshotSignature ?? "today-pending")|\(signature)"
+        )
         PerformanceTracer.mark(
             .coachSnapshot,
             "route_snapshot_store before_update source=today scenePhase=\(String(describing: scenePhase)) main=\(Thread.isMainThread)"
@@ -847,7 +947,7 @@ struct TodayView: View {
             )
             return
         }
-        CoachRouteSnapshotStore.shared.update(snapshot: coachSnapshot, signature: signature, source: "today")
+        CoachRouteSnapshotStore.shared.update(intelligence: coachSnapshot, signature: signature, source: "today")
         PerformanceTracer.mark(
             .coachSnapshot,
             "route_snapshot_store after_update source=today scenePhase=\(String(describing: scenePhase)) main=\(Thread.isMainThread)"
@@ -856,6 +956,19 @@ struct TodayView: View {
 
     private func signature<Value>(_ values: [Value], limit: Int, transform: (Value) -> String) -> String {
         values.prefix(limit).map(transform).joined(separator: ",")
+    }
+
+    private func makeTrainingCall(
+        decision: TrainingDecision,
+        coachSnapshot: CoachIntelligenceSnapshot
+    ) -> TrainingCallSnapshot {
+        trainingCallBuilder.make(
+            decision: decision,
+            activeSplits: activeSplits,
+            completedSessions: Array(completedSessions.prefix(40)),
+            readiness: coachSnapshot.readiness,
+            fatigueRisk: coachSnapshot.fatigueRisk
+        )
     }
 
     private var hydrationSubtitle: String {
@@ -871,16 +984,22 @@ struct TodayView: View {
 
     private var suggestedSplit: TrainingSplit? {
         currentTodaySnapshot.suggestedSplit
+            ?? trainingCall.recommendedSplitName.flatMap { recommendedName in
+                activeSplits.first {
+                    $0.name.compare(
+                        recommendedName,
+                        options: [.caseInsensitive, .diacriticInsensitive]
+                    ) == .orderedSame
+                }
+            }
     }
 
-    private var pplOrderedSplits: [TrainingSplit] {
-        PPLRotation.names.compactMap { name in
-            activeSplits.first { $0.name == name }
-        }
+    private var programmeOrderedSplits: [TrainingSplit] {
+        rotationService.orderedActiveSplits(activeSplits)
     }
 
-    private var recentPPLCycleNames: [String] {
-        currentTodaySnapshot.recentPPLCycleNames
+    private var recentProgrammeCycleNames: [String] {
+        currentTodaySnapshot.recentProgrammeCycleNames
     }
 
     private func makeWorkoutSessionSnapshot(_ session: WorkoutSession) -> TodayWorkoutSessionSnapshot {
@@ -898,18 +1017,18 @@ struct TodayView: View {
         return TodayWorkoutSessionSnapshot(
             session: session,
             baseSplitName: baseSplitName(session.splitNameSnapshot),
-            pplName: pplName(for: session.splitNameSnapshot),
+            programmeSplitName: programmeSplitName(for: session),
             exerciseCount: exerciseLogs.count,
             workingSetCount: workingSetCount,
             workingSetVolume: workingSetVolume
         )
     }
 
-    private func makeRecentPPLCycleNames(from sessionSnapshots: [TodayWorkoutSessionSnapshot]) -> [String] {
+    private func makeRecentProgrammeCycleNames(from sessionSnapshots: [TodayWorkoutSessionSnapshot]) -> [String] {
         var names: [String] = []
 
         for sessionSnapshot in sessionSnapshots {
-            guard let name = sessionSnapshot.pplName else { continue }
+            guard let name = sessionSnapshot.programmeSplitName else { continue }
 
             if names.contains(name) {
                 break
@@ -917,7 +1036,7 @@ struct TodayView: View {
 
             names.append(name)
 
-            if names.count == PPLRotation.names.count {
+            if names.count == programmeOrderedSplits.count {
                 break
             }
         }
@@ -925,33 +1044,16 @@ struct TodayView: View {
         return names
     }
 
-    private func makeSuggestedSplit(
-        recentPPLCycleNames: [String],
-        sessionSnapshots: [TodayWorkoutSessionSnapshot]
-    ) -> TrainingSplit? {
-        let orderedSplits = pplOrderedSplits
-        guard !orderedSplits.isEmpty else { return activeSplits.first }
-
-        let completedNames = Set(recentPPLCycleNames)
-        if let missingSplit = orderedSplits.first(where: { !completedNames.contains($0.name) }) {
-            return missingSplit
+    private func programmeSplitName(for session: WorkoutSession) -> String? {
+        if let splitId = session.splitId {
+            return programmeOrderedSplits.first { $0.id == splitId }?.name
         }
 
-        guard
-            let mostRecentName = sessionSnapshots.compactMap(\.pplName).first,
-            let mostRecentIndex = PPLRotation.names.firstIndex(of: mostRecentName)
-        else {
-            return orderedSplits.first
+        let matches = programmeOrderedSplits.filter { split in
+            session.splitNameSnapshot == split.name
+                || session.splitNameSnapshot.hasPrefix("\(split.name) - ")
         }
-
-        let nextName = PPLRotation.names[(mostRecentIndex + 1) % PPLRotation.names.count]
-        return orderedSplits.first { $0.name == nextName } ?? orderedSplits.first
-    }
-
-    private func pplName(for splitNameSnapshot: String) -> String? {
-        PPLRotation.names.first { name in
-            splitNameSnapshot == name || splitNameSnapshot.hasPrefix("\(name) - ")
-        }
+        return matches.count == 1 ? matches.first?.name : nil
     }
 
     private var weeklySessions: [WorkoutSession] {
@@ -994,15 +1096,7 @@ struct TodayView: View {
     }
 
     private func makeSplitCoverageNames(from splits: [TrainingSplit]) -> [String] {
-        let activePPLNames = PPLRotation.names.filter { name in
-            splits.contains { $0.name == name }
-        }
-
-        if !activePPLNames.isEmpty {
-            return activePPLNames
-        }
-
-        return Array(splits.map(\.name).prefix(3))
+        rotationService.orderedActiveSplits(splits).map(\.name)
     }
 
     private var splitBalanceText: String {
@@ -1034,7 +1128,7 @@ struct TodayView: View {
         let selectable = split.exercises.sorted { $0.orderIndex < $1.orderIndex }.map(WorkoutSelectableExercise.init)
         let planned = modePlanner.plannedExercises(from: selectable, mode: trainingCall.recommendedMode)
         let duration = modePlanner.estimatedDurationMinutes(for: planned, mode: trainingCall.recommendedMode)
-        return "~\(duration.lowerBound)-\(duration.upperBound)m"
+        return "~\(duration.lowerBound)–\(duration.upperBound) min"
     }
 
     private func baseSplitName(_ splitNameSnapshot: String) -> String {
@@ -1057,15 +1151,26 @@ struct TodayView: View {
 
     private func openPreview(_ split: WorkoutPreviewSplit, mode: WorkoutMode = .full) {
         PerformanceTracer.mark(.previewRouteTap, "source=today split=\(split.name) mode=\(mode.rawValue)")
-        PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "navigation request source=today split=\(split.id.uuidString) active=\(previewSplit?.id.uuidString ?? "none")")
-        guard previewSplit?.id != split.id else {
+        PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "navigation request source=today split=\(split.id.uuidString) active=\(previewRoute?.split.id.uuidString ?? "none")")
+        guard previewRoute?.split.id != split.id else {
             PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "navigation skip source=today already_active split=\(split.id.uuidString)")
             return
         }
 
-        AppMotion.withoutAnimation {
-            previewMode = mode
-            previewSplit = split
+        let preparedRoute = WorkoutPreviewWarmStartStore.shared.prepareRoute(
+            for: split,
+            initialMode: mode
+        )
+        let navigationKey = "today.preview.\(split.id.uuidString)"
+        guard NavigationInteraction.perform(
+            key: navigationKey,
+            destinationClass: .warm,
+            haptic: .selection,
+            action: {
+            previewRoute = preparedRoute
+            previewNavigationKey = navigationKey
+        }) else {
+            return
         }
     }
 }
@@ -1074,7 +1179,7 @@ private struct TodayDashboardSnapshot {
     let trainingDecision: TrainingDecision
     let hydrationSummary: DailyHydrationSummary
     let suggestedSplit: TrainingSplit?
-    let recentPPLCycleNames: [String]
+    let recentProgrammeCycleNames: [String]
     let weeklySessions: [WorkoutSession]
     let latestWorkoutSummaryText: String
     let workoutsThisWeek: Int
@@ -1103,7 +1208,7 @@ private struct TodayDashboardSnapshot {
             lastLoggedAt: nil
         ),
         suggestedSplit: nil,
-        recentPPLCycleNames: [],
+        recentProgrammeCycleNames: [],
         weeklySessions: [],
         latestWorkoutSummaryText: "",
         workoutsThisWeek: 0,
@@ -1119,14 +1224,10 @@ private struct TodayDashboardSnapshot {
 private struct TodayWorkoutSessionSnapshot {
     let session: WorkoutSession
     let baseSplitName: String
-    let pplName: String?
+    let programmeSplitName: String?
     let exerciseCount: Int
     let workingSetCount: Int
     let workingSetVolume: Double
-}
-
-private enum PPLRotation {
-    static let names = ["Push", "Pull", "Legs"]
 }
 
 private enum TodayRoute: Hashable, Identifiable {
@@ -1155,11 +1256,48 @@ private enum TodayRoute: Hashable, Identifiable {
             return "hydration"
         }
     }
+
+    var destinationClass: NavigationDestinationClass {
+        switch self {
+        case .coach, .progress:
+            return .deep
+        case .workout, .nutrition, .sleep, .hydration:
+            return .warm
+        }
+    }
 }
 
 private struct TodayRouteNavigationStart {
     let route: TodayRoute
     let startedAt: ContinuousClock.Instant
+}
+
+private struct BackupHealthWarningCard: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let message: String
+
+    var body: some View {
+        FitnessCard {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "externaldrive.badge.exclamationmark")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(appTheme.colors.warning)
+                    .frame(width: 38, height: 38)
+                    .background(appTheme.colors.warning.opacity(0.16), in: Circle())
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Backup needs attention")
+                        .font(.headline)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
 }
 
 private struct TodaySleepRecoveryCard: View {
@@ -1233,7 +1371,7 @@ private struct TodaySleepRecoveryCard: View {
         }
 
         let quality = summary.qualityRating.map { SleepQualityPicker.label(for: $0) } ?? "No quality"
-        return "\(SleepScoringService.durationText(minutes: summary.totalSleepMinutes)) sleep - \(quality) quality"
+        return "\(SleepScoringService.durationText(minutes: summary.totalSleepMinutes)) sleep · \(quality) quality"
     }
 }
 
@@ -1241,23 +1379,24 @@ struct HydrationView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var readinessRefreshClock = ReadinessRefreshClock.shared
 
-    @Query(sort: \HydrationEntry.loggedAt, order: .reverse)
+    @Query
     private var entries: [HydrationEntry]
 
-    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
+    @Query
     private var completedSessions: [WorkoutSession]
 
-    @Query(sort: \SleepSession.createdAt, order: .reverse)
+    @Query
     private var sleepSessions: [SleepSession]
 
-    @Query(sort: \NapSession.startDate, order: .reverse)
+    @Query
     private var napSessions: [NapSession]
 
-    @Query(sort: \FoodLogEntry.loggedAt, order: .reverse)
+    @Query
     private var foodLogEntries: [FoodLogEntry]
 
-    @Query(sort: \DailyCoachCheckIn.date, order: .reverse)
+    @Query
     private var coachCheckIns: [DailyCoachCheckIn]
 
     @State private var customAmount = ""
@@ -1269,6 +1408,7 @@ struct HydrationView: View {
     @State private var nutritionGoal = NutritionGoalService().loadGoal()
     @State private var readinessScore = CoachIntelligenceService.emptySnapshot().readiness
     @State private var lastReadinessSignature: String?
+    @State private var activeHydrationSwipeID: UUID?
 
     private let coachIntelligence = CoachIntelligenceService()
     private let service = HydrationService()
@@ -1276,6 +1416,49 @@ struct HydrationView: View {
     private let sleepSettingsStore = SleepSettingsStore()
     private let nutritionGoalStore = NutritionGoalService()
     private let quickAmounts = [250, 500, 750]
+
+    init() {
+        let recentCutoff = Calendar.current.date(byAdding: .day, value: -30, to: .now) ?? .distantPast
+
+        var hydrationDescriptor = FetchDescriptor<HydrationEntry>(
+            predicate: #Predicate<HydrationEntry> { $0.loggedAt >= recentCutoff },
+            sortBy: [SortDescriptor(\HydrationEntry.loggedAt, order: .reverse)]
+        )
+        hydrationDescriptor.fetchLimit = 500
+        _entries = Query(hydrationDescriptor)
+
+        var workoutDescriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\WorkoutSession.date, order: .reverse)]
+        )
+        workoutDescriptor.fetchLimit = 40
+        _completedSessions = Query(workoutDescriptor)
+
+        var sleepDescriptor = FetchDescriptor<SleepSession>(
+            sortBy: [SortDescriptor(\SleepSession.createdAt, order: .reverse)]
+        )
+        sleepDescriptor.fetchLimit = 90
+        _sleepSessions = Query(sleepDescriptor)
+
+        var napDescriptor = FetchDescriptor<NapSession>(
+            sortBy: [SortDescriptor(\NapSession.startDate, order: .reverse)]
+        )
+        napDescriptor.fetchLimit = 60
+        _napSessions = Query(napDescriptor)
+
+        var foodDescriptor = FetchDescriptor<FoodLogEntry>(
+            predicate: #Predicate<FoodLogEntry> { $0.loggedAt >= recentCutoff },
+            sortBy: [SortDescriptor(\FoodLogEntry.loggedAt, order: .reverse)]
+        )
+        foodDescriptor.fetchLimit = 500
+        _foodLogEntries = Query(foodDescriptor)
+
+        var checkInDescriptor = FetchDescriptor<DailyCoachCheckIn>(
+            sortBy: [SortDescriptor(\DailyCoachCheckIn.date, order: .reverse)]
+        )
+        checkInDescriptor.fetchLimit = 30
+        _coachCheckIns = Query(checkInDescriptor)
+    }
 
     private var todayEntries: [HydrationEntry] {
         service.entries(for: .now, entries: entries)
@@ -1295,16 +1478,13 @@ struct HydrationView: View {
             signature(coachCheckIns, limit: 30) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
             "\(sleepSettings.targetSleepMinutes):\(sleepSettings.recoveryCoachingEnabled):\(sleepSettings.preferredSource.rawValue)",
             "\(hydrationTargetML)",
-            "\(nutritionGoal.updatedAt.timeIntervalSince1970)"
+            "\(nutritionGoal.updatedAt.timeIntervalSince1970)",
+            readinessRefreshClock.token.signature
         ].joined(separator: "|")
     }
 
     var body: some View {
-        FitnessScreen(
-            title: "Hydration",
-            subtitle: "Track your water intake for training and recovery.",
-            systemImage: "drop.fill"
-        ) {
+        FitnessScreen {
             hydrationProgressCard
 
             DashboardSection(title: "Coach Context") {
@@ -1320,7 +1500,6 @@ struct HydrationView: View {
                     ForEach(quickAmounts, id: \.self) { amount in
                         hydrationAddButton(title: "+\(HydrationService.formatAmount(amount))", amount: amount, source: .quickAdd)
                     }
-                    hydrationAddButton(title: "Bottle", amount: 750, source: .preset)
                     Button {
                         showingCustomAmount = true
                     } label: {
@@ -1362,7 +1541,7 @@ struct HydrationView: View {
                     }
                 } else {
                     ForEach(todayEntries) { entry in
-                        HydrationLogRow(entry: entry) {
+                        HydrationLogRow(entry: entry, activeSwipeID: $activeHydrationSwipeID) {
                             delete(entry)
                         }
                     }
@@ -1385,6 +1564,7 @@ struct HydrationView: View {
             Text("Enter an amount in millilitres.")
         }
         .onAppear {
+            readinessRefreshClock.start()
             sleepSettings = sleepSettingsStore.load()
             hydrationTargetML = settingsStore.dailyTargetML()
             nutritionGoal = nutritionGoalStore.loadGoal()
@@ -1521,11 +1701,11 @@ struct HydrationView: View {
 
     private func add(amount: Int, source: HydrationEntrySource) {
         guard amount > 0 else {
-            errorText = "Amount must be greater than 0ml."
+            errorText = "Amount must be greater than 0 mL."
             return
         }
         guard amount <= 2_000 else {
-            errorText = "That is a large single entry. Keep one entry at 2000ml or less."
+            errorText = "That is a large single entry. Keep one entry at 2,000 mL or less."
             return
         }
 
@@ -1563,28 +1743,16 @@ struct HydrationView: View {
 
 private struct HydrationLogRow: View {
     @Environment(\.appTheme) private var appTheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let entry: HydrationEntry
+    @Binding var activeSwipeID: UUID?
     let delete: () -> Void
 
-    @State private var horizontalOffset: CGFloat = 0
-    @State private var dragStartOffset: CGFloat = 0
-    @State private var isDraggingHorizontally = false
-
     var body: some View {
-        ZStack(alignment: .trailing) {
-            deleteAction
-                .padding(.trailing, appTheme.metrics.swipeRevealActionTrailingPadding)
-                .opacity(deleteRevealProgress)
-
+        SwipeRevealRow(id: entry.id, activeID: $activeSwipeID) {
             rowContent
-                .offset(x: horizontalOffset)
-                .simultaneousGesture(swipeGesture)
-                .onTapGesture {
-                    guard horizontalOffset != 0 else { return }
-                    closeSwipe()
-                }
+        } action: {
+            deleteAction
         }
         .accessibilityAction(named: "Delete Entry", delete)
     }
@@ -1625,53 +1793,4 @@ private struct HydrationLogRow: View {
         .accessibilityLabel("Delete \(HydrationService.formatAmount(entry.amountML)) hydration entry")
     }
 
-    private var deleteRevealWidth: CGFloat {
-        appTheme.metrics.swipeRevealWidth
-    }
-
-    private var deleteRevealProgress: CGFloat {
-        min(1, abs(horizontalOffset) / deleteRevealWidth)
-    }
-
-    private var swipeGesture: some Gesture {
-        DragGesture(minimumDistance: 12, coordinateSpace: .local)
-            .onChanged { value in
-                if !isDraggingHorizontally {
-                    guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                    isDraggingHorizontally = true
-                    dragStartOffset = horizontalOffset
-                }
-
-                guard isDraggingHorizontally else { return }
-                horizontalOffset = clampedOffset(dragStartOffset + value.translation.width)
-            }
-            .onEnded { value in
-                defer {
-                    isDraggingHorizontally = false
-                    dragStartOffset = horizontalOffset
-                }
-
-                guard abs(value.translation.width) > abs(value.translation.height) else {
-                    closeSwipe()
-                    return
-                }
-
-                let projectedOffset = dragStartOffset + value.predictedEndTranslation.width
-                let shouldOpen = projectedOffset < -(deleteRevealWidth * 0.45) || value.translation.width < -36
-
-                withAnimation(AppMotion.swipeRevealSnap(reduceMotion: reduceMotion)) {
-                    horizontalOffset = shouldOpen ? -deleteRevealWidth : 0
-                }
-            }
-    }
-
-    private func clampedOffset(_ offset: CGFloat) -> CGFloat {
-        min(0, max(-deleteRevealWidth, offset))
-    }
-
-    private func closeSwipe() {
-        withAnimation(AppMotion.swipeRevealSnap(reduceMotion: reduceMotion)) {
-            horizontalOffset = 0
-        }
-    }
 }

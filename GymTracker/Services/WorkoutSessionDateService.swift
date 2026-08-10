@@ -11,24 +11,22 @@ enum WorkoutSessionDateService {
         session.date = loggedDate(for: session)
     }
 
-    static func repairCompletedSessionDates(in context: ModelContext) {
-        do {
-            let sessions = try context.fetch(FetchDescriptor<WorkoutSession>())
-            var repairedAnySession = false
+    @discardableResult
+    static func repairCompletedSessionDates(in context: ModelContext) throws -> Int {
+        let sessions = try context.fetch(FetchDescriptor<WorkoutSession>())
+        var repairedCount = 0
 
-            for session in sessions where session.completed {
-                guard let startedAt = session.startedAt else { continue }
-                guard abs(session.date.timeIntervalSince(startedAt)) > 1 else { continue }
+        for session in sessions where session.completed {
+            guard let startedAt = session.startedAt else { continue }
+            guard abs(session.date.timeIntervalSince(startedAt)) > 1 else { continue }
 
-                session.date = startedAt
-                repairedAnySession = true
-            }
-
-            if repairedAnySession {
-                try context.save()
-            }
-        } catch {
-            assertionFailure("Workout date repair failed: \(error)")
+            session.date = startedAt
+            repairedCount += 1
         }
+
+        if repairedCount > 0 {
+            try context.save()
+        }
+        return repairedCount
     }
 }

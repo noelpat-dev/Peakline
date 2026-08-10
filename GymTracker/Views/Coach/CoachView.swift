@@ -1,11 +1,86 @@
 import SwiftData
 import SwiftUI
 
-struct CoachView: View {
-    var body: some View {
-        NavigationStack {
-            CoachContentView()
+struct CoachRouteRenderSnapshot: @unchecked Sendable {
+    let intelligence: CoachIntelligenceSnapshot
+    let weeklyReview: WeeklyReview?
+    let derivedMetrics: CoachDerivedMetrics
+    let sleepAnalytics: SleepAnalyticsSnapshot
+    let dailyDecision: CoachDailyDecision
+    let practicalWeeklyReview: CoachWeeklyReviewSnapshot
+    let recommendedSplit: WorkoutPreviewSplit?
+
+    init(
+        intelligence: CoachIntelligenceSnapshot,
+        weeklyReview: WeeklyReview?,
+        derivedMetrics: CoachDerivedMetrics,
+        sleepAnalytics: SleepAnalyticsSnapshot,
+        trainingCall: TrainingCallSnapshot,
+        recommendedSplit: WorkoutPreviewSplit? = nil
+    ) {
+        self.intelligence = intelligence.routeCacheValueSnapshot
+        self.weeklyReview = weeklyReview
+        self.derivedMetrics = derivedMetrics
+        self.sleepAnalytics = sleepAnalytics
+        self.recommendedSplit = recommendedSplit
+
+        let primaryTarget = derivedMetrics.targetSuggestions.first
+        let badgeState: CoachBadgeState
+        if trainingCall.recommendedMode == .recovery {
+            badgeState = .recovery
+        } else if let primaryTarget {
+            badgeState = CoachBadgeState(recommendationType: primaryTarget.recommendationType)
+        } else {
+            badgeState = .baseline
         }
+
+        let splitName = trainingCall.recommendedSplitName
+        self.dailyDecision = CoachDailyDecision(
+            recommendedSplitName: splitName,
+            recommendedMode: trainingCall.recommendedMode,
+            headline: splitName ?? trainingCall.title,
+            targetLine: trainingCall.targetSummary,
+            shortReason: trainingCall.reason,
+            confidenceLabel: trainingCall.confidence.displayName,
+            badgeState: badgeState,
+            canOpenPreview: splitName != nil,
+            primaryActionTitle: "Open \(trainingCall.recommendedMode.displayName) Preview",
+            nextStep: splitName.map { "Next: preview \($0), adjust if needed, then start the session." }
+                ?? "Create or activate a split to prepare a workout preview.",
+            whySignals: Array(trainingCall.auditSignals.prefix(3)).enumerated().map { index, signal in
+                CoachDecisionSignal(
+                    title: index == 0 ? "Programme" : "Signal \(index + 1)",
+                    message: signal,
+                    systemImage: index == 0 ? "arrow.triangle.2.circlepath" : "checkmark.circle"
+                )
+            },
+            primaryTarget: primaryTarget,
+            additionalTargetCount: max(0, derivedMetrics.targetSuggestions.count - (primaryTarget == nil ? 0 : 1)),
+            targetFallback: "Complete clean working sets to sharpen the next target.",
+            modeReason: trainingCall.guardrailNotes.first ?? trainingCall.reason,
+            trainingCall: trainingCall
+        )
+
+        self.practicalWeeklyReview = CoachWeeklyReviewSnapshot(
+            bestWin: weeklyReview?.highlights.first?.message ?? "Finish a few sessions to build a weekly win.",
+            mainRisk: weeklyReview?.watchlist.first?.message ?? "No major risk is standing out right now.",
+            nextAdjustment: weeklyReview?.nextDecision.reason ?? trainingCall.reason,
+            splitBalance: weeklyReview.map {
+                "\($0.splitConsistency.countDescription(separator: " / ")). \($0.splitConsistency.balanceDescription)"
+            } ?? "Active programme coverage will appear once this week has completed sessions.",
+            recoveryNote: intelligence.weeklySummary.recommendedFocus
+        )
+    }
+
+    func replacingIntelligence(_ intelligence: CoachIntelligenceSnapshot) -> CoachRouteRenderSnapshot {
+        CoachRouteRenderSnapshot(
+            intelligence: intelligence,
+            weeklyReview: weeklyReview,
+            derivedMetrics: derivedMetrics,
+            sleepAnalytics: sleepAnalytics,
+            trainingCall: dailyDecision.trainingCall,
+            recommendedSplit: recommendedSplit
+        )
     }
 }
 
@@ -13,23 +88,38 @@ struct CoachView: View {
 final class CoachRouteSnapshotStore {
     static let shared = CoachRouteSnapshotStore()
 
-    private(set) var snapshot: CoachIntelligenceSnapshot?
+    private(set) var snapshot: CoachRouteRenderSnapshot?
     private(set) var signature: String?
 
     private init() {}
 
-    func update(snapshot: CoachIntelligenceSnapshot, signature: String, source: String) {
+    func update(snapshot: CoachRouteRenderSnapshot, signature: String, source: String) {
         PerformanceTracer.mark(
             .coachSnapshot,
-            "route_snapshot_store update_begin source=\(source) main=\(Thread.isMainThread) contains_model_checkIn=\(snapshot.readiness.checkIn != nil)"
+            "route_snapshot_store update_begin source=\(source) main=\(Thread.isMainThread) contains_model_checkIn=\(snapshot.intelligence.readiness.checkIn != nil)"
         )
-        self.snapshot = snapshot.routeCacheValueSnapshot
+        self.snapshot = snapshot
         self.signature = signature
         PerformanceTracer.mark(.coachSnapshot, "route_snapshot_store update source=\(source)")
         PerformanceTracer.mark(
             .coachSnapshot,
-            "route_snapshot_store update_end source=\(source) stored_model_checkIn=\(self.snapshot?.readiness.checkIn != nil)"
+            "route_snapshot_store update_end source=\(source) stored_model_checkIn=\(self.snapshot?.intelligence.readiness.checkIn != nil)"
         )
+    }
+
+    func update(intelligence: CoachIntelligenceSnapshot, signature: String, source: String) {
+        guard let snapshot else { return }
+        update(
+            snapshot: snapshot.replacingIntelligence(intelligence),
+            signature: signature,
+            source: source
+        )
+    }
+
+    func invalidate(source: String) {
+        snapshot = nil
+        signature = nil
+        PerformanceTracer.mark(.coachSnapshot, "route_snapshot_store invalidate source=\(source)")
     }
 }
 
@@ -66,18 +156,18 @@ private extension ReadinessScore {
 }
 
 struct CoachRouteDestinationView: View {
-    @Environment(\.scenePhase) private var scenePhase
-
-    let initialSnapshot: CoachIntelligenceSnapshot?
+    let initialSnapshot: CoachRouteRenderSnapshot?
     let backButtonTitle: String?
     let onBack: (() -> Void)?
 
+    @State private var liveQueriesEnabled = false
+
     init(
-        initialSnapshot: CoachIntelligenceSnapshot? = nil,
+        initialSnapshot: CoachRouteRenderSnapshot? = nil,
         backButtonTitle: String? = nil,
         onBack: (() -> Void)? = nil
     ) {
-        self.initialSnapshot = initialSnapshot?.routeCacheValueSnapshot
+        self.initialSnapshot = initialSnapshot
         self.backButtonTitle = backButtonTitle
         self.onBack = onBack
     }
@@ -85,156 +175,22 @@ struct CoachRouteDestinationView: View {
     var body: some View {
         let routeSnapshot = initialSnapshot ?? CoachRouteSnapshotStore.shared.snapshot
 
-        if scenePhase == .active {
-            DeferredCoachDestinationView(
-                initialSnapshot: routeSnapshot,
-                backButtonTitle: backButtonTitle,
-                onBack: onBack
-            )
-        } else {
-            CoachInactiveDestinationPlaceholder(scenePhaseDescription: String(describing: scenePhase))
-        }
-    }
-}
-
-struct CoachInactiveDestinationPlaceholder: View {
-    let scenePhaseDescription: String
-
-    var body: some View {
-        let _ = PerformanceTracer.mark(.todayCoachDestinationBody, "inactive_placeholder scenePhase=\(scenePhaseDescription)")
-        Color.clear
-            .accessibilityHidden(true)
-    }
-}
-
-struct DeferredCoachDestinationView: View {
-    @Environment(\.appTheme) private var appTheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.scenePhase) private var scenePhase
-
-    let initialSnapshot: CoachIntelligenceSnapshot?
-    let backButtonTitle: String?
-    let onBack: (() -> Void)?
-
-    @State private var showFullContent = false
-    @State private var showWarmStartContent = false
-
-    var body: some View {
-        let _ = PerformanceTracer.mark(.todayCoachDestinationBody, "body showFullContent=\(showFullContent) showWarmStartContent=\(showWarmStartContent) initialSnapshot=\(initialSnapshot != nil)")
-        ZStack {
-            if scenePhase != .active {
-                inactivePlaceholder
-            } else if showFullContent {
-                CoachContentView(initialSnapshot: initialSnapshot)
-                    .transition(.opacity)
-            } else if showWarmStartContent {
-                coachWarmStartView
-                    .transition(.opacity)
-            } else {
-                firstFrameShell
+        CoachContentView(
+            initialSnapshot: routeSnapshot,
+            liveQueriesEnabled: routeSnapshot == nil || liveQueriesEnabled
+        )
+            .background {
+                CoachRouteFrameProbe(label: "coach.route.stable")
             }
-        }
-        .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
-        .background {
-            if scenePhase == .active {
-                CoachRouteFrameProbe(label: "deferredCoach.root")
-            }
-        }
-        .navigationTitle("Coach")
-        .navigationBarTitleDisplayMode(.inline)
-        .accessibilityIdentifier("coach-route-screen")
-        .onAppear {
-            PerformanceTracer.mark(.todayCoachDestinationAppear, "root_onAppear showFullContent=\(showFullContent) initialSnapshot=\(initialSnapshot != nil)")
-            guard !showWarmStartContent && !showFullContent else { return }
-            DispatchQueue.main.async {
-                PerformanceTracer.mark(.todayCoachContentMount, "show_warm_start_content")
-                withAnimation(AppMotion.gentleFade(reduceMotion: reduceMotion)) {
-                    showWarmStartContent = true
-                }
-                PerformanceTracer.trace(.todayCoachContentMount) {
-                    withAnimation(AppMotion.gentleFade(reduceMotion: reduceMotion)) {
-                        showFullContent = true
-                    }
+            .navigationTitle("Coach")
+            .navigationBarTitleDisplayMode(.inline)
+            .accessibilityIdentifier("coach-route-screen")
+            .onAppear {
+                guard routeSnapshot != nil, !liveQueriesEnabled else { return }
+                DispatchQueue.main.async {
+                    liveQueriesEnabled = true
                 }
             }
-        }
-        .task(id: scenePhase) {
-            guard scenePhase == .active else {
-                PerformanceTracer.mark(.todayCoachContentMount, "task_skip scenePhase=\(String(describing: scenePhase))")
-                return
-            }
-            guard !showFullContent else { return }
-            PerformanceTracer.mark(.todayCoachContentMount, "task_start reduceMotion=\(reduceMotion)")
-            await Task.yield()
-            guard !Task.isCancelled, scenePhase == .active else {
-                PerformanceTracer.mark(.todayCoachContentMount, "task_cancelled_or_inactive scenePhase=\(String(describing: scenePhase))")
-                return
-            }
-            PerformanceTracer.mark(.todayCoachContentMount, "before_showFullContent")
-            PerformanceTracer.trace(.todayCoachContentMount) {
-                withAnimation(AppMotion.gentleFade(reduceMotion: reduceMotion)) {
-                    showFullContent = true
-                }
-            }
-            PerformanceTracer.mark(.todayCoachContentMount, "after_showFullContent")
-        }
-    }
-
-    @ViewBuilder
-    private var inactivePlaceholder: some View {
-        let _ = PerformanceTracer.mark(.todayCoachDestinationBody, "inactive_placeholder scenePhase=\(String(describing: scenePhase))")
-        Color.clear
-            .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
-            .accessibilityHidden(true)
-    }
-
-    private var firstFrameShell: some View {
-        Color.clear
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityHidden(true)
-    }
-
-    @ViewBuilder
-    private var coachWarmStartView: some View {
-        let _ = PerformanceTracer.mark(.todayCoachDestinationBody, "warm_start_body initialSnapshot=\(initialSnapshot != nil)")
-        if let initialSnapshot {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: appTheme.metrics.screenContentSpacing) {
-                    FitnessScreenHeader(
-                        title: "Coach",
-                        subtitle: "Readiness, targets, and recovery.",
-                        systemImage: "sparkles"
-                    )
-
-                    ReadinessDetailHeaderCard(readiness: initialSnapshot.readiness)
-
-                    DashboardSection(title: "Recommendation") {
-                        ReadinessRecommendationCard(readiness: initialSnapshot.readiness)
-                    }
-
-                    DashboardSection(title: "Weekly Summary") {
-                        WeeklyCoachSummaryCard(summary: initialSnapshot.weeklySummary)
-                    }
-                }
-                .padding(appTheme.metrics.screenPadding)
-                .padding(.bottom, appTheme.metrics.screenBottomPadding)
-            }
-        } else {
-            FitnessScreen(
-                title: "Coach",
-                subtitle: "Readiness, targets, and recovery.",
-                systemImage: "sparkles"
-            ) {
-                ReadinessDetailHeaderCard(readiness: CoachIntelligenceService.emptySnapshot().readiness)
-
-                DashboardSection(title: "Recommendation") {
-                    ReadinessRecommendationCard(readiness: CoachIntelligenceService.emptySnapshot().readiness)
-                }
-            }
-            .redacted(reason: .placeholder)
-            .allowsHitTesting(false)
-        }
     }
 }
 
@@ -261,6 +217,7 @@ struct CoachContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var readinessRefreshClock = ReadinessRefreshClock.shared
 
     @Query
     private var activeSplits: [TrainingSplit]
@@ -304,7 +261,7 @@ struct CoachContentView: View {
     @Query
     private var splitMetadataRecords: [CoachSplitMetadata]
 
-    @State private var sleepSettings = SleepSettingsStore().load()
+    @State private var sleepSettings = SleepSettings.default
     @State private var sleepSnapshot = SleepAnalyticsService.emptySnapshot()
     @State private var lastSleepAnalyticsSignature: SleepAnalyticsInputSignature?
     @State private var coachSnapshot = CoachIntelligenceService.emptySnapshot()
@@ -325,10 +282,11 @@ struct CoachContentView: View {
     @State private var practicalWeeklyReview = CoachWeeklyReviewSnapshot.placeholder
     @State private var lastCoachDerivedSignature: String?
     @State private var coachDerivedTask: Task<Void, Never>?
-    @State private var hydrationTargetML = HydrationSettingsStore().dailyTargetML()
-    @State private var nutritionGoal = NutritionGoalService().loadGoal()
-    @State private var deferredCoachRefreshWorkItem: DispatchWorkItem?
-    @State private var deferredFullCoachSnapshotWorkItem: DispatchWorkItem?
+    @State private var liveObservationEnabled: Bool
+    @State private var isLiveObservationSuspendedForPreview = false
+    @State private var supportingDashboardMounted: Bool
+    @State private var hydrationTargetML = 2_500
+    @State private var nutritionGoal = NutritionGoal.empty
 
     private let coachIntelligence = CoachIntelligenceService()
     private let sleepSettingsStore = SleepSettingsStore()
@@ -339,32 +297,52 @@ struct CoachContentView: View {
     private let coachPreferencesService = CoachPreferencesService()
     private let modePlanner = WorkoutModePlanner()
     private let trainingCallBuilder = TrainingCallSnapshotBuilder()
-    private let initialSnapshot: CoachIntelligenceSnapshot?
+    private let initialSnapshot: CoachRouteRenderSnapshot?
+    private let liveQueriesEnabled: Bool
 
-    init(initialSnapshot: CoachIntelligenceSnapshot? = nil) {
-        self.initialSnapshot = initialSnapshot?.routeCacheValueSnapshot
-        _activeSplits = Query(Self.activeSplitsDescriptor)
-        _completedSessions = Query(Self.completedSessionsDescriptor)
-        _exercises = Query(Self.exercisesDescriptor)
-        _sleepSessions = Query(Self.sleepSessionsDescriptor)
-        _napSessions = Query(Self.napSessionsDescriptor)
-        _hydrationEntries = Query(Self.hydrationEntriesDescriptor)
-        _foodLogEntries = Query(Self.foodLogEntriesDescriptor)
-        _coachCheckIns = Query(Self.coachCheckInsDescriptor)
-        _coachActionHistory = Query(Self.coachActionHistoryDescriptor)
-        _savedDeloadBlocks = Query(Self.savedDeloadBlocksDescriptor)
-        _recommendationFeedback = Query(Self.recommendationFeedbackDescriptor)
-        _exerciseMetadata = Query(Self.exerciseMetadataDescriptor)
-        _coachPreferences = Query(Self.coachPreferencesDescriptor)
-        _splitMetadataRecords = Query(Self.splitMetadataDescriptor)
+    init(
+        initialSnapshot: CoachRouteRenderSnapshot? = nil,
+        liveQueriesEnabled: Bool = true
+    ) {
+        let shouldFetchLiveData = initialSnapshot == nil || liveQueriesEnabled
+        self.initialSnapshot = initialSnapshot
+        self.liveQueriesEnabled = shouldFetchLiveData
+        _activeSplits = Query(Self.activeSplitsDescriptor(live: shouldFetchLiveData))
+        _completedSessions = Query(Self.completedSessionsDescriptor(live: shouldFetchLiveData))
+        _exercises = Query(Self.exercisesDescriptor(live: shouldFetchLiveData))
+        _sleepSessions = Query(Self.sleepSessionsDescriptor(live: shouldFetchLiveData))
+        _napSessions = Query(Self.napSessionsDescriptor(live: shouldFetchLiveData))
+        _hydrationEntries = Query(Self.hydrationEntriesDescriptor(live: shouldFetchLiveData))
+        _foodLogEntries = Query(Self.foodLogEntriesDescriptor(live: shouldFetchLiveData))
+        _coachCheckIns = Query(Self.coachCheckInsDescriptor(live: shouldFetchLiveData))
+        _coachActionHistory = Query(Self.coachActionHistoryDescriptor(live: shouldFetchLiveData))
+        _savedDeloadBlocks = Query(Self.savedDeloadBlocksDescriptor(live: shouldFetchLiveData))
+        _recommendationFeedback = Query(Self.recommendationFeedbackDescriptor(live: shouldFetchLiveData))
+        _exerciseMetadata = Query(Self.exerciseMetadataDescriptor(live: shouldFetchLiveData))
+        _coachPreferences = Query(Self.coachPreferencesDescriptor(live: shouldFetchLiveData))
+        _splitMetadataRecords = Query(Self.splitMetadataDescriptor(live: shouldFetchLiveData))
+        _liveObservationEnabled = State(initialValue: initialSnapshot == nil)
+        _supportingDashboardMounted = State(initialValue: initialSnapshot == nil)
         if let initialSnapshot {
-            let routeSafeSnapshot = initialSnapshot.routeCacheValueSnapshot
-            _coachSnapshot = State(initialValue: routeSafeSnapshot)
+            _coachSnapshot = State(initialValue: initialSnapshot.intelligence)
+            _weeklyReview = State(initialValue: initialSnapshot.weeklyReview)
+            _summary = State(initialValue: initialSnapshot.derivedMetrics.summary)
+            _recentPRs = State(initialValue: initialSnapshot.derivedMetrics.recentPRs)
+            _targetSuggestions = State(initialValue: initialSnapshot.derivedMetrics.targetSuggestions)
+            _weeklyWorkoutCount = State(initialValue: initialSnapshot.derivedMetrics.weeklyWorkoutCount)
+            _weeklyWorkingSetCount = State(initialValue: initialSnapshot.derivedMetrics.weeklyWorkingSetCount)
+            _progressOpportunityInsights = State(initialValue: initialSnapshot.derivedMetrics.progressOpportunityInsights)
+            _dailyDecision = State(initialValue: initialSnapshot.dailyDecision)
+            _practicalWeeklyReview = State(initialValue: initialSnapshot.practicalWeeklyReview)
+            _sleepSnapshot = State(initialValue: initialSnapshot.sleepAnalytics)
             _hasLoadedCoachSnapshot = State(initialValue: true)
         }
     }
 
-    private static var activeSplitsDescriptor: FetchDescriptor<TrainingSplit> {
+    private static func activeSplitsDescriptor(live: Bool) -> FetchDescriptor<TrainingSplit> {
+        guard live else {
+            return FetchDescriptor(predicate: #Predicate<TrainingSplit> { _ in false })
+        }
         var descriptor = FetchDescriptor<TrainingSplit>(
             predicate: #Predicate<TrainingSplit> { $0.isActive },
             sortBy: [SortDescriptor(\.name)]
@@ -373,7 +351,10 @@ struct CoachContentView: View {
         return descriptor
     }
 
-    private static var completedSessionsDescriptor: FetchDescriptor<WorkoutSession> {
+    private static func completedSessionsDescriptor(live: Bool) -> FetchDescriptor<WorkoutSession> {
+        guard live else {
+            return FetchDescriptor(predicate: #Predicate<WorkoutSession> { _ in false })
+        }
         var descriptor = FetchDescriptor<WorkoutSession>(
             predicate: #Predicate<WorkoutSession> { $0.completed },
             sortBy: [SortDescriptor(\.date, order: .reverse)]
@@ -382,7 +363,10 @@ struct CoachContentView: View {
         return descriptor
     }
 
-    private static var exercisesDescriptor: FetchDescriptor<Exercise> {
+    private static func exercisesDescriptor(live: Bool) -> FetchDescriptor<Exercise> {
+        guard live else {
+            return FetchDescriptor(predicate: #Predicate<Exercise> { _ in false })
+        }
         var descriptor = FetchDescriptor<Exercise>(
             predicate: #Predicate<Exercise> { !$0.isArchived },
             sortBy: [SortDescriptor(\.name)]
@@ -391,7 +375,10 @@ struct CoachContentView: View {
         return descriptor
     }
 
-    private static var sleepSessionsDescriptor: FetchDescriptor<SleepSession> {
+    private static func sleepSessionsDescriptor(live: Bool) -> FetchDescriptor<SleepSession> {
+        guard live else {
+            return FetchDescriptor(predicate: #Predicate<SleepSession> { _ in false })
+        }
         var descriptor = FetchDescriptor<SleepSession>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
@@ -399,7 +386,10 @@ struct CoachContentView: View {
         return descriptor
     }
 
-    private static var napSessionsDescriptor: FetchDescriptor<NapSession> {
+    private static func napSessionsDescriptor(live: Bool) -> FetchDescriptor<NapSession> {
+        guard live else {
+            return FetchDescriptor(predicate: #Predicate<NapSession> { _ in false })
+        }
         var descriptor = FetchDescriptor<NapSession>(
             sortBy: [SortDescriptor(\.startDate, order: .reverse)]
         )
@@ -407,7 +397,10 @@ struct CoachContentView: View {
         return descriptor
     }
 
-    private static var hydrationEntriesDescriptor: FetchDescriptor<HydrationEntry> {
+    private static func hydrationEntriesDescriptor(live: Bool) -> FetchDescriptor<HydrationEntry> {
+        guard live else {
+            return FetchDescriptor(predicate: #Predicate<HydrationEntry> { _ in false })
+        }
         var descriptor = FetchDescriptor<HydrationEntry>(
             sortBy: [SortDescriptor(\.loggedAt, order: .reverse)]
         )
@@ -415,7 +408,10 @@ struct CoachContentView: View {
         return descriptor
     }
 
-    private static var foodLogEntriesDescriptor: FetchDescriptor<FoodLogEntry> {
+    private static func foodLogEntriesDescriptor(live: Bool) -> FetchDescriptor<FoodLogEntry> {
+        guard live else {
+            return FetchDescriptor(predicate: #Predicate<FoodLogEntry> { _ in false })
+        }
         var descriptor = FetchDescriptor<FoodLogEntry>(
             sortBy: [SortDescriptor(\.loggedAt, order: .reverse)]
         )
@@ -423,7 +419,10 @@ struct CoachContentView: View {
         return descriptor
     }
 
-    private static var coachCheckInsDescriptor: FetchDescriptor<DailyCoachCheckIn> {
+    private static func coachCheckInsDescriptor(live: Bool) -> FetchDescriptor<DailyCoachCheckIn> {
+        guard live else {
+            return FetchDescriptor(predicate: #Predicate<DailyCoachCheckIn> { _ in false })
+        }
         var descriptor = FetchDescriptor<DailyCoachCheckIn>(
             sortBy: [SortDescriptor(\.date, order: .reverse)]
         )
@@ -431,7 +430,10 @@ struct CoachContentView: View {
         return descriptor
     }
 
-    private static var coachActionHistoryDescriptor: FetchDescriptor<CoachActionHistoryEntry> {
+    private static func coachActionHistoryDescriptor(live: Bool) -> FetchDescriptor<CoachActionHistoryEntry> {
+        guard live else {
+            return FetchDescriptor(predicate: #Predicate<CoachActionHistoryEntry> { _ in false })
+        }
         var descriptor = FetchDescriptor<CoachActionHistoryEntry>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
@@ -439,7 +441,10 @@ struct CoachContentView: View {
         return descriptor
     }
 
-    private static var savedDeloadBlocksDescriptor: FetchDescriptor<SavedCoachDeloadBlock> {
+    private static func savedDeloadBlocksDescriptor(live: Bool) -> FetchDescriptor<SavedCoachDeloadBlock> {
+        guard live else {
+            return FetchDescriptor(predicate: #Predicate<SavedCoachDeloadBlock> { _ in false })
+        }
         var descriptor = FetchDescriptor<SavedCoachDeloadBlock>(
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
         )
@@ -447,7 +452,10 @@ struct CoachContentView: View {
         return descriptor
     }
 
-    private static var recommendationFeedbackDescriptor: FetchDescriptor<CoachRecommendationFeedback> {
+    private static func recommendationFeedbackDescriptor(live: Bool) -> FetchDescriptor<CoachRecommendationFeedback> {
+        guard live else {
+            return FetchDescriptor(predicate: #Predicate<CoachRecommendationFeedback> { _ in false })
+        }
         var descriptor = FetchDescriptor<CoachRecommendationFeedback>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
@@ -455,7 +463,10 @@ struct CoachContentView: View {
         return descriptor
     }
 
-    private static var exerciseMetadataDescriptor: FetchDescriptor<CoachExerciseMetadata> {
+    private static func exerciseMetadataDescriptor(live: Bool) -> FetchDescriptor<CoachExerciseMetadata> {
+        guard live else {
+            return FetchDescriptor(predicate: #Predicate<CoachExerciseMetadata> { _ in false })
+        }
         var descriptor = FetchDescriptor<CoachExerciseMetadata>(
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
         )
@@ -463,7 +474,10 @@ struct CoachContentView: View {
         return descriptor
     }
 
-    private static var coachPreferencesDescriptor: FetchDescriptor<CoachPreferences> {
+    private static func coachPreferencesDescriptor(live: Bool) -> FetchDescriptor<CoachPreferences> {
+        guard live else {
+            return FetchDescriptor(predicate: #Predicate<CoachPreferences> { _ in false })
+        }
         var descriptor = FetchDescriptor<CoachPreferences>(
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
         )
@@ -471,7 +485,10 @@ struct CoachContentView: View {
         return descriptor
     }
 
-    private static var splitMetadataDescriptor: FetchDescriptor<CoachSplitMetadata> {
+    private static func splitMetadataDescriptor(live: Bool) -> FetchDescriptor<CoachSplitMetadata> {
+        guard live else {
+            return FetchDescriptor(predicate: #Predicate<CoachSplitMetadata> { _ in false })
+        }
         var descriptor = FetchDescriptor<CoachSplitMetadata>(
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
         )
@@ -496,34 +513,18 @@ struct CoachContentView: View {
     }
 
     private var currentSleepSnapshot: SleepAnalyticsSnapshot {
-        guard lastSleepAnalyticsSignature != nil else {
-            return sleepSnapshot
-        }
-
-        let signature = currentSleepAnalyticsSignature
-        if signature == lastSleepAnalyticsSignature {
-            return sleepSnapshot
-        }
-
-        return sleepSnapshot
+        sleepSnapshot
     }
 
     private var currentCoachSnapshot: CoachIntelligenceSnapshot {
-        guard lastCoachSnapshotSignature != nil else {
-            return coachSnapshot
-        }
-
-        let signature = currentCoachSnapshotSignature
-        if signature == lastCoachSnapshotSignature {
-            return coachSnapshot
-        }
-
-        return coachSnapshot
+        coachSnapshot
     }
 
     private var currentCoachSnapshotSignature: String {
         [
-            signature(activeSplits, limit: 12) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(activeSplits, limit: 12) {
+                "\($0.id.uuidString):\($0.activeRotationIndex ?? -1):\($0.updatedAt.timeIntervalSince1970)"
+            },
             signature(exercises, limit: 160) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
             signature(coachHistorySessions, limit: 40) { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.endedAt?.timeIntervalSince1970 ?? 0)" },
             signature(sleepSessions, limit: 90) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
@@ -539,14 +540,15 @@ struct CoachContentView: View {
             signature(splitMetadataRecords, limit: 30) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
             sleepSettingsSignature,
             "\(hydrationTargetML)",
-            "\(nutritionGoal.updatedAt.timeIntervalSince1970)"
+            "\(nutritionGoal.updatedAt.timeIntervalSince1970)",
+            readinessRefreshClock.token.signature
         ].joined(separator: "|")
     }
 
     private var currentWeeklyReviewSignature: String {
         [
             signature(activeSplits, limit: 12) { split in
-                "\((split.id.uuidString)):\(split.updatedAt.timeIntervalSince1970)"
+                "\(split.id.uuidString):\(split.activeRotationIndex ?? -1):\(split.updatedAt.timeIntervalSince1970)"
             },
             signature(recentCompletedSessions, limit: 20) { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.endedAt?.timeIntervalSince1970 ?? 0)" }
         ].joined(separator: "|")
@@ -600,6 +602,26 @@ struct CoachContentView: View {
         SleepAnalyticsInputSignature(sessions: sleepSessions, naps: napSessions, workouts: recentCompletedSessions, settings: sleepSettings, sessionLimit: 90, workoutLimit: 20)
     }
 
+    private var observedSleepAnalyticsSignature: SleepAnalyticsInputSignature? {
+        guard liveObservationEnabled, !isLiveObservationSuspendedForPreview else { return nil }
+        return currentSleepAnalyticsSignature
+    }
+
+    private var observedCoachSnapshotSignature: String? {
+        guard liveObservationEnabled, !isLiveObservationSuspendedForPreview else { return nil }
+        return currentCoachSnapshotSignature
+    }
+
+    private var observedCoachDerivedSignature: String? {
+        guard liveObservationEnabled, !isLiveObservationSuspendedForPreview else { return nil }
+        return currentCoachDerivedSignature
+    }
+
+    private var observedWeeklyReviewSignature: String? {
+        guard liveObservationEnabled, !isLiveObservationSuspendedForPreview else { return nil }
+        return currentWeeklyReviewSignature
+    }
+
     var body: some View {
         let _ = PerformanceTracer.mark(.todayCoachDestinationBody, "CoachContentView body hasLoaded=\(hasLoadedCoachSnapshot) initialSnapshot=\(initialSnapshot != nil)")
         let intelligence = currentCoachSnapshot
@@ -609,24 +631,24 @@ struct CoachContentView: View {
             subtitle: "Readiness, targets, and recovery.",
             systemImage: "sparkles"
         ) {
-            FitnessCard(style: .hero) {
-                VStack(alignment: .leading, spacing: 16) {
+            FitnessInformationalActionCard(style: .hero) {
+                VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .top, spacing: 14) {
                         ExerciseIconTile(
                             iconKey: ExerciseIconMapper.splitIconKey(for: dailyDecision.recommendedSplitName ?? ""),
                             title: nil,
-                            size: 58,
+                            size: 50,
                             style: .compact
                         )
 
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Today's Call")
-                                .font(.caption.weight(.semibold))
+                                .font(AppTypography.eyebrow)
                                 .foregroundStyle(appTheme.colors.textTertiary)
                                 .textCase(.uppercase)
 
                             Text(dailyDecision.headline)
-                                .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                                .font(AppTypography.heroTitle)
                                 .foregroundStyle(appTheme.colors.textPrimary)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .accessibilityIdentifier("coach-todays-call")
@@ -637,39 +659,13 @@ struct CoachContentView: View {
                         VStack(alignment: .trailing, spacing: 8) {
                             CoachBadgeView(state: dailyDecision.badgeState)
                             Text(dailyDecision.confidenceLabel)
-                                .font(.caption.weight(.semibold))
+                                .font(AppTypography.metadataEmphasis)
                                 .foregroundStyle(appTheme.colors.textTertiary)
-                        }
-                    }
-
-                    if dailyDecision.recommendedSplitName != nil {
-                        Button {
-                            openRecommendedPreview()
-                        } label: {
-                            Label(dailyDecision.primaryActionTitle, systemImage: "play.fill")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(PrimaryFitnessButtonStyle())
-                        .accessibilityIdentifier("coach-primary-action")
-                        .disabled(!dailyDecision.canOpenPreview)
-                    }
-
-                    if let targetLine = dailyDecision.targetLine {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Main Target")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(appTheme.colors.textTertiary)
-                                .textCase(.uppercase)
-
-                            Text(targetLine)
-                                .font(.headline)
-                                .foregroundStyle(appTheme.colors.textPrimary)
-                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
 
                     Text(dailyDecision.shortReason)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -686,17 +682,30 @@ struct CoachContentView: View {
                                 .textCase(.uppercase)
 
                             Text(dailyDecision.nextStep)
-                                .font(AppTypography.body)
+                                .font(AppTypography.bodyEmphasis)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
+            } action: {
+                if dailyDecision.recommendedSplitName != nil {
+                    Button {
+                        openRecommendedPreview()
+                    } label: {
+                        Label(dailyDecision.primaryActionTitle, systemImage: "play.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(PrimaryFitnessButtonStyle())
+                    .accessibilityIdentifier("coach-primary-action")
+                    .disabled(!dailyDecision.canOpenPreview)
+                }
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("coach-hero-card")
 
-            DashboardSection(title: "Why this?") {
+            if supportingDashboardMounted {
+                DashboardSection(title: "Why this?") {
                 TrainingCallAuditCard(snapshot: dailyDecision.trainingCall)
                 .accessibilityIdentifier("coach-why-this-section")
             }
@@ -766,10 +775,10 @@ struct CoachContentView: View {
                 }
             }
 
-            DashboardSection(title: "Coach Controls") {
+                DashboardSection(title: "Coach Controls") {
                 VStack(spacing: 12) {
                     Button {
-                        route = .preferences
+                        openCoachRoute(.preferences)
                     } label: {
                         DashboardActionTile(
                             title: "Coach Preferences",
@@ -781,11 +790,14 @@ struct CoachContentView: View {
                     .accessibilityIdentifier("coach-preferences-open")
 
                     Button {
-                        route = .weeklyReview
+                        openCoachRoute(.weeklyReview)
                     } label: {
                         DashboardActionTile(
                             title: "Weekly Review",
-                            subtitle: "\(weeklyWorkoutCount) workouts, \(weeklyWorkingSetCount) working sets",
+                            subtitle: PeaklineText.joinedMetadata([
+                                PeaklineText.count(weeklyWorkoutCount, singular: "workout"),
+                                PeaklineText.count(weeklyWorkingSetCount, singular: "working set")
+                            ]),
                             systemImage: "chart.bar.doc.horizontal"
                         )
                     }
@@ -795,46 +807,40 @@ struct CoachContentView: View {
             }
 
             DashboardSection(title: "Weekly Review") {
-                FitnessCard {
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack(spacing: 10) {
-                            MetricTile(
-                                label: "Workouts",
-                                value: "\(weeklyWorkoutCount)",
-                                caption: "This week",
-                                systemImage: "figure.strengthtraining.traditional"
-                            )
+                FitnessInformationalActionCard {
+                    HStack(spacing: 10) {
+                        MetricTile(
+                            label: "Workouts",
+                            value: "\(weeklyWorkoutCount)",
+                            caption: "This week",
+                            systemImage: "figure.strengthtraining.traditional"
+                        )
 
-                            MetricTile(
-                                label: "Sets",
-                                value: "\(weeklyWorkingSetCount)",
-                                caption: "Working sets",
-                                systemImage: "checkmark.circle"
-                            )
-                        }
-
-                        CoachWeeklyReviewRow(title: "Best win", message: practicalWeeklyReview.bestWin)
-                        CoachWeeklyReviewRow(title: "Main risk", message: practicalWeeklyReview.mainRisk)
-                        CoachWeeklyReviewRow(title: "Next adjustment", message: practicalWeeklyReview.nextAdjustment)
-                        CoachWeeklyReviewRow(title: "Split balance", message: practicalWeeklyReview.splitBalance)
-                        CoachWeeklyReviewRow(title: "Recovery note", message: practicalWeeklyReview.recoveryNote)
-
-                        Button {
-                            route = .weeklyReview
-                        } label: {
-                            Label("Open weekly review", systemImage: "chart.bar.doc.horizontal")
-                                .font(.subheadline.weight(.semibold))
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(SecondaryFitnessButtonStyle())
-                        .accessibilityIdentifier("coach-weekly-review-open-detail")
+                        MetricTile(
+                            label: "Sets",
+                            value: "\(weeklyWorkingSetCount)",
+                            caption: "Working sets",
+                            systemImage: "checkmark.circle"
+                        )
                     }
+
+                    CoachWeeklyReviewRow(title: "Best win", message: practicalWeeklyReview.bestWin)
+                    CoachWeeklyReviewRow(title: "Main risk", message: practicalWeeklyReview.mainRisk)
+                    CoachWeeklyReviewRow(title: "Next adjustment", message: practicalWeeklyReview.nextAdjustment)
+                    CoachWeeklyReviewRow(title: "Split balance", message: practicalWeeklyReview.splitBalance)
+                    CoachWeeklyReviewRow(title: "Recovery note", message: practicalWeeklyReview.recoveryNote)
+                } action: {
+                    Button {
+                        openCoachRoute(.weeklyReview)
+                    } label: {
+                        Label("Open weekly review", systemImage: "chart.bar.doc.horizontal")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryFitnessButtonStyle())
+                    .accessibilityIdentifier("coach-weekly-review-open-detail")
                 }
                 .accessibilityIdentifier("coach-weekly-review-section")
-            }
-
-            DashboardSection(title: "Today's Check-In") {
-                CheckInStatusCard(checkIn: intelligence.readiness.checkIn)
             }
 
             ReadinessDetailHeaderCard(readiness: intelligence.readiness)
@@ -851,7 +857,7 @@ struct CoachContentView: View {
                 CoachActionHistoryTimeline(entries: Array(coachActionHistory.prefix(5)))
 
                 Button {
-                    route = .actionHistory
+                    openCoachRoute(.actionHistory)
                 } label: {
                     Label("Review action history", systemImage: "clock.arrow.circlepath")
                         .font(.subheadline.weight(.semibold))
@@ -1008,13 +1014,14 @@ struct CoachContentView: View {
                 }
             }
 
-            #if DEBUG
-            if coachPreferencesSnapshot.showDiagnostics {
-                DashboardSection(title: "Diagnostics") {
-                    CoachDiagnosticsCard(diagnostics: intelligence.diagnostics)
+                #if DEBUG
+                if coachPreferencesSnapshot.showDiagnostics {
+                    DashboardSection(title: "Diagnostics") {
+                        CoachDiagnosticsCard(diagnostics: intelligence.diagnostics)
+                    }
                 }
+                #endif
             }
-            #endif
         }
         .overlay(alignment: .topLeading) {
             Color.clear
@@ -1024,84 +1031,139 @@ struct CoachContentView: View {
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("coach-screen")
         .navigationDestination(item: $route) { route in
-            switch route {
-            case .actionHistory:
-                CoachActionHistoryDetailView(
-                    entries: coachActionHistory,
-                    feedback: recommendationFeedback
+            Group {
+                switch route {
+                case .actionHistory:
+                    CoachActionHistoryDetailView(
+                        entries: coachActionHistory,
+                        feedback: recommendationFeedback
+                    )
+                case .preferences:
+                    CoachPreferencesView()
+                case .weeklyReview:
+                    WeeklyReviewView(initialReview: weeklyReview ?? initialSnapshot?.weeklyReview)
+                }
+            }
+            .onAppear {
+                NavigationInteraction.destinationDidAppear(
+                    key: "coach.\(route.analyticsName)"
                 )
-            case .preferences:
-                CoachPreferencesView()
-            case .weeklyReview:
-                WeeklyReviewView()
             }
         }
         .navigationDestination(item: $previewRoute) { route in
-            WorkoutPreviewRouteView(split: route.split, initialMode: route.mode)
+            WorkoutPreviewRouteView(preparedRoute: route.preparedRoute)
+                .onAppear {
+                    NavigationInteraction.destinationDidAppear(
+                        key: "coach.preview.\(route.id)"
+                    )
+                }
         }
         .onAppear {
+            readinessRefreshClock.start()
             PerformanceTracer.mark(.todayCoachDestinationAppear, "CoachContentView onAppear begin hasLoaded=\(hasLoadedCoachSnapshot) initialSnapshot=\(initialSnapshot != nil)")
-            sleepSettings = sleepSettingsStore.load()
-            hydrationTargetML = hydrationSettingsStore.dailyTargetML()
-            nutritionGoal = nutritionGoalStore.loadGoal()
-            refreshCoachAfterFirstMount()
+            if isLiveObservationSuspendedForPreview {
+                resumeLiveObservationAfterPreviewIfNeeded()
+            } else if initialSnapshot != nil {
+                // The startup payload already represents one coherent source generation.
+                // Do not traverse every live query while the native push is mounting;
+                // enable query-driven invalidation after the prepared frame can present.
+                PerformanceTracer.mark(.coachSnapshot, "warm_route_payload_reused_without_mount_traversal")
+                scheduleSupportingDashboardMountIfNeeded()
+                scheduleLiveObservationActivationIfNeeded()
+            } else {
+                loadLiveObservationSettings()
+                refreshLiveObservationInputs()
+            }
             PerformanceTracer.mark(.todayCoachDestinationAppear, "CoachContentView onAppear end")
+        }
+        .onChange(of: liveQueriesEnabled) { queriesWereEnabled, queriesAreEnabled in
+            guard !queriesWereEnabled, queriesAreEnabled else { return }
+            scheduleLiveObservationActivationIfNeeded()
+        }
+        .onChange(of: previewRoute) { previousRoute, nextRoute in
+            guard previousRoute != nil, nextRoute == nil else { return }
+            resumeLiveObservationAfterPreviewIfNeeded()
+        }
+        .onChange(of: observedSleepAnalyticsSignature) { previousSignature, signature in
+            guard previousSignature != nil, let signature else { return }
+            guard signature != lastSleepAnalyticsSignature else { return }
+            refreshSleepAnalytics()
+        }
+        .onChange(of: observedCoachSnapshotSignature) { previousSignature, signature in
+            guard previousSignature != nil, let signature else { return }
+            guard signature != lastCoachSnapshotSignature else { return }
+            refreshCoachSnapshot()
+        }
+        .onChange(of: observedCoachDerivedSignature) { previousSignature, signature in
+            guard previousSignature != nil, let signature else { return }
+            guard signature != lastCoachDerivedSignature else { return }
+            refreshCoachDerivedMetrics()
+        }
+        .onChange(of: observedWeeklyReviewSignature) { previousSignature, signature in
+            guard previousSignature != nil, let signature else { return }
+            guard signature != lastWeeklyReviewSignature else { return }
+            refreshWeeklyReview()
         }
         .onDisappear {
             PerformanceTracer.mark(.unsafeBreadcrumb, "coach.onDisappear cancel_tasks begin")
-            deferredCoachRefreshWorkItem?.cancel()
-            deferredFullCoachSnapshotWorkItem?.cancel()
             coachDerivedTask?.cancel()
             weeklyReviewTask?.cancel()
             PerformanceTracer.mark(.unsafeBreadcrumb, "coach.onDisappear cancel_tasks end")
         }
         .onReceive(NotificationCenter.default.publisher(for: .appWillResignActiveForCleanup)) { _ in
             PerformanceTracer.mark(.unsafeBreadcrumb, "coach.willResignActive cancel_tasks begin")
-            deferredCoachRefreshWorkItem?.cancel()
-            deferredFullCoachSnapshotWorkItem?.cancel()
             coachDerivedTask?.cancel()
             weeklyReviewTask?.cancel()
             PerformanceTracer.mark(.unsafeBreadcrumb, "coach.willResignActive cancel_tasks end")
         }
-        .redacted(reason: hasLoadedCoachSnapshot ? [] : .placeholder)
     }
 
-    private func refreshCoachAfterFirstMount() {
-        deferredCoachRefreshWorkItem?.cancel()
-        PerformanceTracer.mark(.unsafeBreadcrumb, "coach.deferred_refresh schedule")
-        let workItem = DispatchWorkItem {
-            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.deferred_refresh begin")
-            refreshSleepAnalytics()
-            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.deferred_refresh after_sleep_analytics")
-            if initialSnapshot != nil, hasLoadedCoachSnapshot, lastCoachSnapshotSignature == nil {
-                PerformanceTracer.mark(.coachSnapshot, "warm_start reused_today_snapshot")
-                let signature = currentCoachSnapshotSignature
-                lastCoachSnapshotSignature = signature
-                CoachRouteSnapshotStore.shared.update(snapshot: coachSnapshot, signature: signature, source: "coach_warm_start")
-                scheduleFullCoachSnapshotRefresh()
-            } else {
-                refreshCoachSnapshot()
-            }
-            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.deferred_refresh after_coach_snapshot")
-            refreshCoachDerivedMetrics()
-            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.deferred_refresh after_derived_schedule")
-            refreshWeeklyReview()
-            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.deferred_refresh end")
-        }
-        deferredCoachRefreshWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: workItem)
+    private func refreshLiveObservationInputs() {
+        refreshSleepAnalytics()
+        refreshCoachSnapshot()
+        refreshCoachDerivedMetrics()
+        refreshWeeklyReview()
     }
 
-    private func scheduleFullCoachSnapshotRefresh() {
-        deferredFullCoachSnapshotWorkItem?.cancel()
-        let workItem = DispatchWorkItem {
-            PerformanceTracer.mark(.coachSnapshot, "deferred_full_refresh")
-            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.deferred_full_snapshot begin")
-            refreshCoachSnapshot(force: true)
-            PerformanceTracer.mark(.unsafeBreadcrumb, "coach.deferred_full_snapshot end")
+    private func loadLiveObservationSettings() {
+        sleepSettings = sleepSettingsStore.load()
+        hydrationTargetML = hydrationSettingsStore.dailyTargetML()
+        nutritionGoal = nutritionGoalStore.loadGoal()
+    }
+
+    private func scheduleSupportingDashboardMountIfNeeded() {
+        guard initialSnapshot != nil, !supportingDashboardMounted else { return }
+
+        // The complete snapshot-backed decision remains visible and actionable
+        // immediately. Sections below the initial viewport join after the first
+        // rendered frame so their large view graph cannot delay the native push.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            supportingDashboardMounted = true
         }
-        deferredFullCoachSnapshotWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: workItem)
+    }
+
+    private func scheduleLiveObservationActivationIfNeeded() {
+        guard liveQueriesEnabled, !liveObservationEnabled else { return }
+        Task { @MainActor in
+            await Task.yield()
+            guard liveQueriesEnabled, !liveObservationEnabled else { return }
+            loadLiveObservationSettings()
+            liveObservationEnabled = true
+        }
+    }
+
+    private func resumeLiveObservationAfterPreviewIfNeeded() {
+        guard isLiveObservationSuspendedForPreview else { return }
+        Task { @MainActor in
+            await Task.yield()
+            guard isLiveObservationSuspendedForPreview, previewRoute == nil else { return }
+
+            // Catch up once while observation is still gated, then reattach the
+            // onChange inputs without starting duplicate refresh work.
+            loadLiveObservationSettings()
+            refreshLiveObservationInputs()
+            isLiveObservationSuspendedForPreview = false
+        }
     }
 
     private func refreshSleepAnalytics(force: Bool = false) {
@@ -1142,7 +1204,7 @@ struct CoachContentView: View {
             lastCoachSnapshotSignature = signature
             hasLoadedCoachSnapshot = true
         }
-        CoachRouteSnapshotStore.shared.update(snapshot: coachSnapshot, signature: signature, source: "coach")
+        CoachRouteSnapshotStore.shared.update(intelligence: coachSnapshot, signature: signature, source: "coach")
         refreshPresentationState()
         PerformanceTracer.mark(.unsafeBreadcrumb, "coach.snapshot after_make")
     }
@@ -1309,7 +1371,7 @@ struct CoachContentView: View {
                 bestWin: "Finish a few sessions to build a weekly win.",
                 mainRisk: "The watchlist is still building from recent training.",
                 nextAdjustment: "Keep logging workouts so Peakline can sharpen the next call.",
-                splitBalance: "Push/Pull/Legs balance will appear once the week has completed sessions.",
+                splitBalance: "Active programme coverage will appear once the week has completed sessions.",
                 recoveryNote: intelligence.weeklySummary.recommendedFocus
             )
         }
@@ -1318,34 +1380,9 @@ struct CoachContentView: View {
             bestWin: weeklyReview.highlights.first?.message ?? "No clear PR win yet this week.",
             mainRisk: weeklyReview.watchlist.first?.message ?? "No major risk is standing out right now.",
             nextAdjustment: weeklyReview.nextDecision.reason,
-            splitBalance: "Push \(weeklyReview.splitConsistency.pushCount) / Pull \(weeklyReview.splitConsistency.pullCount) / Legs \(weeklyReview.splitConsistency.legsCount). \(weeklyReview.splitConsistency.balanceDescription)",
+            splitBalance: "\(weeklyReview.splitConsistency.countDescription(separator: " / ")). \(weeklyReview.splitConsistency.balanceDescription)",
             recoveryNote: intelligence.weeklySummary.recommendedFocus
         )
-    }
-
-    private func recommendedPreviewMode(
-        canonicalDecision: TrainingDecision,
-        intelligence: CoachIntelligenceSnapshot,
-        weeklyReview: WeeklyReview?,
-        targetSuggestions: [TargetSuggestion]
-    ) -> WorkoutMode {
-        if canonicalDecision.recommendedMode == .recovery || weeklyReview?.nextDecision.recommendedMode == .recovery {
-            return .recovery
-        }
-
-        switch intelligence.adaptiveGuidance.mode {
-        case .recoveryFocus:
-            return .recovery
-        case .reduce:
-            return .quick
-        case .push:
-            let hasLoadPush = targetSuggestions.contains { suggestion in
-                suggestion.recommendationType == .increaseLoad || suggestion.recommendationType == .addReps
-            }
-            return hasLoadPush ? .heavy : .full
-        case .maintain:
-            return .full
-        }
     }
 
     private func displayedTargetSuggestions(_ suggestions: [TargetSuggestion], mode: WorkoutMode) -> [TargetSuggestion] {
@@ -1530,19 +1567,14 @@ struct CoachContentView: View {
     private func targetDescription(for suggestion: TargetSuggestion) -> String {
         switch (suggestion.suggestedWeight, suggestion.suggestedReps) {
         case let (.some(weight), .some(reps)):
-            return "\(format(weight))kg x \(reps)"
+            return PeaklineText.loadReps(weight: format(weight), reps: reps)
         case let (.some(weight), .none):
-            return "\(format(weight))kg"
+            return "\(format(weight)) kg"
         case let (.none, .some(reps)):
             return "\(reps)+ reps"
         case (.none, .none):
             return "Log clean sets"
         }
-    }
-
-    private func summaryText(from signals: [CoachDecisionSignal], fallback: String) -> String {
-        let message = signals.prefix(3).map(\.message).joined(separator: " ")
-        return message.isEmpty ? fallback : message
     }
 
     private func targetFallbackText(splitName: String?) -> String {
@@ -1666,13 +1698,15 @@ struct CoachContentView: View {
     }
 
     private func openRecommendedPreview() {
-        guard
-            let split = recommendedSplit(named: dailyDecision.recommendedSplitName)
-                ?? activeSplits.first(where: { $0.name == dailyDecision.recommendedSplitName })
-        else { return }
+        let liveSplit = recommendedSplit(named: dailyDecision.recommendedSplitName)
+            ?? activeSplits.first(where: { $0.name == dailyDecision.recommendedSplitName })
+        let preparedSplit = liveSplit.map(WorkoutPreviewSplit.init)
+            ?? initialSnapshot?.recommendedSplit
+
+        guard let preparedSplit else { return }
 
         let route = CoachWorkoutPreviewRoute(
-            split: WorkoutPreviewSplit(split),
+            split: preparedSplit,
             mode: dailyDecision.recommendedMode
         )
 
@@ -1687,8 +1721,24 @@ struct CoachContentView: View {
             return
         }
 
-        AppMotion.smoothNavigate(reduceMotion: reduceMotion) {
+        NavigationInteraction.perform(
+            key: "coach.preview.\(route.id)",
+            destinationClass: .deep,
+            haptic: .selection
+        ) {
+            isLiveObservationSuspendedForPreview = true
             previewRoute = route
+        }
+    }
+
+    private func openCoachRoute(_ nextRoute: CoachRoute) {
+        guard route != nextRoute else { return }
+        NavigationInteraction.perform(
+            key: "coach.\(nextRoute.analyticsName)",
+            destinationClass: .deep,
+            haptic: .selection
+        ) {
+            route = nextRoute
         }
     }
 
@@ -1825,13 +1875,22 @@ struct CoachContentView: View {
     }
 }
 
-private struct CoachDerivedMetrics: Sendable {
+struct CoachDerivedMetrics: Sendable {
     let summary: CoachRecommendationSummary
     let recentPRs: [PRRecord]
     let targetSuggestions: [TargetSuggestion]
     let weeklyWorkoutCount: Int
     let weeklyWorkingSetCount: Int
     let progressOpportunityInsights: [CoachInsight]
+
+    static let placeholder = CoachDerivedMetrics(
+        summary: .placeholder,
+        recentPRs: [],
+        targetSuggestions: [],
+        weeklyWorkoutCount: 0,
+        weeklyWorkingSetCount: 0,
+        progressOpportunityInsights: []
+    )
 
     static func make(
         activeSplits: [TrainingSplitSnapshot],
@@ -1926,7 +1985,7 @@ private extension CoachRecommendationSummary {
     }
 }
 
-private struct CoachDailyDecision: Equatable {
+struct CoachDailyDecision: Equatable {
     let recommendedSplitName: String?
     let recommendedMode: WorkoutMode
     let headline: String
@@ -1975,7 +2034,7 @@ private struct CoachDailyDecision: Equatable {
     )
 }
 
-private struct CoachWeeklyReviewSnapshot: Equatable {
+struct CoachWeeklyReviewSnapshot: Equatable {
     let bestWin: String
     let mainRisk: String
     let nextAdjustment: String
@@ -1991,39 +2050,13 @@ private struct CoachWeeklyReviewSnapshot: Equatable {
     )
 }
 
-private struct CoachDecisionSignal: Identifiable, Equatable {
+struct CoachDecisionSignal: Identifiable, Equatable {
     let title: String
     let message: String
     let systemImage: String
 
     var id: String {
         "\(title)|\(message)|\(systemImage)"
-    }
-}
-
-private struct CoachDecisionSignalRow: View {
-    @Environment(\.appTheme) private var appTheme
-
-    let signal: CoachDecisionSignal
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            FitnessIconBadge(systemImage: signal.systemImage, size: 40)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(signal.title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.textTertiary)
-                    .textCase(.uppercase)
-
-                Text(signal.message)
-                    .font(.subheadline)
-                    .foregroundStyle(appTheme.colors.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 8)
-        }
     }
 }
 
@@ -2143,11 +2176,29 @@ private enum CoachRoute: Hashable, Identifiable {
     case weeklyReview
 
     var id: Self { self }
+
+    var analyticsName: String {
+        switch self {
+        case .actionHistory: "action-history"
+        case .preferences: "preferences"
+        case .weeklyReview: "weekly-review"
+        }
+    }
 }
 
 private struct CoachWorkoutPreviewRoute: Hashable, Identifiable {
-    let split: WorkoutPreviewSplit
-    let mode: WorkoutMode
+    let preparedRoute: WorkoutPreviewPreparedRoute
+
+    var split: WorkoutPreviewSplit { preparedRoute.split }
+    var mode: WorkoutMode { preparedRoute.initialMode }
+
+    @MainActor
+    init(split: WorkoutPreviewSplit, mode: WorkoutMode) {
+        preparedRoute = WorkoutPreviewWarmStartStore.shared.prepareRoute(
+            for: split,
+            initialMode: mode
+        )
+    }
 
     var id: String {
         "\(split.id.uuidString)-\(mode.rawValue)"

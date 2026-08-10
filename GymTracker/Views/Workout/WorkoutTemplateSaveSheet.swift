@@ -42,7 +42,13 @@ struct WorkoutTemplateSaveSheet: View {
                                 Text(log.exerciseNameSnapshot)
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(appTheme.colors.textPrimary)
-                                Text("\(max(log.targetSets, 1)) sets - \(log.minReps)-\(log.maxReps) reps")
+                                Text(
+                                    PeaklineText.setRepSummary(
+                                        sets: max(log.targetSets, 1),
+                                        minimumReps: log.minReps,
+                                        maximumReps: log.maxReps
+                                    )
+                                )
                                     .font(.caption)
                                     .foregroundStyle(appTheme.colors.textSecondary)
                             }
@@ -57,6 +63,7 @@ struct WorkoutTemplateSaveSheet: View {
                     }
                 }
             }
+            .peaklineGroupedContent()
             .navigationTitle("Save Template")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -74,6 +81,7 @@ struct WorkoutTemplateSaveSheet: View {
                 }
             }
         }
+        .peaklineKeyboardDismissal()
     }
 
     private func save() {

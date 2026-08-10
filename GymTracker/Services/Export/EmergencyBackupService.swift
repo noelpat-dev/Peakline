@@ -227,17 +227,22 @@ struct EmergencyBackupService {
 }
 
 private struct EmergencyBackupRecord: Codable {
-    private let schemaVersion = 1
-    private let compressionAlgorithm = "lzfse"
+    private let schemaVersion: Int
+    private let compressionAlgorithm: String
     let metadata: EmergencyBackupMetadata
     let compressedEnvelopeData: Data
 
     init(envelopeData: Data, metadata: EmergencyBackupMetadata) throws {
+        schemaVersion = 1
+        compressionAlgorithm = "lzfse"
         self.metadata = metadata
         compressedEnvelopeData = try (envelopeData as NSData).compressed(using: .lzfse) as Data
     }
 
     func envelopeData() throws -> Data {
+        guard schemaVersion == 1 else {
+            throw EmergencyBackupRecordError.unsupportedSchemaVersion(schemaVersion)
+        }
         guard compressionAlgorithm == "lzfse" else {
             throw EmergencyBackupRecordError.unsupportedCompression
         }
@@ -258,9 +263,15 @@ private struct EmergencyBackupRecord: Codable {
 }
 
 private enum EmergencyBackupRecordError: LocalizedError {
+    case unsupportedSchemaVersion(Int)
     case unsupportedCompression
 
     var errorDescription: String? {
-        "Unsupported emergency backup compression."
+        switch self {
+        case .unsupportedSchemaVersion(let version):
+            "Unsupported emergency backup schema version \(version)."
+        case .unsupportedCompression:
+            "Unsupported emergency backup compression."
+        }
     }
 }

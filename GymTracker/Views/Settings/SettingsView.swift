@@ -6,14 +6,11 @@ struct SettingsView: View {
     @Environment(\.appTheme) private var appTheme
     @Query private var profiles: [UserProfile]
     @AppStorage("appTheme") private var storedTheme = AppTheme.black.rawValue
+    @AppStorage("appAppearance") private var storedAppearance = AppAppearance.system.rawValue
 
     var body: some View {
         NavigationStack {
-            FitnessScreen(
-                title: "Settings",
-                subtitle: "Preferences, utilities, and local data.",
-                systemImage: "gearshape"
-            ) {
+            FitnessScreen {
                 DashboardSection(title: "Profile") {
                     if let profile = profiles.first {
                         NavigationLink {
@@ -21,23 +18,28 @@ struct SettingsView: View {
                         } label: {
                             SettingsCardRow(
                                 title: profile.goal.displayName,
-                                subtitle: "\(profile.experienceLevel.displayName) - \(profile.trainingDaysPerWeek) days/week",
+                                subtitle: PeaklineText.joinedMetadata([
+                                    profile.experienceLevel.displayName,
+                                    "\(profile.trainingDaysPerWeek) days/week"
+                                ]),
                                 systemImage: "person.crop.circle"
                             )
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(PressableCardButtonStyle())
+                        .accessibilityIdentifier("settings-profile")
                     } else {
                         Button {
                             createProfile()
                         } label: {
                             SettingsCardRow(
                                 title: "Create Profile",
-                                subtitle: "Set goal, training days, and unit preferences.",
+                                subtitle: "Add your goal and training details.",
                                 systemImage: "person.crop.circle.badge.plus",
                                 showsChevron: false
                             )
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(PressableCardButtonStyle())
+                        .accessibilityIdentifier("settings-create-profile")
                     }
                 }
 
@@ -49,7 +51,7 @@ struct SettingsView: View {
                             } label: {
                                 SettingsInlineRow(title: "Exercise Library", subtitle: "Manage exercises and icons", systemImage: "dumbbell")
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(PeaklineButtonPressStyle())
                             .accessibilityIdentifier("settings-exercise-library")
 
                             SettingsDivider()
@@ -59,72 +61,81 @@ struct SettingsView: View {
                             } label: {
                                 SettingsInlineRow(title: "Progress", subtitle: "Charts, PRs, and lift trends", systemImage: "chart.line.uptrend.xyaxis")
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(PeaklineButtonPressStyle())
                             .accessibilityIdentifier("settings-progress")
 
                             SettingsDivider()
 
-                            NavigationLink(value: SettingsRoute.coach) {
+                            NavigationLink {
+                                CoachRouteDestinationView()
+                            } label: {
                                 SettingsInlineRow(title: "Coach", subtitle: "Targets, warnings, and weekly review", systemImage: "sparkles")
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(PeaklineButtonPressStyle())
                             .accessibilityIdentifier("settings-coach")
                         }
                     }
                 }
 
-                DashboardSection(title: "Gym Utilities") {
-                    HStack(spacing: 12) {
-                        NavigationLink {
-                            PlateCalculatorView()
-                        } label: {
-                            SettingsUtilityTile(title: "Plate Calculator", subtitle: "Load the bar quickly", systemImage: "scalemass")
-                        }
-                        .buttonStyle(.plain)
-
-                        NavigationLink {
-                            ThemeSettingsView()
-                        } label: {
-                            SettingsUtilityTile(title: "Themes", subtitle: selectedTheme.displayName, systemImage: "paintpalette")
-                        }
-                        .buttonStyle(.plain)
+                DashboardSection(title: "Workout Tools") {
+                    NavigationLink {
+                        PlateCalculatorView()
+                    } label: {
+                        SettingsCardRow(
+                            title: "Plate Calculator",
+                            subtitle: "Calculate metric plates here or beside each live set.",
+                            systemImage: "scalemass"
+                        )
                     }
+                    .buttonStyle(PressableCardButtonStyle())
+                    .accessibilityIdentifier("settings-plate-calculator")
+                }
+
+                DashboardSection(title: "Appearance") {
+                    NavigationLink {
+                        AppearanceSettingsView()
+                    } label: {
+                        SettingsCardRow(
+                            title: "Appearance",
+                            subtitle: appearanceStatus,
+                            systemImage: "paintpalette"
+                        )
+                    }
+                    .buttonStyle(PressableCardButtonStyle())
+                    .accessibilityIdentifier("settings-appearance")
                 }
 
                 DashboardSection(title: "Apple Health") {
-                    VStack(spacing: 12) {
+                    FitnessCard(style: .compact, padding: 12) {
+                        VStack(spacing: 0) {
                         NavigationLink {
                             SleepSettingsStandaloneView()
                         } label: {
-                            SettingsCardRow(
-                                title: "Sleep Settings",
-                                subtitle: "Sleep reminders, Apple Health, source priority, and recovery coaching.",
-                                systemImage: "moon.zzz"
-                            )
+                            SettingsInlineRow(title: "Sleep Settings", subtitle: "Reminders, sources, and recovery coaching", systemImage: "moon.zzz")
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(PeaklineButtonPressStyle())
+
+                        SettingsDivider()
 
                         NavigationLink {
                             HealthKitSettingsView()
                         } label: {
-                            SettingsCardRow(
-                                title: "Apple Health Sync",
-                                subtitle: "Optional nutrition sharing and labeled activity context.",
-                                systemImage: "heart.text.square"
-                            )
+                            SettingsInlineRow(title: "Apple Health Sync", subtitle: "Nutrition sharing and activity context", systemImage: "heart.text.square")
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(PeaklineButtonPressStyle())
+                        }
                     }
                 }
 
                 DashboardSection(title: "Safety") {
-                    FitnessCard {
+                    FitnessCard(style: .compact) {
                         HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: "cross.case")
-                                .font(.title3.weight(.semibold))
-                                .foregroundStyle(appTheme.colors.warning)
-                                .frame(width: 42, height: 42)
-                                .background(appTheme.colors.warning.opacity(0.16), in: Circle())
+                            FitnessIconBadge(
+                                systemImage: "cross.case",
+                                size: 40,
+                                tint: appTheme.colors.warning,
+                                background: appTheme.colors.warning.opacity(0.14)
+                            )
 
                             Text("This app provides general fitness tracking and training suggestions based on your logged workouts. It is not medical advice. Stop exercising and seek professional advice if you experience pain, dizziness, or symptoms that concern you.")
                                 .font(.footnote)
@@ -138,26 +149,36 @@ struct SettingsView: View {
                     FitnessCard(style: .compact, padding: 12) {
                         VStack(spacing: 0) {
                             NavigationLink {
+                                AccountBackupView()
+                            } label: {
+                                SettingsInlineRow(title: "Account & Backup", subtitle: "Firebase sign-in, encrypted save, and restore", systemImage: "lock.shield")
+                            }
+                            .buttonStyle(PeaklineButtonPressStyle())
+
+                            SettingsDivider()
+
+                            NavigationLink {
                                 BackupExportView()
                             } label: {
-                                SettingsInlineRow(title: "Backup & Export", subtitle: "Create local files you can save", systemImage: "square.and.arrow.up")
+                                SettingsInlineRow(title: "Backup & Export", subtitle: "Create local JSON and CSV files", systemImage: "square.and.arrow.up")
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(PeaklineButtonPressStyle())
 
                             SettingsDivider()
 
                             HStack(spacing: 12) {
-                                Image(systemName: "icloud")
-                                    .font(.headline.weight(.semibold))
-                                    .foregroundStyle(appTheme.colors.textSecondary)
-                                    .frame(width: 36, height: 36)
-                                    .background(appTheme.colors.cardBackgroundElevated, in: Circle())
+                                FitnessIconBadge(
+                                    systemImage: "externaldrive.badge.person.crop",
+                                    size: 36,
+                                    tint: appTheme.colors.textSecondary,
+                                    background: appTheme.colors.cardBackgroundElevated
+                                )
 
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("iCloud sync planned")
+                                    Text("Encrypted backup ready")
                                         .font(.headline)
                                         .foregroundStyle(appTheme.colors.textPrimary)
-                                    Text("Workout data is stored locally with SwiftData. Backup & Export creates local files you can save yourself.")
+                                    Text("Peakline stores fast local data with SwiftData and protects a full-app backup in Firebase after you sign in.")
                                         .font(.caption)
                                         .foregroundStyle(appTheme.colors.textSecondary)
                                         .fixedSize(horizontal: false, vertical: true)
@@ -169,40 +190,10 @@ struct SettingsView: View {
                     }
                 }
 
-                FitnessCard(style: .compact) {
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Current Theme")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(appTheme.colors.textSecondary)
-                                .textCase(.uppercase)
-                            Text(selectedTheme.displayName)
-                                .font(.headline)
-                                .foregroundStyle(appTheme.colors.textPrimary)
-                        }
-
-                        Spacer()
-
-                        ZStack {
-                            Circle()
-                                .fill(selectedTheme.colors.accent)
-                                .frame(width: 28, height: 28)
-                            Circle()
-                                .stroke(appTheme.colors.cardBorder, lineWidth: 1)
-                                .frame(width: 42, height: 42)
-                        }
-                    }
-                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("settings-screen")
-            .navigationDestination(for: SettingsRoute.self) { route in
-                switch route {
-                case .coach:
-                    CoachContentView()
-                }
-            }
         }
     }
 
@@ -214,10 +205,24 @@ struct SettingsView: View {
     private var selectedTheme: AppTheme {
         AppTheme(rawValue: storedTheme) ?? .black
     }
+
+    private var selectedAppearance: AppAppearance {
+        AppAppearance.launchArgumentOverride
+            ?? AppAppearance(rawValue: storedAppearance)
+            ?? .system
+    }
+
+    private var appearanceStatus: String {
+        PeaklineText.joinedMetadata([
+            selectedAppearance.displayName,
+            selectedTheme.displayName
+        ])
+    }
 }
 
 private struct SettingsCardRow: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let title: String
     let subtitle: String
@@ -226,101 +231,126 @@ private struct SettingsCardRow: View {
 
     var body: some View {
         FitnessCard(style: .compact) {
-            HStack(spacing: 12) {
-                SettingsRowIcon(systemImage: systemImage)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .top, spacing: 12) {
+                        SettingsRowIcon(systemImage: systemImage)
+                        titleLabel
+                        Spacer(minLength: 8)
+                        chevron
+                    }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.headline)
-                        .foregroundStyle(appTheme.colors.textPrimary)
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(appTheme.colors.textSecondary)
+                    subtitleLabel
                 }
+            } else {
+                HStack(spacing: 12) {
+                    SettingsRowIcon(systemImage: systemImage)
 
-                Spacer()
+                    VStack(alignment: .leading, spacing: 4) {
+                        titleLabel
+                        subtitleLabel
+                    }
 
-                if showsChevron {
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(appTheme.colors.textTertiary)
+                    Spacer()
+                    chevron
                 }
             }
+        }
+    }
+
+    private var titleLabel: some View {
+        Text(title)
+            .font(AppTypography.sectionTitle)
+            .foregroundStyle(appTheme.colors.textPrimary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var subtitleLabel: some View {
+        Text(subtitle)
+            .font(AppTypography.body)
+            .foregroundStyle(appTheme.colors.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private var chevron: some View {
+        if showsChevron {
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(appTheme.colors.textTertiary)
+                .frame(minWidth: appTheme.metrics.minimumHitTarget, minHeight: appTheme.metrics.minimumHitTarget)
+                .accessibilityHidden(true)
         }
     }
 }
 
 private struct SettingsInlineRow: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let title: String
     let subtitle: String
     let systemImage: String
 
     var body: some View {
-        HStack(spacing: 12) {
-            SettingsRowIcon(systemImage: systemImage)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top, spacing: 12) {
+                        SettingsRowIcon(systemImage: systemImage)
+                        titleLabel
+                        Spacer(minLength: 8)
+                        chevron
+                    }
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.headline)
-                    .foregroundStyle(appTheme.colors.textPrimary)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(appTheme.colors.textSecondary)
+                    subtitleLabel
+                }
+            } else {
+                HStack(spacing: 12) {
+                    SettingsRowIcon(systemImage: systemImage)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        titleLabel
+                        subtitleLabel
+                    }
+
+                    Spacer()
+                    chevron
+                }
             }
-
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(appTheme.colors.textTertiary)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 12)
     }
-}
 
-private struct SettingsUtilityTile: View {
-    @Environment(\.appTheme) private var appTheme
+    private var titleLabel: some View {
+        Text(title)
+            .font(AppTypography.sectionTitle)
+            .foregroundStyle(appTheme.colors.textPrimary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
 
-    let title: String
-    let subtitle: String
-    let systemImage: String
+    private var subtitleLabel: some View {
+        Text(subtitle)
+            .font(AppTypography.metadata)
+            .foregroundStyle(appTheme.colors.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
 
-    var body: some View {
-        FitnessCard(style: .compact) {
-            VStack(alignment: .leading, spacing: 12) {
-                SettingsRowIcon(systemImage: systemImage)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.textPrimary)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.8)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                        .lineLimit(2)
-                }
-            }
-            .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
-        }
+    private var chevron: some View {
+        Image(systemName: "chevron.right")
+            .font(.caption.weight(.bold))
+            .foregroundStyle(appTheme.colors.textTertiary)
+            .frame(minWidth: appTheme.metrics.minimumHitTarget, minHeight: appTheme.metrics.minimumHitTarget)
+            .accessibilityHidden(true)
     }
 }
 
 private struct SettingsRowIcon: View {
-    @Environment(\.appTheme) private var appTheme
-
     let systemImage: String
 
     var body: some View {
-        Image(systemName: systemImage)
-            .font(.headline.weight(.semibold))
-            .foregroundStyle(appTheme.colors.accent)
-            .frame(width: appTheme.metrics.rowIconSize, height: appTheme.metrics.rowIconSize)
-            .background(appTheme.colors.accentSurface, in: Circle())
+        FitnessIconBadge(systemImage: systemImage)
     }
 }
 
@@ -334,16 +364,12 @@ private struct SettingsDivider: View {
     }
 }
 
-private enum SettingsRoute: Hashable {
-    case coach
-}
-
-private struct ThemeSettingsView: View {
+private struct AppearanceSettingsView: View {
     @Environment(\.appTheme) private var appTheme
     @AppStorage("appTheme") private var storedTheme = AppTheme.black.rawValue
     @AppStorage("appAppearance") private var storedAppearance = AppAppearance.system.rawValue
 
-    private let availableThemes: [AppTheme] = [.black]
+    private let availableThemes = AppTheme.allCases
 
     private var selectedTheme: Binding<AppTheme> {
         Binding {
@@ -362,55 +388,43 @@ private struct ThemeSettingsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Colour")
-                        .font(.headline)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-
-                    FitnessCard(padding: 10) {
-                        VStack(spacing: 6) {
-                            ForEach(availableThemes) { theme in
-                                ThemeOptionRow(
-                                    theme: theme,
-                                    isSelected: selectedTheme.wrappedValue == theme
-                                ) {
-                                    selectedTheme.wrappedValue = theme
-                                }
-                            }
-                        }
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Appearance")
-                        .font(.headline)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-
-                    FitnessCard(padding: 10) {
-                        HStack(spacing: 8) {
-                            ForEach(AppAppearance.allCases) { appearance in
-                                AppearanceOptionButton(
-                                    appearance: appearance,
-                                    isSelected: selectedAppearance.wrappedValue == appearance
-                                ) {
-                                    selectedAppearance.wrappedValue = appearance
-                                }
+        FitnessScreen {
+            DashboardSection(title: "Accent Colour") {
+                FitnessCard(padding: appTheme.metrics.spacing10) {
+                    VStack(spacing: appTheme.metrics.spacing6) {
+                        ForEach(availableThemes) { theme in
+                            ThemeOptionRow(
+                                theme: theme,
+                                isSelected: selectedTheme.wrappedValue == theme
+                            ) {
+                                selectedTheme.wrappedValue = theme
                             }
                         }
                     }
                 }
             }
-            .padding()
+
+            DashboardSection(title: "Mode") {
+                FitnessCard(padding: appTheme.metrics.spacing10) {
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 92), spacing: appTheme.metrics.spacing8)],
+                        spacing: appTheme.metrics.spacing8
+                    ) {
+                        ForEach(AppAppearance.allCases) { appearance in
+                            AppearanceOptionButton(
+                                appearance: appearance,
+                                isSelected: selectedAppearance.wrappedValue == appearance
+                            ) {
+                                selectedAppearance.wrappedValue = appearance
+                            }
+                        }
+                    }
+                }
+            }
         }
-        .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
-        .navigationTitle("Themes")
+        .navigationTitle("Appearance")
         .navigationBarTitleDisplayMode(.inline)
-        .accessibilityIdentifier("theme-settings-screen")
-        .onAppear {
-            storedTheme = AppTheme.black.rawValue
-        }
+        .accessibilityIdentifier("appearance-settings-screen")
     }
 }
 
@@ -452,6 +466,10 @@ private struct ThemeOptionRow: View {
             .background(isSelected ? theme.colors.accentSurface : Color.clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(theme.displayName) accent colour")
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+        .accessibilityIdentifier("theme-option-\(theme.rawValue)")
     }
 
     private var themeDescription: String {
@@ -467,7 +485,7 @@ private struct ThemeOptionRow: View {
         case .blue:
             return "Cool training blue"
         case .black:
-            return "Monochrome black accents"
+            return "Adaptive monochrome accents"
         }
     }
 }
@@ -502,6 +520,10 @@ private struct AppearanceOptionButton: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(appearance.displayName) appearance")
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+        .accessibilityIdentifier("appearance-option-\(appearance.rawValue)")
     }
 
     private var systemImage: String {
@@ -520,25 +542,17 @@ private struct ProfileEditorView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
     @Bindable var profile: UserProfile
-    @State private var activePicker: ProfilePicker?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                ProfileSummaryCard(profile: profile)
-                trainingPreferencesSection
-                bodySection
-                notesSection
-                coachingImpactCard
-            }
-            .padding()
+        FitnessScreen(locksHorizontalScrolling: true) {
+            ProfileSummaryCard(profile: profile)
+            trainingPreferencesSection
+            bodySection
+            notesSection
         }
-        .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
         .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog(pickerTitle, isPresented: pickerPresented, titleVisibility: .visible) {
-            pickerOptions
-        }
+        .accessibilityIdentifier("profile-editor-screen")
         .onDisappear {
             profile.updatedAt = .now
             try? modelContext.save()
@@ -546,36 +560,38 @@ private struct ProfileEditorView: View {
     }
 
     private var trainingPreferencesSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ProfileSectionTitle("Training Preferences")
-
-            FitnessCard(padding: 12) {
-                VStack(spacing: 8) {
-                    ProfileSettingRow(icon: "target", title: "Goal", subtitle: "Tunes rep targets and progression style.") {
-                        pickerButton(profile.goal.displayName, picker: .goal)
+        DashboardSection(title: "Training Profile") {
+            FitnessCard(style: .compact, padding: appTheme.metrics.spacing12) {
+                VStack(spacing: appTheme.metrics.spacing8) {
+                    ProfileSettingRow(icon: "target", title: "Goal", subtitle: "What you are training toward.") {
+                        pickerButton(
+                            profile.goal.displayName,
+                            label: "Goal",
+                            identifier: "profile-goal-menu",
+                            picker: .goal
+                        )
                     }
 
                     ProfileDivider()
 
-                    ProfileSettingRow(icon: "chart.line.uptrend.xyaxis", title: "Experience", subtitle: "Keeps recommendations realistic.") {
-                        pickerButton(profile.experienceLevel.displayName, picker: .experience)
+                    ProfileSettingRow(icon: "chart.line.uptrend.xyaxis", title: "Experience", subtitle: "Your self-described lifting experience.") {
+                        pickerButton(
+                            profile.experienceLevel.displayName,
+                            label: "Experience",
+                            identifier: "profile-experience-menu",
+                            picker: .experience
+                        )
                     }
 
                     ProfileDivider()
 
-                    ProfileSettingRow(icon: "calendar", title: "Preferred split", subtitle: "Your default weekly structure.") {
-                        pickerButton(profile.preferredSplitType.displayName, picker: .split)
-                    }
-
-                    ProfileDivider()
-
-                    ProfileSettingRow(icon: "number", title: "Training days", subtitle: "Used for weekly consistency targets.") {
+                    ProfileSettingRow(icon: "number", title: "Training days", subtitle: "How often you aim to train each week.") {
                         ProfileStepperControl(value: $profile.trainingDaysPerWeek, range: 1...7)
                     }
 
                     ProfileDivider()
 
-                    ProfileSettingRow(icon: "calendar.badge.clock", title: "Lifting start", subtitle: "Estimates your training age.") {
+                    ProfileSettingRow(icon: "calendar.badge.clock", title: "Lifting start", subtitle: "An optional date for your profile.") {
                         ProfileDateChip(date: Binding($profile.liftingStartDate, replacingNilWith: .now))
                     }
                 }
@@ -584,31 +600,23 @@ private struct ProfileEditorView: View {
     }
 
     private var bodySection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ProfileSectionTitle("Body")
-
-            FitnessCard(padding: 12) {
-                VStack(spacing: 8) {
-                    ProfileSettingRow(icon: "scalemass", title: "Bodyweight", subtitle: "Current tracking weight.") {
-                        ProfileBodyweightField(value: $profile.bodyweight, unitText: unitText)
-                    }
-
-                    ProfileDivider()
-
-                    ProfileSettingRow(icon: "ruler", title: "Units", subtitle: "Used across workouts and charts.") {
-                        pickerButton(unitText, picker: .units)
-                    }
+        DashboardSection(title: "Body") {
+            FitnessCard(style: .compact, padding: appTheme.metrics.spacing12) {
+                ProfileSettingRow(
+                    icon: "scalemass",
+                    title: "Bodyweight",
+                    subtitle: "Optional profile reference in \(unitText)."
+                ) {
+                    ProfileBodyweightField(value: $profile.bodyweight, unitText: unitText)
                 }
             }
         }
     }
 
     private var notesSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ProfileSectionTitle("Health & Notes")
-
-            FitnessCard {
-                VStack(alignment: .leading, spacing: 12) {
+        DashboardSection(title: "Health & Notes") {
+            FitnessCard(style: .compact) {
+                VStack(alignment: .leading, spacing: appTheme.metrics.spacing12) {
                     HStack(alignment: .top, spacing: 12) {
                         ProfileIcon(systemName: "cross.case")
 
@@ -616,9 +624,10 @@ private struct ProfileEditorView: View {
                             Text("Injury notes")
                                 .font(.headline)
                                 .foregroundStyle(appTheme.colors.textPrimary)
-                            Text("Tell Coach what to avoid or be cautious with.")
+                            Text("Private reference notes. Workouts are not changed automatically.")
                                 .font(.subheadline)
                                 .foregroundStyle(appTheme.colors.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
 
@@ -626,10 +635,14 @@ private struct ProfileEditorView: View {
 
                     if !profile.exercisesToAvoid.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Exercises to avoid")
+                            Text("Saved exercises to avoid")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .textCase(.uppercase)
+
+                            Text("Stored for reference only.")
+                                .font(.caption)
+                                .foregroundStyle(appTheme.colors.textTertiary)
 
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], alignment: .leading, spacing: 8) {
                                 ForEach(profile.exercisesToAvoid, id: \.self) { exercise in
@@ -643,100 +656,48 @@ private struct ProfileEditorView: View {
         }
     }
 
-    private var coachingImpactCard: some View {
-        FitnessCard {
-            HStack(alignment: .top, spacing: 12) {
-                ProfileIcon(systemName: "sparkles")
-
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("How Coach uses this")
-                        .font(.headline)
-                        .foregroundStyle(appTheme.colors.textPrimary)
-                    Text("Your goal, experience level, and weekly training days help Coach suggest realistic targets and recovery advice.")
-                        .font(.subheadline)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                }
-            }
-        }
-    }
-
     private var unitText: String {
         profile.unitSystem == .metric ? "kg" : "lb"
     }
 
-    private func pickerButton(_ text: String, picker: ProfilePicker) -> some View {
-        Button {
-            activePicker = picker
+    private func pickerButton(
+        _ text: String,
+        label: String,
+        identifier: String,
+        picker: ProfilePicker
+    ) -> some View {
+        Menu {
+            pickerOptions(for: picker)
         } label: {
             ProfileValueChip(text: text, systemImage: "chevron.down")
         }
         .buttonStyle(.plain)
-    }
-
-    private var pickerPresented: Binding<Bool> {
-        Binding {
-            activePicker != nil
-        } set: { isPresented in
-            if !isPresented {
-                activePicker = nil
-            }
-        }
-    }
-
-    private var pickerTitle: String {
-        switch activePicker {
-        case .goal:
-            return "Goal"
-        case .experience:
-            return "Experience"
-        case .split:
-            return "Preferred Split"
-        case .units:
-            return "Units"
-        case .none:
-            return "Profile"
-        }
+        .accessibilityLabel(label)
+        .accessibilityValue(text)
+        .accessibilityIdentifier(identifier)
     }
 
     @ViewBuilder
-    private var pickerOptions: some View {
-        switch activePicker {
+    private func pickerOptions(for picker: ProfilePicker) -> some View {
+        switch picker {
         case .goal:
             ForEach(TrainingGoal.allCases) { goal in
                 Button(selectionTitle(goal.displayName, isSelected: profile.goal == goal)) {
                     profile.goal = goal
-                    activePicker = nil
                 }
+                .accessibilityLabel(goal.displayName)
+                .accessibilityValue(profile.goal == goal ? "Selected" : "Not selected")
+                .accessibilityIdentifier("profile-goal-option-\(goal.rawValue)")
             }
         case .experience:
             ForEach(ExperienceLevel.allCases) { level in
                 Button(selectionTitle(level.displayName, isSelected: profile.experienceLevel == level)) {
                     profile.experienceLevel = level
-                    activePicker = nil
                 }
+                .accessibilityLabel(level.displayName)
+                .accessibilityValue(profile.experienceLevel == level ? "Selected" : "Not selected")
+                .accessibilityIdentifier("profile-experience-option-\(level.rawValue)")
             }
-        case .split:
-            ForEach(SplitType.allCases) { splitType in
-                Button(selectionTitle(splitType.displayName, isSelected: profile.preferredSplitType == splitType)) {
-                    profile.preferredSplitType = splitType
-                    activePicker = nil
-                }
-            }
-        case .units:
-            Button(selectionTitle("kg", isSelected: profile.unitSystem == .metric)) {
-                profile.unitSystem = .metric
-                activePicker = nil
-            }
-            Button(selectionTitle("lb", isSelected: profile.unitSystem == .imperial)) {
-                profile.unitSystem = .imperial
-                activePicker = nil
-            }
-        case .none:
-            EmptyView()
-        }
-
-        Button("Cancel", role: .cancel) {
-            activePicker = nil
         }
     }
 
@@ -748,8 +709,6 @@ private struct ProfileEditorView: View {
 private enum ProfilePicker {
     case goal
     case experience
-    case split
-    case units
 }
 
 private struct ProfileSummaryCard: View {
@@ -757,74 +716,37 @@ private struct ProfileSummaryCard: View {
     let profile: UserProfile
 
     var body: some View {
-        FitnessCard {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .top, spacing: 12) {
-                    ExerciseIconView(iconKey: .genericExercise, size: 54, showBackground: true, isDecorative: true)
+        FitnessCard(style: .compact) {
+            HStack(alignment: .center, spacing: appTheme.metrics.spacing12) {
+                ProfileIcon(systemName: "person.crop.circle")
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Training Profile")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .textCase(.uppercase)
-                        Text(profile.goal.displayName)
-                            .font(.system(.largeTitle, design: .rounded).weight(.bold))
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                            .lineLimit(2)
-                        Text("\(profile.experienceLevel.displayName) · \(profile.preferredSplitType.displayName)")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                    }
-
-                    Spacer()
+                VStack(alignment: .leading, spacing: appTheme.metrics.spacing4) {
+                    Text("Profile overview")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .textCase(.uppercase)
+                    Text(profile.goal.displayName)
+                        .font(.headline)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(profile.experienceLevel.displayName)
+                        .font(.subheadline)
+                        .foregroundStyle(appTheme.colors.textSecondary)
                 }
 
-                HStack(spacing: 8) {
-                    ProfileValueChip(text: "\(profile.trainingDaysPerWeek) days/week", systemImage: "calendar")
-                    ProfileValueChip(text: profile.unitSystem == .metric ? "kg" : "lb", systemImage: "scalemass")
-                    ProfileValueChip(text: shortSplitName, systemImage: "square.grid.2x2")
-                }
-
-                Text("Used to tune your targets and weekly recommendations.")
-                    .font(.subheadline)
-                    .foregroundStyle(appTheme.colors.textSecondary)
+                Spacer(minLength: appTheme.metrics.spacing8)
             }
         }
-    }
-
-    private var shortSplitName: String {
-        switch profile.preferredSplitType {
-        case .pushPullLegs:
-            return "PPL"
-        case .upperLower:
-            return "Upper/Lower"
-        case .fullBody:
-            return "Full Body"
-        case .broSplit:
-            return "Bro Split"
-        case .custom:
-            return "Custom"
-        }
-    }
-}
-
-private struct ProfileSectionTitle: View {
-    @Environment(\.appTheme) private var appTheme
-    let title: String
-
-    init(_ title: String) {
-        self.title = title
-    }
-
-    var body: some View {
-        Text(title)
-            .font(.headline)
-            .foregroundStyle(appTheme.colors.textSecondary)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Profile overview")
+        .accessibilityValue("\(profile.goal.displayName), \(profile.experienceLevel.displayName)")
+        .accessibilityIdentifier("profile-overview")
     }
 }
 
 private struct ProfileSettingRow<Accessory: View>: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let icon: String
     let title: String
@@ -838,11 +760,47 @@ private struct ProfileSettingRow<Accessory: View>: View {
         self.accessory = accessory()
     }
 
+    @ViewBuilder
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                stackedLayout
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    inlineLayout
+                    stackedLayout
+                }
+            }
+        }
+        .padding(.vertical, appTheme.metrics.spacing4)
+    }
+
+    private var inlineLayout: some View {
+        HStack(alignment: .center, spacing: appTheme.metrics.spacing12) {
+            label
+                .fixedSize(horizontal: true, vertical: true)
+
+            Spacer(minLength: appTheme.metrics.spacing10)
+
+            accessory
+                .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+
+    private var stackedLayout: some View {
+        VStack(alignment: .leading, spacing: appTheme.metrics.spacing10) {
+            label
+
+            accessory
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+    }
+
+    private var label: some View {
+        HStack(alignment: .top, spacing: appTheme.metrics.spacing12) {
             ProfileIcon(systemName: icon)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: appTheme.metrics.spacing4) {
                 Text(title)
                     .font(.headline)
                     .foregroundStyle(appTheme.colors.textPrimary)
@@ -851,12 +809,7 @@ private struct ProfileSettingRow<Accessory: View>: View {
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
-            Spacer(minLength: 10)
-
-            accessory
         }
-        .padding(.vertical, 7)
     }
 }
 
@@ -874,6 +827,7 @@ private struct ProfileIcon: View {
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .stroke(appTheme.colors.accent.opacity(0.2), lineWidth: 1)
             }
+            .accessibilityHidden(true)
     }
 }
 
@@ -886,18 +840,19 @@ private struct ProfileValueChip: View {
     var body: some View {
         HStack(spacing: 6) {
             Text(text)
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
+                .lineLimit(2)
+                .multilineTextAlignment(.trailing)
 
             if let systemImage {
                 Image(systemName: systemImage)
                     .font(.caption2.weight(.bold))
+                    .accessibilityHidden(true)
             }
         }
         .font(.subheadline.weight(.semibold))
         .foregroundStyle(appTheme.colors.accent)
-        .padding(.horizontal, 11)
-        .padding(.vertical, 7)
+        .padding(.horizontal, appTheme.metrics.spacing12)
+        .frame(minHeight: appTheme.metrics.minimumHitTarget)
         .background(appTheme.colors.accentSurface, in: Capsule())
         .overlay {
             Capsule()
@@ -921,6 +876,9 @@ private struct ProfileStepperControl: View {
                 .font(.subheadline.weight(.bold))
                 .foregroundStyle(appTheme.colors.textPrimary)
                 .frame(minWidth: 58)
+                .accessibilityLabel("Training days")
+                .accessibilityValue(PeaklineText.count(value, singular: "day"))
+                .accessibilityIdentifier("profile-training-days-value")
 
             stepButton(systemImage: "plus", isDisabled: value >= range.upperBound) {
                 value = min(range.upperBound, value + 1)
@@ -939,11 +897,14 @@ private struct ProfileStepperControl: View {
             Image(systemName: systemImage)
                 .font(.caption.weight(.bold))
                 .foregroundStyle(isDisabled ? appTheme.colors.textTertiary : appTheme.colors.accent)
-                .frame(width: 30, height: 30)
+                .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
                 .background(isDisabled ? appTheme.colors.cardBackground : appTheme.colors.accentSurface, in: Circle())
         }
         .disabled(isDisabled)
         .buttonStyle(.plain)
+        .accessibilityLabel(systemImage == "minus" ? "Decrease training days" : "Increase training days")
+        .accessibilityValue(PeaklineText.count(value, singular: "day"))
+        .accessibilityIdentifier(systemImage == "minus" ? "profile-training-days-decrease" : "profile-training-days-increase")
     }
 }
 
@@ -956,12 +917,15 @@ private struct ProfileDateChip: View {
             .labelsHidden()
             .tint(appTheme.colors.accent)
             .padding(.horizontal, 8)
-            .padding(.vertical, 3)
+            .frame(minHeight: appTheme.metrics.minimumHitTarget)
             .background(appTheme.colors.accentSurface, in: Capsule())
             .overlay {
                 Capsule()
                     .stroke(appTheme.colors.accent.opacity(0.24), lineWidth: 1)
             }
+            .accessibilityLabel("Lifting start")
+            .accessibilityValue(date.formatted(date: .abbreviated, time: .omitted))
+            .accessibilityIdentifier("profile-lifting-start")
     }
 }
 
@@ -984,15 +948,18 @@ private struct ProfileBodyweightField: View {
             TextField("Not set", text: text)
                 .multilineTextAlignment(.trailing)
                 .keyboardType(.decimalPad)
-                .frame(width: 58)
+                .frame(minWidth: 72, maxWidth: 100, minHeight: appTheme.metrics.minimumHitTarget)
                 .foregroundStyle(appTheme.colors.accent)
+                .accessibilityLabel("Bodyweight")
+                .accessibilityValue(value.map { "\($0.formatted(.number.precision(.fractionLength(0...1)))) \(unitText)" } ?? "Not set")
+                .accessibilityIdentifier("profile-bodyweight-field")
 
             Text(unitText)
                 .foregroundStyle(appTheme.colors.accent)
+                .accessibilityHidden(true)
         }
         .font(.subheadline.weight(.semibold))
-        .padding(.horizontal, 11)
-        .padding(.vertical, 7)
+        .padding(.horizontal, appTheme.metrics.spacing12)
         .background(appTheme.colors.accentSurface, in: Capsule())
         .overlay {
             Capsule()
@@ -1020,6 +987,9 @@ private struct ProfileNotesEditor: View {
                 .frame(minHeight: 118)
                 .padding(8)
                 .foregroundStyle(appTheme.colors.textPrimary)
+                .accessibilityLabel("Injury notes")
+                .accessibilityValue(text.isEmpty ? "Not set" : text)
+                .accessibilityIdentifier("profile-injury-notes")
         }
         .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
@@ -1036,7 +1006,7 @@ private struct ProfileDivider: View {
         Rectangle()
             .fill(appTheme.colors.cardBorder)
             .frame(height: 1)
-            .padding(.leading, 48)
+            .padding(.leading, appTheme.metrics.rowIconSize + appTheme.metrics.spacing12)
     }
 }
 

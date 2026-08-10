@@ -31,6 +31,7 @@ struct NutritionGoalService {
             dailyProteinTarget: positive(goal.dailyProteinTarget),
             dailyCarbsTarget: positive(goal.dailyCarbsTarget),
             dailyFatTarget: positive(goal.dailyFatTarget),
+            dailyFibreTarget: positive(goal.dailyFibreTarget),
             trainingDayCaloriesTarget: positive(goal.trainingDayCaloriesTarget),
             restDayCaloriesTarget: positive(goal.restDayCaloriesTarget),
             isEnabled: goal.isEnabled,

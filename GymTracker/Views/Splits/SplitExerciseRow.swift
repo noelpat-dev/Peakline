@@ -29,7 +29,13 @@ struct SplitExerciseRow: View {
                     }
                 }
 
-                Text("\(exercise.targetSets) sets - \(exercise.minReps)-\(exercise.maxReps) reps")
+                Text(
+                    PeaklineText.setRepSummary(
+                        sets: exercise.targetSets,
+                        minimumReps: exercise.minReps,
+                        maximumReps: exercise.maxReps
+                    )
+                )
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(appTheme.colors.textSecondary)
 

@@ -1,6 +1,85 @@
 import SwiftData
 import SwiftUI
 
+struct SessionSummaryExerciseSnapshot: Identifiable, Equatable, Sendable {
+    let id: UUID
+    let exerciseName: String
+    let iconKey: ExerciseIconKey
+    let bestSetDescription: String
+    let notes: String?
+}
+
+struct SessionSummaryRenderSnapshot: Equatable, Sendable {
+    let summary: SessionSummary
+    let sessionPRs: [PRRecord]
+    let nextTrainingCall: TrainingCallSnapshot
+    let completedExercises: [SessionSummaryExerciseSnapshot]
+    let matchingSplitID: UUID?
+
+    @MainActor
+    static func build(
+        session: WorkoutSession,
+        completedSessions: [WorkoutSession],
+        activeSplits: [TrainingSplit]
+    ) -> SessionSummaryRenderSnapshot {
+        let summary = SessionSummaryBuilder().build(
+            from: session,
+            completedSessions: completedSessions,
+            activeSplits: activeSplits
+        )
+        let sessionPRs = TrainingAnalyticsService().prs(for: session, in: completedSessions)
+        let weeklyReview = WeeklyReviewBuilder().build(
+            activeSplits: activeSplits,
+            completedSessions: completedSessions
+        )
+        let nextTrainingCall = TrainingCallSnapshotBuilder().make(
+            decision: weeklyReview.nextDecision,
+            activeSplits: activeSplits,
+            completedSessions: completedSessions
+        )
+        let completedExercises = session.exerciseLogs
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .filter { exerciseLog in
+                exerciseLog.setLogs.contains { $0.completed || $0.weight > 0 || $0.reps > 0 || $0.rpe != nil }
+            }
+            .map { exerciseLog in
+                let bestSet = exerciseLog.setLogs
+                    .filter { $0.completed && !$0.isWarmup }
+                    .max { ($0.weight * Double($0.reps)) < ($1.weight * Double($1.reps)) }
+                let bestSetDescription: String
+                if let bestSet {
+                    let weight = bestSet.weight.formatted(
+                        .number.precision(
+                            .fractionLength(bestSet.weight.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1)
+                        )
+                    )
+                    bestSetDescription = PeaklineText.loadReps(weight: weight, reps: bestSet.reps)
+                } else {
+                    bestSetDescription = "Logged"
+                }
+                return SessionSummaryExerciseSnapshot(
+                    id: exerciseLog.id,
+                    exerciseName: exerciseLog.exerciseNameSnapshot,
+                    iconKey: ExerciseIconMapper.iconKey(for: exerciseLog),
+                    bestSetDescription: bestSetDescription,
+                    notes: exerciseLog.notes
+                )
+            }
+        let matchingSplitID = activeSplits.first { split in
+            let base = session.splitNameSnapshot.components(separatedBy: " - ").first ?? session.splitNameSnapshot
+            return split.id == session.splitId || split.name == base
+        }?.id
+
+        return SessionSummaryRenderSnapshot(
+            summary: summary,
+            sessionPRs: sessionPRs,
+            nextTrainingCall: nextTrainingCall,
+            completedExercises: completedExercises,
+            matchingSplitID: matchingSplitID
+        )
+    }
+}
+
 struct SessionSummaryView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -10,46 +89,36 @@ struct SessionSummaryView: View {
     @State private var reopenedSession: WorkoutSession?
     @State private var showingUpdateSplitConfirmation = false
 
-    @Query(filter: #Predicate<WorkoutSession> { $0.completed }, sort: \WorkoutSession.date, order: .reverse)
-    private var completedSessions: [WorkoutSession]
-
-    @Query(filter: #Predicate<TrainingSplit> { $0.isActive }, sort: \TrainingSplit.name)
-    private var activeSplits: [TrainingSplit]
-
     let session: WorkoutSession
-    private let builder = SessionSummaryBuilder()
-    private let analytics = TrainingAnalyticsService()
-    private let reviewBuilder = WeeklyReviewBuilder()
-    private let trainingCallBuilder = TrainingCallSnapshotBuilder()
+    let snapshot: SessionSummaryRenderSnapshot
+    let onDone: (() -> Void)?
     private let reopenService = WorkoutSessionReopenService()
     private let splitUpdateService = SplitTemplateUpdateService()
 
+    init(
+        session: WorkoutSession,
+        snapshot: SessionSummaryRenderSnapshot,
+        onDone: (() -> Void)? = nil
+    ) {
+        self.session = session
+        self.snapshot = snapshot
+        self.onDone = onDone
+    }
+
     private var summary: SessionSummary {
-        builder.build(from: session, completedSessions: completedSessions, activeSplits: activeSplits)
+        snapshot.summary
     }
 
     private var sessionPRs: [PRRecord] {
-        analytics.prs(for: session, in: completedSessions)
-    }
-
-    private var weeklyReview: WeeklyReview {
-        reviewBuilder.build(activeSplits: activeSplits, completedSessions: completedSessions)
+        snapshot.sessionPRs
     }
 
     private var nextTrainingCall: TrainingCallSnapshot {
-        trainingCallBuilder.make(
-            decision: weeklyReview.nextDecision,
-            activeSplits: activeSplits,
-            completedSessions: completedSessions
-        )
+        snapshot.nextTrainingCall
     }
 
     var body: some View {
-        FitnessScreen(
-            title: "Summary",
-            subtitle: session.date.formatted(date: .abbreviated, time: .omitted),
-            systemImage: "checkmark.circle.fill"
-        ) {
+        FitnessScreen {
             FitnessCard(style: .hero) {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .top, spacing: 14) {
@@ -64,12 +133,14 @@ struct SessionSummaryView: View {
                             Text("Completed")
                                 .font(AppTypography.metadataEmphasis)
                                 .foregroundStyle(appTheme.colors.textSecondary)
-                                .textCase(.uppercase)
+                                .accessibilityLabel("Completed")
+                                .accessibilityIdentifier("session-summary-status")
                             Text(summary.splitName)
-                                .font(AppTypography.screenTitle)
+                                .font(AppTypography.heroTitle)
                                 .foregroundStyle(appTheme.colors.textPrimary)
                                 .lineLimit(1)
-                                .minimumScaleFactor(0.68)
+                                .minimumScaleFactor(0.58)
+                                .allowsTightening(true)
                         }
 
                         Spacer()
@@ -82,14 +153,29 @@ struct SessionSummaryView: View {
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    HStack(spacing: 10) {
-                        MetricTile(label: "Duration", value: summary.durationText, caption: nil, systemImage: "timer")
-                        MetricTile(label: "Sets", value: "\(summary.workingSetCount)", caption: "Working", systemImage: "checkmark.circle")
-                    }
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .bottom, spacing: 14) {
+                            SessionSummaryPrimaryMetric(value: "\(summary.workingSetCount)")
 
-                    HStack(spacing: 10) {
-                        MetricTile(label: "Exercises", value: "\(summary.completedExerciseCount)", caption: "Completed", systemImage: "list.bullet")
-                        MetricTile(label: "Rating", value: summary.ratingText ?? "-", caption: "Session feel", systemImage: "face.smiling")
+                            Divider()
+                                .overlay(appTheme.colors.cardBorder)
+                                .frame(height: 62)
+
+                            HStack(alignment: .bottom, spacing: 14) {
+                                SessionSummarySupportingMetric(label: "Duration", value: summary.durationText)
+                                SessionSummarySupportingMetric(label: "Exercises", value: "\(summary.completedExerciseCount)")
+                                SessionSummarySupportingMetric(label: "Rating", value: summary.ratingText ?? "–")
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            SessionSummaryPrimaryMetric(value: "\(summary.workingSetCount)")
+                            HStack(alignment: .bottom, spacing: 16) {
+                                SessionSummarySupportingMetric(label: "Duration", value: summary.durationText)
+                                SessionSummarySupportingMetric(label: "Exercises", value: "\(summary.completedExerciseCount)")
+                                SessionSummarySupportingMetric(label: "Rating", value: summary.ratingText ?? "–")
+                            }
+                        }
                     }
 
                     if let notes = session.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -112,12 +198,12 @@ struct SessionSummaryView: View {
                         }
 
                         if sessionPRs.isEmpty {
-                            Text("No PRs today, but you completed \(summary.workingSetCount) working sets.")
+                            Text("No PRs today, but you completed \(PeaklineText.count(summary.workingSetCount, singular: "working set")).")
                                 .font(.subheadline)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                         } else {
                             ForEach(sessionPRs.prefix(5)) { pr in
-                                Label("\(pr.exerciseName) - \(pr.improvementDescription)", systemImage: "arrow.up.circle.fill")
+                                Label("\(pr.exerciseName) · \(pr.improvementDescription)", systemImage: "arrow.up.circle.fill")
                                     .font(.subheadline)
                             }
                         }
@@ -156,16 +242,16 @@ struct SessionSummaryView: View {
                 TrainingCallAuditCard(snapshot: nextTrainingCall, title: "Next call")
             }
 
-            if !completedExerciseLogs.isEmpty {
+            if !snapshot.completedExercises.isEmpty {
                 DashboardSection(title: "Completed Exercises") {
                     FitnessCard {
                         VStack(alignment: .leading, spacing: 10) {
-                            ForEach(Array(completedExerciseLogs.enumerated()), id: \.element.id) { index, exerciseLog in
+                            ForEach(Array(snapshot.completedExercises.enumerated()), id: \.element.id) { index, exercise in
                                 if index > 0 {
                                     Divider()
                                 }
 
-                                SessionSummaryExerciseRow(exerciseLog: exerciseLog)
+                                SessionSummaryExerciseRow(exercise: exercise)
                             }
                         }
                     }
@@ -173,44 +259,31 @@ struct SessionSummaryView: View {
             }
 
             DashboardSection(title: "Actions") {
-                HStack(spacing: 10) {
-                    NavigationLink {
-                        HistoryView()
-                    } label: {
-                        Label("History", systemImage: "calendar")
-                            .frame(maxWidth: .infinity)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        historyButton
+                        doneButton
                     }
-                    .buttonStyle(SecondaryFitnessButtonStyle())
 
-                    Button {
-                        dismiss()
-                    } label: {
-                        Label("Done", systemImage: "house")
-                            .frame(maxWidth: .infinity)
+                    VStack(spacing: 10) {
+                        doneButton
+                        historyButton
                     }
-                    .buttonStyle(PrimaryFitnessButtonStyle())
-                }
-                .font(.headline)
-
-                HStack(spacing: 10) {
-                    Button {
-                        showingTemplateSave = true
-                    } label: {
-                        Label("Save Template", systemImage: "rectangle.stack.badge.plus")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(SecondaryFitnessButtonStyle())
-
-                    Button {
-                        showingReopenConfirmation = true
-                    } label: {
-                        Label("Reopen", systemImage: "arrow.uturn.backward.circle")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(SecondaryFitnessButtonStyle())
                 }
 
-                if matchingSplit != nil {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        saveTemplateButton
+                        reopenButton
+                    }
+
+                    VStack(spacing: 10) {
+                        saveTemplateButton
+                        reopenButton
+                    }
+                }
+
+                if snapshot.matchingSplitID != nil {
                     Button {
                         showingUpdateSplitConfirmation = true
                     } label: {
@@ -221,6 +294,8 @@ struct SessionSummaryView: View {
                 }
             }
         }
+        .navigationTitle("Summary")
+        .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden()
         .navigationDestination(item: $reopenedSession) { session in
             WorkoutLoggerView(session: session)
@@ -246,19 +321,48 @@ struct SessionSummaryView: View {
         }
     }
 
-    private var completedExerciseLogs: [ExerciseLog] {
-        session.exerciseLogs
-            .sorted { $0.orderIndex < $1.orderIndex }
-            .filter { exerciseLog in
-                exerciseLog.setLogs.contains { $0.completed || $0.weight > 0 || $0.reps > 0 || $0.rpe != nil }
-            }
+    private var historyButton: some View {
+        NavigationLink {
+            HistoryView()
+        } label: {
+            Label("History", systemImage: "calendar")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(SecondaryFitnessButtonStyle())
     }
 
-    private var matchingSplit: TrainingSplit? {
-        activeSplits.first { split in
-            let base = session.splitNameSnapshot.components(separatedBy: " - ").first ?? session.splitNameSnapshot
-            return split.id == session.splitId || split.name == base
+    private var doneButton: some View {
+        Button {
+            if let onDone {
+                onDone()
+            } else {
+                dismiss()
+            }
+        } label: {
+            Label("Done", systemImage: "checkmark")
+                .frame(maxWidth: .infinity)
         }
+        .buttonStyle(PrimaryFitnessButtonStyle())
+    }
+
+    private var saveTemplateButton: some View {
+        Button {
+            showingTemplateSave = true
+        } label: {
+            Label("Save Template", systemImage: "rectangle.stack.badge.plus")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(SecondaryFitnessButtonStyle())
+    }
+
+    private var reopenButton: some View {
+        Button {
+            showingReopenConfirmation = true
+        } label: {
+            Label("Reopen", systemImage: "arrow.uturn.backward.circle")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(SecondaryFitnessButtonStyle())
     }
 
     private func reopenWorkout() {
@@ -268,46 +372,86 @@ struct SessionSummaryView: View {
     }
 
     private func updateMatchingSplit() {
-        guard let matchingSplit else { return }
+        guard let matchingSplitID = snapshot.matchingSplitID else { return }
+        let descriptor = FetchDescriptor<TrainingSplit>(
+            predicate: #Predicate { $0.id == matchingSplitID }
+        )
+        guard let matchingSplit = try? modelContext.fetch(descriptor).first else { return }
         splitUpdateService.replaceOrder(of: matchingSplit, with: session)
         try? modelContext.save()
+    }
+}
+
+private struct SessionSummaryPrimaryMetric: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(value)
+                .font(AppTypography.heroMetric)
+                .foregroundStyle(appTheme.colors.textPrimary)
+                .lineLimit(1)
+            Text("Working sets")
+                .font(AppTypography.metadataEmphasis)
+                .foregroundStyle(appTheme.colors.textSecondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct SessionSummarySupportingMetric: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(value)
+                .font(AppTypography.workoutNumber)
+                .foregroundStyle(appTheme.colors.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.64)
+            Text(label)
+                .font(AppTypography.metadata)
+                .foregroundStyle(appTheme.colors.textSecondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 }
 
 private struct SessionSummaryExerciseRow: View {
     @Environment(\.appTheme) private var appTheme
 
-    let exerciseLog: ExerciseLog
-
-    private var bestSet: SetLog? {
-        exerciseLog.setLogs
-            .filter { $0.completed && !$0.isWarmup }
-            .max { ($0.weight * Double($0.reps)) < ($1.weight * Double($1.reps)) }
-    }
+    let exercise: SessionSummaryExerciseSnapshot
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
                 ExerciseIconView(
-                    iconKey: ExerciseIconMapper.iconKey(for: exerciseLog),
+                    iconKey: exercise.iconKey,
                     size: 34,
                     showBackground: true,
                     isDecorative: true
                 )
 
-                Text(exerciseLog.exerciseNameSnapshot)
+                Text(exercise.exerciseName)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .lineLimit(1)
 
                 Spacer()
 
-                Text(bestSetDescription)
+                Text(exercise.bestSetDescription)
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(appTheme.colors.textPrimary)
             }
 
-            if let notes = exerciseLog.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let notes = exercise.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Label(notes, systemImage: "note.text")
                     .font(.caption)
                     .foregroundStyle(appTheme.colors.textSecondary)
@@ -318,12 +462,4 @@ private struct SessionSummaryExerciseRow: View {
         .accessibilityElement(children: .combine)
     }
 
-    private var bestSetDescription: String {
-        guard let bestSet else { return "Logged" }
-        return "\(format(bestSet.weight))kg x \(bestSet.reps)"
-    }
-
-    private func format(_ value: Double) -> String {
-        value.formatted(.number.precision(.fractionLength(value.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1)))
-    }
 }

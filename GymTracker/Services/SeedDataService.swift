@@ -46,7 +46,14 @@ enum SeedDataService {
                 try seedSplitsFixture(in: context, exercises: existingExercises)
             }
 
-            try context.save()
+            if ProcessInfo.processInfo.arguments.contains("-UITestPRCelebrationFixture") {
+                try seedPRCelebrationFixture(in: context, exercises: existingExercises)
+            }
+
+            try TrainingRotationService().normalizePersistedRotation(in: context)
+            if context.hasChanges {
+                try context.save()
+            }
         } catch {
             assertionFailure("Seed data failed: \(error)")
         }
@@ -324,6 +331,50 @@ enum SeedDataService {
         }
     }
 
+    private static func seedPRCelebrationFixture(in context: ModelContext, exercises: [Exercise]) throws {
+        let existingCount = try context.fetchCount(FetchDescriptor<WorkoutSession>())
+        guard
+            existingCount == 0,
+            let exercise = exercises.first(where: { $0.name == "Incline Chest Press (Smith)" })
+        else {
+            return
+        }
+
+        let sessionDate = Calendar.current.date(byAdding: .day, value: -1, to: .now) ?? .now
+        let session = WorkoutSession(
+            date: sessionDate,
+            splitNameSnapshot: "Push",
+            endedAt: sessionDate.addingTimeInterval(3_600),
+            durationMinutes: 60,
+            durationSeconds: 3_600,
+            perceivedDifficulty: 3,
+            completed: true
+        )
+        let log = ExerciseLog(
+            workoutSessionId: session.id,
+            exerciseId: exercise.id,
+            exerciseNameSnapshot: exercise.name,
+            orderIndex: 0,
+            targetSets: 2,
+            minReps: 6,
+            maxReps: 10
+        )
+        let set = SetLog(
+            exerciseLogId: log.id,
+            setNumber: 1,
+            weight: 5,
+            reps: 6,
+            rpe: 7,
+            isWarmup: false,
+            completed: true
+        )
+        set.exerciseLog = log
+        log.setLogs = [set]
+        log.workoutSession = session
+        session.exerciseLogs = [log]
+        context.insert(session)
+    }
+
     private static func seedSplitsFixture(in context: ModelContext, exercises: [Exercise]) throws {
         let existingSplits = try context.fetch(FetchDescriptor<TrainingSplit>())
         guard !existingSplits.contains(where: { $0.name == "UI Test Other Split" }) else { return }
@@ -353,5 +404,30 @@ enum SeedDataService {
         }
 
         context.insert(split)
+
+        for name in ["Upper", "Lower"] where !existingSplits.contains(where: { $0.name == name }) {
+            let activeSplit = TrainingSplit(
+                name: name,
+                splitType: .custom,
+                isActive: true,
+                daysPerWeek: 1
+            )
+            if let exercise {
+                let splitExercise = SplitExercise(
+                    splitId: activeSplit.id,
+                    exerciseId: exercise.id,
+                    exerciseNameSnapshot: exercise.name,
+                    orderIndex: 0,
+                    targetSets: 2,
+                    minReps: 8,
+                    maxReps: 12,
+                    restSeconds: 120,
+                    notes: "UI test rotation exercise."
+                )
+                splitExercise.split = activeSplit
+                activeSplit.exercises = [splitExercise]
+            }
+            context.insert(activeSplit)
+        }
     }
 }

@@ -64,6 +64,10 @@ struct WorkoutTemplateRow: View {
 
     private var detailText: String {
         let source = template.sourceSplitName ?? "Custom"
-        return "\(source) - \(template.exercises.count) exercises - updated \(template.updatedAt.formatted(date: .abbreviated, time: .omitted))"
+        return PeaklineText.joinedMetadata([
+            source,
+            PeaklineText.count(template.exercises.count, singular: "exercise"),
+            "Updated \(template.updatedAt.formatted(date: .abbreviated, time: .omitted))"
+        ])
     }
 }

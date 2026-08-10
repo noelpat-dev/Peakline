@@ -45,17 +45,22 @@ struct ExerciseIconTile: View {
             }
         }
         .padding(style == .compact ? appTheme.metrics.spacing8 : appTheme.metrics.spacing12)
-        .background(tileBackground, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous))
+        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous)
-                .stroke(tintColor.opacity(0.22), lineWidth: 1)
+                .stroke(appTheme.colors.cardBorder.opacity(0.68), lineWidth: 0.75)
         )
         .accessibilityElement(children: .combine)
     }
 
     private var icon: some View {
-        ExerciseIconView(iconKey: iconKey, size: size, tint: tintColor, showBackground: true)
-            .shadow(color: tintColor.opacity(0.22), radius: 10, x: 0, y: 4)
+        ExerciseIconView(
+            iconKey: iconKey,
+            size: size * 0.54,
+            tint: tintColor,
+            showBackground: false
+        )
+        .frame(width: size, height: size)
     }
 
     @ViewBuilder
@@ -67,16 +72,5 @@ struct ExerciseIconTile: View {
                 .lineLimit(2)
                 .minimumScaleFactor(0.78)
         }
-    }
-
-    private var tileBackground: some ShapeStyle {
-        LinearGradient(
-            colors: [
-                appTheme.colors.cardBackgroundElevated,
-                tintColor.opacity(0.08)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
     }
 }

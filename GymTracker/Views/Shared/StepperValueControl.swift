@@ -42,7 +42,7 @@ struct StepperValueControl: View {
                 } label: {
                     Image(systemName: "minus")
                         .font(AppTypography.badge)
-                        .frame(width: 38, height: 38)
+                        .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
                 }
                 .disabled(!canDecrement)
                 .accessibilityIdentifier("stepper-\(identifierBase)-decrement")
@@ -64,7 +64,7 @@ struct StepperValueControl: View {
                                 .lineLimit(1)
                         }
                     }
-                    .frame(maxWidth: .infinity, minHeight: 38)
+                    .frame(maxWidth: .infinity, minHeight: appTheme.metrics.minimumHitTarget)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -76,7 +76,7 @@ struct StepperValueControl: View {
                 } label: {
                     Image(systemName: "plus")
                         .font(AppTypography.badge)
-                        .frame(width: 38, height: 38)
+                        .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
                 }
                 .accessibilityIdentifier("stepper-\(identifierBase)-increment")
             }

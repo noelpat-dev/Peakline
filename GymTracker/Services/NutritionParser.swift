@@ -67,6 +67,10 @@ struct NutritionParser {
             warnings.insert(.ocrLikelyMisread)
         }
 
+        if context.basisWasInferred {
+            warnings.insert(.basisInferredFromComposition)
+        }
+
         if context.availableBases.isEmpty {
             warnings.insert(.basisNotDetected)
         }
@@ -157,13 +161,42 @@ struct NutritionParser {
             }
         }
 
-        let availableBases = uniqueBases(bases)
+        let explicitBases = uniqueBases(bases)
+        let inferredBasis = explicitBases.isEmpty ? inferredCompositionBasis(from: lines) : nil
+        let availableBases = inferredBasis.map { [$0] } ?? explicitBases
         let selectedBasis = preferredBasis(from: availableBases)
         return ParserContext(
             availableBases: availableBases,
             selectedBasis: selectedBasis,
-            didApplyOCRCorrection: false
+            didApplyOCRCorrection: false,
+            basisWasInferred: inferredBasis != nil
         )
+    }
+
+    private func inferredCompositionBasis(from lines: [String]) -> NutritionBasis? {
+        guard
+            let water = compositionAmount(in: lines.first(where: { $0.contains("water") })),
+            let carbohydrates = compositionAmount(for: .carbohydrates, in: lines),
+            let protein = compositionAmount(for: .protein, in: lines),
+            let fat = compositionAmount(for: .fat, in: lines)
+        else {
+            return nil
+        }
+
+        let compositionTotal = water + carbohydrates + protein + fat
+        guard (90...105).contains(compositionTotal) else { return nil }
+        return .per100g
+    }
+
+    private func compositionAmount(for nutrient: NutritionNutrientKind, in lines: [String]) -> Double? {
+        compositionAmount(in: lines.first(where: { detectExplicitNutrient(in: $0) == nutrient }))
+    }
+
+    private func compositionAmount(in line: String?) -> Double? {
+        guard let line else { return nil }
+        return nutritionMatches(in: line, allowedUnits: [.grams])
+            .first(where: { $0.unit == .grams })?
+            .amount
     }
 
     private func parseEnergyRow(
@@ -615,6 +648,9 @@ struct NutritionParser {
         if wasInferred || selected.isLessThan || basis == .unknown {
             return .low
         }
+        if context.basisWasInferred {
+            return .medium
+        }
         if selected.hadUnit, context.availableBases.contains(basis) {
             return .high
         }
@@ -625,7 +661,9 @@ struct NutritionParser {
         if values.isEmpty || context.selectedBasis == .unknown || warnings.contains(.basisNotDetected) {
             return .low
         }
-        if values.contains(where: { $0.confidence == .low }) || warnings.contains(.onlyServingValuesDetected) {
+        if context.basisWasInferred
+            || values.contains(where: { $0.confidence == .low })
+            || warnings.contains(.onlyServingValuesDetected) {
             return .medium
         }
         return .high
@@ -673,6 +711,7 @@ private struct ParserContext {
     let availableBases: [NutritionBasis]
     let selectedBasis: NutritionBasis
     let didApplyOCRCorrection: Bool
+    let basisWasInferred: Bool
 }
 
 private struct ParsedAmount {

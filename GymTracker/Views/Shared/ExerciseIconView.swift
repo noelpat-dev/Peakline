@@ -67,6 +67,13 @@ struct ExerciseIconView: View {
     private var iconSize: CGFloat {
         showBackground ? size * 0.54 : size
     }
+
+    @MainActor
+    static func prewarm<S: Sequence>(_ keys: S) where S.Element == ExerciseIconKey {
+        for key in keys {
+            _ = ExerciseIconAssetCache.hasAsset(named: key.assetName)
+        }
+    }
 }
 
 private enum ExerciseIconAssetCache {

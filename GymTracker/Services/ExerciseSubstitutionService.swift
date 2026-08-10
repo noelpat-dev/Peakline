@@ -39,7 +39,7 @@ struct ExerciseSubstitutionCandidate: Identifiable, Equatable {
 
 struct ExerciseSubstitutionService {
     func alternatives(for exerciseId: UUID, in exercises: [Exercise], limit: Int = 6) -> [Exercise] {
-        candidates(for: exerciseId, in: exercises, completedSessions: [], reason: nil, limit: limit)
+        candidates(for: exerciseId, in: exercises, usedExerciseIDs: [], reason: nil, limit: limit)
             .compactMap { candidate in
                 exercises.first { $0.id == candidate.exerciseId }
             }
@@ -52,12 +52,29 @@ struct ExerciseSubstitutionService {
         reason substitutionReason: ExerciseSubstitutionReason?,
         limit: Int = 8
     ) -> [ExerciseSubstitutionCandidate] {
-        guard let source = exercises.first(where: { $0.id == exerciseId }) else { return [] }
-        let usedExerciseIds = Set(
+        let usedExerciseIDs = Set(
             completedSessions.flatMap { session in
                 session.exerciseLogs.map(\.exerciseId)
             }
         )
+
+        return candidates(
+            for: exerciseId,
+            in: exercises,
+            usedExerciseIDs: usedExerciseIDs,
+            reason: substitutionReason,
+            limit: limit
+        )
+    }
+
+    func candidates(
+        for exerciseId: UUID,
+        in exercises: [Exercise],
+        usedExerciseIDs: Set<UUID>,
+        reason substitutionReason: ExerciseSubstitutionReason?,
+        limit: Int = 8
+    ) -> [ExerciseSubstitutionCandidate] {
+        guard let source = exercises.first(where: { $0.id == exerciseId }) else { return [] }
 
         return exercises
             .filter { $0.id != exerciseId && !$0.isArchived }
@@ -65,7 +82,7 @@ struct ExerciseSubstitutionService {
                 candidateDTO(
                     candidate,
                     source: source,
-                    score: score(candidate, against: source, usedExerciseIds: usedExerciseIds, substitutionReason: substitutionReason)
+                    score: score(candidate, against: source, usedExerciseIDs: usedExerciseIDs, substitutionReason: substitutionReason)
                 )
             }
             .sorted {
@@ -86,7 +103,7 @@ struct ExerciseSubstitutionService {
     private func score(
         _ candidate: Exercise,
         against source: Exercise,
-        usedExerciseIds: Set<UUID>,
+        usedExerciseIDs: Set<UUID>,
         substitutionReason: ExerciseSubstitutionReason?
     ) -> Double {
         var score: Double = 0
@@ -113,7 +130,7 @@ struct ExerciseSubstitutionService {
             score += 8
         }
 
-        if usedExerciseIds.contains(candidate.id) {
+        if usedExerciseIDs.contains(candidate.id) {
             score += 10
         }
 
