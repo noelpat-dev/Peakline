@@ -1,78 +1,100 @@
 # Peakline
 
-Current file: `README.md`
+[![iOS CI](https://github.com/noelpat-dev/Peakline/actions/workflows/ios-ci.yml/badge.svg?branch=main)](https://github.com/noelpat-dev/Peakline/actions/workflows/ios-ci.yml)
+![Platform](https://img.shields.io/badge/platform-iOS%2017%2B-111827)
+![Built with](https://img.shields.io/badge/built%20with-SwiftUI%20%2B%20SwiftData-F05138)
 
-Peakline is a local-first SwiftUI and SwiftData lifting coach built around an editable ordered training rotation. The current programme is Push, Pull, Legs, Upper, and Lower, with every recommendation advancing through that rotation. The app focuses on fast workout logging, practical progression targets, explainable coaching, useful history, recovery context that stays on device, and encrypted account-linked backup for reinstall recovery.
+Peakline is a local-first iOS lifting coach I am building to make the training loop clearer and more useful:
 
-## Product Goal
+1. Decide what to train next.
+2. Preview and adjust the session.
+3. Log the workout quickly.
+4. Review what happened.
+5. Use that history to choose a better next target.
 
-Peakline should answer three questions quickly:
+The product is designed for the gym rather than for a social feed. It keeps the core workout path fast, makes coaching explainable, and treats personal training data as local source-of-truth data.
 
-1. What should I train today?
-2. What did I do last time?
-3. What target should I aim for next?
+> Peakline is an active portfolio project by [Noel](https://github.com/noelpat-dev). It is being developed as a production-minded app, with particular attention to SwiftUI responsiveness, persistence safety, accessibility, and honest product boundaries.
 
-The app should feel gym-ready: quick to open, easy to use mid-session, and clear about why it suggests a target, mode change, or recovery adjustment.
+## What Peakline does
 
-## Canonical Docs
+### Training and workouts
 
-Use these root docs as the active source of truth:
+- Maintains an editable Push, Pull, Legs, Upper, and Lower training rotation.
+- Recommends the next meaningful workout consistently across Today, Coach, Workout, Splits, Progress, and History.
+- Supports Full, Quick, Recovery, and Heavy workout modes.
+- Provides a detailed workout preview with target suggestions, last-best-set context, alternatives, notes, addable exercises, and real handle-based reordering.
+- Offers fast live logging with set entry, rest timing, pause/resume, substitutions, skipped-exercise reasons, completion rating, and a prepared session summary.
+- Supports workout templates, recent-session repeat, exercise notes, and a metric plate calculator.
 
-- [FEATURE_SUMMARY.md](FEATURE_SUMMARY.md) for current product and feature state.
-- [ARCHITECTURE.md](ARCHITECTURE.md) for implementation map and guardrails.
-- [ROADMAP.md](ROADMAP.md) for current priorities and later backlog.
-- [UI_STYLE_GUIDE.md](UI_STYLE_GUIDE.md) for the active visual direction.
-- [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for current risks and regression checks.
-- [PERFORMANCE_ACCEPTANCE_GOAL.md](PERFORMANCE_ACCEPTANCE_GOAL.md) for the performance acceptance workflow and verifier.
-- [NEXT_TASK.md](NEXT_TASK.md) for the immediate task.
-- [NEXT_CODEX_CHAT.md](NEXT_CODEX_CHAT.md) for the ready-to-paste Codex handoff prompt.
+### Coaching and progress
 
-Historical prompts, phase reports, QA reports, and older planning docs are indexed in [Docs/AUDIT_INDEX.md](Docs/AUDIT_INDEX.md). Archived files are for reference only and should not be treated as active instructions unless a task explicitly calls for them.
+- Uses deterministic local rules instead of opaque or remote AI calls.
+- Explains progression targets and readiness recommendations with the evidence available on the device.
+- Includes readiness scoring, recovery guidance, weekly review, action history, deload context, and feedback capture.
+- Keeps History useful with attendance markers, filters, session details, editing, and deletion flows.
+- Shows best sets, estimated 1RM, best-set volume, set history, charts, and a PR timeline.
 
-## Current App Surface
+### Nutrition, recovery, and data ownership
 
-The current app includes:
+- Tracks nutrition, optional fibre targets, hydration, sleep, naps, and recovery context.
+- Supports barcode lookup, Open Food Facts import, nutrition-label OCR, parser review, and source comparison before imported data is saved.
+- Treats HealthKit as optional and degrades gracefully when permission or device data is unavailable.
+- Supports local JSON/workout CSV export and encrypted account-linked Firebase backup for reinstall recovery.
+- Keeps the real Firebase configuration out of source control; the app can still run in local-only mode.
 
-- Today dashboard with quick actions into Coach, Workout, Nutrition, Progress, Sleep, and Hydration.
-- Branded Peakline launch screen and in-app splash that keep the root tabs hidden until the active rotation and shared dashboard snapshots are ready.
-- Workout start flow, a single eager detailed Workout Preview order with real handle-only reordering, varied exercise-transition motivation, live workout logging, templates, substitutions, skipped reasons, and session summary.
-- Coach dashboard with a complete lifecycle-stable warm snapshot, an immediately actionable value-backed hero, evidence-aware Readiness Score v2, weekly review, action history, and deterministic recommendations.
-- Splits with an editable active rotation, a minimal attendance calendar in History, and Progress surfaces.
-- Nutrition logging with read-only previous-day browsing, optional fibre targets, barcode import, OCR label scan, parser review, source comparison, and HealthKit bridge work.
-- Sleep and nap tracking, hydration tracking, a compact truthful Profile, Workout Tools, Appearance, local export utilities, encrypted Firebase backup/restore, and exact exercise icon support.
-- An implemented premium-athletic visual system with metric-led hierarchy, solid semantic content surfaces, adaptive native chrome, restrained everyday motion, and earned PR-only celebration across Light and Dark appearances.
+## Engineering highlights
 
-## Codex Workflow
+- **Local-first architecture:** SwiftData is the fast local source of truth. Firebase stores an encrypted backup copy rather than becoming a dependency for everyday navigation or logging.
+- **Prepared value snapshots:** startup and performance-sensitive routes prepare immutable value-backed snapshots before navigation, reducing repeated SwiftData traversal and keeping the first actionable frame responsive.
+- **Deterministic coaching:** target suggestions, training rotation, readiness evidence rules, and recommendation copy are testable local services with bounded certainty.
+- **Performance as a feature:** the repository includes a focused acceptance verifier for route timing, warm-cache reuse, duplicate refreshes, notification work, UI timeouts, and unsafe synchronous SwiftData access.
+- **Shared design system:** semantic theme tokens, Dynamic Type-backed typography, native navigation, 44-point controls, restrained motion, and Reduce Motion/Reduce Transparency fallbacks are shared across the major app surfaces.
+- **Reliability coverage:** unit and UI tests cover workout logging, backup/restore, nutrition export, coaching, warm-start snapshots, History, Splits, scanner navigation, and lifecycle behavior.
 
-For a new Codex session, start with:
+## Technical stack
 
-- [NEXT_TASK.md](NEXT_TASK.md)
-- [NEXT_CODEX_CHAT.md](NEXT_CODEX_CHAT.md)
-- [FEATURE_SUMMARY.md](FEATURE_SUMMARY.md)
-- [ARCHITECTURE.md](ARCHITECTURE.md)
-- [ROADMAP.md](ROADMAP.md)
-- [UI_STYLE_GUIDE.md](UI_STYLE_GUIDE.md)
-- [KNOWN_ISSUES.md](KNOWN_ISSUES.md)
-- [PERFORMANCE_ACCEPTANCE_GOAL.md](PERFORMANCE_ACCEPTANCE_GOAL.md) when the work touches performance-sensitive flows
+| Area | Choice |
+| --- | --- |
+| Platform | iOS 17+ |
+| UI | SwiftUI |
+| Persistence | SwiftData |
+| Charts | Swift Charts |
+| Coaching | Deterministic local services |
+| Backup | Firebase Authentication + Cloud Firestore |
+| Backup security | On-device compression and passphrase encryption |
+| Health data | Optional HealthKit bridge |
+| CI | GitHub Actions on macOS with Xcode |
 
-Default rule:
+## Architecture at a glance
 
 ```text
-Only implement the task described in NEXT_TASK.md unless the user explicitly redirects scope.
+SwiftUI views
+    ↓ present state and collect input
+Feature services
+    ↓ coaching, calculations, imports, exports, backup, snapshots
+SwiftData models
+    ↓ local source of truth
+Prepared value snapshots
+    ↓ stable, responsive navigation and rendering
+Shared theme, motion, accessibility, and performance utilities
 ```
 
-## Requirements
+The main implementation boundaries are documented in [ARCHITECTURE.md](ARCHITECTURE.md). The current product surface is summarised in [FEATURE_SUMMARY.md](FEATURE_SUMMARY.md), and the active priorities are in [ROADMAP.md](ROADMAP.md).
+
+## Current status
+
+The main lifting loop is implemented end to end and the app is in an active quality and acceptance phase. The current focus is physical-device validation across Light and Dark appearance, large Dynamic Type, VoiceOver, Reduce Motion, Reduce Transparency, Firebase restore, and the most performance-sensitive workout routes.
+
+The canonical 9 August 2026 performance run recorded 106 passing unit tests, Today-to-Coach at 195 ms, Coach-to-Preview at 249 ms, root-tab switching at 129 ms, two Preview warm-cache hits, zero mounted Preview refreshes, and no acceptance failures. These figures are a dated engineering baseline, not a promise that every device will produce the same timing.
+
+## Run locally
+
+Requirements:
 
 - macOS with Xcode installed.
-- iOS 17+ simulator or a real iPhone.
-- SwiftUI.
-- SwiftData.
-- Swift Charts.
-- Firebase Spark project with Email/Password Authentication and Cloud Firestore for account-linked backup.
-- A real `GoogleService-Info.plist` added to the app target for live Firebase backup. Without it, the app can run in local-only mode but account backup remains unavailable.
-- For real-device installs, use Xcode signing with an Apple ID.
-
-## Run Locally
+- An iOS 17+ simulator or a signed physical iPhone.
+- A Firebase `GoogleService-Info.plist` only if account backup is being exercised. It is intentionally ignored by Git.
 
 Open the project:
 
@@ -80,30 +102,13 @@ Open the project:
 open GymTracker.xcodeproj
 ```
 
-In Xcode:
-
-1. Select the `GymTracker` scheme.
-2. Select an iPhone simulator or connected iPhone.
-3. Press `Cmd+B` to build.
-4. Press `Cmd+R` to run.
+Then select the `GymTracker` scheme and an iPhone simulator or connected iPhone.
 
 Command-line build:
 
 ```bash
-xcodebuild -project GymTracker.xcodeproj \
-  -scheme GymTracker \
-  -configuration Debug \
-  -destination 'platform=iOS Simulator,name=iPhone 17' \
-  build
-```
-
-## Validation
-
-General validation:
-
-```bash
-git diff --check
-xcodebuild -project GymTracker.xcodeproj \
+xcodebuild \
+  -project GymTracker.xcodeproj \
   -scheme GymTracker \
   -configuration Debug \
   -destination 'platform=iOS Simulator,name=iPhone 17' \
@@ -116,28 +121,22 @@ Performance-sensitive validation:
 Scripts/verify_performance_acceptance.sh
 ```
 
-That verifier runs a build, unit tests, the focused UI acceptance test, and log scanning for the recent performance and navigation regressions.
+The product and repository are branded **Peakline**. Existing Xcode project, scheme, source-directory, test-target, and bundle-identifier names still use `GymTracker` as a compatibility detail for the current local install and build setup; they are not separate products.
 
-## Exercise Icons
+## Repository guide
 
-Exact source PNGs live in:
+- [FEATURE_SUMMARY.md](FEATURE_SUMMARY.md) — implemented product and feature state.
+- [ARCHITECTURE.md](ARCHITECTURE.md) — implementation map and architectural guardrails.
+- [UI_STYLE_GUIDE.md](UI_STYLE_GUIDE.md) — visual, interaction, accessibility, and motion standards.
+- [KNOWN_ISSUES.md](KNOWN_ISSUES.md) — known risks and regression boundaries.
+- [PERFORMANCE_ACCEPTANCE_GOAL.md](PERFORMANCE_ACCEPTANCE_GOAL.md) — acceptance thresholds and verifier workflow.
+- [ROADMAP.md](ROADMAP.md) — near-term priorities and longer-term ideas.
+- [Docs/AUDIT_INDEX.md](Docs/AUDIT_INDEX.md) — index of historical reports and archived planning material.
 
-```text
-GymTracker/IconSource/ExerciseIcons/
-```
+Historical prompts and phase reports are retained for context only; the root docs above describe the current project.
 
-Generated asset-catalog icons live in:
+## Portfolio notes
 
-```text
-GymTracker/Assets.xcassets/ExerciseIcons/
-```
+Peakline is intentionally more than a collection of screens. The repository shows how I approach a growing SwiftUI product: establish clear ownership boundaries, keep persistence local and recoverable, measure hot paths, make uncertainty visible, and keep the experience usable under real gym conditions.
 
-When mapping a new source icon, update `Scripts/prepare_exercise_icons.py`, confirm `ExerciseIconKey`, update `ExerciseIconMapper`, then run:
-
-```bash
-python3 Scripts/prepare_exercise_icons.py
-```
-
-## Real iPhone Install
-
-Free Apple ID installs usually expire after about 7 days. The backup implementation avoids paid Apple iCloud and Sign in with Apple capabilities by using Firebase Spark for encrypted account-linked backup; HealthKit still uses the existing entitlement and normal Xcode signing.
+The next meaningful milestone is a complete unlocked-device acceptance pass, followed by continued reliability work around encrypted restore, nutrition imports, and safe SwiftData evolution.
