@@ -82,6 +82,9 @@ actor BackupPayloadWorker {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(envelope)
+        guard data.count <= FullAppBackupLimits.maxDecompressedPayloadBytes else {
+            throw FullAppBackupError.payloadTooLarge
+        }
         let compressedData = try (data as NSData).compressed(using: .lzfse) as Data
         guard compressedData.count <= FullAppBackupLimits.maxCompressedPayloadBytes else {
             throw FullAppBackupError.payloadTooLarge
