@@ -61,7 +61,7 @@ The main value loop is:
 - Hydration supports quick water logging and daily context.
 - Sleep and recovery include sleep sessions, naps, readiness scoring, recovery labels, and coaching context.
 - HealthKit remains optional and should fail gracefully when unavailable, denied, or revoked.
-- Firebase account backup uses email/password authentication plus a user passphrase to store encrypted full-app backups for reinstall recovery. Backup/export schema version 2 preserves the optional active rotation index while version-1 restores remain supported.
+- Firebase account backup uses email/password authentication plus a user passphrase to store encrypted full-app backups for reinstall recovery. The current backup envelope is schema version 3, while schema version 2 imports remain supported for compatibility.
 
 ### Settings And Utilities
 
@@ -110,7 +110,7 @@ The main value loop is:
 - The main lifting loop is implemented end to end.
 - Coach, Progress, Nutrition, Sleep, Hydration, and export utilities now sit on top of that core instead of replacing it.
 - Recent performance cleanup materially improved route timing, notification refresh behavior, and Coach navigation stability.
-- The 9 August 2026 canonical verifier is green after the app-wide visual migration: 106 unit tests passed, Today-to-Coach measured 195 ms, Coach-to-Preview 249 ms, root-tab transitions 129 ms, Preview recorded two warm-cache hits, mounted Preview recomputation remained zero, and the combined-log audit found no forbidden patterns.
+- The latest recorded verifier is green: 131 unit tests passed, Today-to-Coach measured 214 ms, Coach-to-Preview 272 ms, root-tab transitions 84 ms, Preview recorded two warm-cache hits, mounted Preview recomputation remained zero, and the combined-log audit found no forbidden patterns.
 
 ## Remaining Practical Expansion
 

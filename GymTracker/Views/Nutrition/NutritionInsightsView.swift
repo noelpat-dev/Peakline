@@ -500,7 +500,7 @@ struct NutritionTargetsView: View {
     var body: some View {
         FitnessScreen(
             title: "Nutrition Targets",
-            subtitle: "Set manual targets. GymTracker uses them only for local progress and insight cards.",
+            subtitle: "Set manual targets. Peakline uses them only for local progress and insight cards.",
             systemImage: "target"
         ) {
             FitnessCard {

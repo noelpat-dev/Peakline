@@ -32,6 +32,14 @@ struct FullAppBackupMetadata: Codable, Equatable, Sendable {
     let appVersion: String?
 }
 
+enum FullAppBackupLimits {
+    static let maxRecordCount = 100_000
+    static let maxCompressedPayloadBytes = 64 * 1024 * 1024
+    static let maxDecompressedPayloadBytes = 128 * 1024 * 1024
+    static let maxCloudChunkCount = 256
+    static let maxCloudChunkBytes = 480 * 1_024
+}
+
 struct FullAppBackupImportSummary: Equatable {
     let counts: FullAppBackupCounts
     let importedAt: Date
@@ -203,10 +211,17 @@ struct FullAppBackupService {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys]
-        return try encoder.encode(envelope)
+        let data = try encoder.encode(envelope)
+        guard data.count <= FullAppBackupLimits.maxDecompressedPayloadBytes else {
+            throw FullAppBackupError.payloadTooLarge
+        }
+        return data
     }
 
     func decodeEnvelope(from data: Data) throws -> FullAppBackupEnvelope {
+        guard data.count <= FullAppBackupLimits.maxDecompressedPayloadBytes else {
+            throw FullAppBackupError.payloadTooLarge
+        }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(FullAppBackupEnvelope.self, from: data)
@@ -350,6 +365,10 @@ struct FullAppBackupService {
             throw FullAppBackupError.unsupportedSchemaVersion(envelope.schemaVersion)
         }
 
+        guard envelope.counts.totalRecordCount <= FullAppBackupLimits.maxRecordCount else {
+            throw FullAppBackupError.recordLimitExceeded
+        }
+
         let data = envelope.data
         try requireUnique(data.userProfiles.map(\.id), label: "user profile")
         try requireUnique(data.exercises.map(\.id), label: "exercise")
@@ -481,6 +500,8 @@ enum FullAppBackupError: LocalizedError, Equatable {
     case duplicateIdentifier(String)
     case invalidRelationship(String)
     case preflightCountMismatch
+    case payloadTooLarge
+    case recordLimitExceeded
 
     var errorDescription: String? {
         switch self {
@@ -496,6 +517,10 @@ enum FullAppBackupError: LocalizedError, Equatable {
             return message
         case .preflightCountMismatch:
             return "The backup failed its restore preflight count check."
+        case .payloadTooLarge:
+            return "The backup payload is larger than Peakline's supported safety limit."
+        case .recordLimitExceeded:
+            return "The backup contains more records than Peakline will process in one operation."
         }
     }
 }

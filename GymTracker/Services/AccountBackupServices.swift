@@ -79,10 +79,12 @@ struct FirebaseAccountService {
     }
 
     func readiness() async -> AccountReadiness {
+#if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-UITestInMemoryStore")
             || ProcessInfo.processInfo.arguments.contains("-SkipAccountGate") {
             return .ready(FirebaseAccountRecord(userIdentifier: "ui-test-user", email: "ui-test@peakline.local", signedInAt: .distantPast))
         }
+#endif
 
         guard FirebaseBootstrap.isConfigured else {
             return .firebaseNotConfigured

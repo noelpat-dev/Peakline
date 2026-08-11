@@ -86,7 +86,7 @@ The main implementation boundaries are documented in [ARCHITECTURE.md](ARCHITECT
 
 The main lifting loop is implemented end to end and the app is in an active quality and acceptance phase. The current focus is physical-device validation across Light and Dark appearance, large Dynamic Type, VoiceOver, Reduce Motion, Reduce Transparency, Firebase restore, and the most performance-sensitive workout routes.
 
-The canonical 9 August 2026 performance run recorded 106 passing unit tests, Today-to-Coach at 195 ms, Coach-to-Preview at 249 ms, root-tab switching at 129 ms, two Preview warm-cache hits, zero mounted Preview refreshes, and no acceptance failures. These figures are a dated engineering baseline, not a promise that every device will produce the same timing.
+The latest recorded performance run on 11 August 2026 passed 131 unit tests, measured Today-to-Coach at 214 ms, Coach-to-Preview at 272 ms, and root-tab switching at 84 ms, with two Preview warm-cache hits, zero mounted Preview refreshes, and no acceptance failures. These figures are a dated engineering baseline, not a promise that every device will produce the same timing.
 
 ## Run locally
 
@@ -131,9 +131,10 @@ The product and repository are branded **Peakline**. Existing Xcode project, sch
 - [KNOWN_ISSUES.md](KNOWN_ISSUES.md) — known risks and regression boundaries.
 - [PERFORMANCE_ACCEPTANCE_GOAL.md](PERFORMANCE_ACCEPTANCE_GOAL.md) — acceptance thresholds and verifier workflow.
 - [ROADMAP.md](ROADMAP.md) — near-term priorities and longer-term ideas.
-- [Docs/AUDIT_INDEX.md](Docs/AUDIT_INDEX.md) — index of historical reports and archived planning material.
+- [ENGINEERING_DECISIONS.md](ENGINEERING_DECISIONS.md) — concise first-person decisions behind the implementation.
+- [SECURITY.md](SECURITY.md) — responsible reporting and release-safety boundaries.
 
-Historical prompts and phase reports are retained for context only; the root docs above describe the current project.
+The public tree is intentionally limited to the product source, tests, CI, canonical documentation, and portfolio-facing engineering notes needed to understand and run Peakline.
 
 ## Portfolio notes
 

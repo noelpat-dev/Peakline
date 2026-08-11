@@ -56,7 +56,7 @@ struct OpenFoodFactsService {
         }
 
         var request = URLRequest(url: url)
-        request.setValue("GymTracker/1.0 (personal iOS nutrition app)", forHTTPHeaderField: "User-Agent")
+        request.setValue("Peakline/1.0 (personal iOS nutrition app)", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 15
 
         let (data, response) = try await session.data(for: request)

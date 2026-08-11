@@ -264,15 +264,16 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 
 extension AppAppearance {
     static var launchArgumentOverride: AppAppearance? {
+#if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
-        guard arguments.contains("-UITestInMemoryStore"),
-              let argumentIndex = arguments.firstIndex(of: "-UITestAppearance"),
-              arguments.indices.contains(argumentIndex + 1)
-        else {
-            return nil
+        if arguments.contains("-UITestInMemoryStore"),
+           let argumentIndex = arguments.firstIndex(of: "-UITestAppearance"),
+           arguments.indices.contains(argumentIndex + 1) {
+            return AppAppearance(rawValue: arguments[argumentIndex + 1].lowercased())
         }
+#endif
 
-        return AppAppearance(rawValue: arguments[argumentIndex + 1].lowercased())
+        return nil
     }
 }
 

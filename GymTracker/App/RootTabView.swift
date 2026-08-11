@@ -338,8 +338,10 @@ struct RootTabView: View {
     }
 
     private func refreshFullAppBackup(reason: String) {
+#if DEBUG
         guard !ProcessInfo.processInfo.arguments.contains("-UITestInMemoryStore")
                 && !ProcessInfo.processInfo.arguments.contains("-SkipAccountGate") else { return }
+#endif
 
         fullAppBackupTask?.cancel()
         fullAppBackupTask = Task { @MainActor in
@@ -565,14 +567,16 @@ private enum RootTab: String, Hashable {
     case settings
 
     static var launchArgumentSelection: RootTab {
+#if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
-        guard arguments.contains("-UITestInMemoryStore"),
-              let flagIndex = arguments.firstIndex(of: "-UITestInitialTab"),
-              arguments.indices.contains(flagIndex + 1) else {
-            return .today
+        if arguments.contains("-UITestInMemoryStore"),
+           let flagIndex = arguments.firstIndex(of: "-UITestInitialTab"),
+           arguments.indices.contains(flagIndex + 1) {
+            return RootTab(rawValue: arguments[flagIndex + 1]) ?? .today
         }
+#endif
 
-        return RootTab(rawValue: arguments[flagIndex + 1]) ?? .today
+        return .today
     }
 }
 

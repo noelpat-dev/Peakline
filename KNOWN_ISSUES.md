@@ -27,7 +27,7 @@ Current file: `KNOWN_ISSUES.md`
 
 ## HealthKit And Firebase Backup
 
-- A real Firebase `GoogleService-Info.plist` is not committed to the repo; live account backup requires adding one from the Firebase project registered to `com.noel.GymTracker`.
+- A real Firebase `GoogleService-Info.plist` is not committed to the repo; live account backup requires adding one from the Firebase project registered to the existing compatibility bundle identifier `com.noel.GymTracker`.
 - If Firebase is not configured, the startup gate allows local-only use, but that data is not protected from app deletion until a real Firebase backup is saved.
 - Email/Password Authentication and Cloud Firestore must be enabled in Firebase, with rules that restrict `users/{uid}` documents to that authenticated user.
 - Forgetting the backup passphrase makes the encrypted remote backup unrecoverable after reinstall.
@@ -72,7 +72,7 @@ Current file: `KNOWN_ISSUES.md`
 - Protect the current acceptance thresholds:
   `today.route.appear coach` under 500ms in the verifier path, `root.notification.refresh` under 50ms in the interactive path, and one Preview `refresh onAppear` per open.
 - Coach and hydrated Workout Preview are data-backed deep routes with a 500 ms navigation budget. Lightweight warm routes remain on the 300 ms budget; do not reclassify a route merely to hide a regression.
-- The 9 August 2026 post-migration canonical verifier is green after a fresh build and all 106 unit tests: Today-to-Coach measured 195 ms, Coach-to-Preview 249 ms, root switching 129 ms, Preview warm-cache hits 2, mounted Preview refreshes 0, and the combined-log audit passed. This supersedes the earlier transient 663 ms sample; keep the 500 ms deep-route and 300 ms warm-route gates unchanged.
+- The latest canonical verifier is green after a fresh build and all 131 unit tests: Today-to-Coach measured 214 ms, Coach-to-Preview 272 ms, root switching 84 ms, Preview warm-cache hits 2, mounted Preview refreshes 0, and the combined-log audit passed. Keep the 500 ms deep-route and 300 ms warm-route gates unchanged.
 
 ## Data And Analytics
 

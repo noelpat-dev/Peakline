@@ -501,7 +501,7 @@ private extension NutritionHealthKitBridge {
             "GymTrackerFoodItemID": entry.foodItemId.uuidString,
             "GymTrackerMealType": entry.mealType.rawValue,
             "GymTrackerSyncVersion": HealthKitFoodLogSyncRecord.currentSyncVersion,
-            "GymTrackerSource": "GymTracker"
+            "GymTrackerSource": "Peakline"
         ]
         let startDate = entry.loggedAt
         let endDate = startDate.addingTimeInterval(1)

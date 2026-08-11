@@ -811,7 +811,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -eu\ndefault_source_path=\"${PROJECT_DIR}/GymTracker/GoogleService-Info.plist\"\nsource_path=\"${PEAKLINE_FIREBASE_CONFIG_PATH:-${default_source_path}}\"\ndestination_path=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GoogleService-Info.plist\"\nif [ -f \"${source_path}\" ]; then\n    /bin/mkdir -p \"$(/usr/bin/dirname \"${destination_path}\")\"\n    /bin/cp \"${source_path}\" \"${destination_path}\"\nelse\n    /bin/rm -f \"${destination_path}\"\n    echo \"note: GoogleService-Info.plist is absent; Peakline will run in local-only mode.\"\nfi\n";
+			shellScript = "set -eu\ndefault_source_path=\"${PROJECT_DIR}/GymTracker/GoogleService-Info.plist\"\nsource_path=\"${PEAKLINE_FIREBASE_CONFIG_PATH:-${default_source_path}}\"\ndestination_path=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GoogleService-Info.plist\"\ncase \"${source_path}\" in\n    */GoogleService-Info.plist|GoogleService-Info.plist) ;;\n    *) echo \"error: PEAKLINE_FIREBASE_CONFIG_PATH must point to a GoogleService-Info.plist file.\" >&2; exit 1 ;;\nesac\nif [ -f \"${source_path}\" ]; then\n    /bin/mkdir -p \"$(/usr/bin/dirname \"${destination_path}\")\"\n    /bin/cp \"${source_path}\" \"${destination_path}\"\nelse\n    /bin/rm -f \"${destination_path}\"\n    echo \"note: GoogleService-Info.plist is absent; Peakline will run in local-only mode.\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -1122,10 +1122,10 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Peakline;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
-				INFOPLIST_KEY_NSCameraUsageDescription = "GymTracker uses the camera to scan food barcodes and read nutrition labels for local food logging.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "GymTracker reads selected Apple Health data, such as sleep, body weight, activity, and workouts, to improve training-aware recovery and nutrition insights when you enable this integration.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "GymTracker saves confirmed nutrition logs and estimated Sleep Mode sessions to Apple Health when you enable each sync option.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "GymTracker lets you choose nutrition label photos so OCR can prefill food details for local food logging.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Peakline uses the camera to scan food barcodes and read nutrition labels for local food logging.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Peakline reads selected Apple Health data, such as sleep, body weight, activity, and workouts, to improve training-aware recovery and nutrition insights when you enable this integration.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Peakline saves confirmed nutrition logs and estimated Sleep Mode sessions to Apple Health when you enable each sync option.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Peakline lets you choose nutrition label photos so OCR can prefill food details for local food logging.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
@@ -1162,10 +1162,10 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Peakline;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
-				INFOPLIST_KEY_NSCameraUsageDescription = "GymTracker uses the camera to scan food barcodes and read nutrition labels for local food logging.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "GymTracker reads selected Apple Health data, such as sleep, body weight, activity, and workouts, to improve training-aware recovery and nutrition insights when you enable this integration.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "GymTracker saves confirmed nutrition logs and estimated Sleep Mode sessions to Apple Health when you enable each sync option.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "GymTracker lets you choose nutrition label photos so OCR can prefill food details for local food logging.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Peakline uses the camera to scan food barcodes and read nutrition labels for local food logging.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Peakline reads selected Apple Health data, such as sleep, body weight, activity, and workouts, to improve training-aware recovery and nutrition insights when you enable this integration.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Peakline saves confirmed nutrition logs and estimated Sleep Mode sessions to Apple Health when you enable each sync option.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Peakline lets you choose nutrition label photos so OCR can prefill food details for local food logging.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;

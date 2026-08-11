@@ -185,7 +185,7 @@ struct BarcodeScannerView: View {
                         .font(.title3.bold())
                         .foregroundStyle(appTheme.colors.textPrimary)
 
-                    Text("GymTracker uses the camera to scan food barcodes for nutrition tracking.")
+                    Text("Peakline uses the camera to scan food barcodes for nutrition tracking.")
                         .font(.subheadline)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)

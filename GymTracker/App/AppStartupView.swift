@@ -543,11 +543,13 @@ final class AppStartupCoordinator: ObservableObject {
             return
         }
 
+#if DEBUG
         guard !ProcessInfo.processInfo.arguments.contains("-UITestInMemoryStore")
                 && !ProcessInfo.processInfo.arguments.contains("-SkipAccountGate") else {
             await prepareLocalData(in: context, forceDateRepair: false)
             return
         }
+#endif
 
         // A populated local store is always usable without a cloud account. Account
         // readiness only matters when an empty install can offer a cloud restore.

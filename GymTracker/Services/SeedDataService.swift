@@ -30,6 +30,7 @@ enum SeedDataService {
                 starterSplits(using: existingExercises).forEach(context.insert)
             }
 
+#if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-UITestCoachFatigueFixture") {
                 try seedCoachFatigueFixture(in: context, exercises: existingExercises)
             }
@@ -49,6 +50,7 @@ enum SeedDataService {
             if ProcessInfo.processInfo.arguments.contains("-UITestPRCelebrationFixture") {
                 try seedPRCelebrationFixture(in: context, exercises: existingExercises)
             }
+#endif
 
             try TrainingRotationService().normalizePersistedRotation(in: context)
             if context.hasChanges {

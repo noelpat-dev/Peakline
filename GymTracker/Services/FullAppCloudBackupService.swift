@@ -82,7 +82,11 @@ actor BackupPayloadWorker {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(envelope)
-        return try (data as NSData).compressed(using: .lzfse) as Data
+        let compressedData = try (data as NSData).compressed(using: .lzfse) as Data
+        guard compressedData.count <= FullAppBackupLimits.maxCompressedPayloadBytes else {
+            throw FullAppBackupError.payloadTooLarge
+        }
+        return compressedData
     }
 
     func deriveKey(passphrase: String, salt: Data, iterationCount: Int?) throws -> BackupKeyMaterial {
@@ -109,8 +113,18 @@ actor BackupPayloadWorker {
         _ record: RemoteFullAppBackupRecord,
         keyData: Data
     ) throws -> (envelope: FullAppBackupEnvelope, compressedByteCount: Int) {
+        guard (0...FullAppBackupLimits.maxCompressedPayloadBytes).contains(record.metadata.compressedByteCount),
+              record.encryptedData.count <= FullAppBackupLimits.maxCompressedPayloadBytes + 16 else {
+            throw FirebaseFullAppBackupError.payloadTooLarge
+        }
         let compressedData = try decrypt(record, keyData: keyData)
+        guard compressedData.count <= FullAppBackupLimits.maxCompressedPayloadBytes else {
+            throw FirebaseFullAppBackupError.payloadTooLarge
+        }
         let envelopeData = try (compressedData as NSData).decompressed(using: .lzfse) as Data
+        guard envelopeData.count <= FullAppBackupLimits.maxDecompressedPayloadBytes else {
+            throw FirebaseFullAppBackupError.payloadTooLarge
+        }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return (
@@ -205,6 +219,7 @@ struct BackupCoordinator {
                 try context.save()
             }
             let envelope = try await backupService.makeEnvelope(in: context.container)
+            try backupService.validate(envelope)
             try Task.checkCancellation()
             let compressedData = try await payloadWorker.encodeAndCompress(envelope)
             try Task.checkCancellation()
@@ -339,7 +354,7 @@ struct BackupCoordinator {
 }
 
 struct FirebaseFullAppBackupStore: RemoteFullAppBackupStoring {
-    private let chunkByteLimit = 480 * 1_024
+    private let chunkByteLimit = FullAppBackupLimits.maxCloudChunkBytes
 
     func latestMetadata() async throws -> FullAppBackupMetadata? {
         let backupReference = try backupDocumentReference()
@@ -410,10 +425,18 @@ struct FirebaseFullAppBackupStore: RemoteFullAppBackupStoring {
 
     func saveRecord(_ record: RemoteFullAppBackupRecord) async throws {
         try record.crypto.validateSupported()
+        guard (0...FullAppBackupLimits.maxCompressedPayloadBytes).contains(record.metadata.compressedByteCount),
+              (0...FullAppBackupLimits.maxRecordCount).contains(record.metadata.counts.totalRecordCount),
+              record.encryptedData.count <= FullAppBackupLimits.maxCompressedPayloadBytes + 16 else {
+            throw FirebaseFullAppBackupError.payloadTooLarge
+        }
         let pointerReference = try backupDocumentReference()
         let generationID = UUID().uuidString.lowercased()
         let generationReference = pointerReference.collection("generations").document(generationID)
         let chunks = Self.split(record.encryptedData, chunkByteLimit: chunkByteLimit)
+        guard (1...FullAppBackupLimits.maxCloudChunkCount).contains(chunks.count) else {
+            throw FirebaseFullAppBackupError.chunkLimitExceeded
+        }
         let payloadHash = Self.sha256Hex(record.encryptedData)
 
         for (index, chunk) in chunks.enumerated() {
@@ -504,13 +527,20 @@ struct FirebaseFullAppBackupStore: RemoteFullAppBackupStoring {
                 userContentCount: data["userContentCount"] as? Int ?? 0
             )
         }
-        return FullAppBackupMetadata(
+        let metadata = FullAppBackupMetadata(
             createdAt: try dateField("createdAt", in: data),
             exportedAt: try dateField("exportedAt", in: data),
             counts: counts,
             compressedByteCount: try intField("compressedByteCount", in: data),
             appVersion: data["appVersion"] as? String
         )
+        guard (0...FullAppBackupLimits.maxCompressedPayloadBytes).contains(metadata.compressedByteCount) else {
+            throw FirebaseFullAppBackupError.payloadTooLarge
+        }
+        guard (0...FullAppBackupLimits.maxRecordCount).contains(metadata.counts.totalRecordCount) else {
+            throw FirebaseFullAppBackupError.recordLimitExceeded
+        }
+        return metadata
     }
 
     private func crypto(from data: [String: Any]) throws -> BackupCryptoMetadata {
@@ -540,8 +570,8 @@ struct FirebaseFullAppBackupStore: RemoteFullAppBackupStoring {
 
     private func validatedChunkCount(from data: [String: Any]) throws -> Int {
         let count = try intField("chunkCount", in: data)
-        guard (1...10_000).contains(count) else {
-            throw FirebaseFullAppBackupError.missingRecordData
+        guard (1...FullAppBackupLimits.maxCloudChunkCount).contains(count) else {
+            throw FirebaseFullAppBackupError.chunkLimitExceeded
         }
         return count
     }
@@ -561,6 +591,8 @@ struct FirebaseFullAppBackupStore: RemoteFullAppBackupStoring {
                   expectedGenerationID == nil || chunkData["generationID"] as? String == expectedGenerationID,
                   let payload = chunkData["payloadBase64"] as? String,
                   let chunk = Data(base64Encoded: payload),
+                  chunk.count <= FullAppBackupLimits.maxCloudChunkBytes,
+                  data.count <= FullAppBackupLimits.maxCompressedPayloadBytes + 16 - chunk.count,
                   chunkData["sha256"] == nil || chunkData["sha256"] as? String == Self.sha256Hex(chunk) else {
                 throw FirebaseFullAppBackupError.missingRecordData
             }
@@ -879,6 +911,9 @@ enum FirebaseFullAppBackupError: LocalizedError, Equatable {
     case unavailable(String)
     case missingRecordData
     case integrityCheckFailed
+    case payloadTooLarge
+    case recordLimitExceeded
+    case chunkLimitExceeded
 
     var errorDescription: String? {
         switch self {
@@ -888,6 +923,12 @@ enum FirebaseFullAppBackupError: LocalizedError, Equatable {
             return "The Firebase backup record is incomplete."
         case .integrityCheckFailed:
             return "The Firebase backup failed its integrity check and was not restored."
+        case .payloadTooLarge:
+            return "The Firebase backup payload is larger than Peakline's supported safety limit."
+        case .recordLimitExceeded:
+            return "The Firebase backup contains more records than Peakline will process in one operation."
+        case .chunkLimitExceeded:
+            return "The Firebase backup contains more chunks than Peakline will process in one operation."
         }
     }
 }

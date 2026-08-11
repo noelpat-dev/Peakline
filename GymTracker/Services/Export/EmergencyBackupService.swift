@@ -121,9 +121,11 @@ struct EmergencyBackupService {
     }
 
     func saveLatestBackup(in context: ModelContext) -> EmergencyBackupSaveOutcome {
+#if DEBUG
         guard !ProcessInfo.processInfo.arguments.contains("-UITestInMemoryStore") else {
             return .skippedUITestStore
         }
+#endif
 
         do {
             let workouts = try context.fetch(FetchDescriptor<WorkoutSession>())
@@ -164,9 +166,11 @@ struct EmergencyBackupService {
     }
 
     func restoreIfNeeded(in context: ModelContext) -> EmergencyBackupRestoreOutcome {
+#if DEBUG
         guard !ProcessInfo.processInfo.arguments.contains("-UITestInMemoryStore") else {
             return .skippedUITestStore
         }
+#endif
 
         do {
             guard let record = try loadRecord() else {

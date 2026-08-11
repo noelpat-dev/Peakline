@@ -136,7 +136,11 @@ struct PeaklineModelContainerHost: View {
     }
 
     private static func loadContainer() -> PeaklineModelContainerLoadState {
+#if DEBUG
         let inMemory = ProcessInfo.processInfo.arguments.contains("-UITestInMemoryStore")
+#else
+        let inMemory = false
+#endif
         do {
             return .ready(try PeaklineModelStore.makeContainer(isStoredInMemoryOnly: inMemory))
         } catch {

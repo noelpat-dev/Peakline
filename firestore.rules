@@ -2,13 +2,122 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{userId}/backups/{backupId} {
-      allow read, write: if request.auth != null
-                         && request.auth.uid == userId;
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
 
-      match /{backupDocument=**} {
-        allow read, write: if request.auth != null
-                           && request.auth.uid == userId;
+    function validManifest(data, expectedGenerationID) {
+      return data.keys().hasOnly([
+          'schemaVersion',
+          'createdAt',
+          'exportedAt',
+          'countsJSON',
+          'userContentCount',
+          'totalRecordCount',
+          'workoutCount',
+          'foodLogCount',
+          'sleepCount',
+          'hydrationCount',
+          'compressedByteCount',
+          'appVersion',
+          'chunkCount',
+          'encryptionAlgorithm',
+          'keyDerivation',
+          'iterationCount',
+          'saltBase64',
+          'nonceBase64',
+          'tagBase64',
+          'storageSchemaVersion',
+          'generationID',
+          'payloadSHA256',
+          'state'
+        ])
+        && data.schemaVersion == 3
+        && data.storageSchemaVersion == 3
+        && data.createdAt is timestamp
+        && data.exportedAt is timestamp
+        && data.countsJSON is string
+        && data.countsJSON.size() <= 16384
+        && data.userContentCount is int
+        && data.userContentCount >= 0
+        && data.userContentCount <= 100000
+        && data.totalRecordCount is int
+        && data.totalRecordCount >= 0
+        && data.totalRecordCount <= 100000
+        && data.workoutCount is int
+        && data.workoutCount >= 0
+        && data.foodLogCount is int
+        && data.foodLogCount >= 0
+        && data.sleepCount is int
+        && data.sleepCount >= 0
+        && data.hydrationCount is int
+        && data.hydrationCount >= 0
+        && data.compressedByteCount is int
+        && data.compressedByteCount >= 0
+        && data.compressedByteCount <= 67108864
+        && (data.appVersion == null || data.appVersion is string)
+        && data.chunkCount is int
+        && data.chunkCount >= 1
+        && data.chunkCount <= 256
+        && data.encryptionAlgorithm == 'AES-GCM-256'
+        && data.keyDerivation == 'PBKDF2-HMAC-SHA256'
+        && data.iterationCount is int
+        && data.iterationCount >= 10000
+        && data.iterationCount <= 5000000
+        && data.saltBase64 is string
+        && data.saltBase64.size() == 24
+        && data.nonceBase64 is string
+        && data.nonceBase64.size() == 16
+        && data.tagBase64 is string
+        && data.tagBase64.size() == 24
+        && data.generationID is string
+        && data.generationID.size() <= 64
+        && (expectedGenerationID == null || data.generationID == expectedGenerationID)
+        && data.payloadSHA256 is string
+        && data.payloadSHA256.size() == 64
+        && data.state == 'complete';
+    }
+
+    function validChunk(data, expectedGenerationID) {
+      return data.keys().hasOnly([
+          'generationID',
+          'index',
+          'payloadBase64',
+          'sha256'
+        ])
+        && data.generationID is string
+        && data.generationID == expectedGenerationID
+        && data.index is int
+        && data.index >= 0
+        && data.index < 256
+        && data.payloadBase64 is string
+        && data.payloadBase64.size() <= 655360
+        && data.sha256 is string
+        && data.sha256.size() == 64;
+    }
+
+    match /users/{userId}/backups/latest {
+      // Legacy backup documents remain readable while current writes use the
+      // immutable generation layout below.
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+                            && validManifest(request.resource.data, null);
+
+      match /generations/{generationId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+                              && validManifest(request.resource.data, generationId);
+
+        match /chunks/{chunkId} {
+          allow read: if isOwner(userId);
+          allow create, update: if isOwner(userId)
+                                && validChunk(request.resource.data, generationId);
+        }
+      }
+
+      // Read-only compatibility for the original latest/chunks layout.
+      match /chunks/{chunkId} {
+        allow read: if isOwner(userId);
       }
     }
   }

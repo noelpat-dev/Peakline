@@ -10,7 +10,7 @@ Implementation baseline: shared system and major app surfaces migrated on 9 Augu
 
 Platform baseline: iOS 17+, with native adaptation on newer iOS releases
 
-This guide is the active visual and interaction reference for Peakline. The shared theme and major Today, Workout, Splits, History, Settings, Coach, Progress, Nutrition, Sleep, Preview, Logger, completion, and Summary surfaces now use this baseline. New work and any remaining deep-screen polish must preserve it. The guide supersedes archived UI prompts, including older glass-heavy directions; archived material can explain history but must not overrule this file.
+This guide is the active visual and interaction reference for Peakline. The shared theme and major Today, Workout, Splits, History, Settings, Coach, Progress, Nutrition, Sleep, Preview, Logger, completion, and Summary surfaces now use this baseline. New work and any remaining deep-screen polish must preserve it. The guide supersedes earlier design explorations, including older glass-heavy directions; the implemented system and this file are the active visual contract.
 
 Peakline follows current Apple platform principles of hierarchy, harmony, consistency, restrained materials, and accessible interaction without copying Apple's layouts, Activity Rings, brand assets, or visual identity:
 

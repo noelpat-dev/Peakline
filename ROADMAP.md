@@ -20,7 +20,7 @@ The app should stay centered on lifting: fast logging, an editable ordered train
 - The focused performance acceptance verifier is in place and should stay green as navigation and feature work continues.
 - Profile is compact and adaptive, Gym Utilities has been replaced by purposeful Workout Tools plus Appearance, Workout Preview has real route-local drag ordering, and Logger transition motivation now rotates through 28 nonrepeating messages.
 - The premium-athletic style guide is implemented across the shared design system and major Today, Workout, Splits, History, Settings, Coach, Progress, Nutrition, Sleep, Preview, Logger, completion, and Summary surfaces in both semantic appearances.
-- The 9 August 2026 post-migration full performance verifier is green with 106 unit tests, Today-to-Coach at 195 ms, Coach-to-Preview at 249 ms, and root switching at 129 ms.
+- The latest full performance verifier is green with 131 unit tests, Today-to-Coach at 214 ms, Coach-to-Preview at 272 ms, and root switching at 84 ms.
 
 ## Current Near-Term Priority
 

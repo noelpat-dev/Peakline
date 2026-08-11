@@ -91,18 +91,18 @@ The UI acceptance flow covers:
 
 ## Current Baseline
 
-The 9 August 2026 post-migration canonical full verifier completed a fresh Debug build, passed all 106 unit tests, passed the focused aggregate UI route, and passed the combined-log audit. Its in-app summary reported:
+The latest recorded canonical full verifier completed a fresh Debug build, passed all 131 unit tests, passed the focused aggregate UI route, and passed the combined-log audit. Its in-app summary reported:
 
 - `performance_acceptance=PASS`
-- `todayCoachMax=195`
-- `coachPreviewMax=249`
-- `rootTabMax=129`
+- `todayCoachMax=214`
+- `coachPreviewMax=272`
+- `rootTabMax=84`
 - `rootNotificationMax=0`
 - `previewWarmCacheHits=2`
 - `previewOnAppearRefreshes=0`
 - `failures=none`
 
-This clean run supersedes the transient red Coach-to-Preview samples observed earlier on 9 August. Treat the canonical aggregate values as the current healthy baseline rather than a hard promise for every machine; the enforced thresholds remain the source of truth.
+Treat these aggregate values as the current healthy baseline rather than a hard promise for every machine; the enforced thresholds remain the source of truth.
 
 The persistent DEBUG summary includes `previewWarmCacheHits` because current Xcode releases may omit individual app console lines from `xcodebuild` output. The verifier accepts either the original warm-cache trace line or a positive summary count; it does not remove the warm-cache requirement.
 

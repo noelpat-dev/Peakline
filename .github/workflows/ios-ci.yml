@@ -10,6 +10,9 @@ concurrency:
   group: ios-ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: macos-15
@@ -54,8 +57,19 @@ jobs:
             -only-testing:GymTrackerTests \
             test
 
+      - name: Run focused performance route smoke test
+        run: |
+          xcodebuild \
+            -project GymTracker.xcodeproj \
+            -scheme GymTracker \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO \
+            -only-testing:GymTrackerUITests/CoachWorkoutPreviewUITests/testPerformanceAcceptanceRoutes \
+            test
+
       - name: Strict-concurrency diagnostics lane
-        continue-on-error: true
         run: |
           strict_log="${RUNNER_TEMP}/strict-concurrency.log"
           if ! xcodebuild \

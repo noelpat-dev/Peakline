@@ -19,3 +19,21 @@ tmp/
 
 # Local service configuration
 GymTracker/GoogleService-Info.plist
+
+# Private development notes, agent workflow, and temporary reports
+AGENTS.md
+Agents/
+.agents/
+Docs/
+Prompts/
+NEXT_TASK.md
+NEXT_CODEX_CHAT.md
+*_REPORT.md
+*_PROMPT.md
+*_AUDIT.md
+
+# Credentials and signing material
+**/GoogleService-Info.plist
+*.p12
+*.mobileprovision
+*.pem

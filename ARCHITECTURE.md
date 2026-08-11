@@ -188,4 +188,4 @@ When adding or replacing an exact exercise icon:
 - Keep nutrition, barcode, OCR, HealthKit, and Open Food Facts data reviewable before it affects local truth.
 - Add backup/export or migration tests before risky schema changes, and keep restore behavior safe for fresh installs versus existing local data.
 - Keep charts lazy-loaded and large history screens performance-aware.
-- Use the archive index for historical context; do not treat archived prompts as current architecture.
+- Keep historical investigation material outside the public product tree; this document and the other canonical root docs define the active architecture.

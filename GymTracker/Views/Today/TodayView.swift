@@ -565,11 +565,13 @@ struct TodayView: View {
     }
 
     private func refreshBackupWarning() async {
+#if DEBUG
         guard !ProcessInfo.processInfo.arguments.contains("-UITestInMemoryStore")
                 && !ProcessInfo.processInfo.arguments.contains("-SkipAccountGate") else {
             backupWarning = nil
             return
         }
+#endif
 
         let readiness = await accountService.readiness()
         guard readiness.isReady else {
