@@ -7,6 +7,8 @@ struct RootTabView: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.scenePhase) private var scenePhase
 
+    @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
+
     @Query
     private var sleepSessions: [SleepSession]
 
@@ -43,6 +45,7 @@ struct RootTabView: View {
     @State private var fullAppBackupTask: Task<Void, Never>?
     @State private var previewWarmRefreshTask: Task<Void, Never>?
     @State private var lastPreviewWarmSourceSignature: String?
+    @State private var previewWarmRetryCount = 0
     @State private var isWorkoutCompletionPresentationActive = false
 
     private let sleepSettingsStore = SleepSettingsStore()
@@ -235,17 +238,12 @@ struct RootTabView: View {
     }
 
     private var previewWarmSourceSignature: String {
-        [
-            previewSplits.map {
-                "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970):\($0.activeRotationIndex ?? -1)"
-            }.joined(separator: ","),
-            workouts.map {
-                "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.completed)"
-            }.joined(separator: ","),
-            previewExercises.map {
-                "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)"
-            }.joined(separator: ",")
-        ].joined(separator: "|")
+        WorkoutWarmStartSourceSignature.make(
+            revision: workoutWarmStartInvalidation.revision,
+            splitSignatures: previewSplits.map { WorkoutWarmStartSourceSignature.split($0) },
+            workoutSignatures: workouts.map { WorkoutWarmStartSourceSignature.workout($0) },
+            exerciseSignatures: previewExercises.map { WorkoutWarmStartSourceSignature.exercise($0) }
+        )
     }
 
     private var coachModifierSourceSignature: String {
@@ -300,11 +298,20 @@ struct RootTabView: View {
                 )
                 SavedFoodWarmStartStore.shared.update(snapshot.savedFoodCatalogSnapshot)
                 lastPreviewWarmSourceSignature = signature
+                previewWarmRetryCount = 0
             } catch {
                 PerformanceTracer.mark(
                     .workoutPreviewWarmCache,
                     "root_refresh_failed error=\(error.localizedDescription)"
                 )
+                guard previewWarmRetryCount < 2 else { return }
+                previewWarmRetryCount += 1
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(previewWarmRetryCount))
+                    guard !Task.isCancelled,
+                          signature == previewWarmSourceSignature else { return }
+                    schedulePreviewWarmRefresh(for: signature)
+                }
             }
         }
     }
@@ -600,7 +607,7 @@ private struct RootTabContainer: View {
     var body: some View {
         TabView(selection: selectedTabBinding) {
             TodayView(startupSnapshot: startupSnapshot)
-                .onAppear { markStableFrame(for: .today) }
+                .onAppear { scheduleStableFrame(for: .today) }
                 .tabItem {
                     Label("Today", systemImage: "calendar")
                 }
@@ -608,7 +615,7 @@ private struct RootTabContainer: View {
                 .accessibilityIdentifier("tab-today")
 
             StartWorkoutView()
-                .onAppear { markStableFrame(for: .workout) }
+                .onAppear { scheduleStableFrame(for: .workout) }
                 .tabItem {
                     Label("Workout", systemImage: "figure.strengthtraining.traditional")
                 }
@@ -616,7 +623,7 @@ private struct RootTabContainer: View {
                 .accessibilityIdentifier("tab-workout")
 
             SplitsView()
-                .onAppear { markStableFrame(for: .splits) }
+                .onAppear { scheduleStableFrame(for: .splits) }
                 .tabItem {
                     Label("Splits", systemImage: "list.bullet.rectangle")
                 }
@@ -624,15 +631,15 @@ private struct RootTabContainer: View {
                 .accessibilityIdentifier("tab-splits")
 
             HistoryView(startupSnapshot: startupSnapshot.historySnapshot)
-                .onAppear { markStableFrame(for: .history) }
+                .onAppear { scheduleStableFrame(for: .history) }
                 .tabItem {
                     Label("History", systemImage: "clock.arrow.circlepath")
                 }
                 .tag(RootTab.history)
                 .accessibilityIdentifier("tab-history")
 
-            SettingsView()
-                .onAppear { markStableFrame(for: .settings) }
+            SettingsView(initialProfileSnapshot: startupSnapshot.settingsProfileSnapshot)
+                .onAppear { scheduleStableFrame(for: .settings) }
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")
                 }
@@ -650,7 +657,9 @@ private struct RootTabContainer: View {
             pendingSelectionStartedAt = .now
             PerformanceTracer.mark(.motionTabSelect, "requested tab=\(newTab.rawValue)")
             PerformanceTracer.trace(.motionTabSelect) {
-                selectionState.selectedTab = newTab
+                AppMotion.withoutAnimation {
+                    selectionState.selectedTab = newTab
+                }
             }
             AppHaptics.selection()
         }
@@ -668,5 +677,15 @@ private struct RootTabContainer: View {
         )
         pendingTab = nil
         self.pendingSelectionStartedAt = nil
+    }
+
+    private func scheduleStableFrame(for tab: RootTab) {
+        Task { @MainActor in
+            // `onAppear` can run before the replacement hierarchy is committed.
+            // Yield past the insertion turn before recording the visible frame.
+            try? await Task.sleep(for: .milliseconds(1))
+            guard !Task.isCancelled else { return }
+            markStableFrame(for: tab)
+        }
     }
 }

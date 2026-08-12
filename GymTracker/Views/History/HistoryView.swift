@@ -22,6 +22,7 @@ struct HistoryWorkoutSnapshot: Hashable, Sendable {
     let endedAt: Date?
     let durationMinutes: Int?
     let durationSeconds: Int?
+    let accumulatedPausedSeconds: Int
     let rating: Int?
     let notes: String?
     let exercises: [Exercise]
@@ -35,6 +36,7 @@ struct HistoryWorkoutSnapshot: Hashable, Sendable {
         endedAt = session.endedAt
         durationMinutes = session.durationMinutes
         durationSeconds = session.durationSeconds
+        accumulatedPausedSeconds = session.accumulatedPausedSeconds
         rating = session.perceivedDifficulty
         notes = session.notes
         exercises = session.exerciseLogs.map { log in
@@ -65,6 +67,8 @@ enum HistoryDisplaySnapshotBuilder {
     static func build(
         workouts: [HistoryWorkoutSnapshot],
         filters: HistoryFilters = HistoryFilters(),
+        trainingDaysPerWeek: Int? = nil,
+        now: Date = .now,
         calendar: Calendar = .current
     ) -> HistoryDisplaySnapshot {
         let filtered = workouts.filter { workout in
@@ -75,7 +79,12 @@ enum HistoryDisplaySnapshotBuilder {
             sessionRows: filtered.map(rowSnapshot),
             calendarDaySummaries: calendarSummaries(filtered, calendar: calendar),
             splitOptions: Array(Set(workouts.map { baseSplitName($0.splitName) })).sorted(),
-            overview: overview(filtered)
+            overview: monthlyOverview(
+                workouts,
+                trainingDaysPerWeek: trainingDaysPerWeek,
+                now: now,
+                calendar: calendar
+            )
         )
     }
 
@@ -98,7 +107,7 @@ enum HistoryDisplaySnapshotBuilder {
             return false
         }
         if let endDate = filters.endDate,
-           workout.date > (calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: endDate)) ?? endDate) {
+           workout.date >= (calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: endDate)) ?? endDate) {
             return false
         }
         return true
@@ -130,21 +139,37 @@ enum HistoryDisplaySnapshotBuilder {
         )
     }
 
-    private static func overview(_ workouts: [HistoryWorkoutSnapshot]) -> HistoryOverviewSnapshot {
-        let exercises = workouts.flatMap(loggedExercises)
-        let totalSets = exercises.flatMap(\.sets).filter(\.completed).count
-        let totalDuration = workouts.reduce(0) { $0 + durationSeconds($1) }
-        let ratings = workouts.compactMap(\.rating)
+    private static func monthlyOverview(
+        _ workouts: [HistoryWorkoutSnapshot],
+        trainingDaysPerWeek: Int?,
+        now: Date,
+        calendar: Calendar
+    ) -> HistoryOverviewSnapshot {
+        guard let currentMonth = calendar.dateInterval(of: .month, for: now) else { return .empty }
+        let previousMonthDate = calendar.date(byAdding: .month, value: -1, to: currentMonth.start) ?? currentMonth.start
+        let previousMonth = calendar.dateInterval(of: .month, for: previousMonthDate)
+        let currentWorkouts = workouts.filter { currentMonth.contains($0.date) }
+        let previousWorkouts = previousMonth.map { interval in
+            workouts.filter { interval.contains($0.date) }
+        } ?? []
+        let currentVisits = Set(currentWorkouts.map { calendar.startOfDay(for: $0.date) }).count
+        let previousVisits = Set(previousWorkouts.map { calendar.startOfDay(for: $0.date) }).count
+        let currentDuration = currentWorkouts.reduce(0) { $0 + durationSeconds($1) }
+        let previousDuration = previousWorkouts.reduce(0) { $0 + durationSeconds($1) }
+        let daysInMonth = calendar.range(of: .day, in: .month, for: currentMonth.start)?.count ?? 30
+        let monthlyTarget = trainingDaysPerWeek.map {
+            max(1, Int((Double(daysInMonth * $0) / 7).rounded()))
+        }
+
         return HistoryOverviewSnapshot(
-            sessionCountText: "\(workouts.count)",
-            setCountText: "\(totalSets)",
-            exerciseCountText: "\(exercises.count)",
-            durationText: totalDuration > 0 ? formatDuration(totalDuration) : "No duration",
-            topSplitText: mostFrequent(workouts.map { baseSplitName($0.splitName) }) ?? "No split yet",
-            topExerciseText: mostFrequent(exercises.map(\.name)) ?? "No exercise yet",
-            averageRatingText: ratings.isEmpty
-                ? "No rating"
-                : (Double(ratings.reduce(0, +)) / Double(ratings.count)).formatted(.number.precision(.fractionLength(1)))
+            monthTitle: currentMonth.start.formatted(.dateTime.month(.wide).year()),
+            currentVisitCount: currentVisits,
+            monthlyTarget: monthlyTarget,
+            progress: monthlyTarget.map { min(1, Double(currentVisits) / Double($0)) } ?? 0,
+            currentDurationText: currentDuration > 0 ? formatDuration(currentDuration) : "No duration",
+            previousVisitCount: previousVisits,
+            previousDurationText: previousDuration > 0 ? formatDuration(previousDuration) : "No duration",
+            goalSourceText: trainingDaysPerWeek.map { "Based on \($0) \($0 == 1 ? "day" : "days")/week" }
         )
     }
 
@@ -191,7 +216,10 @@ enum HistoryDisplaySnapshotBuilder {
         if let seconds = workout.durationSeconds { return seconds }
         if let minutes = workout.durationMinutes { return minutes * 60 }
         if let startedAt = workout.startedAt, let endedAt = workout.endedAt {
-            return max(0, Int(endedAt.timeIntervalSince(startedAt)))
+            return max(
+                0,
+                Int(endedAt.timeIntervalSince(startedAt)) - max(0, workout.accumulatedPausedSeconds)
+            )
         }
         return 0
     }
@@ -224,18 +252,6 @@ enum HistoryDisplaySnapshotBuilder {
         name.components(separatedBy: " - ").first ?? name
     }
 
-    private static func mostFrequent(_ values: [String]) -> String? {
-        let nonEmptyValues = values.filter { !$0.isEmpty }
-        let groupedValues: [String: [String]] = Dictionary(grouping: nonEmptyValues, by: { $0 })
-        let valueCounts: [(value: String, count: Int)] = groupedValues.map { entry in
-            (value: entry.key, count: entry.value.count)
-        }
-        let sortedCounts = valueCounts.sorted { lhs, rhs in
-            lhs.count == rhs.count ? lhs.value < rhs.value : lhs.count > rhs.count
-        }
-        return sortedCounts.first?.value
-    }
-
     private static func collapsedSplitSummary(_ names: [String]) -> String {
         let nonEmptyNames = names.filter { !$0.isEmpty }
         let groupedNames: [String: [String]] = Dictionary(grouping: nonEmptyNames, by: { $0 })
@@ -253,9 +269,13 @@ enum HistoryDisplaySnapshotBuilder {
 
 struct HistoryView: View {
     @Environment(\.appTheme) private var appTheme
+    @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
 
     @Query
     private var sessions: [WorkoutSession]
+
+    @Query
+    private var profiles: [UserProfile]
 
     @State private var displayedMonth = Date()
     @State private var selectedCalendarDate = Calendar.current.startOfDay(for: .now)
@@ -273,6 +293,7 @@ struct HistoryView: View {
     @State private var isWorkoutCompletionPresentationActive = false
     @State private var isHistoryVisible = false
     @State private var sourceSnapshotRefreshTask: Task<Void, Never>?
+    @State private var showingGoalEditor = false
 
     private let initialWarmSnapshot: HistoryWarmSnapshot?
 
@@ -301,9 +322,17 @@ struct HistoryView: View {
     }
 
     private var sessionGeneration: String {
-        sessions.prefix(120).map {
-            "\($0.id.uuidString):\($0.splitNameSnapshot):\($0.date.timeIntervalSince1970):\($0.perceivedDifficulty ?? 0):\($0.durationSeconds ?? 0)"
-        }.joined(separator: "|")
+        [
+            "revision:\(workoutWarmStartInvalidation.revision)",
+            sessions.prefix(120).map {
+                "\($0.id.uuidString):\($0.splitNameSnapshot):\($0.date.timeIntervalSince1970):\($0.perceivedDifficulty ?? 0):\($0.durationSeconds ?? 0):\($0.durationMinutes ?? 0):\($0.endedAt?.timeIntervalSince1970 ?? 0)"
+            }.joined(separator: "|")
+        ].joined(separator: "|")
+    }
+
+    private var profileGoalGeneration: String {
+        guard let profile = profiles.first else { return "missing" }
+        return "\(profile.id.uuidString):\(profile.trainingDaysPerWeek)"
     }
 
     private var sessionGenerationForObservation: String? {
@@ -331,7 +360,9 @@ struct HistoryView: View {
     var body: some View {
         NavigationStack {
             FitnessScreen {
-                HistoryOverviewCard(snapshot: currentDisplaySnapshot.overview, filtersActive: filters.isActive)
+                HistoryOverviewCard(snapshot: currentDisplaySnapshot.overview) {
+                    openGoalEditor()
+                }
 
                 FitnessCard(style: .compact, padding: 12) {
                     WorkoutCalendarView(
@@ -395,6 +426,10 @@ struct HistoryView: View {
                 filterSheet
                     .presentationDetents([.medium, .large])
             }
+            .sheet(isPresented: $showingGoalEditor) {
+                HistoryTrainingGoalSheet(profile: profiles.first)
+                    .presentationDetents([.medium])
+            }
             .navigationDestination(item: $selectedWorkoutDetailRoute) { route in
                 WorkoutHistoryDetailRouteView(sessionID: route.sessionID)
                     .onAppear {
@@ -419,6 +454,9 @@ struct HistoryView: View {
             scheduleSourceSnapshotRefresh(force: true)
         }
         .onChange(of: filters) { _, _ in
+            refreshDisplaySnapshot()
+        }
+        .onChange(of: profileGoalGeneration) { _, _ in
             refreshDisplaySnapshot()
         }
         .onReceive(NotificationCenter.default.publisher(for: .workoutCompletionPresentationBegan)) { _ in
@@ -465,12 +503,20 @@ struct HistoryView: View {
 
     private func refreshDisplaySnapshot() {
         let nextSnapshot = PerformanceTracer.trace(.historyDisplaySnapshot) {
-            HistoryDisplaySnapshotBuilder.build(workouts: workoutSnapshots, filters: filters)
+            HistoryDisplaySnapshotBuilder.build(
+                workouts: workoutSnapshots,
+                filters: filters,
+                trainingDaysPerWeek: profiles.first?.trainingDaysPerWeek
+            )
         }
         AppMotion.withoutAnimation {
             displaySnapshot = nextSnapshot
             displaySnapshotReady = true
         }
+    }
+
+    private func openGoalEditor() {
+        showingGoalEditor = true
     }
 
     private var filterChips: some View {
@@ -667,22 +713,24 @@ struct HistoryDisplaySnapshot: Sendable {
 }
 
 struct HistoryOverviewSnapshot: Hashable, Sendable {
-    let sessionCountText: String
-    let setCountText: String
-    let exerciseCountText: String
-    let durationText: String
-    let topSplitText: String
-    let topExerciseText: String
-    let averageRatingText: String
+    let monthTitle: String
+    let currentVisitCount: Int
+    let monthlyTarget: Int?
+    let progress: Double
+    let currentDurationText: String
+    let previousVisitCount: Int
+    let previousDurationText: String
+    let goalSourceText: String?
 
     static let empty = HistoryOverviewSnapshot(
-        sessionCountText: "0",
-        setCountText: "0",
-        exerciseCountText: "0",
-        durationText: "No duration",
-        topSplitText: "No split yet",
-        topExerciseText: "No exercise yet",
-        averageRatingText: "No rating"
+        monthTitle: Date.now.formatted(.dateTime.month(.wide).year()),
+        currentVisitCount: 0,
+        monthlyTarget: nil,
+        progress: 0,
+        currentDurationText: "No duration",
+        previousVisitCount: 0,
+        previousDurationText: "No duration",
+        goalSourceText: nil
     )
 }
 
@@ -757,92 +805,79 @@ private struct HistoryOverviewCard: View {
     @Environment(\.appTheme) private var appTheme
 
     let snapshot: HistoryOverviewSnapshot
-    let filtersActive: Bool
+    let editGoal: () -> Void
 
     var body: some View {
         FitnessCard(style: .hero) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 12) {
-                    FitnessIconBadge(systemImage: "chart.bar.xaxis", size: 38)
+                    FitnessIconBadge(systemImage: "calendar.badge.checkmark", size: 38)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(filtersActive ? "Filtered training log" : "Training log")
+                        Text("\(snapshot.monthTitle) attendance")
                             .font(AppTypography.cardTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
-                        Text(filtersActive ? "Calendar and totals reflect active filters." : "Calendar, volume, and recent sessions in one view.")
+                        Text("Gym days are counted once, even when a day contains more than one workout.")
                             .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Spacer(minLength: 0)
+
+                    Button(snapshot.monthlyTarget == nil ? "Set Goal" : "Edit Goal", action: editGoal)
+                        .font(AppTypography.metadataEmphasis)
+                        .buttonStyle(.borderless)
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("history-edit-training-goal")
+                }
+
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("\(snapshot.currentVisitCount)")
+                        .font(AppTypography.heroMetric)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                    if let monthlyTarget = snapshot.monthlyTarget {
+                        Text("of \(monthlyTarget) gym visits")
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                    } else {
+                        Text(snapshot.currentVisitCount == 1 ? "gym visit" : "gym visits")
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+
+                if snapshot.monthlyTarget != nil {
+                    SwiftUI.ProgressView(value: snapshot.progress)
+                        .tint(appTheme.colors.accent)
+                        .accessibilityLabel("Monthly gym visit progress")
+                        .accessibilityValue("\(Int(snapshot.progress * 100)) percent")
                 }
 
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .bottom, spacing: 14) {
-                        HistoryOverviewPrimaryMetric(value: snapshot.sessionCountText)
-
-                        Divider()
-                            .overlay(appTheme.colors.cardBorder)
-                            .frame(height: 64)
-
-                        HStack(alignment: .bottom, spacing: 14) {
-                            HistoryOverviewSupportingMetric(label: "Sets", value: snapshot.setCountText)
-                            HistoryOverviewSupportingMetric(label: "Exercises", value: snapshot.exerciseCountText)
-                            HistoryOverviewSupportingMetric(label: "Rating", value: snapshot.averageRatingText)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        HistoryOverviewSupportingMetric(label: "This month", value: snapshot.currentDurationText)
+                        HistoryOverviewSupportingMetric(label: "Previous visits", value: "\(snapshot.previousVisitCount)")
+                        HistoryOverviewSupportingMetric(label: "Previous duration", value: snapshot.previousDurationText)
                     }
 
                     VStack(alignment: .leading, spacing: 12) {
-                        HistoryOverviewPrimaryMetric(value: snapshot.sessionCountText)
-
-                        Divider()
-                            .overlay(appTheme.colors.cardBorder)
-
-                        HStack(alignment: .bottom, spacing: 16) {
-                            HistoryOverviewSupportingMetric(label: "Sets", value: snapshot.setCountText)
-                            HistoryOverviewSupportingMetric(label: "Exercises", value: snapshot.exerciseCountText)
-                            HistoryOverviewSupportingMetric(label: "Rating", value: snapshot.averageRatingText)
+                        HistoryOverviewSupportingMetric(label: "This month", value: snapshot.currentDurationText)
+                        HStack(alignment: .bottom, spacing: 14) {
+                            HistoryOverviewSupportingMetric(label: "Previous visits", value: "\(snapshot.previousVisitCount)")
+                            HistoryOverviewSupportingMetric(label: "Previous duration", value: snapshot.previousDurationText)
                         }
                     }
                 }
 
-                Text(
-                    PeaklineText.joinedMetadata([
-                        "Top split: \(snapshot.topSplitText)",
-                        snapshot.durationText,
-                        "Most used: \(snapshot.topExerciseText)"
-                    ])
-                )
+                Text(snapshot.goalSourceText ?? "Set a weekly training goal to track monthly progress.")
                     .font(AppTypography.metadata)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .accessibilityIdentifier("history-overview-card")
-    }
-}
-
-private struct HistoryOverviewPrimaryMetric: View {
-    @Environment(\.appTheme) private var appTheme
-
-    let value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(value)
-                .font(AppTypography.heroMetric)
-                .foregroundStyle(appTheme.colors.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-
-            Label("Workouts", systemImage: "calendar.badge.checkmark")
-                .font(AppTypography.metadataEmphasis)
-                .foregroundStyle(appTheme.colors.textSecondary)
-                .lineLimit(1)
-        }
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -867,6 +902,84 @@ private struct HistoryOverviewSupportingMetric: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+    }
+}
+
+private struct HistoryTrainingGoalSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.appTheme) private var appTheme
+
+    let profile: UserProfile?
+    @State private var trainingDaysPerWeek: Int
+    @State private var saveErrorMessage: String?
+
+    init(profile: UserProfile?) {
+        self.profile = profile
+        _trainingDaysPerWeek = State(initialValue: profile?.trainingDaysPerWeek ?? 4)
+    }
+
+    var body: some View {
+        NavigationStack {
+            FitnessScreen {
+                FitnessCard {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Weekly training goal")
+                            .font(AppTypography.cardTitle)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                        Text("Peakline converts this into a monthly target using the number of days in the current month.")
+                            .font(AppTypography.body)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Stepper(
+                            "\(trainingDaysPerWeek) \(trainingDaysPerWeek == 1 ? "day" : "days") per week",
+                            value: $trainingDaysPerWeek,
+                            in: 1...7
+                        )
+                        .font(AppTypography.bodyEmphasis)
+                        .accessibilityIdentifier("history-training-goal-stepper")
+                    }
+                }
+            }
+            .navigationTitle("Gym Visit Goal")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        let savedProfile: UserProfile
+                        if let profile {
+                            savedProfile = profile
+                        } else {
+                            let newProfile = UserProfile()
+                            modelContext.insert(newProfile)
+                            savedProfile = newProfile
+                        }
+                        savedProfile.trainingDaysPerWeek = trainingDaysPerWeek
+                        savedProfile.updatedAt = .now
+                        do {
+                            try modelContext.save()
+                            dismiss()
+                        } catch {
+                            modelContext.rollback()
+                            saveErrorMessage = "Could not save your training goal locally. Try again."
+                        }
+                    }
+                    .fontWeight(.semibold)
+                    .accessibilityIdentifier("history-training-goal-save")
+                }
+            }
+            .alert("Couldn’t save goal", isPresented: Binding(
+                get: { saveErrorMessage != nil },
+                set: { if !$0 { saveErrorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(saveErrorMessage ?? "Could not save your training goal locally. Try again.")
+            }
+        }
     }
 }
 
@@ -1452,6 +1565,8 @@ private struct WorkoutHistoryDetailView: View {
     @State private var showingTemplateSave = false
     @State private var showingReopenConfirmation = false
     @State private var showingDeleteConfirmation = false
+    @State private var deleteErrorMessage: String?
+    @State private var reopenErrorMessage: String?
     @State private var editRoute: HistoryWorkoutEditRoute?
     @State private var sessionPRs: [PRRecord] = []
     @State private var didPrepareSessionPRs = false
@@ -1550,6 +1665,19 @@ private struct WorkoutHistoryDetailView: View {
             }
         } message: {
             Text("This removes the workout from history and progress trends.")
+        }
+        .alert("Could not delete workout", isPresented: deleteErrorPresentation) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(deleteErrorMessage ?? "Try again.")
+        }
+        .alert("Could not reopen workout", isPresented: Binding(
+            get: { reopenErrorMessage != nil },
+            set: { if !$0 { reopenErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(reopenErrorMessage ?? "Try again.")
         }
         .toolbar {
             ToolbarItemGroup(placement: .bottomBar) {
@@ -1711,15 +1839,19 @@ private struct WorkoutHistoryDetailView: View {
 
     private var durationText: String? {
         if let durationSeconds = session.durationSeconds {
-            return formatDuration(seconds: durationSeconds)
+            return durationSeconds > 0 ? formatDuration(seconds: durationSeconds) : nil
         }
 
         if let startedAt = session.startedAt, let endedAt = session.endedAt {
-            return formatDuration(seconds: max(0, Int(endedAt.timeIntervalSince(startedAt))))
+            let activeSeconds = max(
+                0,
+                Int(endedAt.timeIntervalSince(startedAt)) - max(0, session.accumulatedPausedSeconds)
+            )
+            return activeSeconds > 0 ? formatDuration(seconds: activeSeconds) : nil
         }
 
         if let duration = session.durationMinutes {
-            return "\(duration) min"
+            return duration > 0 ? "\(duration) min" : nil
         }
 
         return nil
@@ -1746,19 +1878,41 @@ private struct WorkoutHistoryDetailView: View {
 
     private func deleteWorkout() {
         modelContext.delete(session)
-        try? modelContext.save()
-        dismiss()
+        do {
+            try modelContext.save()
+            dismiss()
+        } catch {
+            modelContext.rollback()
+            deleteErrorMessage = "Could not delete this workout locally. Try again."
+        }
+    }
+
+    private var deleteErrorPresentation: Binding<Bool> {
+        Binding {
+            deleteErrorMessage != nil
+        } set: { isPresented in
+            if !isPresented {
+                deleteErrorMessage = nil
+            }
+        }
     }
 
     private func reopenWorkout() {
+        let originalState = WorkoutSessionCompletionState(session)
         reopenService.reopen(session)
-        try? modelContext.save()
-        NavigationInteraction.perform(
-            key: "history.reopen.\(session.id.uuidString)",
-            destinationClass: .warm,
-            haptic: .medium
-        ) {
-            reopenedSession = session
+        do {
+            try modelContext.save()
+            WorkoutWarmStartInvalidation.shared.invalidate(reason: .workoutReopened)
+            NavigationInteraction.perform(
+                key: "history.reopen.\(session.id.uuidString)",
+                destinationClass: .warm,
+                haptic: .medium
+            ) {
+                reopenedSession = session
+            }
+        } catch {
+            originalState.restore(session)
+            reopenErrorMessage = "Could not reopen this workout locally. Try again."
         }
     }
 

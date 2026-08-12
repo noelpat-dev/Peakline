@@ -22,18 +22,18 @@ The main value loop is:
 - `TrainingRotationService` is the single recommendation source for Today, Workout, Coach, Splits, Weekly Review, Progress, and session summaries. It advances from the latest meaningful completed workout by stable split ID and wraps at the end.
 - Existing split templates can be included, excluded, and reordered. Inactive templates remain under Other Splits.
 - Splits show training-day cards, readiness and progression context, target rows, exercise counts, stable detail routes, and cached target calculations.
-- Exercise library and split editing support the personal programme instead of a generic template marketplace.
+- Exercise library and split editing support the personal programme instead of a generic template marketplace. Split exercise rows no longer expose template-note fields or quick-note chips; existing stored notes remain backup-compatible and available to logger/history consumers.
 
 ### Workout Preview And Logging
 
 - Start from the recommended workout card, split cards, templates, the recent-session repeat action, or an empty workout.
 - Workout Preview supports Full, Quick, Recovery, and Heavy modes.
 - All four modes for every active split are prepared as complete immutable `WorkoutPreviewPreparedSnapshot` values during startup. Every Preview route must resolve and pin a prepared cache key before navigation, so Today, Coach, Workout, templates, repeats, and History reuse open one complete generation without a second loading shell.
-- Preview includes duration estimate, last best set, target suggestions, alternatives, addable exercises, notes, dedicated-handle reordering, removal controls, and Coach adjustment actions. During a drag, only the active exercise lifts and follows the finger, while a slim accent insertion cue marks the exact landing edge; release applies the route-local order once with one damped settle. Reduce Motion keeps the row spatially still while preserving the cue and immediate reorder. The mutation resets any incompatible one-workout Coach adjustment and carries that exact order through `WorkoutLaunchDraft` into Logger without changing the split template or prepared cache.
+- Preview includes a history-calibrated duration range, last best set, target suggestions, alternatives, addable exercises, notes, dedicated-handle reordering, removal controls, and Coach adjustment actions. Its pinned calibration prefers valid recent same-split/mode sessions, excludes sessions under 10 minutes or at least four hours, and falls back conservatively when history is sparse. During a drag, only the active exercise lifts and follows the finger, while a slim accent insertion cue marks the exact landing edge; release applies the route-local order once with one damped settle. Reduce Motion keeps the row spatially still while preserving the cue and immediate reorder. The mutation resets any incompatible one-workout Coach adjustment and carries that exact order through `WorkoutLaunchDraft` into Logger without changing the split template or prepared cache.
 - Preview presents its real prepared mode, session snapshot, Coach Brief, and Start action immediately. The same generation's single full-detail eager order mounts on the next rendered frame (normally about 50 ms; 109 ms in the focused hydration UI run), with row-frame geometry ready before the first possible drag. An opened Preview never accepts source-data or cache publication while mounted.
 - Live logging includes current exercise focus, set entry, quick controls, rest timer, substitutions, skipped-exercise reasons, pause and resume, and post-workout rating. Incomplete sets remain editable without an inactive Draft badge; only meaningful Warm-up and Logged states are shown.
 - Exercise-to-exercise Continue transitions rotate deterministically through 28 unique title/detail pairs for the session, use every pair before reuse, and prevent an immediate rollover repeat. Completion copy remains separate.
-- Finished sessions show a celebration overlay and session summary. Ordinary completions retain the restrained rating-led presentation. When the already-prepared session summary contains genuine PR records, completion instead shows PR/exercise counts, rating feedback, duration, and a one-shot focused trophy starburst; it never performs another query or delays Done.
+- Finished sessions show a celebration overlay and session summary. A recorded duration of four hours or more is intercepted before rating so the user can correct it, explicitly accept it, or return to logging. Completed-workout Edit provides hours-and-minutes duration correction and synchronizes the existing seconds, minutes, and end-time fields on Save. Ordinary completions retain the restrained rating-led presentation. When the already-prepared session summary contains genuine PR records, completion instead shows PR/exercise counts, rating feedback, duration, and a one-shot focused trophy starburst; it never performs another query or delays Done.
 - Session dates are tied to the actual workout start time so late-night workouts stay on the correct training day.
 
 ### Coach And Progression
@@ -50,7 +50,7 @@ The main value loop is:
 
 ### History And Progress
 
-- History uses consistent 44×44 workout-day markers without exposing split abbreviations in calendar cells. Its bounded overview, filters, calendar aggregates, and recent rows are startup-prepared immutable snapshots; its reverse-date completed-session observation is capped at the same visible 120-session window, and flat rows omit swipe gestures and repeated shadows to keep vertical scrolling responsive. Selected-day summaries, workout details, editing, deletion from detail, and session metadata remain available.
+- History leads with current-calendar-month gym attendance independent of filters: one visit per local day, uncapped `X of Y` copy with capped progress, current/previous month duration and visits, and an editable 1–7 days/week goal converted with the current month's day count. Its bounded overview, filters, calendar aggregates, and recent rows are startup-prepared immutable snapshots; its reverse-date completed-session observation is capped at the same visible 120-session window, and flat rows omit swipe gestures and repeated shadows to keep vertical scrolling responsive. Selected-day summaries, workout details, editing, deletion from detail, and session metadata remain available.
 - Workout completion freezes the completed logger behind its celebration and opens Session Summary from a prepared value snapshot, avoiding post-save SwiftData traversal during the transition.
 - Progress includes latest best sets, estimated 1RM, best-set volume, set history, charts, and PR timeline.
 - Analytics and charts should stay lazy-loaded and readable as workout history grows.
@@ -110,7 +110,7 @@ The main value loop is:
 - The main lifting loop is implemented end to end.
 - Coach, Progress, Nutrition, Sleep, Hydration, and export utilities now sit on top of that core instead of replacing it.
 - Recent performance cleanup materially improved route timing, notification refresh behavior, and Coach navigation stability.
-- The latest recorded verifier is green: 131 unit tests passed, Today-to-Coach measured 214 ms, Coach-to-Preview 272 ms, root-tab transitions 84 ms, Preview recorded two warm-cache hits, mounted Preview recomputation remained zero, and the combined-log audit found no forbidden patterns.
+- The latest serial validation passed 151 unit tests. The route acceptance flow measured Today-to-Coach at 132 ms, Coach-to-Preview at 191 ms, a warmed root transition at 201 ms, two Preview warm-cache hits, and zero mounted Preview recomputations. Repeated cold first-load root-tab runs remain a known acceptance item at 302–405 ms against the 300 ms target.
 
 ## Remaining Practical Expansion
 

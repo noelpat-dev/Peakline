@@ -44,9 +44,17 @@ struct WorkoutLoggerView: View {
     @State private var exercises: [Exercise] = []
     @State private var activeSplits: [TrainingSplit] = []
     @State private var didLoadReferenceData = false
+    @State private var editDurationHours: Int
+    @State private var editDurationMinutes: Int
+    @State private var pendingOutlierDurationSeconds: Int?
+    @State private var acceptedOutlierDurationSeconds: Int?
+    @State private var completionDurationOverrideSeconds: Int?
+    @State private var showingDurationOutlierConfirmation = false
+    @State private var showingDurationCorrectionSheet = false
 
     private let skippedReasonService = SkippedExerciseReasonService()
     private let substitutionService = ExerciseSubstitutionService()
+    private let durationService = WorkoutSessionDurationService()
 
     init(
         session: WorkoutSession,
@@ -57,6 +65,9 @@ struct WorkoutLoggerView: View {
         self.isEditingCompletedWorkout = isEditingCompletedWorkout
         self.onSummaryDone = onSummaryDone
         _motivationRotation = State(initialValue: WorkoutMotivationRotation(sessionID: session.id))
+        let durationSeconds = WorkoutSessionDurationService().recordedDurationSeconds(for: session) ?? 0
+        _editDurationHours = State(initialValue: durationSeconds / 3_600)
+        _editDurationMinutes = State(initialValue: (durationSeconds % 3_600) / 60)
     }
 
     private static var completedSessionsDescriptor: FetchDescriptor<WorkoutSession> {
@@ -91,7 +102,6 @@ struct WorkoutLoggerView: View {
                     .ignoresSafeArea()
             } else {
                 workoutList
-                    .opacity(isPopupVisible ? 0.72 : 1)
                     .allowsHitTesting(!isPopupMounted)
             }
 
@@ -160,6 +170,49 @@ struct WorkoutLoggerView: View {
                 applySubstitution(request: request, candidate: candidate)
             }
         }
+        .confirmationDialog(
+            "Check workout duration",
+            isPresented: $showingDurationOutlierConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Edit Duration") {
+                let duration = pendingOutlierDurationSeconds ?? 0
+                editDurationHours = duration / 3_600
+                editDurationMinutes = (duration % 3_600) / 60
+                DispatchQueue.main.async {
+                    showingDurationCorrectionSheet = true
+                }
+            }
+            Button("Use Recorded Time") {
+                acceptedOutlierDurationSeconds = pendingOutlierDurationSeconds
+                finishWorkout()
+            }
+            Button("Cancel", role: .cancel) {
+                cancelDurationCheck()
+            }
+        } message: {
+            Text("Peakline recorded \(durationText(seconds: pendingOutlierDurationSeconds ?? 0)). Confirm it or correct the duration before rating this workout.")
+        }
+        .sheet(isPresented: $showingDurationCorrectionSheet, onDismiss: {
+            if pendingOutlierDurationSeconds != nil,
+               completionDurationOverrideSeconds == nil {
+                cancelDurationCheck()
+            }
+        }) {
+            WorkoutDurationEditorSheet(
+                initialHours: editDurationHours,
+                initialMinutes: editDurationMinutes
+            ) { hours, minutes in
+                let correctedSeconds = (hours * 60 + minutes) * 60
+                editDurationHours = hours
+                editDurationMinutes = minutes
+                completionDurationOverrideSeconds = correctedSeconds
+                acceptedOutlierDurationSeconds = correctedSeconds
+                pendingOutlierDurationSeconds = nil
+                finishWorkout()
+            }
+            .presentationDetents([.medium])
+        }
         .alert("Finish with skipped exercises?", isPresented: $showingSkippedExerciseConfirmation) {
             Button("Keep Logging", role: .cancel) {}
             Button("Finish Anyway") {
@@ -225,10 +278,6 @@ struct WorkoutLoggerView: View {
         overlayPhase != .idle
     }
 
-    private var isPopupVisible: Bool {
-        overlayVisible
-    }
-
     private var completionErrorBinding: Binding<Bool> {
         Binding {
             completionErrorMessage != nil
@@ -274,6 +323,7 @@ struct WorkoutLoggerView: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(PrimaryFitnessButtonStyle())
+                    .disabled(editableDurationSeconds < 60)
                     .accessibilityIdentifier("workout-logger-save-changes")
                 }
             }
@@ -386,8 +436,10 @@ struct WorkoutLoggerView: View {
                 contextLabel: "Current exercise - \(currentExerciseIndex + 1) of \(orderedExerciseLogs.count)",
                 templateNote: templateNote(for: currentExerciseLog),
                 previousPerformance: previousPerformanceByExerciseId[currentExerciseLog.exerciseId],
+                isCompletedWorkout: isEditingCompletedWorkout || session.completed,
                 canSubstitute: hasSubstitutionCandidates(for: currentExerciseLog),
-                requestSubstitution: { requestSubstitution(for: currentExerciseLog) }
+                requestSubstitution: { requestSubstitution(for: currentExerciseLog) },
+                reportPersistenceError: { completionErrorMessage = $0 }
             )
             .id(currentExerciseLog.id)
 
@@ -415,9 +467,11 @@ struct WorkoutLoggerView: View {
     private var editSessionContent: some View {
         Section("Session") {
             LabeledContent("Date", value: session.date.formatted(date: .abbreviated, time: .shortened))
-            if let duration = sessionDurationText {
-                LabeledContent("Duration", value: duration)
-            }
+            Stepper("Hours: \(editDurationHours)", value: $editDurationHours, in: 0...23)
+                .accessibilityIdentifier("workout-edit-duration-hours")
+            Stepper("Minutes: \(editDurationMinutes)", value: $editDurationMinutes, in: 0...59)
+                .accessibilityIdentifier("workout-edit-duration-minutes")
+            LabeledContent("Duration", value: editableDurationText)
         }
 
         if orderedExerciseLogs.isEmpty {
@@ -432,8 +486,10 @@ struct WorkoutLoggerView: View {
                     exerciseLog: exerciseLog,
                     templateNote: templateNote(for: exerciseLog),
                     previousPerformance: previousPerformanceByExerciseId[exerciseLog.exerciseId],
+                    isCompletedWorkout: isEditingCompletedWorkout || session.completed,
                     canSubstitute: hasSubstitutionCandidates(for: exerciseLog),
-                    requestSubstitution: { requestSubstitution(for: exerciseLog) }
+                    requestSubstitution: { requestSubstitution(for: exerciseLog) },
+                    reportPersistenceError: { completionErrorMessage = $0 }
                 )
             }
         }
@@ -441,6 +497,15 @@ struct WorkoutLoggerView: View {
 
     private var isLastExercise: Bool {
         currentExerciseIndex >= orderedExerciseLogs.count - 1
+    }
+
+    private var editableDurationSeconds: Int {
+        (editDurationHours * 60 + editDurationMinutes) * 60
+    }
+
+    private var editableDurationText: String {
+        guard editableDurationSeconds >= 60 else { return "Enter at least 1 minute" }
+        return durationText(seconds: editableDurationSeconds)
     }
 
     private var previousPerformanceInputSignature: String {
@@ -716,12 +781,29 @@ struct WorkoutLoggerView: View {
         finishWorkout()
     }
 
+    private func cancelDurationCheck() {
+        session.endedAt = nil
+        pendingOutlierDurationSeconds = nil
+        acceptedOutlierDurationSeconds = nil
+        completionDurationOverrideSeconds = nil
+    }
+
     private func finishWorkout() {
         PerformanceTracer.trace(.workoutLoggerFinish) {
             guard !isEditingCompletedWorkout else {
+                guard durationService.apply(
+                    activeDurationSeconds: editableDurationSeconds,
+                    to: session
+                ) else { return }
                 markEnteredSetsComplete()
-                try? modelContext.save()
-                dismiss()
+                do {
+                    try modelContext.save()
+                    WorkoutWarmStartInvalidation.shared.invalidate(reason: .completedWorkoutEdited)
+                    dismiss()
+                } catch {
+                    modelContext.rollback()
+                    completionErrorMessage = "Peakline could not save these workout changes. Please try again."
+                }
                 return
             }
 
@@ -732,6 +814,15 @@ struct WorkoutLoggerView: View {
             finalizePausedTime(at: session.endedAt ?? Date())
             markEnteredSetsComplete()
             restTimerState = RestTimerState()
+
+            let measuredSeconds = completionDurationOverrideSeconds
+                ?? activeDurationSeconds(at: session.endedAt ?? Date())
+            if measuredSeconds >= WorkoutSessionDurationService.outlierThresholdSeconds,
+               acceptedOutlierDurationSeconds != measuredSeconds {
+                pendingOutlierDurationSeconds = measuredSeconds
+                showingDurationOutlierConfirmation = true
+                return
+            }
             presentRatingOverlay()
         }
     }
@@ -783,6 +874,7 @@ struct WorkoutLoggerView: View {
     }
 
     private func saveCompletedWorkout(rating: WorkoutRating) {
+        let originalCompletionState = WorkoutSessionCompletionState(session)
         let end = Date()
         if !didSuspendWarmRefreshForCompletion {
             didSuspendWarmRefreshForCompletion = true
@@ -795,12 +887,21 @@ struct WorkoutLoggerView: View {
         session.perceivedDifficulty = rating.score
         WorkoutSessionDateService.alignLoggedDateToStartDate(session)
 
-        let activeSeconds = activeDurationSeconds(at: session.endedAt ?? end)
-        session.durationSeconds = activeSeconds
-        session.durationMinutes = max(1, Int(ceil(Double(activeSeconds) / 60)))
+        let activeSeconds = completionDurationOverrideSeconds
+            ?? activeDurationSeconds(at: session.endedAt ?? end)
+        guard durationService.apply(activeDurationSeconds: activeSeconds, to: session) else {
+            finishCompletionPresentation()
+            isCompletionCommitted = false
+            originalCompletionState.restore(session)
+            overlayPhase = .rating
+            overlayActionInFlight = false
+            completionErrorMessage = "Enter a workout duration of at least one minute."
+            return
+        }
 
         do {
             try modelContext.save()
+            WorkoutWarmStartInvalidation.shared.invalidate(reason: .workoutCompleted)
             PerformanceTracer.mark(.workoutLoggerFinish, "local_save_complete")
             let summarySessions = [session] + completedSessions.filter { $0.id != session.id }
             summaryRenderSnapshot = SessionSummaryRenderSnapshot.build(
@@ -826,8 +927,7 @@ struct WorkoutLoggerView: View {
             finishCompletionPresentation()
             isCompletionCommitted = false
             summaryRenderSnapshot = nil
-            session.completed = false
-            session.perceivedDifficulty = nil
+            originalCompletionState.restore(session)
             overlayPhase = .rating
             overlayActionInFlight = false
             completionErrorMessage = error.localizedDescription
@@ -1124,6 +1224,8 @@ private struct LiveWorkoutOrderRow: View {
                     Image(systemName: "chevron.up")
                 }
                 .disabled(!canMoveUp)
+                .accessibilityLabel("Move \(exerciseName) up")
+                .accessibilityIdentifier("workout-logger-order-move-up-\(exerciseName)")
 
                 Button {
                     AppHaptics.selection()
@@ -1132,6 +1234,8 @@ private struct LiveWorkoutOrderRow: View {
                     Image(systemName: "chevron.down")
                 }
                 .disabled(!canMoveDown)
+                .accessibilityLabel("Move \(exerciseName) down")
+                .accessibilityIdentifier("workout-logger-order-move-down-\(exerciseName)")
             }
             .buttonStyle(.borderless)
             .tint(appTheme.actionColor)
@@ -1329,7 +1433,6 @@ private struct WorkoutRatingOverlay: View {
     let selectRating: (WorkoutRating) -> Void
 
     @State private var selectedRating: WorkoutRating?
-    @State private var contentRevealed = false
     @State private var isTransitioning = false
 
     var body: some View {
@@ -1358,8 +1461,6 @@ private struct WorkoutRatingOverlay: View {
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .opacity(contentRevealed ? 1 : 0)
-                .offset(y: reduceMotion ? 0 : (contentRevealed ? 0 : 8))
             }
             .frame(maxWidth: 460)
             .padding(.horizontal, 16)
@@ -1371,12 +1472,6 @@ private struct WorkoutRatingOverlay: View {
                 hiddenOffset: 30,
                 anchor: .bottom
             )
-        }
-        .onAppear {
-            updateContentVisibility(isVisible)
-        }
-        .onChange(of: isVisible) { _, newValue in
-            updateContentVisibility(newValue)
         }
     }
 
@@ -1457,27 +1552,6 @@ private struct WorkoutRatingOverlay: View {
         selectRating(rating)
     }
 
-    private func updateContentVisibility(_ visible: Bool) {
-        if reduceMotion {
-            contentRevealed = visible
-            return
-        }
-
-        if visible {
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: AppMotion.popupContentRevealDelay)
-                guard isVisible else { return }
-
-                withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
-                    contentRevealed = true
-                }
-            }
-        } else {
-            withAnimation(AppMotion.popupExit(reduceMotion: reduceMotion)) {
-                contentRevealed = false
-            }
-        }
-    }
 }
 
 struct WorkoutTransitionMessage: Identifiable, Hashable, Sendable {
@@ -1582,6 +1656,59 @@ private enum WorkoutOverlayPhase: Equatable {
     }
 }
 
+private struct WorkoutDurationEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.appTheme) private var appTheme
+
+    @State private var hours: Int
+    @State private var minutes: Int
+    let save: (Int, Int) -> Void
+
+    init(initialHours: Int, initialMinutes: Int, save: @escaping (Int, Int) -> Void) {
+        _hours = State(initialValue: min(23, max(0, initialHours)))
+        _minutes = State(initialValue: min(59, max(0, initialMinutes)))
+        self.save = save
+    }
+
+    var body: some View {
+        NavigationStack {
+            FitnessScreen {
+                FitnessCard {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("How long did you train?")
+                            .font(AppTypography.cardTitle)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                        Text("Enter the active time you actually spent training. Paused time remains separate.")
+                            .font(AppTypography.body)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Stepper("Hours: \(hours)", value: $hours, in: 0...23)
+                            .accessibilityIdentifier("workout-duration-correction-hours")
+                        Stepper("Minutes: \(minutes)", value: $minutes, in: 0...59)
+                            .accessibilityIdentifier("workout-duration-correction-minutes")
+                    }
+                }
+            }
+            .navigationTitle("Edit Duration")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        save(hours, minutes)
+                        dismiss()
+                    }
+                    .disabled(hours == 0 && minutes == 0)
+                    .fontWeight(.semibold)
+                    .accessibilityIdentifier("workout-duration-correction-save")
+                }
+            }
+        }
+    }
+}
+
 private struct WorkoutSummaryRoute: Identifiable, Hashable {
     let sessionID: UUID
 
@@ -1618,8 +1745,10 @@ private struct ExerciseLoggerSection: View {
     var contextLabel: String? = nil
     let templateNote: String?
     let previousPerformance: PreviousExercisePerformance?
+    let isCompletedWorkout: Bool
     let canSubstitute: Bool
     let requestSubstitution: () -> Void
+    let reportPersistenceError: (String) -> Void
 
     @State private var showingNotes = false
 
@@ -1736,6 +1865,7 @@ private struct ExerciseLoggerSection: View {
             ForEach(Array(orderedSets.enumerated()), id: \.element.id) { index, setLog in
                 SetRowView(
                     setLog: setLog,
+                    didMutate: persistValueMutation,
                     deleteAction: { delete(setLog) }
                 )
                     .destructiveSwipeAction {
@@ -1805,7 +1935,7 @@ private struct ExerciseLoggerSection: View {
 
         set.exerciseLog = exerciseLog
         exerciseLog.setLogs.append(set)
-        try? modelContext.save()
+        persistMutation()
     }
 
     private func setWeight(copyPrevious: Bool, currentPrevious: SetLog?, sessionPrevious: PreviousSetSnapshot?) -> Double {
@@ -1832,13 +1962,13 @@ private struct ExerciseLoggerSection: View {
             set.setNumber = index + 1
         }
 
-        try? modelContext.save()
+        persistMutation()
     }
 
     private func removeExerciseFromSession() {
         guard let session = exerciseLog.workoutSession else {
             modelContext.delete(exerciseLog)
-            try? modelContext.save()
+            persistMutation()
             return
         }
 
@@ -1849,7 +1979,23 @@ private struct ExerciseLoggerSection: View {
             log.orderIndex = index
         }
 
-        try? modelContext.save()
+        persistMutation()
+    }
+
+    private func persistMutation() {
+        do {
+            try modelContext.save()
+            if isCompletedWorkout {
+                WorkoutWarmStartInvalidation.shared.invalidate(reason: .completedWorkoutSetEdited)
+            }
+        } catch {
+            reportPersistenceError("Peakline could not save this set change. Please try again.")
+        }
+    }
+
+    private func persistValueMutation() {
+        guard isCompletedWorkout else { return }
+        persistMutation()
     }
 
 }
@@ -1857,6 +2003,7 @@ private struct ExerciseLoggerSection: View {
 private struct SetRowView: View {
     @Environment(\.appTheme) private var appTheme
     @Bindable var setLog: SetLog
+    let didMutate: () -> Void
     let deleteAction: () -> Void
 
     @State private var activeSheet: SetRowSheet?
@@ -1960,6 +2107,8 @@ private struct SetRowView: View {
                         .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
                 }
                 .buttonStyle(.borderless)
+                .accessibilityLabel("Actions for set \(setLog.setNumber)")
+                .accessibilityIdentifier("workout-logger-set-actions-\(setLog.id.uuidString)")
             }
         }
         .padding(.vertical, 8)
@@ -1968,6 +2117,7 @@ private struct SetRowView: View {
         }
         .onChange(of: setLog.isWarmup) { _, _ in
             syncCompletedState()
+            didMutate()
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
@@ -1989,6 +2139,7 @@ private struct SetRowView: View {
                 EffortPickerSheet(selectedRPE: setLog.rpe) { rpe in
                     setLog.rpe = rpe
                     syncCompletedState()
+                    didMutate()
                     activeSheet = nil
                 }
             case .plates:
@@ -2006,11 +2157,13 @@ private struct SetRowView: View {
     private func updateWeight(_ weight: Double) {
         setLog.weight = max(0, weight)
         syncCompletedState()
+        didMutate()
     }
 
     private func updateReps(_ reps: Int) {
         setLog.reps = max(0, reps)
         syncCompletedState()
+        didMutate()
     }
 
     private func syncCompletedState() {

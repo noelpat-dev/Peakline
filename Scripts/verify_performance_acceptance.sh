@@ -49,7 +49,9 @@ run_and_log performance_ui_test \
     -configuration Debug \
     -destination "$DESTINATION" \
     -parallel-testing-enabled NO \
-    test -only-testing:GymTrackerUITests/CoachWorkoutPreviewUITests/testPerformanceAcceptanceRoutes
+    test \
+    -only-testing:GymTrackerUITests/CoachWorkoutPreviewUITests/testPerformanceAcceptanceRoutes \
+    -only-testing:GymTrackerUITests/CoachWorkoutPreviewUITests/testPerformanceAcceptanceRootTabTransitionsRemainResponsive
 
 cat "$LOG_DIR"/*.log > "$LOG_DIR/combined.log"
 

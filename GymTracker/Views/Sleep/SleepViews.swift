@@ -29,6 +29,7 @@ struct SleepDashboardView: View {
     @State private var confirmationSession: SleepSession?
     @State private var pendingDiscardSession: SleepSession?
     @State private var importedCount: Int?
+    @State private var healthKitImportError: String?
     @State private var summaries: [SleepSummary] = []
     @State private var latestSummary = SleepScoringService.emptySummary()
     @State private var dashboardSummary = SleepAnalyticsService.emptyDashboardSummary()
@@ -49,12 +50,14 @@ struct SleepDashboardView: View {
     private let hydrationSettingsStore = HydrationSettingsStore()
     private let nutritionGoalStore = NutritionGoalService()
     private let hasInitialSnapshot: Bool
+    private let initialAnalyticsSignature: SleepAnalyticsInputSignature?
 
     init(
         initialSnapshot: SleepAnalyticsSnapshot? = nil,
         initialReadinessScore: ReadinessScore? = nil
     ) {
         hasInitialSnapshot = initialSnapshot != nil
+        initialAnalyticsSignature = initialSnapshot?.inputSignature
         _sessions = Query(Self.sessionsDescriptor)
         _workouts = Query(Self.workoutsDescriptor)
         _naps = Query(Self.napsDescriptor)
@@ -167,6 +170,13 @@ struct SleepDashboardView: View {
 
     var body: some View {
         FitnessScreen {
+            if let healthKitImportError {
+                Text(healthKitImportError)
+                    .font(.subheadline)
+                    .foregroundStyle(appTheme.colors.danger)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             if let activeSession {
                 activeSleepCard(activeSession)
             } else {
@@ -228,12 +238,17 @@ struct SleepDashboardView: View {
             hydrationTargetML = hydrationSettingsStore.dailyTargetML()
             nutritionGoal = nutritionGoalStore.loadGoal()
             maybePromptForWakeTime()
-            let shouldForceRefresh = !didRequestInitialDashboardRefresh && !hasInitialSnapshot
+            let currentSignature = currentAnalyticsSignature
+            let warmSnapshotMatchesLiveData = hasInitialSnapshot && initialAnalyticsSignature == currentSignature
+            let shouldForceRefresh = !didRequestInitialDashboardRefresh
+                && (!hasInitialSnapshot || !warmSnapshotMatchesLiveData)
             didRequestInitialDashboardRefresh = true
-            if hasInitialSnapshot {
-                lastAnalyticsSignature = currentAnalyticsSignature
-                lastReadinessSignature = currentReadinessSignature
+            if warmSnapshotMatchesLiveData {
+                lastAnalyticsSignature = currentSignature
+            } else {
+                lastAnalyticsSignature = nil
             }
+            lastReadinessSignature = nil
             DispatchQueue.main.async {
                 refreshSleepAnalytics(force: shouldForceRefresh)
                 refreshReadinessScore(force: shouldForceRefresh)
@@ -872,30 +887,38 @@ struct SleepDashboardView: View {
     @MainActor
     private func applyHealthKitSleepImport(_ candidates: [HealthKitSleepImportCandidate]) {
         PerformanceTracer.mark(.healthKitSleepBridge, "import main_apply begin")
-        let count = persistHealthKitSleepImport(candidates)
-        settings = settingsStore.load()
-        refreshSleepAnalytics(force: true)
-        if count > 0 {
-            importedCount = count
-        }
+        do {
+            let count = try persistHealthKitSleepImport(candidates)
+            settings = settingsStore.load()
+            healthKitImportError = nil
+            refreshSleepAnalytics(force: true)
+            if count > 0 {
+                importedCount = count
+            }
 
-        let notificationSettings = settings
-        let sessionSnapshots = SleepNotificationScheduler.sessionSnapshots(from: sessions)
-        let workoutSnapshots = SleepNotificationScheduler.workoutSnapshots(from: workouts)
-        Task {
-            PerformanceTracer.mark(.unsafeBreadcrumb, "sleep.import notification_refresh begin")
-            await SleepNotificationScheduler().refreshAllSleepNotifications(
-                settings: notificationSettings,
-                sessions: sessionSnapshots,
-                workouts: workoutSnapshots
-            )
-            PerformanceTracer.mark(.unsafeBreadcrumb, "sleep.import notification_refresh end")
+            let notificationSettings = settings
+            let sessionSnapshots = SleepNotificationScheduler.sessionSnapshots(from: sessions)
+            let workoutSnapshots = SleepNotificationScheduler.workoutSnapshots(from: workouts)
+            Task {
+                PerformanceTracer.mark(.unsafeBreadcrumb, "sleep.import notification_refresh begin")
+                await SleepNotificationScheduler().refreshAllSleepNotifications(
+                    settings: notificationSettings,
+                    sessions: sessionSnapshots,
+                    workouts: workoutSnapshots
+                )
+                PerformanceTracer.mark(.unsafeBreadcrumb, "sleep.import notification_refresh end")
+            }
+        } catch {
+            healthKitImportError = "Could not save Apple Health sleep data locally. Try again."
+            PerformanceTracer.mark(.healthKitSleepBridge, "import save_failed error=\(error.localizedDescription)")
         }
         PerformanceTracer.mark(.healthKitSleepBridge, "import main_apply end")
     }
 
-    private func persistHealthKitSleepImport(_ candidates: [HealthKitSleepImportCandidate]) -> Int {
+    private func persistHealthKitSleepImport(_ candidates: [HealthKitSleepImportCandidate]) throws -> Int {
         var imported = 0
+        var insertedSessions: [SleepSession] = []
+        var insertedNaps: [NapSession] = []
 
         for candidate in candidates {
             switch candidate {
@@ -910,6 +933,7 @@ struct SleepDashboardView: View {
                     healthKitSampleIds: healthKitSampleIds
                 )
                 modelContext.insert(session)
+                insertedSessions.append(session)
                 imported += 1
             case let .nap(startDate, endDate, healthKitSampleIds):
                 let nap = NapSession(
@@ -920,12 +944,19 @@ struct SleepDashboardView: View {
                     healthKitSampleIds: healthKitSampleIds
                 )
                 modelContext.insert(nap)
+                insertedNaps.append(nap)
                 imported += 1
             }
         }
 
         if imported > 0 {
-            try? modelContext.save()
+            do {
+                try modelContext.save()
+            } catch {
+                insertedSessions.forEach(modelContext.delete)
+                insertedNaps.forEach(modelContext.delete)
+                throw error
+            }
         }
 
         var refreshedSettings = settingsStore.load()

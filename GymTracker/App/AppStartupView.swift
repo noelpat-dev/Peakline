@@ -449,6 +449,7 @@ struct StartupSnapshotBundle {
     let historySnapshot: HistoryWarmSnapshot
     let previewWarmSnapshots: [WorkoutPreviewWarmSnapshot]
     let savedFoodCatalogSnapshot: SavedFoodCatalogSnapshot
+    let settingsProfileSnapshot: SettingsProfileSnapshot?
     let activeSplitCount: Int
     let completedWorkoutCount: Int
     let unfinishedWorkoutCount: Int
@@ -647,6 +648,7 @@ enum AppStartupMigrationService {
 enum StartupSnapshotBuilder {
     static func make(in context: ModelContext) async throws -> StartupSnapshotBundle {
         try await PerformanceTracer.traceAsync(.startupSnapshotPreparation) {
+            let sourceRevision = WorkoutWarmStartInvalidation.shared.revision
             let splits = try context.fetch(
                 FetchDescriptor<TrainingSplit>(sortBy: [SortDescriptor(\.name)])
             )
@@ -655,6 +657,8 @@ enum StartupSnapshotBuilder {
                 from: orderedActiveSplits,
                 in: context
             )
+            let profile = try context.fetch(FetchDescriptor<UserProfile>()).first
+            let trainingDaysPerWeek = profile?.trainingDaysPerWeek
 
             var completedDescriptor = FetchDescriptor<WorkoutSession>(
                 predicate: #Predicate<WorkoutSession> { $0.completed },
@@ -722,14 +726,11 @@ enum StartupSnapshotBuilder {
             checkInDescriptor.fetchLimit = 30
             let checkIns = try context.fetch(checkInDescriptor)
 
-            let sourceSignature = [
-                splitSnapshots.map {
-                    "\($0.id.uuidString):\($0.activeRotationIndex ?? -1):\($0.updatedAt.timeIntervalSince1970)"
-                }.joined(separator: ","),
-                workoutSnapshots.map {
-                    "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.splitId?.uuidString ?? "legacy")"
-                }.joined(separator: ",")
-            ].joined(separator: "|")
+            let sourceSignature = WorkoutWarmStartSourceSignature.make(
+                revision: sourceRevision,
+                splitSignatures: splitSnapshots.map { WorkoutWarmStartSourceSignature.split($0) },
+                workoutSignatures: completedWorkouts.map { WorkoutWarmStartSourceSignature.workout($0) }
+            )
 
             let trainingCallTask = Task.detached(priority: .userInitiated) {
                 let summary = CoachRecommendationEngine().makeSummary(
@@ -815,10 +816,14 @@ enum StartupSnapshotBuilder {
                 sleepReadinessSnapshot: sleepReadiness,
                 historySnapshot: HistoryWarmSnapshot(
                     workouts: historyWorkouts,
-                    display: HistoryDisplaySnapshotBuilder.build(workouts: historyWorkouts)
+                    display: HistoryDisplaySnapshotBuilder.build(
+                        workouts: historyWorkouts,
+                        trainingDaysPerWeek: trainingDaysPerWeek
+                    )
                 ),
                 previewWarmSnapshots: previewWarmSnapshots,
                 savedFoodCatalogSnapshot: savedFoodCatalogSnapshot,
+                settingsProfileSnapshot: profile.map(SettingsProfileSnapshot.init),
                 activeSplitCount: orderedActiveSplits.count,
                 completedWorkoutCount: completedWorkouts.count,
                 unfinishedWorkoutCount: unfinishedWorkouts.count,

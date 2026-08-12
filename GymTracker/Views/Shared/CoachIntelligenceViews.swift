@@ -64,7 +64,6 @@ struct CoachBriefCard: View {
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Daily Coach Brief. Readiness \(readiness.value), \(readiness.isProvisional ? "provisional" : readiness.category.displayName). \(readiness.recommendation.title).")
     }
 
     private var readinessScoreBlock: some View {

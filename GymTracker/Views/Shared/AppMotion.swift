@@ -440,11 +440,14 @@ enum NavigationDestinationClass {
 @MainActor
 enum NavigationInteraction {
     private struct PendingRequest {
+        let id: UUID
         let requestedAt: Date
         let destinationClass: NavigationDestinationClass
     }
 
+    private static let pendingRequestTimeoutMilliseconds = 1_000
     private static var pendingRequests: [String: PendingRequest] = [:]
+    private static var pendingRequestExpiryTasks: [String: Task<Void, Never>] = [:]
 
     @discardableResult
     static func perform(
@@ -459,10 +462,12 @@ enum NavigationInteraction {
         }
 
         let request = PendingRequest(
+            id: UUID(),
             requestedAt: .now,
             destinationClass: destinationClass
         )
         pendingRequests[key] = request
+        scheduleExpiry(for: key, requestID: request.id)
         haptic.prepare()
         haptic.play()
 
@@ -476,8 +481,27 @@ enum NavigationInteraction {
         return true
     }
 
+    private static func scheduleExpiry(for key: String, requestID: UUID) {
+        pendingRequestExpiryTasks[key]?.cancel()
+        pendingRequestExpiryTasks[key] = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(pendingRequestTimeoutMilliseconds))
+            guard !Task.isCancelled,
+                  let request = pendingRequests[key],
+                  request.id == requestID else { return }
+
+            pendingRequests.removeValue(forKey: key)
+            pendingRequestExpiryTasks.removeValue(forKey: key)
+            PerformanceTracer.mark(
+                .navigationInteraction,
+                "expired key=\(key) timeout_ms=\(pendingRequestTimeoutMilliseconds)"
+            )
+        }
+    }
+
     static func destinationDidAppear(key: String) {
         guard let request = pendingRequests.removeValue(forKey: key) else { return }
+        pendingRequestExpiryTasks[key]?.cancel()
+        pendingRequestExpiryTasks.removeValue(forKey: key)
         let elapsedMilliseconds = max(
             0,
             Int(Date.now.timeIntervalSince(request.requestedAt) * 1_000)
@@ -490,6 +514,8 @@ enum NavigationInteraction {
 
     static func cancel(key: String, reason: String) {
         guard pendingRequests.removeValue(forKey: key) != nil else { return }
+        pendingRequestExpiryTasks[key]?.cancel()
+        pendingRequestExpiryTasks.removeValue(forKey: key)
         PerformanceTracer.mark(
             .navigationInteraction,
             "cancelled key=\(key) reason=\(reason)"
@@ -497,6 +523,8 @@ enum NavigationInteraction {
     }
 
     static func resetForTesting() {
+        pendingRequestExpiryTasks.values.forEach { $0.cancel() }
+        pendingRequestExpiryTasks.removeAll()
         pendingRequests.removeAll()
     }
 }
@@ -736,24 +764,12 @@ extension View {
 
 struct PeaklinePopupBackdrop: View {
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     let isVisible: Bool
 
     var body: some View {
-        ZStack {
-            if reduceTransparency {
-                Color.black
-                    .opacity(colorScheme == .dark ? 0.58 : 0.24)
-            } else {
-                Rectangle()
-                    .fill(.regularMaterial)
-                    .opacity(colorScheme == .dark ? 0.16 : 0.22)
-
-                Color.black
-                    .opacity(colorScheme == .dark ? 0.34 : 0.16)
-            }
-        }
+        Color.black
+            .opacity(colorScheme == .dark ? 0.48 : 0.22)
         .opacity(isVisible ? 1 : 0)
         .accessibilityHidden(true)
     }
@@ -762,7 +778,6 @@ struct PeaklinePopupBackdrop: View {
 struct PeaklinePopupCard<Content: View>: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var cornerRadius: CGFloat = 34
     var padding: CGFloat = 24
@@ -777,16 +792,7 @@ struct PeaklinePopupCard<Content: View>: View {
             .padding(padding)
             .frame(maxWidth: .infinity)
             .background {
-                if reduceTransparency {
-                    shape.fill(appTheme.colors.cardBackground)
-                } else {
-                    shape.fill(.regularMaterial)
-                }
-            }
-            .overlay {
-                shape
-                    .fill(appTheme.colors.cardBackground.opacity(colorScheme == .dark ? 0.74 : 0.82))
-                    .allowsHitTesting(false)
+                shape.fill(appTheme.colors.cardBackground)
             }
             .overlay {
                 shape

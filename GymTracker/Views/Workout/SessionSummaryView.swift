@@ -88,6 +88,7 @@ struct SessionSummaryView: View {
     @State private var showingReopenConfirmation = false
     @State private var reopenedSession: WorkoutSession?
     @State private var showingUpdateSplitConfirmation = false
+    @State private var persistenceErrorMessage: String?
 
     let session: WorkoutSession
     let snapshot: SessionSummaryRenderSnapshot
@@ -319,6 +320,14 @@ struct SessionSummaryView: View {
         } message: {
             Text("This applies the completed workout's exercise order and substitutions to the matching split. Your workout history stays unchanged.")
         }
+        .alert("Could not save changes", isPresented: Binding(
+            get: { persistenceErrorMessage != nil },
+            set: { if !$0 { persistenceErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(persistenceErrorMessage ?? "Try again.")
+        }
     }
 
     private var historyButton: some View {
@@ -366,9 +375,16 @@ struct SessionSummaryView: View {
     }
 
     private func reopenWorkout() {
+        let originalState = WorkoutSessionCompletionState(session)
         reopenService.reopen(session)
-        try? modelContext.save()
-        reopenedSession = session
+        do {
+            try modelContext.save()
+            WorkoutWarmStartInvalidation.shared.invalidate(reason: .workoutReopened)
+            reopenedSession = session
+        } catch {
+            originalState.restore(session)
+            persistenceErrorMessage = "Could not reopen this workout locally. Try again."
+        }
     }
 
     private func updateMatchingSplit() {

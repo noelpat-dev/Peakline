@@ -62,6 +62,8 @@ Current file: `KNOWN_ISSUES.md`
 ## Performance And Charts
 
 - Keep live workout logging fast and avoid heavy recomputation in hot logging views.
+- Duration calibration must continue to reject future, unfinished, zero-working-set, under-10-minute, and four-hour-or-longer sessions. Explicitly accepted long workouts remain valid History records but must not influence later Preview estimates.
+- Completed-duration correction must continue to preserve `startedAt` and accumulated paused time while synchronizing seconds, rounded minutes, and `endedAt`; backup/export compatibility relies on the existing fields rather than a new schema field.
 - Today, Coach, Workout Preview, Splits, History, Nutrition, Sleep, and Progress remain performance-sensitive as history grows. History snapshot rebuilding must remain outside active scroll intervals; deletion stays in Workout Detail rather than on row swipe actions. Saved Foods must remain value-backed while mounted and resolve SwiftData models only for mutations.
 - Active Workout Preview content is bounded to the active rotation × four modes, with eight fallback/reuse entries. If that cap changes, re-run physical-device memory and first-frame acceptance checks rather than expanding startup work without measurement.
 - Keep Preview source-data and cache publication outside the entire mounted route, not merely active scroll intervals. Retain one eager border-only detailed order and dedicated-handle drag ownership; row-wide drag gestures, duplicated orders, or lazy variable-height detailed rows can reintroduce scroll-indicator jitter. The order currently mounts from the pinned snapshot about 50 ms after the actionable top frame, and frame publication follows at about 100 ms; do not move frame setup back to the first drag, because that makes the lifted row a no-op.
@@ -72,7 +74,7 @@ Current file: `KNOWN_ISSUES.md`
 - Protect the current acceptance thresholds:
   `today.route.appear coach` under 500ms in the verifier path, `root.notification.refresh` under 50ms in the interactive path, and one Preview `refresh onAppear` per open.
 - Coach and hydrated Workout Preview are data-backed deep routes with a 500 ms navigation budget. Lightweight warm routes remain on the 300 ms budget; do not reclassify a route merely to hide a regression.
-- The latest canonical verifier is green after a fresh build and all 131 unit tests: Today-to-Coach measured 214 ms, Coach-to-Preview 272 ms, root switching 84 ms, Preview warm-cache hits 2, mounted Preview refreshes 0, and the combined-log audit passed. Keep the 500 ms deep-route and 300 ms warm-route gates unchanged.
+- The 12 August serial build and 151-unit-test suite are green. The focused route flow passed at Today-to-Coach 132 ms, Coach-to-Preview 191 ms, warmed root transition 201 ms, Preview warm-cache hits 2, and mounted Preview refreshes 0. Repeated cold first-load root-tab runs still fail the unchanged 300 ms gate variably at 302–405 ms; Settings was the most consistent over-budget surface after its prepared-profile improvement. Keep the thresholds unchanged and continue reducing cold tab construction work.
 
 ## Data And Analytics
 
@@ -101,4 +103,4 @@ Scripts/verify_performance_acceptance.sh
 
 For documentation-only tasks, `git diff --check` is sufficient unless app or project files were accidentally changed.
 
-Physical-device QA remains outstanding because the connected iPhone was passcode locked during this run. Recheck all five redesigned root surfaces, the first Preview drag, menu anchoring, compact Profile and adaptive Settings rows, Workout Tools/Appearance copy, genuine-PR burst and static Reduce Motion fallback, immediate Done-to-Summary transition, Light/Dark appearance, Dynamic Type, VoiceOver, and Reduce Transparency on an unlocked device. The simulator's interactive inspection service also failed to start twice, so screenshots and UI-test accessibility queries supplied the automated visual evidence.
+Physical-device QA remains outstanding because the connected iPhone was passcode locked during this run. Recheck all five redesigned root surfaces, the monthly History hero and weekly-goal sheet, completed duration editing, four-hour finish choices, Quick/Recovery estimate copy, Split Edit without template-note controls, the first Preview drag, menu anchoring, compact Profile and adaptive Settings rows, Workout Tools/Appearance copy, genuine-PR burst and static Reduce Motion fallback, immediate Done-to-Summary transition, Light/Dark appearance, Dynamic Type, VoiceOver, and Reduce Transparency on an unlocked device. The simulator's interactive inspection service also failed to start twice, so screenshots and UI-test accessibility queries supplied the automated visual evidence.

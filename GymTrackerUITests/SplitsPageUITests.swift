@@ -11,7 +11,11 @@ final class SplitsPageUITests: XCTestCase {
     }
 
     func testSeededSplitsOpenDetailAndAddSheet() throws {
-        XCTAssertTrue(app.staticTexts["Today"].waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
+                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            "Expected Today to be ready after launch"
+        )
 
         tapTab(at: 2, expectedTitle: "Splits")
         XCTAssertTrue(app.descendants(matching: .any)["splits-screen"].waitForExistence(timeout: 5))
@@ -27,6 +31,13 @@ final class SplitsPageUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["split-detail-screen"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["split-detail-title-Push"].waitForExistence(timeout: 5))
 
+        app.buttons["split-edit-button"].tap()
+        XCTAssertTrue(app.navigationBars["Edit Split"].waitForExistence(timeout: 5))
+        for _ in 0..<4 { app.swipeUp() }
+        XCTAssertFalse(app.staticTexts["Template note"].exists)
+        XCTAssertFalse(app.staticTexts["Felt strong"].exists)
+        tapBackButton()
+
         tapBackButton()
         XCTAssertTrue(app.descendants(matching: .any)["splits-screen"].waitForExistence(timeout: 5))
 
@@ -37,7 +48,11 @@ final class SplitsPageUITests: XCTestCase {
     }
 
     func testFiveDayRotationCanBeOpenedAndSaved() throws {
-        XCTAssertTrue(app.staticTexts["Today"].waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
+                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            "Expected Today to be ready after launch"
+        )
         tapTab(at: 2, expectedTitle: "Splits")
 
         let editButton = app.buttons["edit-rotation-button"]

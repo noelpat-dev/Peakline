@@ -20,6 +20,7 @@ struct NutritionInsightsDashboardView: View {
     @State private var lastInsightsSignature: String?
     @State private var didRequestInitialSnapshot = false
     @State private var healthContextTask: Task<Void, Never>?
+    @State private var isPreparingInitialSnapshot = true
 
     private let goalService = NutritionGoalService()
     private let summaryService = NutritionSummaryService()
@@ -98,7 +99,12 @@ struct NutritionInsightsDashboardView: View {
             subtitle: "Training-aware nutrition from your local food and workout logs.",
             systemImage: "sparkles"
         ) {
-            contextHeader
+            if isPreparingInitialSnapshot {
+                SwiftUI.ProgressView("Preparing insights…")
+                    .frame(maxWidth: .infinity, minHeight: 180)
+                    .accessibilityIdentifier("nutrition-insights-loading")
+            } else {
+                contextHeader
 
             DashboardSection(title: "Targets") {
                 if goal.hasTargets {
@@ -133,7 +139,7 @@ struct NutritionInsightsDashboardView: View {
                 WeeklyTrendPreview(summary: weeklySummary, goal: goal)
             }
 
-            DashboardSection(title: "Actions") {
+                DashboardSection(title: "Actions") {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                     Button {
                         navigate(to: .logFood)
@@ -166,6 +172,7 @@ struct NutritionInsightsDashboardView: View {
                     }
                     .buttonStyle(PressableCardButtonStyle())
                     .accessibilityIdentifier("nutrition-insights-food-log")
+                }
                 }
             }
         }
@@ -218,6 +225,7 @@ struct NutritionInsightsDashboardView: View {
         AppMotion.withoutAnimation {
             insightsSnapshot = nextSnapshot
             lastInsightsSignature = signature
+            isPreparingInitialSnapshot = false
         }
     }
 

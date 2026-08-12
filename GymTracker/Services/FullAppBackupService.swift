@@ -263,6 +263,7 @@ struct FullAppBackupService {
 
             try beforeCommit()
             try context.save()
+            WorkoutWarmStartInvalidation.shared.invalidate(reason: .importedWorkouts)
             envelope.preferences.apply(to: defaults)
             return FullAppBackupImportSummary(counts: envelope.counts, importedAt: Date())
         } catch {

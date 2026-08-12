@@ -1,18 +1,40 @@
 import SwiftData
 import SwiftUI
 
+struct SettingsProfileSnapshot: Sendable {
+    let id: UUID
+    let goalTitle: String
+    let experienceTitle: String
+    let trainingDaysPerWeek: Int
+
+    init(_ profile: UserProfile) {
+        id = profile.id
+        goalTitle = profile.goal.displayName
+        experienceTitle = profile.experienceLevel.displayName
+        trainingDaysPerWeek = profile.trainingDaysPerWeek
+    }
+}
+
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
-    @Query private var profiles: [UserProfile]
     @AppStorage("appTheme") private var storedTheme = AppTheme.black.rawValue
     @AppStorage("appAppearance") private var storedAppearance = AppAppearance.system.rawValue
+    @State private var profile: UserProfile?
+    @State private var showingProfileEditor = false
+    @State private var didLoadProfile = false
+
+    private let initialProfileSnapshot: SettingsProfileSnapshot?
+
+    init(initialProfileSnapshot: SettingsProfileSnapshot? = nil) {
+        self.initialProfileSnapshot = initialProfileSnapshot
+    }
 
     var body: some View {
         NavigationStack {
             FitnessScreen {
                 DashboardSection(title: "Profile") {
-                    if let profile = profiles.first {
+                    if let profile {
                         NavigationLink {
                             ProfileEditorView(profile: profile)
                         } label: {
@@ -21,6 +43,21 @@ struct SettingsView: View {
                                 subtitle: PeaklineText.joinedMetadata([
                                     profile.experienceLevel.displayName,
                                     "\(profile.trainingDaysPerWeek) days/week"
+                                ]),
+                                systemImage: "person.crop.circle"
+                            )
+                        }
+                        .buttonStyle(PressableCardButtonStyle())
+                        .accessibilityIdentifier("settings-profile")
+                    } else if let initialProfileSnapshot {
+                        Button {
+                            openPreparedProfile()
+                        } label: {
+                            SettingsCardRow(
+                                title: initialProfileSnapshot.goalTitle,
+                                subtitle: PeaklineText.joinedMetadata([
+                                    initialProfileSnapshot.experienceTitle,
+                                    "\(initialProfileSnapshot.trainingDaysPerWeek) days/week"
                                 ]),
                                 systemImage: "person.crop.circle"
                             )
@@ -194,12 +231,43 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("settings-screen")
+            .navigationDestination(isPresented: $showingProfileEditor) {
+                if let profile {
+                    ProfileEditorView(profile: profile)
+                }
+            }
+        }
+        .onAppear {
+            guard !didLoadProfile else { return }
+            didLoadProfile = true
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(100))
+                guard !Task.isCancelled else { return }
+                loadProfile()
+            }
         }
     }
 
     private func createProfile() {
-        modelContext.insert(UserProfile())
-        try? modelContext.save()
+        let newProfile = UserProfile()
+        modelContext.insert(newProfile)
+        do {
+            try modelContext.save()
+            profile = newProfile
+        } catch {
+            modelContext.delete(newProfile)
+        }
+    }
+
+    private func loadProfile() {
+        var descriptor = FetchDescriptor<UserProfile>()
+        descriptor.fetchLimit = 1
+        profile = try? modelContext.fetch(descriptor).first
+    }
+
+    private func openPreparedProfile() {
+        loadProfile()
+        showingProfileEditor = profile != nil
     }
 
     private var selectedTheme: AppTheme {

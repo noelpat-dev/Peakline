@@ -356,7 +356,11 @@ struct StartWorkoutContentView: View {
             restoreWarmedDashboardIfNeeded()
             scheduleDashboardSnapshotRefresh(force: dashboardSnapshot == nil)
             if lastSleepReadinessSignature == nil {
-                refreshSleepReadiness()
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(50))
+                    guard !Task.isCancelled, isDashboardVisible else { return }
+                    refreshSleepReadiness()
+                }
             }
         }
         .onChange(of: dashboardSignatureForObservation) { _, signature in
@@ -390,7 +394,7 @@ struct StartWorkoutContentView: View {
 
         dashboardRefreshTask?.cancel()
         dashboardRefreshTask = Task { @MainActor in
-            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(50))
             guard !Task.isCancelled, !isWorkoutCompletionPresentationActive else { return }
             await refreshDashboardSnapshot(signature: signature)
         }

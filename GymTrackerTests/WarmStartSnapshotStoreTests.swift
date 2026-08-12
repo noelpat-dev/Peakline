@@ -3,6 +3,54 @@ import XCTest
 
 @MainActor
 final class WarmStartSnapshotStoreTests: XCTestCase {
+    func testWorkoutWarmStartSourceSignatureUsesScalarWorkoutFieldsOnly() {
+        let session = WorkoutSession(
+            date: Date(timeIntervalSince1970: 1_000),
+            splitId: UUID(),
+            splitNameSnapshot: "Push - Full",
+            endedAt: Date(timeIntervalSince1970: 4_600),
+            durationMinutes: 60,
+            durationSeconds: 3_600,
+            completed: true
+        )
+        let exerciseLog = ExerciseLog(
+            workoutSessionId: session.id,
+            exerciseId: UUID(),
+            exerciseNameSnapshot: "Bench Press",
+            orderIndex: 0
+        )
+        let setLog = SetLog(exerciseLogId: exerciseLog.id, setNumber: 1)
+        setLog.exerciseLog = exerciseLog
+        exerciseLog.setLogs = [setLog]
+        session.exerciseLogs = [exerciseLog]
+
+        let before = WorkoutWarmStartSourceSignature.workout(session)
+        setLog.completed = true
+
+        XCTAssertEqual(before, WorkoutWarmStartSourceSignature.workout(session))
+    }
+
+    func testWorkoutWarmStartInvalidationAdvancesRevision() {
+        let invalidation = WorkoutWarmStartInvalidation.shared
+        let previousRevision = invalidation.revision
+
+        invalidation.invalidate(reason: .completedWorkoutSetEdited)
+
+        XCTAssertEqual(invalidation.revision, previousRevision + 1)
+    }
+
+    func testWorkoutWarmStartInvalidationPersistsAcrossStoreRecreation() throws {
+        let suiteName = "WorkoutWarmStartInvalidationTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let first = WorkoutWarmStartInvalidation(defaults: defaults)
+
+        first.invalidate(reason: .completedWorkoutSetEdited)
+        let recreated = WorkoutWarmStartInvalidation(defaults: defaults)
+
+        XCTAssertEqual(recreated.revision, first.revision)
+    }
+
     func testSaveAndLoadMatchingSnapshot() async throws {
         let directoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directoryURL) }
@@ -82,6 +130,74 @@ final class WarmStartSnapshotStoreTests: XCTestCase {
         XCTAssertEqual(updated.foods.map(\.name), ["Green Apple"])
         XCTAssertNotEqual(updated.sourceSignature, initial.sourceSignature)
         XCTAssertTrue(removed.foods.isEmpty)
+    }
+
+    func testWorkoutWarmStartSignatureUsesScalarInputsAndRevision() {
+        let session = WorkoutSession(
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            splitId: UUID(uuidString: "10000000-0000-0000-0000-000000000001"),
+            endedAt: Date(timeIntervalSince1970: 1_700_002_700),
+            durationMinutes: 45,
+            durationSeconds: 2_700,
+            completed: true
+        )
+        let splitSignatures = ["split-1"]
+        let workoutSignatures = [WorkoutWarmStartSourceSignature.workout(session)]
+
+        let initial = WorkoutWarmStartSourceSignature.make(
+            revision: 7,
+            splitSignatures: splitSignatures,
+            workoutSignatures: workoutSignatures
+        )
+        session.exerciseLogs = [
+            ExerciseLog(
+                exerciseId: UUID(),
+                exerciseNameSnapshot: "Bench Press",
+                orderIndex: 0,
+                setLogs: [SetLog(setNumber: 1, weight: 80, reps: 8, completed: true)]
+            )
+        ]
+
+        XCTAssertEqual(
+            initial,
+            WorkoutWarmStartSourceSignature.make(
+                revision: 7,
+                splitSignatures: splitSignatures,
+                workoutSignatures: [WorkoutWarmStartSourceSignature.workout(session)]
+            )
+        )
+        XCTAssertNotEqual(
+            initial,
+            WorkoutWarmStartSourceSignature.make(
+                revision: 8,
+                splitSignatures: splitSignatures,
+                workoutSignatures: workoutSignatures
+            )
+        )
+
+        session.durationSeconds = 2_760
+        XCTAssertNotEqual(
+            initial,
+            WorkoutWarmStartSourceSignature.make(
+                revision: 7,
+                splitSignatures: splitSignatures,
+                workoutSignatures: [WorkoutWarmStartSourceSignature.workout(session)]
+            )
+        )
+    }
+
+    func testWorkoutWarmStartInvalidationAdvancesForCompletionAndEdits() {
+        let invalidation = WorkoutWarmStartInvalidation.shared
+        let initialRevision = invalidation.revision
+
+        invalidation.invalidate(reason: .workoutCompleted)
+        XCTAssertEqual(invalidation.revision, initialRevision + 1)
+
+        invalidation.invalidate(reason: .completedWorkoutSetEdited)
+        XCTAssertEqual(invalidation.revision, initialRevision + 2)
+
+        invalidation.invalidate(reason: .completedWorkoutEdited)
+        XCTAssertEqual(invalidation.revision, initialRevision + 3)
     }
 
     func testSavedFoodPreparedRouteRetainsItsExactCatalogGeneration() throws {
@@ -427,6 +543,7 @@ final class WarmStartSnapshotStoreTests: XCTestCase {
             basePlannedExercises: base.basePlannedExercises,
             plannedExercises: base.plannedExercises,
             estimatedDuration: base.estimatedDuration,
+            durationCalibration: base.durationCalibration,
             suggestions: base.suggestions,
             alternatives: base.alternatives,
             substitutionCandidates: base.substitutionCandidates,

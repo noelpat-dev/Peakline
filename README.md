@@ -23,8 +23,8 @@ The product is designed for the gym rather than for a social feed. It keeps the 
 - Maintains an editable Push, Pull, Legs, Upper, and Lower training rotation.
 - Recommends the next meaningful workout consistently across Today, Coach, Workout, Splits, Progress, and History.
 - Supports Full, Quick, Recovery, and Heavy workout modes.
-- Provides a detailed workout preview with target suggestions, last-best-set context, alternatives, notes, addable exercises, and real handle-based reordering.
-- Offers fast live logging with set entry, rest timing, pause/resume, substitutions, skipped-exercise reasons, completion rating, and a prepared session summary.
+- Provides a detailed workout preview with target suggestions, last-best-set context, alternatives, notes, addable exercises, real handle-based reordering, and history-calibrated duration ranges.
+- Offers fast live logging with set entry, rest timing, pause/resume, substitutions, skipped-exercise reasons, long-session confirmation, completion rating, and a prepared session summary.
 - Supports workout templates, recent-session repeat, exercise notes, and a metric plate calculator.
 
 ### Coaching and progress
@@ -32,7 +32,7 @@ The product is designed for the gym rather than for a social feed. It keeps the 
 - Uses deterministic local rules instead of opaque or remote AI calls.
 - Explains progression targets and readiness recommendations with the evidence available on the device.
 - Includes readiness scoring, recovery guidance, weekly review, action history, deload context, and feedback capture.
-- Keeps History useful with attendance markers, filters, session details, editing, and deletion flows.
+- Keeps History useful with a current-month visit goal, attendance markers, filters, session details, duration correction, and deletion flows.
 - Shows best sets, estimated 1RM, best-set volume, set history, charts, and a PR timeline.
 
 ### Nutrition, recovery, and data ownership
@@ -86,7 +86,7 @@ The main implementation boundaries are documented in [ARCHITECTURE.md](ARCHITECT
 
 The main lifting loop is implemented end to end and the app is in an active quality and acceptance phase. The current focus is physical-device validation across Light and Dark appearance, large Dynamic Type, VoiceOver, Reduce Motion, Reduce Transparency, Firebase restore, and the most performance-sensitive workout routes.
 
-The latest recorded performance run on 11 August 2026 passed 131 unit tests, measured Today-to-Coach at 214 ms, Coach-to-Preview at 272 ms, and root-tab switching at 84 ms, with two Preview warm-cache hits, zero mounted Preview refreshes, and no acceptance failures. These figures are a dated engineering baseline, not a promise that every device will produce the same timing.
+The latest serial validation on 12 August 2026 passed 151 unit tests and measured Today-to-Coach at 132 ms, Coach-to-Preview at 191 ms, and the warmed root transition in that route flow at 201 ms, with two Preview warm-cache hits and zero mounted Preview refreshes. Repeated cold first-load root-tab runs remain variable at 302–405 ms against the 300 ms target, so the canonical performance gate is not yet fully green. These figures are a dated engineering baseline, not a promise that every device will produce the same timing.
 
 ## Run locally
 

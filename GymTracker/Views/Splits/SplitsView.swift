@@ -5,6 +5,7 @@ struct SplitsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
 
     @Query
     private var splits: [TrainingSplit]
@@ -20,6 +21,7 @@ struct SplitsView: View {
     @State private var lastDashboardSignature: String?
     @State private var dashboardRefreshTask: Task<Void, Never>?
     @State private var isDashboardVisible = false
+    @State private var isPreparingInitialSnapshot = true
 
     private let coachEngine = CoachRecommendationEngine()
     private let targetService = TargetSuggestionService()
@@ -62,7 +64,11 @@ struct SplitsView: View {
 
         NavigationStack {
             FitnessScreen {
-                if !snapshot.activeProgrammeSplits.isEmpty {
+                if isPreparingInitialSnapshot {
+                    SwiftUI.ProgressView("Loading splits…")
+                        .frame(maxWidth: .infinity, minHeight: 180)
+                        .accessibilityIdentifier("splits-loading")
+                } else if !snapshot.activeProgrammeSplits.isEmpty {
                     SplitProgrammeCard(
                         splits: snapshot.activeProgrammeSplits,
                         trainingCall: snapshot.trainingCall,
@@ -290,18 +296,9 @@ struct SplitsView: View {
                 return "\(split.id.uuidString):\(split.name):\(split.isActive):\(split.activeRotationIndex ?? -1):\(split.updatedAt.timeIntervalSince1970):\(exerciseSignature)"
             }
             .joined(separator: "|"),
+            "revision:\(workoutWarmStartInvalidation.revision)",
             completedSessions.prefix(40).map { session in
-                let logSignature = session.exerciseLogs
-                    .sorted { $0.orderIndex < $1.orderIndex }
-                    .map { log in
-                        let setSignature = log.setLogs
-                            .sorted { $0.setNumber < $1.setNumber }
-                            .map { "\($0.id.uuidString):\($0.setNumber):\($0.weight):\($0.reps):\($0.completed):\($0.isWarmup)" }
-                            .joined(separator: ",")
-                        return "\(log.id.uuidString):\(log.exerciseId.uuidString):\(log.orderIndex):\(setSignature)"
-                    }
-                    .joined(separator: ";")
-                return "\(session.id.uuidString):\(session.date.timeIntervalSince1970):\(session.endedAt?.timeIntervalSince1970 ?? 0):\(logSignature)"
+                "\(session.id.uuidString):\(session.date.timeIntervalSince1970):\(session.endedAt?.timeIntervalSince1970 ?? 0):\(session.durationSeconds ?? 0):\(session.perceivedDifficulty ?? 0)"
             }
             .joined(separator: "|")
         ].joined(separator: "||")
@@ -323,11 +320,15 @@ struct SplitsView: View {
 
     private func refreshDashboardSnapshot(force: Bool = false) {
         let signature = dashboardSignature
-        guard force || signature != lastDashboardSignature else { return }
+        guard force || signature != lastDashboardSignature else {
+            isPreparingInitialSnapshot = false
+            return
+        }
         dashboardSnapshot = PerformanceTracer.trace(.splitsDashboard) {
             makeDashboardSnapshot()
         }
         lastDashboardSignature = signature
+        isPreparingInitialSnapshot = false
     }
 
     private func makeDashboardSnapshot() -> SplitsDashboardSnapshot {
@@ -1130,7 +1131,7 @@ private struct SplitEditorView: View {
             minReps: 8,
             maxReps: 12,
             restSeconds: 120,
-            notes: "Use double progression: add reps inside the target range before adding load."
+            notes: nil
         )
         splitExercise.split = split
         split.exercises.append(splitExercise)
@@ -1187,11 +1188,6 @@ private struct SplitExerciseEditorRow: View {
                 Stepper("Min reps: \(splitExercise.minReps)", value: $splitExercise.minReps, in: 1...50)
                 Stepper("Max reps: \(splitExercise.maxReps)", value: $splitExercise.maxReps, in: max(splitExercise.minReps, 1)...50)
                 Stepper("Rest: \(restText)", value: Binding($splitExercise.restSeconds, replacingNilWith: 120), in: 30...300, step: 15)
-                ExerciseNotesEditor(
-                    text: Binding($splitExercise.notes, replacingNilWith: ""),
-                    title: "Template note",
-                    placeholder: "Seat height, grip, setup cue, or progression reminder."
-                )
             }
         }
         .padding(.vertical, 4)

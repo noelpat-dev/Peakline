@@ -30,16 +30,23 @@ struct LocalBackupImportService {
         into context: ModelContext,
         replaceSeedDataWhenNoWorkouts: Bool = false
     ) throws -> LocalBackupImportSummary {
-        if replaceSeedDataWhenNoWorkouts {
-            try removeStarterDataIfSafe(for: envelope, in: context)
-        }
+        do {
+            if replaceSeedDataWhenNoWorkouts {
+                try removeStarterDataIfSafe(for: envelope, in: context)
+            }
 
-        try importExercises(envelope.exercises, into: context)
-        try importSplits(envelope.splits, into: context)
-        try importWorkouts(envelope.workouts, into: context)
-        try context.save()
-        try TrainingRotationService().normalizePersistedRotation(in: context)
-        try context.save()
+            try importExercises(envelope.exercises, into: context)
+            try importSplits(envelope.splits, into: context)
+            try importWorkouts(envelope.workouts, into: context)
+            try TrainingRotationService().normalizePersistedRotation(in: context)
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
+        if envelope.workouts.contains(where: \.completed) {
+            WorkoutWarmStartInvalidation.shared.invalidate(reason: .importedWorkouts)
+        }
 
         return LocalBackupImportSummary(
             workoutCount: envelope.workouts.count,

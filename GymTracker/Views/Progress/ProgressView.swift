@@ -13,19 +13,32 @@ struct ProgressView: View {
 struct ProgressContentView: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.modelContext) private var modelContext
+    @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
+
+    @Query private var observedExercises: [Exercise]
+    @Query private var observedCompletedSessions: [WorkoutSession]
+    @Query private var observedActiveSplits: [TrainingSplit]
 
     @State private var exercises: [Exercise] = []
     @State private var exercisesLoaded = false
     @State private var selectedExercise: Exercise?
     @State private var isExerciseChartsPresented = false
     @State private var isPRTimelinePresented = false
-    @State private var didRequestInitialRefresh = false
     @State private var weeklySummary: WeeklyTrainingSummary?
     @State private var splitConsistency: SplitConsistencySummary?
+    @State private var lastExercisesSignature: String?
     @State private var lastSummarySignature: String?
     @State private var summaryTask: Task<Void, Never>?
+    @State private var progressRefreshTask: Task<Void, Never>?
+    @State private var isProgressVisible = false
 
     private let analytics = TrainingAnalyticsService()
+
+    init() {
+        _observedExercises = Query(Self.exercisesDescriptor)
+        _observedCompletedSessions = Query(Self.completedSessionsDescriptor)
+        _observedActiveSplits = Query(Self.activeSplitsDescriptor)
+    }
 
     private static var exercisesDescriptor: FetchDescriptor<Exercise> {
         var descriptor = FetchDescriptor<Exercise>(
@@ -62,7 +75,11 @@ struct ProgressContentView: View {
 
     var body: some View {
         FitnessScreen {
-            progressWeekCard
+            if weeklySummary == nil || splitConsistency == nil {
+                progressLoadingCard
+            } else {
+                progressWeekCard
+            }
 
             DashboardSection(title: "Progress Charts") {
                 if !exercisesLoaded {
@@ -167,13 +184,52 @@ struct ProgressContentView: View {
                 }
         }
         .onAppear {
-            guard !didRequestInitialRefresh else { return }
-            didRequestInitialRefresh = true
-            refreshExercises(force: true)
-            refreshSummary(force: true)
+            isProgressVisible = true
+            scheduleProgressRefresh(
+                force: lastExercisesSignature == nil || lastSummarySignature == nil
+            )
+        }
+        .onChange(of: progressSignatureForObservation) { oldSignature, newSignature in
+            guard oldSignature != nil, newSignature != nil else { return }
+            scheduleProgressRefresh()
         }
         .onDisappear {
+            isProgressVisible = false
+            progressRefreshTask?.cancel()
+            progressRefreshTask = nil
             summaryTask?.cancel()
+        }
+    }
+
+    private var progressSignatureForObservation: String? {
+        isProgressVisible ? progressSourceSignature : nil
+    }
+
+    private var progressSourceSignature: String {
+        let activeSplitNames = TrainingRotationService()
+            .orderedActiveSplits(observedActiveSplits)
+            .map(\.name)
+        let scalarSignature = ProgressAnalyticsInputSignature(
+            sessions: Array(observedCompletedSessions.prefix(40)),
+            exerciseIDs: observedExercises.map(\.id),
+            activeSplitNames: activeSplitNames
+        ).rawValue
+        let exerciseScalarSignature = observedExercises
+            .map {
+                "\($0.id.uuidString):\($0.name):\($0.primaryMuscleGroup.rawValue):\($0.updatedAt.timeIntervalSince1970)"
+            }
+            .joined(separator: ",")
+
+        return "\(workoutWarmStartInvalidation.revision)||\(exerciseScalarSignature)||\(scalarSignature)"
+    }
+
+    private func scheduleProgressRefresh(force: Bool = false) {
+        progressRefreshTask?.cancel()
+        progressRefreshTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled, isProgressVisible else { return }
+            refreshExercises(force: force)
+            refreshSummary(force: force)
         }
     }
 
@@ -376,45 +432,36 @@ struct ProgressContentView: View {
     }
 
     private func refreshExercises(force: Bool = false) {
-        guard force || !exercisesLoaded else { return }
+        let signature = observedExercises
+            .map {
+                "\($0.id.uuidString):\($0.name):\($0.primaryMuscleGroup.rawValue):\($0.updatedAt.timeIntervalSince1970)"
+            }
+            .joined(separator: ",")
+        guard force || signature != lastExercisesSignature else { return }
 
-        do {
-            let nextExercises = try PerformanceTracer.trace(.progressFetchExercises) {
-                try modelContext.fetch(Self.exercisesDescriptor)
-            }
-            AppMotion.withoutAnimation {
-                exercises = nextExercises
-            }
-        } catch {
-            AppMotion.withoutAnimation {
-                exercises = []
-            }
+        AppMotion.withoutAnimation {
+            exercises = observedExercises
         }
         AppMotion.withoutAnimation {
             exercisesLoaded = true
+            lastExercisesSignature = signature
         }
     }
 
     private func refreshSummary(force: Bool = false) {
-        summaryTask?.cancel()
-
-        let recentSessions: [WorkoutSession]
-        let activeSplitNames: [String]
-        do {
-            recentSessions = try modelContext.fetch(Self.completedSessionsDescriptor)
-            activeSplitNames = TrainingRotationService()
-                .orderedActiveSplits(try modelContext.fetch(Self.activeSplitsDescriptor))
-                .map(\.name)
-        } catch {
-            weeklySummary = nil
-            splitConsistency = nil
-            return
-        }
-
-        let signature = Self.summarySignature(for: recentSessions)
-            + "||"
-            + activeSplitNames.joined(separator: "|")
+        let recentSessions = Array(observedCompletedSessions.prefix(40))
+        let activeSplitNames = TrainingRotationService()
+            .orderedActiveSplits(observedActiveSplits)
+            .map(\.name)
+        let scalarSignature = ProgressAnalyticsInputSignature(
+            sessions: recentSessions,
+            exerciseIDs: observedExercises.map(\.id),
+            activeSplitNames: activeSplitNames
+        ).rawValue
+        let generation = workoutWarmStartInvalidation.revision
+        let signature = "\(generation)||\(scalarSignature)"
         guard force || signature != lastSummarySignature else { return }
+        summaryTask?.cancel()
 
         let snapshots: [WorkoutAnalyticsSession]
         do {
@@ -440,7 +487,8 @@ struct ProgressContentView: View {
                 }
             }.value
 
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled,
+                  generation == workoutWarmStartInvalidation.revision else { return }
             AppMotion.withoutAnimation {
                 weeklySummary = result.0
                 splitConsistency = result.1
@@ -449,14 +497,55 @@ struct ProgressContentView: View {
         }
     }
 
-    private static func summarySignature(for sessions: [WorkoutSession]) -> String {
-        sessions
-            .map { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.endedAt?.timeIntervalSince1970 ?? 0)" }
-            .joined(separator: "|")
-    }
-
     private func format(_ value: Double) -> String {
         value.formatted(.number.precision(.fractionLength(value.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1)))
+    }
+}
+
+struct ProgressAnalyticsInputSignature: Equatable {
+    let rawValue: String
+
+    init(
+        sessions: [WorkoutSession],
+        exerciseIDs: [UUID] = [],
+        activeSplitNames: [String] = []
+    ) {
+        let sessionSignatures = sessions
+            .prefix(160)
+            .sorted { lhs, rhs in
+                if lhs.date != rhs.date { return lhs.date > rhs.date }
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
+            .map { session in
+                return [
+                    session.id.uuidString,
+                    "\(session.date.timeIntervalSince1970)",
+                    session.splitId?.uuidString ?? "",
+                    session.splitNameSnapshot,
+                    Self.timestamp(session.startedAt),
+                    Self.timestamp(session.endedAt),
+                    "\(session.durationMinutes ?? -1)",
+                    "\(session.durationSeconds ?? -1)",
+                    Self.timestamp(session.pausedAt),
+                    "\(session.accumulatedPausedSeconds)",
+                    "\(session.perceivedDifficulty ?? -1)",
+                    "\(session.energyLevel ?? -1)",
+                    "\(session.sorenessLevel ?? -1)",
+                    session.notes ?? "",
+                    "\(session.completed)"
+                ].joined(separator: ":")
+            }
+            .joined(separator: "|")
+
+        rawValue = [
+            exerciseIDs.map(\.uuidString).sorted().joined(separator: ","),
+            sessionSignatures,
+            activeSplitNames.joined(separator: "|")
+        ].joined(separator: "||")
+    }
+
+    private static func timestamp(_ date: Date?) -> String {
+        date.map { String($0.timeIntervalSince1970) } ?? ""
     }
 }
 
@@ -514,6 +603,7 @@ private struct ProgressActionCard: View {
 
 private struct ExerciseProgressDetailView: View {
     @Environment(\.appTheme) private var appTheme
+    @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
 
     let exercise: Exercise
 
@@ -538,10 +628,11 @@ private struct ExerciseProgressDetailView: View {
     }
 
     private var entriesSignature: String {
-        [
-            exercise.id.uuidString,
-            sessions.prefix(160).map { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.endedAt?.timeIntervalSince1970 ?? 0):\($0.exerciseLogs.count)" }.joined(separator: ",")
-        ].joined(separator: "|")
+        let input = ProgressAnalyticsInputSignature(
+            sessions: Array(sessions.prefix(160)),
+            exerciseIDs: [exercise.id]
+        )
+        return "\(workoutWarmStartInvalidation.revision)||\(input.rawValue)"
     }
 
     private func makeEntries() -> [ExerciseProgressEntry] {
@@ -629,7 +720,7 @@ private struct ExerciseProgressDetailView: View {
         }
         .navigationTitle(exercise.name)
         .onAppear {
-            refreshEntries(force: true)
+            refreshEntries()
         }
         .onChange(of: entriesSignature) { _, _ in
             refreshEntries()
@@ -649,9 +740,9 @@ private struct ExerciseProgressDetailView: View {
         }
     }
 
-    private func refreshEntries(force: Bool = false) {
+    private func refreshEntries() {
         let signature = entriesSignature
-        guard force || signature != lastEntriesSignature else { return }
+        guard signature != lastEntriesSignature else { return }
 
         let nextEntries = PerformanceTracer.trace(.exerciseProgressEntries) {
             makeEntries()

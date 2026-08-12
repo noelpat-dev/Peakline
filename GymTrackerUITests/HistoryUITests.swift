@@ -14,11 +14,21 @@ final class HistoryUITests: XCTestCase {
     }
 
     func testHistoryOverviewIsCleanInformativeAndScrollable() throws {
-        XCTAssertTrue(app.staticTexts["Today"].waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
+                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            "Expected Today to be ready after launch"
+        )
 
         tapTab(at: 3, expectedTitle: "History")
         XCTAssertTrue(app.descendants(matching: .any)["history-screen"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.descendants(matching: .any)["history-overview-card"].waitForExistence(timeout: 10))
+        let editGoal = app.buttons["Edit Goal"]
+        let setGoal = app.buttons["Set Goal"]
+        XCTAssertTrue(
+            editGoal.waitForExistence(timeout: 3) || setGoal.waitForExistence(timeout: 2),
+            "Expected the monthly attendance hero to expose its goal action"
+        )
         XCTAssertTrue(app.descendants(matching: .any)["history-calendar-card"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["history-filter-chips"].waitForExistence(timeout: 5))
 
@@ -37,7 +47,11 @@ final class HistoryUITests: XCTestCase {
     }
 
     func testHistoryCalendarFiltersAndSessionDetailOpen() throws {
-        XCTAssertTrue(app.staticTexts["Today"].waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
+                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            "Expected Today to be ready after launch"
+        )
 
         tapTab(at: 3, expectedTitle: "History")
         XCTAssertTrue(app.descendants(matching: .any)["history-calendar-card"].waitForExistence(timeout: 10))
@@ -69,6 +83,8 @@ final class HistoryUITests: XCTestCase {
             app.descendants(matching: .any)["workout-logger-screen"].waitForExistence(timeout: 8),
             "Expected History Edit to reach the completed-workout editor without freezing"
         )
+        XCTAssertTrue(app.steppers["workout-edit-duration-hours"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.steppers["workout-edit-duration-minutes"].waitForExistence(timeout: 5))
         tapBackButton()
         XCTAssertTrue(app.descendants(matching: .any)["history-detail-hero"].waitForExistence(timeout: 8))
         tapBackButton()

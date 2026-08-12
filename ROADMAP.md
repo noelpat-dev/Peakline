@@ -15,12 +15,13 @@ The app should stay centered on lifting: fast logging, an editable ordered train
 - Live workout logging includes timer, pause and resume, set entry, rest timer, completion rating, celebration, and session summary.
 - `TargetSuggestionService` aligns targets across Coach, Workout Preview, and Splits.
 - Readiness Score v2 is evidence-aware: missing inputs stay unknown, sparse results are provisional, signal influence is capped by coverage and reliability, eligible personal baselines are bounded, and provisional readiness cannot independently prescribe aggressive or recovery training.
-- History uses minimal attendance markers; Nutrition can browse previous days read-only; filters, progress charts, themes, exercise icons, sleep, hydration, HealthKit bridge work, local export, templates, notes, and coach intelligence are all present.
+- History now includes monthly gym-visit progress from the Profile weekly goal, current/previous duration and visits, local-day attendance markers, filters, details, and duration correction. Nutrition can browse previous days read-only; progress charts, themes, exercise icons, sleep, hydration, HealthKit bridge work, local export, templates, notes, and coach intelligence are all present.
 - Firebase email/password account backup is in place for encrypted full-app restore after reinstall while SwiftData remains the fast local database.
 - The focused performance acceptance verifier is in place and should stay green as navigation and feature work continues.
 - Profile is compact and adaptive, Gym Utilities has been replaced by purposeful Workout Tools plus Appearance, Workout Preview has real route-local drag ordering, and Logger transition motivation now rotates through 28 nonrepeating messages.
 - The premium-athletic style guide is implemented across the shared design system and major Today, Workout, Splits, History, Settings, Coach, Progress, Nutrition, Sleep, Preview, Logger, completion, and Summary surfaces in both semantic appearances.
-- The latest full performance verifier is green with 131 unit tests, Today-to-Coach at 214 ms, Coach-to-Preview at 272 ms, and root switching at 84 ms.
+- Preview duration ranges are calibrated from valid recent working-set history, and Logger intercepts four-hour timer outliers before rating while retaining an explicit long-session path.
+- The 12 August serial suite is green for 151 unit tests, the focused route flow, lifecycle relaunch, History, Nutrition, Splits, and Workout journeys. Today-to-Coach measured 132 ms and Coach-to-Preview 191 ms. Repeated cold first-load root-tab runs remain 302–405 ms against the 300 ms acceptance target.
 
 ## Current Near-Term Priority
 
@@ -33,10 +34,11 @@ That means:
 - keep account backup and restore reliable before schema changes
 - maintain readable UI across light and dark mode
 - keep performance-sensitive routes within the current acceptance thresholds
+- bring cold first-load Workout, History, and Settings tab transitions under the existing 300 ms gate without relaxing the threshold
 
 ## Next Practical Priorities
 
-- Run focused physical-device visual QA across the redesigned core surfaces in Light and Dark, including large Dynamic Type, VoiceOver, Reduce Motion, Reduce Transparency, compact Profile rows, Workout Tools/Appearance, the first Preview drag, motivational Continue transitions, and the PR-only completion.
+- Run focused physical-device visual QA across the redesigned core surfaces in Light and Dark, including large Dynamic Type, VoiceOver, Reduce Motion, Reduce Transparency, monthly History goal editing, completed duration correction, the four-hour finish guard, realistic Preview estimates, compact Profile rows, Workout Tools/Appearance, the first Preview drag, motivational Continue transitions, and the PR-only completion.
 - Preserve the `Scripts/verify_performance_acceptance.sh` workflow for any changes that touch Today, Workout, Coach, Preview, or root lifecycle behavior.
 - Keep notification refresh, route warm-starts, and SwiftData async safety intact.
 - Confirm exact PNG icon coverage for seeded exercises and add mappings where source assets already exist.

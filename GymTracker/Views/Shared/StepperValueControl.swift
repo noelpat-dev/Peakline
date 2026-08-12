@@ -45,6 +45,8 @@ struct StepperValueControl: View {
                         .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
                 }
                 .disabled(!canDecrement)
+                .accessibilityLabel("Decrease \(label)")
+                .accessibilityValue(currentValueAccessibilityText)
                 .accessibilityIdentifier("stepper-\(identifierBase)-decrement")
 
                 Button {
@@ -68,6 +70,8 @@ struct StepperValueControl: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Edit \(label)")
+                .accessibilityValue(currentValueAccessibilityText)
                 .accessibilityIdentifier("stepper-\(identifierBase)-edit")
 
                 Button {
@@ -78,6 +82,8 @@ struct StepperValueControl: View {
                         .font(AppTypography.badge)
                         .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
                 }
+                .accessibilityLabel("Increase \(label)")
+                .accessibilityValue(currentValueAccessibilityText)
                 .accessibilityIdentifier("stepper-\(identifierBase)-increment")
             }
             .buttonStyle(.borderless)
@@ -93,5 +99,13 @@ struct StepperValueControl: View {
     private var identifierBase: String {
         let filtered = label.lowercased().filter { $0.isLetter || $0.isNumber }
         return filtered.isEmpty ? "value" : String(filtered)
+    }
+
+    private var currentValueAccessibilityText: String {
+        if let unitSuffix {
+            return "\(valueText) \(unitSuffix)"
+        }
+
+        return valueText
     }
 }

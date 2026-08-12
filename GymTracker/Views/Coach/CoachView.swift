@@ -173,7 +173,7 @@ struct CoachRouteDestinationView: View {
     }
 
     var body: some View {
-        let routeSnapshot = initialSnapshot ?? CoachRouteSnapshotStore.shared.snapshot
+        let routeSnapshot = CoachRouteSnapshotStore.shared.snapshot ?? initialSnapshot
 
         CoachContentView(
             initialSnapshot: routeSnapshot,
@@ -1149,6 +1149,7 @@ struct CoachContentView: View {
             guard liveQueriesEnabled, !liveObservationEnabled else { return }
             loadLiveObservationSettings()
             liveObservationEnabled = true
+            refreshLiveObservationInputs()
         }
     }
 

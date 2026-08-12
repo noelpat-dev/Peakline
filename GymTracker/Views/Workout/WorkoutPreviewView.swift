@@ -861,7 +861,13 @@ struct WorkoutPreviewView: View {
             coreExercise: source.coreExercise,
             basePlannedExercises: basePlan,
             plannedExercises: plan,
-            estimatedDuration: modePlanner.estimatedDurationMinutes(for: plan, mode: selectedMode),
+            estimatedDuration: modePlanner.estimatedDurationMinutes(
+                for: plan,
+                mode: selectedMode,
+                calibration: source.durationCalibration,
+                splitName: split.name
+            ),
+            durationCalibration: source.durationCalibration,
             suggestions: suggestions,
             alternatives: source.alternatives,
             substitutionCandidates: source.substitutionCandidates,

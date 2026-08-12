@@ -490,6 +490,7 @@ struct TodayView: View {
                 .padding(.bottom, appTheme.metrics.screenBottomPadding)
             }
             .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
+            .accessibilityIdentifier("today-screen")
             .navigationTitle("Today")
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(item: $selectedRoute) { route in
@@ -893,10 +894,7 @@ struct TodayView: View {
     }
 
     private var coachNavigationSnapshot: CoachRouteRenderSnapshot? {
-        if let initialStartupSnapshot {
-            return initialStartupSnapshot.coachRouteSnapshot
-        }
-        return CoachRouteSnapshotStore.shared.snapshot
+        CoachRouteSnapshotStore.shared.snapshot ?? initialStartupSnapshot?.coachRouteSnapshot
     }
 
     private func refreshSleepReadiness(force: Bool = false) {

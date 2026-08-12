@@ -43,6 +43,22 @@ final class SleepRecoveryReliabilityTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(lowScore, 0)
     }
 
+    func testSleepAnalyticsWarmSnapshotCarriesItsInputSignature() {
+        let sessions = [sleepSession(day: 9, startHour: 23, durationMinutes: 480, quality: 4, confidence: .high, source: .manual)]
+        let snapshot = SleepAnalyticsSnapshotStore.shared.snapshot(
+            sessions: sessions,
+            naps: [],
+            workouts: [],
+            settings: .default,
+            force: true
+        )
+
+        XCTAssertEqual(
+            snapshot.inputSignature,
+            SleepAnalyticsInputSignature(sessions: sessions, naps: [], workouts: [], settings: .default)
+        )
+    }
+
     func testNapCreditCapsRecoveryAndFlagsLateNaps() {
         let calendar = utcCalendar()
         let overnight = ResolvedSleepSession(

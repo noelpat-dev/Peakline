@@ -62,6 +62,95 @@ final class WorkoutReliabilityTests: XCTestCase {
         XCTAssertEqual(routeMutations, 2)
     }
 
+    func testNavigationInteractionRecoversWhenDestinationNeverAppears() async {
+        var routeMutations = 0
+
+        XCTAssertTrue(
+            NavigationInteraction.perform(
+                key: "test.timeout",
+                destinationClass: .warm,
+                haptic: .none
+            ) {
+                routeMutations += 1
+            }
+        )
+        XCTAssertFalse(
+            NavigationInteraction.perform(
+                key: "test.timeout",
+                destinationClass: .warm,
+                haptic: .none
+            ) {
+                routeMutations += 1
+            }
+        )
+
+        try? await Task.sleep(nanoseconds: 1_100_000_000)
+
+        XCTAssertTrue(
+            NavigationInteraction.perform(
+                key: "test.timeout",
+                destinationClass: .warm,
+                haptic: .none
+            ) {
+                routeMutations += 1
+            }
+        )
+        XCTAssertEqual(routeMutations, 2)
+    }
+
+    func testProgressAnalyticsInputSignatureTracksScalarChangesWithoutWalkingNestedSets() {
+        let session = WorkoutSession(
+            date: date(day: 8, hour: 12),
+            splitNameSnapshot: "Push",
+            durationSeconds: 3_600,
+            perceivedDifficulty: 3,
+            completed: true
+        )
+        let exerciseID = UUID()
+        let base = ProgressAnalyticsInputSignature(
+            sessions: [session],
+            exerciseIDs: [exerciseID],
+            activeSplitNames: ["Push"]
+        )
+
+        session.durationSeconds = 3_900
+        XCTAssertNotEqual(base, ProgressAnalyticsInputSignature(
+            sessions: [session],
+            exerciseIDs: [exerciseID],
+            activeSplitNames: ["Push"]
+        ))
+
+        session.durationSeconds = 3_600
+        session.perceivedDifficulty = 5
+        XCTAssertNotEqual(base, ProgressAnalyticsInputSignature(
+            sessions: [session],
+            exerciseIDs: [exerciseID],
+            activeSplitNames: ["Push"]
+        ))
+
+        session.perceivedDifficulty = 3
+        let log = ExerciseLog(
+            workoutSessionId: session.id,
+            exerciseId: exerciseID,
+            exerciseNameSnapshot: "Bench Press",
+            orderIndex: 0,
+            setLogs: [SetLog(setNumber: 1, weight: 100, reps: 8, completed: true)]
+        )
+        session.exerciseLogs = [log]
+        let nestedBase = ProgressAnalyticsInputSignature(
+            sessions: [session],
+            exerciseIDs: [exerciseID],
+            activeSplitNames: ["Push"]
+        )
+        log.setLogs[0].weight = 105
+
+        XCTAssertEqual(nestedBase, ProgressAnalyticsInputSignature(
+            sessions: [session],
+            exerciseIDs: [exerciseID],
+            activeSplitNames: ["Push"]
+        ))
+    }
+
     func testWorkoutLaunchDraftCopiesValuesAndCreatesOrderedSession() {
         let splitID = UUID()
         let exercises = [
@@ -411,6 +500,61 @@ final class WorkoutReliabilityTests: XCTestCase {
         XCTAssertLessThanOrEqual(adjusted.confidence, 0.7)
     }
 
+    func testWorkoutDurationEstimateUsesPersonalSameModeMedianAndIgnoresOutliers() {
+        let now = date(day: 20, hour: 12)
+        let calibration = WorkoutDurationCalibration(samples: [
+            WorkoutDurationSample(date: date(day: 19, hour: 12), splitName: "Lower", mode: .quick, durationSeconds: 3_600, completedWorkingSetCount: 12),
+            WorkoutDurationSample(date: date(day: 18, hour: 12), splitName: "Lower", mode: .quick, durationSeconds: 3_300, completedWorkingSetCount: 11),
+            WorkoutDurationSample(date: date(day: 17, hour: 12), splitName: "Lower", mode: .quick, durationSeconds: 3_900, completedWorkingSetCount: 13),
+            WorkoutDurationSample(date: date(day: 16, hour: 12), splitName: "Lower", mode: .quick, durationSeconds: 9 * 3_600, completedWorkingSetCount: 12),
+            WorkoutDurationSample(date: date(day: 15, hour: 12), splitName: "Push", mode: .full, durationSeconds: 7_200, completedWorkingSetCount: 12)
+        ])
+        let exercises = (0..<4).map { index in
+            PlannedWorkoutExercise(
+                id: UUID(),
+                exerciseId: UUID(),
+                name: "Exercise \(index)",
+                targetSets: 3,
+                minReps: 8,
+                maxReps: 12,
+                notes: nil
+            )
+        }
+
+        let estimate = WorkoutModePlanner().estimatedDurationMinutes(
+            for: exercises,
+            mode: .quick,
+            calibration: calibration,
+            splitName: "Lower",
+            now: now
+        )
+
+        XCTAssertEqual(estimate, 50...70)
+    }
+
+    func testWorkoutDurationEstimateUsesConservativeModeFallbacksWhenHistoryIsSparse() {
+        let exercises = (0..<4).map { index in
+            PlannedWorkoutExercise(
+                id: UUID(),
+                exerciseId: UUID(),
+                name: "Exercise \(index)",
+                targetSets: 3,
+                minReps: 8,
+                maxReps: 12,
+                notes: nil
+            )
+        }
+
+        XCTAssertEqual(
+            WorkoutModePlanner().estimatedDurationMinutes(for: exercises, mode: .quick),
+            50...70
+        )
+        XCTAssertEqual(
+            WorkoutModePlanner().estimatedDurationMinutes(for: exercises, mode: .recovery),
+            45...65
+        )
+    }
+
     func testCanonicalDailyRecommendationKeepsCoachAndTargetsOnSameSplit() throws {
         let pushExerciseId = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!
         let pullExerciseId = UUID(uuidString: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC")!
@@ -665,14 +809,264 @@ final class WorkoutReliabilityTests: XCTestCase {
         let display = HistoryDisplaySnapshotBuilder.build(
             workouts: snapshots,
             filters: filters,
+            trainingDaysPerWeek: 4,
+            now: date(day: 10, hour: 12),
             calendar: Calendar(identifier: .gregorian)
         )
 
         XCTAssertEqual(display.sessionRows.count, 1)
         XCTAssertEqual(display.sessionRows.first?.splitName, "Push - Full")
         XCTAssertEqual(display.calendarDaySummaries.count, 1)
-        XCTAssertEqual(display.overview.sessionCountText, "1")
+        XCTAssertEqual(display.overview.currentVisitCount, 2)
+        XCTAssertEqual(display.overview.monthlyTarget, 18)
+        XCTAssertEqual(display.overview.currentDurationText, "1 hr 45 min")
         XCTAssertEqual(display.splitOptions, ["Pull", "Push"])
+    }
+
+    func testPRTimelineFilterOptionsUseObservedBaseSplitNamesAndPreserveAll() {
+        XCTAssertEqual(
+            PRTimelineFilterOptions.options(from: [
+                "Push - Full",
+                "Lower - Quick",
+                "Upper",
+                "Custom Circuit - Recovery",
+                "upper - Heavy",
+                "",
+                "   ",
+                "All - Full"
+            ]),
+            ["All", "Custom Circuit", "Lower", "Push", "Upper"]
+        )
+    }
+
+    func testHistoryMonthlyTargetsRespectCalendarMonthLengthAndMissingGoal() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+
+        func target(year: Int, month: Int) -> Int? {
+            let now = calendar.date(from: DateComponents(year: year, month: month, day: 10, hour: 12))!
+            return HistoryDisplaySnapshotBuilder.build(
+                workouts: [],
+                trainingDaysPerWeek: 4,
+                now: now,
+                calendar: calendar
+            ).overview.monthlyTarget
+        }
+
+        XCTAssertEqual(target(year: 2025, month: 2), 16)
+        XCTAssertEqual(target(year: 2024, month: 2), 17)
+        XCTAssertEqual(target(year: 2026, month: 4), 17)
+        XCTAssertEqual(target(year: 2026, month: 5), 18)
+
+        let missingGoal = HistoryDisplaySnapshotBuilder.build(
+            workouts: [],
+            now: date(day: 10, hour: 12),
+            calendar: calendar
+        ).overview
+        XCTAssertNil(missingGoal.monthlyTarget)
+        XCTAssertNil(missingGoal.goalSourceText)
+    }
+
+    func testHistoryCountsMultipleCompletedWorkoutsOnOneDayAsOneVisit() {
+        let first = workout(date: date(day: 8, hour: 9), splitName: "Push - Full", weight: 90, reps: 8, durationSeconds: 3_600, rating: 4)
+        let second = workout(date: date(day: 8, hour: 18), splitName: "Pull - Quick", weight: 70, reps: 10, durationSeconds: 2_700, rating: 3)
+        let overview = HistoryDisplaySnapshotBuilder.build(
+            workouts: [HistoryWorkoutSnapshot(first), HistoryWorkoutSnapshot(second)],
+            trainingDaysPerWeek: 3,
+            now: date(day: 10, hour: 12),
+            calendar: Calendar(identifier: .gregorian)
+        ).overview
+
+        XCTAssertEqual(overview.currentVisitCount, 1)
+        XCTAssertEqual(overview.currentDurationText, "1 hr 45 min")
+    }
+
+    func testHistoryEndDateExcludesMidnightAtStartOfFollowingDay() {
+        let included = workout(
+            date: date(day: 10, hour: 23, minute: 59),
+            splitName: "Push",
+            weight: 90,
+            reps: 8,
+            durationSeconds: 3_600,
+            rating: 4
+        )
+        let excluded = workout(
+            date: date(day: 11, hour: 0),
+            splitName: "Pull",
+            weight: 70,
+            reps: 10,
+            durationSeconds: 2_700,
+            rating: 3
+        )
+        var filters = HistoryFilters()
+        filters.endDate = date(day: 10, hour: 12)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+
+        let display = HistoryDisplaySnapshotBuilder.build(
+            workouts: [HistoryWorkoutSnapshot(included), HistoryWorkoutSnapshot(excluded)],
+            filters: filters,
+            now: date(day: 12, hour: 12),
+            calendar: calendar
+        )
+
+        XCTAssertEqual(display.sessionRows.map(\.id), [included.id])
+    }
+
+    func testHistoryLegacyDurationSubtractsAccumulatedPausedSeconds() {
+        let startedAt = date(day: 8, hour: 12)
+        let session = WorkoutSession(
+            date: startedAt,
+            splitNameSnapshot: "Push",
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(2 * 60 * 60),
+            accumulatedPausedSeconds: 30 * 60,
+            completed: true
+        )
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+
+        let display = HistoryDisplaySnapshotBuilder.build(
+            workouts: [HistoryWorkoutSnapshot(session)],
+            now: date(day: 10, hour: 12),
+            calendar: calendar
+        )
+
+        XCTAssertEqual(display.sessionRows.first?.durationText, "1 hr 30 min")
+        XCTAssertEqual(display.overview.currentDurationText, "1 hr 30 min")
+    }
+
+    func testWorkoutDurationCorrectionSynchronizesStoredFieldsAndEndTime() {
+        let startedAt = date(day: 8, hour: 12)
+        let loggedDate = date(day: 8, hour: 11)
+        let session = WorkoutSession(
+            date: loggedDate,
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(9 * 3_600),
+            durationMinutes: 540,
+            durationSeconds: 9 * 3_600,
+            accumulatedPausedSeconds: 300,
+            completed: true
+        )
+
+        XCTAssertTrue(WorkoutSessionDurationService().apply(activeDurationSeconds: 5_400, to: session))
+        XCTAssertEqual(session.durationSeconds, 5_400)
+        XCTAssertEqual(session.durationMinutes, 90)
+        XCTAssertEqual(session.endedAt, startedAt.addingTimeInterval(5_700))
+        XCTAssertEqual(session.date, loggedDate)
+    }
+
+    func testWorkoutDurationCorrectionRejectsValuesBelowOneMinuteWithoutMutation() {
+        let startedAt = date(day: 8, hour: 12)
+        let originalEnd = startedAt.addingTimeInterval(3_600)
+        let session = WorkoutSession(
+            date: startedAt,
+            startedAt: startedAt,
+            endedAt: originalEnd,
+            durationMinutes: 60,
+            durationSeconds: 3_600,
+            completed: true
+        )
+        let service = WorkoutSessionDurationService()
+
+        XCTAssertFalse(service.apply(activeDurationSeconds: 0, to: session))
+        XCTAssertFalse(service.apply(activeDurationSeconds: 59, to: session))
+        XCTAssertEqual(session.durationSeconds, 3_600)
+        XCTAssertEqual(session.durationMinutes, 60)
+        XCTAssertEqual(session.endedAt, originalEnd)
+        XCTAssertTrue(service.apply(activeDurationSeconds: 60, to: session))
+        XCTAssertEqual(session.durationSeconds, 60)
+        XCTAssertEqual(session.durationMinutes, 1)
+    }
+
+    func testWorkoutCompletionStateRestoresEveryMutatedTimingField() {
+        let startedAt = date(day: 8, hour: 12)
+        let originalEnd = startedAt.addingTimeInterval(3_600)
+        let session = WorkoutSession(
+            date: startedAt,
+            startedAt: startedAt,
+            endedAt: originalEnd,
+            durationMinutes: 60,
+            durationSeconds: 3_600,
+            pausedAt: startedAt.addingTimeInterval(3_500),
+            accumulatedPausedSeconds: 120,
+            perceivedDifficulty: 3,
+            completed: false
+        )
+        let original = WorkoutSessionCompletionState(session)
+
+        session.date = startedAt.addingTimeInterval(86_400)
+        session.endedAt = startedAt.addingTimeInterval(7_200)
+        session.durationMinutes = 120
+        session.durationSeconds = 7_200
+        session.pausedAt = nil
+        session.accumulatedPausedSeconds = 600
+        session.perceivedDifficulty = 5
+        session.completed = true
+        original.restore(session)
+
+        XCTAssertEqual(session.date, startedAt)
+        XCTAssertEqual(session.endedAt, originalEnd)
+        XCTAssertEqual(session.durationMinutes, 60)
+        XCTAssertEqual(session.durationSeconds, 3_600)
+        XCTAssertEqual(session.pausedAt, startedAt.addingTimeInterval(3_500))
+        XCTAssertEqual(session.accumulatedPausedSeconds, 120)
+        XCTAssertEqual(session.perceivedDifficulty, 3)
+        XCTAssertFalse(session.completed)
+    }
+
+    func testWorkoutDurationCalibrationFiltersInvalidSamplesAtEveryBoundary() {
+        let now = date(day: 20, hour: 12)
+        let invalidOnly = WorkoutDurationCalibration(samples: [
+            WorkoutDurationSample(date: now.addingTimeInterval(1), splitName: "Push", mode: .full, durationSeconds: 3_600, completedWorkingSetCount: 12),
+            WorkoutDurationSample(date: now.addingTimeInterval(-181 * 86_400), splitName: "Push", mode: .full, durationSeconds: 3_600, completedWorkingSetCount: 12),
+            WorkoutDurationSample(date: date(day: 19, hour: 12), splitName: "Push", mode: .full, durationSeconds: 599, completedWorkingSetCount: 2),
+            WorkoutDurationSample(date: date(day: 18, hour: 12), splitName: "Push", mode: .full, durationSeconds: 4 * 3_600, completedWorkingSetCount: 12),
+            WorkoutDurationSample(date: date(day: 17, hour: 12), splitName: "Push", mode: .full, durationSeconds: 3_600, completedWorkingSetCount: 0)
+        ])
+
+        XCTAssertNil(invalidOnly.minutesPerWorkingSet(splitName: "Push", mode: .full, now: now))
+
+        let inclusiveLowerBoundary = WorkoutDurationCalibration(samples: [
+            WorkoutDurationSample(date: date(day: 19, hour: 12), splitName: "Push", mode: .full, durationSeconds: 600, completedWorkingSetCount: 2),
+            WorkoutDurationSample(date: date(day: 18, hour: 12), splitName: "Push", mode: .full, durationSeconds: 600, completedWorkingSetCount: 2),
+            WorkoutDurationSample(date: date(day: 17, hour: 12), splitName: "Push", mode: .full, durationSeconds: 600, completedWorkingSetCount: 2)
+        ])
+
+        XCTAssertEqual(
+            inclusiveLowerBoundary.minutesPerWorkingSet(splitName: "Push", mode: .full, now: now),
+            5
+        )
+    }
+
+    func testWorkoutDurationSampleRequiresCompletedWorkoutAndWorkingSet() {
+        let session = WorkoutSession(
+            date: date(day: 8, hour: 12),
+            durationSeconds: 3_600,
+            completed: false
+        )
+        XCTAssertNil(WorkoutDurationSample(session: session))
+
+        session.completed = true
+        XCTAssertNil(WorkoutDurationSample(session: session))
+
+        let exerciseLog = ExerciseLog(
+            workoutSessionId: session.id,
+            exerciseId: UUID(),
+            exerciseNameSnapshot: "Bench Press",
+            orderIndex: 0
+        )
+        let workingSet = SetLog(
+            exerciseLogId: exerciseLog.id,
+            setNumber: 1,
+            isWarmup: false,
+            completed: true
+        )
+        workingSet.exerciseLog = exerciseLog
+        exerciseLog.setLogs = [workingSet]
+        session.exerciseLogs = [exerciseLog]
+
+        XCTAssertEqual(WorkoutDurationSample(session: session)?.completedWorkingSetCount, 1)
     }
 
     func testFiveDayRotationAdvancesLegsUpperLowerAndWrapsToPush() {

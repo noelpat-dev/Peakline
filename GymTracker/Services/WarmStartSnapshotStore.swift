@@ -1,4 +1,75 @@
+import Combine
 import Foundation
+
+enum WorkoutWarmStartInvalidationReason: String, Sendable {
+    case workoutCompleted
+    case completedWorkoutEdited
+    case completedWorkoutSetEdited
+    case workoutReopened
+    case importedWorkouts
+}
+
+/// Monotonic, persisted generation for warm data derived from workout history.
+///
+/// WorkoutSession relationships are intentionally not part of the root observation
+/// signature. Callers that change completed-workout content advance this generation
+/// so the next warm build still replaces stale Preview and History values.
+@MainActor
+final class WorkoutWarmStartInvalidation: ObservableObject {
+    static let shared = WorkoutWarmStartInvalidation()
+    private static let revisionKey = "Peakline.WorkoutWarmStartInvalidation.revision"
+
+    @Published private(set) var revision: Int
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        revision = defaults.integer(forKey: Self.revisionKey)
+    }
+
+    func invalidate(reason: WorkoutWarmStartInvalidationReason) {
+        revision &+= 1
+        defaults.set(revision, forKey: Self.revisionKey)
+        PerformanceTracer.mark(
+            .workoutPreviewWarmCache,
+            "source_generation revision=\(revision) reason=\(reason.rawValue)"
+        )
+    }
+}
+
+enum WorkoutWarmStartSourceSignature {
+    static func make(
+        revision: Int,
+        splitSignatures: [String],
+        workoutSignatures: [String],
+        exerciseSignatures: [String] = []
+    ) -> String {
+        [
+            "revision:\(revision)",
+            splitSignatures.joined(separator: ","),
+            workoutSignatures.joined(separator: ","),
+            exerciseSignatures.joined(separator: ",")
+        ].joined(separator: "|")
+    }
+
+    // These projections intentionally read scalar model properties only. They are
+    // safe to use from repeated SwiftUI observation and source-generation checks.
+    static func split(_ split: TrainingSplit) -> String {
+        "\(split.id.uuidString):\(split.updatedAt.timeIntervalSince1970):\(split.activeRotationIndex ?? -1)"
+    }
+
+    static func split(_ split: TrainingSplitSnapshot) -> String {
+        "\(split.id.uuidString):\(split.updatedAt.timeIntervalSince1970):\(split.activeRotationIndex ?? -1)"
+    }
+
+    static func workout(_ session: WorkoutSession) -> String {
+        "\(session.id.uuidString):\(session.date.timeIntervalSince1970):\(session.splitId?.uuidString ?? "legacy"):\(session.completed):\(session.durationSeconds ?? 0):\(session.durationMinutes ?? 0):\(session.endedAt?.timeIntervalSince1970 ?? 0)"
+    }
+
+    static func exercise(_ exercise: Exercise) -> String {
+        "\(exercise.id.uuidString):\(exercise.updatedAt.timeIntervalSince1970)"
+    }
+}
 
 @MainActor
 final class WorkoutDashboardWarmStartStore {
@@ -209,6 +280,7 @@ struct WorkoutPreviewPreparedSnapshot: @unchecked Sendable {
     let basePlannedExercises: [PlannedWorkoutExercise]
     let plannedExercises: [PlannedWorkoutExercise]
     let estimatedDuration: ClosedRange<Int>
+    let durationCalibration: WorkoutDurationCalibration
     let suggestions: [UUID: TargetSuggestion]
     let alternatives: [UUID: [WorkoutPreviewExerciseOption]]
     let substitutionCandidates: [UUID: [ExerciseSubstitutionCandidate]]
@@ -270,7 +342,12 @@ struct WorkoutPreviewPreparedSnapshot: @unchecked Sendable {
             coreExercise: options.first { $0.name == "Abdominal Crunch" },
             basePlannedExercises: plannedExercises,
             plannedExercises: plannedExercises,
-            estimatedDuration: planner.estimatedDurationMinutes(for: plannedExercises, mode: mode),
+            estimatedDuration: planner.estimatedDurationMinutes(
+                for: plannedExercises,
+                mode: mode,
+                splitName: split.name
+            ),
+            durationCalibration: .empty,
             suggestions: suggestions,
             alternatives: [:],
             substitutionCandidates: [:],
@@ -325,6 +402,9 @@ enum WorkoutPreviewSnapshotBuilder {
         let trainingCallBuilder = TrainingCallSnapshotBuilder()
         let substitutionService = ExerciseSubstitutionService()
         let adjustmentService = CoachWorkoutAdjustmentService()
+        let durationCalibration = WorkoutDurationCalibration(
+            samples: completedWorkoutModels.compactMap { WorkoutDurationSample(session: $0) }
+        )
         let exerciseOptions = exercises.map(WorkoutPreviewExerciseOption.init)
         ExerciseIconView.prewarm(exerciseOptions.map(\.iconKey))
         let optionsByID = Dictionary(exerciseOptions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -465,8 +545,11 @@ enum WorkoutPreviewSnapshotBuilder {
                     plannedExercises: plannedExercises,
                     estimatedDuration: modePlanner.estimatedDurationMinutes(
                         for: plannedExercises,
-                        mode: mode
+                        mode: mode,
+                        calibration: durationCalibration,
+                        splitName: previewSplit.name
                     ),
+                    durationCalibration: durationCalibration,
                     suggestions: suggestions,
                     alternatives: alternatives,
                     substitutionCandidates: candidates,
@@ -879,6 +962,7 @@ final class WorkoutPreviewWarmStartStore {
             basePlannedExercises: base.basePlannedExercises,
             plannedExercises: base.plannedExercises,
             estimatedDuration: base.estimatedDuration,
+            durationCalibration: base.durationCalibration,
             suggestions: base.suggestions,
             alternatives: alternatives,
             substitutionCandidates: candidates,

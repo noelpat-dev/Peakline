@@ -45,6 +45,7 @@ struct NutritionDashboardView: View {
     @State private var activeFoodLogSwipeID: UUID?
     @State private var didRequestInitialRefresh = false
     @State private var deferredDashboardRefreshWorkItem: DispatchWorkItem?
+    @State private var isPreparingInitialSnapshot = true
 
     init() {
         _logEntries = Query(Self.logEntriesDescriptor)
@@ -169,13 +170,17 @@ struct NutritionDashboardView: View {
 
     private func refreshDashboardSnapshot(force: Bool = false) {
         let signature = dashboardSignature
-        guard force || signature != lastDashboardSignature else { return }
+        guard force || signature != lastDashboardSignature else {
+            isPreparingInitialSnapshot = false
+            return
+        }
         let nextSnapshot = PerformanceTracer.trace(.nutritionDashboardSnapshot) {
             makeDashboardSnapshot()
         }
         AppMotion.withoutAnimation {
             dashboardSnapshot = nextSnapshot
             lastDashboardSignature = signature
+            isPreparingInitialSnapshot = false
         }
     }
 
@@ -269,12 +274,17 @@ struct NutritionDashboardView: View {
         let snapshot = currentDashboardSnapshot
 
         FitnessScreen(title: nil) {
-            NutritionDayNavigator(
-                selectedDate: $selectedDate,
-                canMoveForward: !isToday,
-                moveBackward: { moveSelectedDay(by: -1) },
-                moveForward: { moveSelectedDay(by: 1) }
-            )
+            if isPreparingInitialSnapshot {
+                SwiftUI.ProgressView("Preparing nutrition…")
+                    .frame(maxWidth: .infinity, minHeight: 180)
+                    .accessibilityIdentifier("nutrition-loading")
+            } else {
+                NutritionDayNavigator(
+                    selectedDate: $selectedDate,
+                    canMoveForward: !isToday,
+                    moveBackward: { moveSelectedDay(by: -1) },
+                    moveForward: { moveSelectedDay(by: 1) }
+                )
 
             NutritionHeroCard(
                 totals: snapshot.totals,
@@ -369,7 +379,7 @@ struct NutritionDashboardView: View {
                 }
             }
 
-            DashboardSection(title: isToday ? "Today" : "Meals") {
+                DashboardSection(title: isToday ? "Today" : "Meals") {
                 if snapshot.dayEntries.isEmpty {
                     if isToday {
                         Button {
@@ -411,6 +421,7 @@ struct NutritionDashboardView: View {
                             }
                         }
                     }
+                }
                 }
             }
         }
@@ -1379,6 +1390,8 @@ struct LogFoodView: View {
             return
         }
 
+        errorText = nil
+
         let snapshot = calculator.calculate(for: food, consumedAmount: amount, unit: amountUnit)
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let now = Date.now
@@ -1404,7 +1417,14 @@ struct LogFoodView: View {
         )
 
         modelContext.insert(entry)
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            modelContext.delete(entry)
+            errorText = "Could not log this food locally. Try again."
+            AppHaptics.error()
+            return
+        }
         AppHaptics.success()
 
         let healthPreferences = HealthKitPreferenceStore().load()

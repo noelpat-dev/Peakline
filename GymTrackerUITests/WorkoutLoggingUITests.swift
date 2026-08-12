@@ -11,7 +11,11 @@ final class WorkoutLoggingUITests: XCTestCase {
     }
 
     func testSeededWorkoutCanLogSetPauseFinishAndReachHistory() throws {
-        XCTAssertTrue(app.staticTexts["Today"].waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
+                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            "Expected Today to be ready after launch"
+        )
 
         tapTab(at: 1, expectedTitle: "Workout")
         tapElement(identifier: "start-split-Push", maxSwipes: 8)
@@ -22,6 +26,17 @@ final class WorkoutLoggingUITests: XCTestCase {
 
         tapElement(identifier: "workout-logger-add-set", maxSwipes: 8)
         XCTAssertTrue(app.descendants(matching: .any)["set-row-1"].waitForExistence(timeout: 5))
+        assertAccessibilityLabel(identifier: "stepper-weight-decrement", expectedLabel: "Decrease Weight")
+        assertAccessibilityLabel(identifier: "stepper-weight-edit", expectedLabel: "Edit Weight")
+        assertAccessibilityLabel(identifier: "stepper-weight-increment", expectedLabel: "Increase Weight")
+        assertAccessibilityLabel(identifier: "stepper-reps-decrement", expectedLabel: "Decrease Reps")
+        assertAccessibilityLabel(identifier: "stepper-reps-edit", expectedLabel: "Edit Reps")
+        assertAccessibilityLabel(identifier: "stepper-reps-increment", expectedLabel: "Increase Reps")
+        let setActionsMenu = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-logger-set-actions-"))
+            .firstMatch
+        XCTAssertTrue(setActionsMenu.waitForExistence(timeout: 5), "Expected a per-set actions menu")
+        XCTAssertEqual(setActionsMenu.label, "Actions for set 1")
         XCTAssertFalse(app.staticTexts["Draft"].exists, "Incomplete set data should remain editable without a decorative Draft badge")
 
         tapButton(identifier: "stepper-weight-increment", times: 2)
@@ -33,6 +48,13 @@ final class WorkoutLoggingUITests: XCTestCase {
         tapElement(identifier: "workout-logger-finish", maxSwipes: 6, swipeUp: false)
         if app.buttons["Finish Anyway"].waitForExistence(timeout: 3) {
             app.buttons["Finish Anyway"].tap()
+        }
+
+        XCTAssertTrue(app.staticTexts["How did it go?"].waitForExistence(timeout: 5))
+        for rating in 1...5 {
+            let ratingControl = tappableElement(identifier: "workout-rating-\(rating)")
+            XCTAssertTrue(ratingControl.waitForExistence(timeout: 2), "Expected rating \(rating) to be visible")
+            XCTAssertTrue(ratingControl.isEnabled, "Expected rating \(rating) to remain enabled")
         }
 
         tapModalElement(identifier: "workout-rating-3")
@@ -68,7 +90,11 @@ final class WorkoutLoggingUITests: XCTestCase {
         app.launchArguments = ["-UITestInMemoryStore", "-UITestPRCelebrationFixture"]
         app.launch()
 
-        XCTAssertTrue(app.staticTexts["Today"].waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
+                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            "Expected Today to be ready after launch"
+        )
 
         tapTab(at: 1, expectedTitle: "Workout")
         tapElement(identifier: "start-split-Push", maxSwipes: 8)
@@ -109,7 +135,11 @@ final class WorkoutLoggingUITests: XCTestCase {
     }
 
     func testSubstitutePresentsOnFirstTapAndCanReopen() throws {
-        XCTAssertTrue(app.staticTexts["Today"].waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
+                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            "Expected Today to be ready after launch"
+        )
 
         tapTab(at: 1, expectedTitle: "Workout")
         tapElement(identifier: "start-split-Push", maxSwipes: 8)
@@ -129,7 +159,11 @@ final class WorkoutLoggingUITests: XCTestCase {
     }
 
     func testContinueShowsFreshTransitionCopyAcrossTwoExerciseChanges() throws {
-        XCTAssertTrue(app.staticTexts["Today"].waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
+                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            "Expected Today to be ready after launch"
+        )
 
         tapTab(at: 1, expectedTitle: "Workout")
         tapElement(identifier: "start-split-Push", maxSwipes: 8)
@@ -175,12 +209,53 @@ final class WorkoutLoggingUITests: XCTestCase {
         )
     }
 
+    func testLongWorkoutRequiresDurationConfirmationBeforeRating() throws {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchArguments = ["-UITestInMemoryStore", "-UITestLongWorkoutFixture"]
+        app.launch()
+
+        XCTAssertTrue(
+            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
+                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            "Expected Today to be ready after launch"
+        )
+        tapTab(at: 1, expectedTitle: "Workout")
+        tapElement(identifier: "start-split-Push", maxSwipes: 8)
+        tapElement(identifier: "workout-preview-start", maxSwipes: 4)
+        tapElement(identifier: "workout-logger-finish", maxSwipes: 6, swipeUp: false)
+        if app.buttons["Finish Anyway"].waitForExistence(timeout: 3) {
+            app.buttons["Finish Anyway"].tap()
+        }
+
+        XCTAssertTrue(app.buttons["Edit Duration"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["workout-rating-3"].exists)
+        app.buttons["Edit Duration"].tap()
+        XCTAssertTrue(app.steppers["workout-duration-correction-hours"].waitForExistence(timeout: 5))
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["workout-logger-screen"].waitForExistence(timeout: 5))
+
+        tapElement(identifier: "workout-logger-finish", maxSwipes: 6, swipeUp: false)
+        if app.buttons["Finish Anyway"].waitForExistence(timeout: 3) {
+            app.buttons["Finish Anyway"].tap()
+        }
+        XCTAssertTrue(app.buttons["Use Recorded Time"].waitForExistence(timeout: 5))
+        app.buttons["Use Recorded Time"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["workout-rating-3"].waitForExistence(timeout: 5))
+    }
+
     private func tapButton(identifier: String, times: Int) {
         let button = app.buttons[identifier]
         XCTAssertTrue(button.waitForExistence(timeout: 5), "Expected \(identifier) to exist")
         for _ in 0..<times {
             button.tap()
         }
+    }
+
+    private func assertAccessibilityLabel(identifier: String, expectedLabel: String) {
+        let element = app.buttons[identifier]
+        XCTAssertTrue(element.waitForExistence(timeout: 5), "Expected \(identifier) to exist")
+        XCTAssertEqual(element.label, expectedLabel)
     }
 
     private func tapTab(at index: Int, expectedTitle: String) {

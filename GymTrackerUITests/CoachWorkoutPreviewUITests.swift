@@ -547,6 +547,13 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         XCTAssertTrue(firstLoggerRow.waitForExistence(timeout: 5))
         XCTAssertTrue(secondLoggerRow.waitForExistence(timeout: 5))
         XCTAssertLessThan(firstLoggerRow.frame.minY, secondLoggerRow.frame.minY)
+
+        let moveSecondExerciseUp = app.buttons["workout-logger-order-move-up-\(secondExercise)"]
+        let moveFirstExerciseDown = app.buttons["workout-logger-order-move-down-\(firstExercise)"]
+        XCTAssertTrue(moveSecondExerciseUp.waitForExistence(timeout: 5))
+        XCTAssertTrue(moveFirstExerciseDown.waitForExistence(timeout: 5))
+        XCTAssertEqual(moveSecondExerciseUp.label, "Move \(secondExercise) up")
+        XCTAssertEqual(moveFirstExerciseDown.label, "Move \(firstExercise) down")
     }
 
     func testWorkoutPreviewOptionalExerciseMenuSelectsAndAddsExercise() throws {
@@ -762,14 +769,14 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testPerformanceAcceptanceRootTabTransitionsRemainResponsive() throws {
-        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
 
-        tapTab(at: 1, expectedTitle: "Workout")
-        tapTab(at: 2, expectedTitle: "Splits")
-        tapTab(at: 3, expectedTitle: "History")
-        tapTab(at: 4, expectedTitle: "Settings")
-        tapTab(at: 1, expectedTitle: "Workout")
-        tapTab(at: 0, expectedTitle: "Today")
+        tapTabAndAssertResponsive(at: 1, expectedTitle: "Workout")
+        tapTabAndAssertResponsive(at: 2, expectedTitle: "Splits")
+        tapTabAndAssertResponsive(at: 3, expectedTitle: "History")
+        tapTabAndAssertResponsive(at: 4, expectedTitle: "Settings")
+        tapTabAndAssertResponsive(at: 1, expectedTitle: "Workout")
+        tapTabAndAssertResponsive(at: 0, expectedTitle: "Today")
 
         assertPerformanceAcceptancePassed()
     }
@@ -924,15 +931,37 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         XCTAssertTrue(waitForTabContent(expectedTitle, timeout: 10), "Expected \(expectedTitle) tab to be visible")
     }
 
+    private func tapTabAndAssertResponsive(
+        at index: Int,
+        expectedTitle: String
+    ) {
+        let tabBar = app.tabBars.firstMatch
+        XCTAssertTrue(tabBar.waitForExistence(timeout: 5), "Expected tab bar to exist")
+        let namedTab = tabBar.buttons[expectedTitle]
+        let tab = namedTab.exists ? namedTab : tabBar.buttons.element(boundBy: index)
+        XCTAssertTrue(tab.waitForExistence(timeout: 5), "Expected tab \(index) to exist")
+        guard let identifier = tabScreenIdentifier(for: expectedTitle) else {
+            XCTFail("Missing screen marker for \(expectedTitle)")
+            return
+        }
+
+        tab.tap()
+        let destination = app.descendants(matching: .any)[identifier]
+        let destinationAppeared = destination.waitForExistence(timeout: 3)
+        if !destinationAppeared {
+            print("Missing root screen marker \(identifier):\n\(app.debugDescription)")
+        }
+        XCTAssertTrue(destinationAppeared, "Expected \(expectedTitle) screen marker")
+    }
+
     private func waitForTabContent(_ expectedTitle: String, timeout: TimeInterval) -> Bool {
+        if let identifier = tabScreenIdentifier(for: expectedTitle) {
+            return app.descendants(matching: .any)[identifier].waitForExistence(timeout: timeout)
+        }
+
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
             if app.navigationBars[expectedTitle].exists || app.staticTexts[expectedTitle].exists {
-                return true
-            }
-
-            if let identifier = tabScreenIdentifier(for: expectedTitle),
-               app.descendants(matching: .any)[identifier].exists {
                 return true
             }
 
@@ -944,8 +973,14 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
     private func tabScreenIdentifier(for title: String) -> String? {
         switch title {
+        case "Today":
+            return "today-screen"
         case "Workout":
             return "workout-screen"
+        case "Splits":
+            return "splits-screen"
+        case "History":
+            return "history-screen"
         case "Settings":
             return "settings-screen"
         default:

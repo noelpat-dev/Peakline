@@ -1842,6 +1842,7 @@ struct SleepAnalyticsSnapshot {
     var latestSummary: SleepSummary
     var dashboardSummary: SleepDashboardSummary
     var generatedAt: Date
+    var inputSignature: SleepAnalyticsInputSignature? = nil
 }
 
 struct SleepWorkoutReadinessSnapshot {
@@ -1874,7 +1875,8 @@ final class SleepAnalyticsSnapshotStore {
         let limitedSessions = Array(sessions.prefix(sessionLimit))
         let limitedNaps = Array(naps.prefix(sessionLimit))
         let limitedWorkouts = Array(workouts.prefix(workoutLimit))
-        let snapshot = service.snapshot(sessions: limitedSessions, naps: limitedNaps, workouts: limitedWorkouts, settings: settings)
+        var snapshot = service.snapshot(sessions: limitedSessions, naps: limitedNaps, workouts: limitedWorkouts, settings: settings)
+        snapshot.inputSignature = signature
         cachedSignature = signature
         cachedSnapshot = snapshot
         return snapshot
