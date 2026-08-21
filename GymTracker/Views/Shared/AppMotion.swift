@@ -605,6 +605,9 @@ enum AppHaptics {
     }
 
     private static func perform(_ feedback: @escaping () -> Void) {
+#if targetEnvironment(simulator)
+        return
+#else
         if Thread.isMainThread {
             feedback()
         } else {
@@ -612,6 +615,7 @@ enum AppHaptics {
                 feedback()
             }
         }
+#endif
     }
 
     private static func shouldPlay(since lastPlayedAt: inout Date, minimumInterval: TimeInterval) -> Bool {

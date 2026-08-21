@@ -37,7 +37,7 @@ The product is designed for the gym rather than for a social feed. It keeps the 
 
 ### Nutrition, recovery, and data ownership
 
-- Tracks nutrition, optional fibre targets, hydration, sleep, naps, and recovery context.
+- Tracks nutrition, optional fibre targets, hydration, and a state-led Sleep experience with overnight history, Sleep Mode, manual entries, naps, recovery context, and an optional truthful HealthKit bridge.
 - Supports barcode lookup, Open Food Facts import, nutrition-label OCR, parser review, and source comparison before imported data is saved.
 - Treats HealthKit as optional and degrades gracefully when permission or device data is unavailable.
 - Supports local JSON/workout CSV export and encrypted account-linked Firebase backup for reinstall recovery.
@@ -86,7 +86,7 @@ The main implementation boundaries are documented in [ARCHITECTURE.md](ARCHITECT
 
 The main lifting loop is implemented end to end and the app is in an active quality and acceptance phase. The current focus is physical-device validation across Light and Dark appearance, large Dynamic Type, VoiceOver, Reduce Motion, Reduce Transparency, Firebase restore, and the most performance-sensitive workout routes.
 
-The latest serial validation on 12 August 2026 passed 151 unit tests and measured Today-to-Coach at 132 ms, Coach-to-Preview at 191 ms, and the warmed root transition in that route flow at 201 ms, with two Preview warm-cache hits and zero mounted Preview refreshes. Repeated cold first-load root-tab runs remain variable at 302–405 ms against the 300 ms target, so the canonical performance gate is not yet fully green. These figures are a dated engineering baseline, not a promise that every device will produce the same timing.
+The 17 August 2026 Sleep validation passed the Debug build, 13 focused Sleep tests, all 11 dedicated Sleep UI tests, and all 159 unit/reliability tests inside the canonical verifier. The focused route flow measured Today-to-Coach at 136 ms, Coach-to-Preview at 195 ms, and a warmed root transition at 248 ms, with two Preview warm-cache hits and zero mounted Preview refreshes. The canonical performance gate is not fully green because its cold run measured Workout 373 ms, History 304 ms, and Settings 396 ms against the unchanged 300 ms target; a serial retry still measured Workout 329 ms and Settings 330 ms. These figures are a dated engineering baseline, not a promise that every device will produce the same timing.
 
 ## Run locally
 

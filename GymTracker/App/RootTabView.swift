@@ -8,6 +8,8 @@ struct RootTabView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
+    @ObservedObject private var sleepDeepLinkRouter = SleepDeepLinkRouter.shared
+    @ObservedObject private var readinessRefreshClock = ReadinessRefreshClock.shared
 
     @Query
     private var sleepSessions: [SleepSession]
@@ -36,6 +38,7 @@ struct RootTabView: View {
     @State private var tabSelectionState = RootTabSelectionState(selectedTab: .launchArgumentSelection)
     @State private var sleepSettings = SleepSettingsStore().load()
     @State private var sleepDestination: SleepNotificationDestination?
+    @State private var didStartRootTabPrewarm = false
     @State private var didStartDeferredServices = false
     @State private var sleepNotificationRefreshTask: Task<Void, Never>?
     @State private var cachedSleepNotificationRefreshInputs: SleepNotificationRefreshInputs?
@@ -43,12 +46,17 @@ struct RootTabView: View {
     @State private var queuedSleepNotificationRefreshSignature: String?
     @State private var lastSleepNotificationRefreshAt: Date?
     @State private var fullAppBackupTask: Task<Void, Never>?
-    @State private var previewWarmRefreshTask: Task<Void, Never>?
     @State private var lastPreviewWarmSourceSignature: String?
-    @State private var previewWarmRetryCount = 0
+    @State private var lastOverallReadinessSourceSignature: String?
+    // Keep this coordination flag outside SwiftUI's observation graph. A tab
+    // selection must cancel/suppress warm work without invalidating the root
+    // view and reevaluating every root query signature on the measured path.
+    @State private var rootTabTransitionGate = RootTabTransitionGate()
     @State private var isWorkoutCompletionPresentationActive = false
 
     private let sleepSettingsStore = SleepSettingsStore()
+    private let hydrationSettingsStore = HydrationSettingsStore()
+    private let nutritionGoalService = NutritionGoalService()
     private let backupCoordinator = BackupCoordinator()
     private let startupSnapshot: StartupSnapshotBundle
     private let startupRevealComplete: Bool
@@ -87,7 +95,12 @@ struct RootTabView: View {
     }
 
     private static var previewSplitsDescriptor: FetchDescriptor<TrainingSplit> {
-        FetchDescriptor<TrainingSplit>(sortBy: [SortDescriptor(\.updatedAt, order: .reverse)])
+        var descriptor = FetchDescriptor<TrainingSplit>(
+            predicate: #Predicate<TrainingSplit> { $0.isActive },
+            sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 12
+        return descriptor
     }
 
     private static var previewExercisesDescriptor: FetchDescriptor<Exercise> {
@@ -134,18 +147,16 @@ struct RootTabView: View {
     var body: some View {
         RootTabContainer(
             startupSnapshot: startupSnapshot,
-            selectionState: tabSelectionState
+            selectionState: tabSelectionState,
+            onTabSelectionStarted: rootTabSelectionStarted,
+            onTabSelectionSettled: rootTabSelectionSettled
         )
         .tint(appTheme.colors.accent)
         .sheet(item: $sleepDestination) { destination in
             sleepDestinationView(destination)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .sleepNotificationTapped)) { notification in
-            PerformanceTracer.mark(.appLifecycle, "sleepNotificationTapped begin")
-            sleepSettings = sleepSettingsStore.load()
-            tabSelectionState.selectedTab = .today
-            sleepDestination = notification.object as? SleepNotificationDestination ?? .sleepDashboard
-            PerformanceTracer.mark(.appLifecycle, "sleepNotificationTapped end")
+        .onChange(of: sleepDeepLinkRouter.pendingRequest) { _, request in
+            presentSleepDeepLinkIfReady(request)
         }
         .onReceive(NotificationCenter.default.publisher(for: .appWillResignActiveForCleanup)) { _ in
             PerformanceTracer.mark(.appLifecycle, "willResignActive cleanup observed")
@@ -155,8 +166,8 @@ struct RootTabView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .workoutCompletionPresentationBegan)) { _ in
             isWorkoutCompletionPresentationActive = true
-            previewWarmRefreshTask?.cancel()
-            previewWarmRefreshTask = nil
+            rootTabTransitionGate.previewWarmRefreshTask?.cancel()
+            rootTabTransitionGate.previewWarmRefreshTask = nil
             PerformanceTracer.mark(.workoutLoggerFinish, "root_warm_refresh_suspended")
         }
         .onReceive(NotificationCenter.default.publisher(for: .workoutCompletionPresentationEnded)) { _ in
@@ -171,6 +182,7 @@ struct RootTabView: View {
                 sleepSettings = refreshedSettings
             }
             refreshCachedSleepNotificationInputs(reason: "user_defaults_changed")
+            refreshOverallReadinessIfNeeded(reason: "user_defaults_changed")
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard startupRevealComplete else { return }
@@ -178,7 +190,7 @@ struct RootTabView: View {
             switch newPhase {
             case .background:
                 PerformanceTracer.mark(.appLifecycle, "background before notification refresh")
-                refreshSleepNotifications(source: .sceneBackground, updateMainStateAfterAwait: false)
+                refreshSleepNotifications(source: .sceneBackground)
                 refreshFullAppBackup(reason: "scene_background")
                 PerformanceTracer.mark(.appLifecycle, "background after notification refresh request")
             case .inactive:
@@ -197,6 +209,7 @@ struct RootTabView: View {
             sleepSettingsStore.save(newValue)
             PerformanceTracer.mark(.appLifecycle, "sleepSettings changed save end")
             refreshCachedSleepNotificationInputs(reason: "sleep_settings_changed")
+            refreshOverallReadinessIfNeeded(reason: "sleep_settings_changed")
         }
         .onChange(of: sleepNotificationRefreshSourceSignature) { _, _ in
             guard startupRevealComplete else { return }
@@ -204,25 +217,57 @@ struct RootTabView: View {
         }
         .onChange(of: previewWarmSourceSignature) { _, newSignature in
             guard startupRevealComplete else { return }
+            WorkoutPreviewWarmStartStore.shared.invalidateStaleSnapshots(
+                reason: "root_preview_source_changed"
+            )
             schedulePreviewWarmRefresh(for: newSignature)
+            refreshOverallReadinessIfNeeded(reason: "workout_source_changed")
         }
         .onChange(of: coachModifierSourceSignature) { _, _ in
             guard startupRevealComplete else { return }
-            // Modifier-only changes do not require history, saved-food, and workout
-            // preview caches to be rebuilt. The coach route will refresh its own
-            // bounded live queries when it is next opened.
+            WorkoutPreviewWarmStartStore.shared.invalidateStaleSnapshots(
+                reason: "root_coach_inputs_changed"
+            )
+            // Modifier-only changes do not require history or saved-food caches
+            // to be rebuilt. Preview generations are invalidated above because
+            // their embedded intelligence can depend on these inputs; the Coach
+            // route refreshes its own bounded live queries when next opened.
             CoachRouteSnapshotStore.shared.invalidate(source: "root_modifier_change")
+            refreshOverallReadinessIfNeeded(reason: "coach_inputs_changed")
+        }
+        .onChange(of: workoutWarmStartInvalidation.revision) { _, _ in
+            guard startupRevealComplete else { return }
+            refreshOverallReadinessIfNeeded(reason: "workout_revision_changed")
+        }
+        .onChange(of: readinessRefreshClock.token) { _, _ in
+            guard startupRevealComplete else { return }
+            refreshOverallReadinessIfNeeded(reason: "readiness_boundary_changed")
         }
         .onChange(of: startupRevealComplete) { _, isComplete in
             guard isComplete else { return }
             startDeferredServicesIfNeeded()
+            refreshOverallReadinessIfNeeded(reason: "startup_reveal_complete")
+            presentSleepDeepLinkIfReady(sleepDeepLinkRouter.pendingRequest)
         }
         .onAppear {
+            startRootTabPrewarmIfNeeded()
             startDeferredServicesIfNeeded()
+            readinessRefreshClock.start()
+            presentSleepDeepLinkIfReady(sleepDeepLinkRouter.pendingRequest)
         }
         .onDisappear {
             PerformanceTracer.mark(.appLifecycle, "root onDisappear no_task_cancel")
         }
+    }
+
+    private func presentSleepDeepLinkIfReady(_ request: SleepDeepLinkRouter.Request?) {
+        guard startupRevealComplete, let request else { return }
+        PerformanceTracer.mark(.appLifecycle, "sleep_deep_link present begin destination=\(request.destination.id)")
+        sleepSettings = sleepSettingsStore.load()
+        tabSelectionState.selectedTab = .today
+        sleepDestination = request.destination
+        sleepDeepLinkRouter.consume(request)
+        PerformanceTracer.mark(.appLifecycle, "sleep_deep_link present end destination=\(request.destination.id)")
     }
 
     private func startDeferredServicesIfNeeded() {
@@ -235,6 +280,28 @@ struct RootTabView: View {
         refreshSleepNotifications(deferred: true, source: .launchDeferred)
         lastPreviewWarmSourceSignature = previewWarmSourceSignature
         PerformanceTracer.mark(.appLifecycle, "root deferred services end")
+    }
+
+    /// Root is inserted while the startup splash still owns hit testing. Warm the
+    /// small scalar projections used by Today/Workout while the startup
+    /// splash owns hit testing. The workout-generation token is intentional: it
+    /// keeps this hidden pass from traversing every exercise/set relationship on
+    /// the root interaction path.
+    private func startRootTabPrewarmIfNeeded() {
+        guard !didStartRootTabPrewarm, !startupRevealComplete else { return }
+        didStartRootTabPrewarm = true
+
+        PerformanceTracer.mark(.appLifecycle, "root tab prewarm begin")
+        _ = SleepAnalyticsInputSignature(
+            sessions: sleepSessions,
+            naps: naps,
+            workouts: workouts,
+            settings: sleepSettings,
+            sessionLimit: 60,
+            workoutLimit: 40,
+            workoutRevision: workoutWarmStartInvalidation.revision
+        )
+        PerformanceTracer.mark(.appLifecycle, "root tab prewarm end")
     }
 
     private var previewWarmSourceSignature: String {
@@ -266,54 +333,157 @@ struct RootTabView: View {
         ].joined(separator: "|")
     }
 
+    private func refreshOverallReadinessIfNeeded(reason: String) {
+        guard startupRevealComplete else { return }
+        guard !rootTabTransitionGate.isActive else {
+            rootTabTransitionGate.overallReadinessRefreshPending = true
+            PerformanceTracer.mark(.appLifecycle, "readiness refresh deferred reason=\(reason)")
+            return
+        }
+
+        // The reveal callback can load a newer UserDefaults value into State
+        // immediately before this function runs. Read the store here as well
+        // so the handoff cannot validate against the pre-splash value while
+        // SwiftUI is still committing that State mutation.
+        let currentSleepSettings = sleepSettingsStore.load()
+        if currentSleepSettings != sleepSettings {
+            sleepSettings = currentSleepSettings
+        }
+        let hydrationTargetML = hydrationSettingsStore.dailyTargetML()
+        let nutritionGoal = nutritionGoalService.loadGoal()
+        let inputSignature = OverallReadinessInputSignature.make(
+            sleepSessions: sleepSessions,
+            napSessions: naps,
+            completedWorkouts: workouts,
+            hydrationEntries: hydrationEntries,
+            foodLogs: foodLogs,
+            checkIns: checkIns,
+            sleepSettings: currentSleepSettings,
+            hydrationTargetML: hydrationTargetML,
+            nutritionGoal: nutritionGoal,
+            workoutRevision: workoutWarmStartInvalidation.revision,
+            dayStart: readinessRefreshClock.token.dayStart,
+            hydrationPhase: readinessRefreshClock.token.hydrationPhase
+        )
+        let signature = [
+            inputSignature,
+            "readinessGeneration:\(readinessRefreshClock.token.generation)"
+        ].joined(separator: "|")
+        guard signature != lastOverallReadinessSourceSignature else { return }
+
+        // Startup already computed and published this readiness generation
+        // before the root becomes interactive. Reuse that immutable value on
+        // the first root refresh instead of traversing all live SwiftData
+        // inputs again during the first cold tab transition.
+        if reason == "startup_reveal_complete",
+           lastOverallReadinessSourceSignature == nil,
+           startupSnapshot.overallReadinessInputSignature == inputSignature {
+            let startupReadiness = startupSnapshot.coachSnapshot.readiness
+            if OverallReadinessSnapshotStore.shared.snapshot.revision == 0 {
+                OverallReadinessSnapshotStore.shared.update(
+                    readiness: startupReadiness,
+                    sourceSignature: signature
+                )
+            }
+            lastOverallReadinessSourceSignature = signature
+            PerformanceTracer.mark(
+                .appLifecycle,
+                "readiness reused startup snapshot reason=\(reason) provisional=\(startupReadiness.isProvisional)"
+            )
+            return
+        }
+
+        let readiness = CoachIntelligenceService().readiness(
+            sleepSessions: sleepSessions,
+            napSessions: naps,
+            hydrationEntries: hydrationEntries,
+            completedWorkouts: workouts,
+            foodLogs: foodLogs,
+            checkIns: checkIns,
+            sleepSettings: currentSleepSettings,
+            hydrationTargetML: hydrationTargetML,
+            nutritionGoal: nutritionGoal
+        )
+        OverallReadinessSnapshotStore.shared.update(
+            readiness: readiness,
+            sourceSignature: signature
+        )
+        lastOverallReadinessSourceSignature = signature
+        PerformanceTracer.mark(.appLifecycle, "readiness refreshed reason=\(reason) provisional=\(readiness.isProvisional)")
+    }
+
     private func schedulePreviewWarmRefresh(for signature: String) {
         guard signature != lastPreviewWarmSourceSignature else { return }
+        guard startupRevealComplete else {
+            PerformanceTracer.mark(.workoutPreviewWarmCache, "root_refresh_deferred_until_reveal")
+            return
+        }
+        guard !rootTabTransitionGate.isActive else {
+            PerformanceTracer.mark(.workoutPreviewWarmCache, "root_refresh_deferred_for_tab_transition")
+            return
+        }
         guard !isWorkoutCompletionPresentationActive else {
             PerformanceTracer.mark(.workoutLoggerFinish, "root_warm_refresh_deferred")
             return
         }
-        previewWarmRefreshTask?.cancel()
-        previewWarmRefreshTask = Task { @MainActor in
+        rootTabTransitionGate.previewWarmRefreshTask?.cancel()
+        let requestedWorkoutRevision = workoutWarmStartInvalidation.revision
+        // Root refreshes must stay value-only. The startup bundle is already a
+        // coherent snapshot; never re-enter the broad SwiftData projection
+        // builder from a delayed root task, because tab selection can contend
+        // with that main-actor work. A changed source is rebuilt by the owning
+        // route when it becomes visible.
+        let warmPayload = RootWarmRefreshPayload(
+            sourceSignature: startupSnapshot.sourceSignature,
+            trainingCall: startupSnapshot.trainingCall,
+            previewWarmSnapshots: startupSnapshot.previewWarmSnapshots,
+            savedFoodCatalogSnapshot: startupSnapshot.savedFoodCatalogSnapshot
+        )
+        rootTabTransitionGate.previewWarmRefreshTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(180))
             guard !Task.isCancelled,
+                  startupRevealComplete,
+                  !rootTabTransitionGate.isActive,
                   !isWorkoutCompletionPresentationActive,
+                  requestedWorkoutRevision == workoutWarmStartInvalidation.revision,
                   signature == previewWarmSourceSignature else { return }
 
-            do {
-                let snapshot = try await StartupSnapshotBuilder.make(in: modelContext)
-                guard !Task.isCancelled,
-                      signature == previewWarmSourceSignature else { return }
-
-                WorkoutDashboardWarmStartStore.shared.update(
-                    trainingCall: snapshot.trainingCall,
-                    sourceSignature: snapshot.sourceSignature
-                )
-                CoachRouteSnapshotStore.shared.update(
-                    snapshot: snapshot.coachRouteSnapshot,
-                    signature: snapshot.sourceSignature,
-                    source: "root_preload"
-                )
-                WorkoutPreviewWarmStartStore.shared.replaceActiveSnapshots(
-                    snapshot.previewWarmSnapshots
-                )
-                SavedFoodWarmStartStore.shared.update(snapshot.savedFoodCatalogSnapshot)
+            // Do not publish a startup generation after any source change. This
+            // guard makes the bounded fallback stale-safe; the route's live
+            // preparation remains responsible for producing a new generation.
+            guard warmPayload.sourceSignature == signature else {
+                PerformanceTracer.mark(.workoutPreviewWarmCache, "root_refresh_skip_stale_value_payload")
                 lastPreviewWarmSourceSignature = signature
-                previewWarmRetryCount = 0
-            } catch {
-                PerformanceTracer.mark(
-                    .workoutPreviewWarmCache,
-                    "root_refresh_failed error=\(error.localizedDescription)"
-                )
-                guard previewWarmRetryCount < 2 else { return }
-                previewWarmRetryCount += 1
-                Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(previewWarmRetryCount))
-                    guard !Task.isCancelled,
-                          signature == previewWarmSourceSignature else { return }
-                    schedulePreviewWarmRefresh(for: signature)
-                }
+                return
             }
+
+            guard !Task.isCancelled else { return }
+            WorkoutDashboardWarmStartStore.shared.update(
+                trainingCall: warmPayload.trainingCall,
+                sourceSignature: warmPayload.sourceSignature
+            )
+            WorkoutPreviewWarmStartStore.shared.replaceActiveSnapshots(
+                warmPayload.previewWarmSnapshots
+            )
+            SavedFoodWarmStartStore.shared.update(warmPayload.savedFoodCatalogSnapshot)
+            lastPreviewWarmSourceSignature = signature
         }
+    }
+
+    private func rootTabSelectionStarted() {
+        rootTabTransitionGate.isActive = true
+        rootTabTransitionGate.previewWarmRefreshTask?.cancel()
+        rootTabTransitionGate.previewWarmRefreshTask = nil
+        PerformanceTracer.mark(.workoutPreviewWarmCache, "root_refresh_cancelled_for_tab_transition")
+    }
+
+    private func rootTabSelectionSettled() {
+        rootTabTransitionGate.isActive = false
+        if rootTabTransitionGate.overallReadinessRefreshPending {
+            rootTabTransitionGate.overallReadinessRefreshPending = false
+            refreshOverallReadinessIfNeeded(reason: "tab_transition_settled")
+        }
+        schedulePreviewWarmRefresh(for: previewWarmSourceSignature)
     }
 
     @ViewBuilder
@@ -322,7 +492,7 @@ struct RootTabView: View {
         case .sleepMode:
             SleepModeView(settings: $sleepSettings)
         case .wakeConfirmation(let sessionID):
-            if let session = sleepSessions.first(where: { $0.id == sessionID }) {
+            if let session = sleepSession(withID: sessionID) {
                 SleepMorningConfirmationView(session: session)
             } else {
                 NavigationStack {
@@ -342,6 +512,14 @@ struct RootTabView: View {
                 )
             }
         }
+    }
+
+    private func sleepSession(withID sessionID: UUID) -> SleepSession? {
+        var descriptor = FetchDescriptor<SleepSession>(
+            predicate: #Predicate<SleepSession> { $0.id == sessionID }
+        )
+        descriptor.fetchLimit = 1
+        return try? modelContext.fetch(descriptor).first
     }
 
     private func refreshFullAppBackup(reason: String) {
@@ -370,10 +548,9 @@ struct RootTabView: View {
 
     private func refreshSleepNotifications(
         deferred: Bool = false,
-        source: SleepNotificationRefreshSource = .manual,
-        updateMainStateAfterAwait: Bool = true
+        source: SleepNotificationRefreshSource = .manual
     ) {
-        PerformanceTracer.mark(.appLifecycle, "notification refresh request source=\(source.rawValue) deferred=\(deferred) updateMainStateAfterAwait=\(updateMainStateAfterAwait)")
+        PerformanceTracer.mark(.appLifecycle, "notification refresh request source=\(source.rawValue) deferred=\(deferred)")
         PerformanceTracer.trace(.rootNotificationRefresh) {
             let inputs: SleepNotificationRefreshInputs
             if source == .sceneBackground {
@@ -417,21 +594,11 @@ struct RootTabView: View {
                 inputs: inputs
             )
 
-            if updateMainStateAfterAwait {
-                sleepNotificationRefreshTask = Task(priority: .utility) {
-                    await job.run()
-                    guard !Task.isCancelled else { return }
-                    await MainActor.run {
-                        applySleepNotificationRefreshCompletion(signature: inputs.signature)
-                    }
-                }
-            } else {
-                sleepNotificationRefreshTask = Task(priority: .utility) {
-                    await job.run()
-                    guard !Task.isCancelled else { return }
-                    await MainActor.run {
-                        applySleepNotificationRefreshCompletion(signature: inputs.signature)
-                    }
+            sleepNotificationRefreshTask = Task(priority: .utility) {
+                await job.run()
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    applySleepNotificationRefreshCompletion(signature: inputs.signature)
                 }
             }
         }
@@ -530,6 +697,14 @@ struct RootTabView: View {
     }
 }
 
+/// A deliberately non-observable coordination object. Mutating the gate must
+/// not invalidate RootTabView while a native tab transition is being measured.
+private final class RootTabTransitionGate {
+    var isActive = false
+    var previewWarmRefreshTask: Task<Void, Never>?
+    var overallReadinessRefreshPending = false
+}
+
 private enum SleepNotificationRefreshSource: String, Sendable {
     case launchDeferred
     case sceneBackground
@@ -541,6 +716,13 @@ private struct SleepNotificationRefreshInputs: Sendable {
     let sessions: [SleepNotificationSessionSnapshot]
     let workouts: [SleepNotificationWorkoutSnapshot]
     let signature: String
+}
+
+private struct RootWarmRefreshPayload: Sendable {
+    let sourceSignature: String
+    let trainingCall: TrainingCallSnapshot
+    let previewWarmSnapshots: [WorkoutPreviewWarmSnapshot]
+    let savedFoodCatalogSnapshot: SavedFoodCatalogSnapshot
 }
 
 private struct SleepNotificationRefreshJob: Sendable {
@@ -600,6 +782,8 @@ private final class RootTabSelectionState {
 private struct RootTabContainer: View {
     let startupSnapshot: StartupSnapshotBundle
     @Bindable var selectionState: RootTabSelectionState
+    let onTabSelectionStarted: () -> Void
+    let onTabSelectionSettled: () -> Void
 
     @State private var pendingTab: RootTab?
     @State private var pendingSelectionStartedAt: Date?
@@ -614,7 +798,12 @@ private struct RootTabContainer: View {
                 .tag(RootTab.today)
                 .accessibilityIdentifier("tab-today")
 
-            StartWorkoutView()
+            StartWorkoutView(
+                initialReadinessSnapshot: startupSnapshot.workoutSleepReadinessSnapshot,
+                initialReadinessSignature: startupSnapshot.sleepReadinessInputSignature,
+                initialFirstFrameSnapshot: startupSnapshot.workoutFirstFrameSnapshot,
+                initialOverallReadinessIsProvisional: startupSnapshot.coachSnapshot.readiness.isProvisional
+            )
                 .onAppear { scheduleStableFrame(for: .workout) }
                 .tabItem {
                     Label("Workout", systemImage: "figure.strengthtraining.traditional")
@@ -622,7 +811,7 @@ private struct RootTabContainer: View {
                 .tag(RootTab.workout)
                 .accessibilityIdentifier("tab-workout")
 
-            SplitsView()
+            DeferredSplitsTabHost()
                 .onAppear { scheduleStableFrame(for: .splits) }
                 .tabItem {
                     Label("Splits", systemImage: "list.bullet.rectangle")
@@ -655,13 +844,19 @@ private struct RootTabContainer: View {
             guard selectionState.selectedTab != newTab else { return }
             pendingTab = newTab
             pendingSelectionStartedAt = .now
+            onTabSelectionStarted()
             PerformanceTracer.mark(.motionTabSelect, "requested tab=\(newTab.rawValue)")
             PerformanceTracer.trace(.motionTabSelect) {
                 AppMotion.withoutAnimation {
                     selectionState.selectedTab = newTab
                 }
             }
-            AppHaptics.selection()
+#if !targetEnvironment(simulator)
+            Task { @MainActor in
+                await Task.yield()
+                AppHaptics.selection()
+            }
+#endif
         }
     }
 
@@ -675,6 +870,7 @@ private struct RootTabContainer: View {
             .motionTabSelect,
             "stable_frame tab=\(tab.rawValue) elapsed_ms=\(elapsedMilliseconds)"
         )
+        onTabSelectionSettled()
         pendingTab = nil
         self.pendingSelectionStartedAt = nil
     }
@@ -683,9 +879,54 @@ private struct RootTabContainer: View {
         Task { @MainActor in
             // `onAppear` can run before the replacement hierarchy is committed.
             // Yield past the insertion turn before recording the visible frame.
-            try? await Task.sleep(for: .milliseconds(1))
+            await Task.yield()
             guard !Task.isCancelled else { return }
             markStableFrame(for: tab)
+        }
+    }
+}
+
+/// Keeps the native Splits tab's first frame lightweight. The tab still owns
+/// the real `SplitsView` and its navigation routes; only its relationship-heavy
+/// construction is moved past the root tab's stable-frame turn.
+private struct DeferredSplitsTabHost: View {
+    @State private var isSplitsMounted = false
+    @State private var mountTask: Task<Void, Never>?
+
+    var body: some View {
+        Group {
+            if isSplitsMounted {
+                SplitsView()
+            } else {
+                NavigationStack {
+                    FitnessScreen {
+                        SwiftUI.ProgressView("Loading splits…")
+                            .frame(maxWidth: .infinity, minHeight: 180)
+                            .accessibilityIdentifier("splits-loading")
+                    }
+                    .accessibilityIdentifier("splits-screen")
+                    .navigationTitle("Splits")
+                    .navigationBarTitleDisplayMode(.inline)
+                }
+            }
+        }
+        .onAppear {
+            mountTask?.cancel()
+            mountTask = Task { @MainActor in
+                // RootTabContainer records its stable frame after one yield.
+                // Use a second turn so Splits' live queries cannot participate
+                // in that measurement.
+                await Task.yield()
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                isSplitsMounted = true
+                mountTask = nil
+            }
+        }
+        .onDisappear {
+            mountTask?.cancel()
+            mountTask = nil
+            isSplitsMounted = false
         }
     }
 }

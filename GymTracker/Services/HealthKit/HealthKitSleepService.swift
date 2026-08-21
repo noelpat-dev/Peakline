@@ -5,7 +5,230 @@ import SwiftData
 import HealthKit
 #endif
 
+enum HealthKitSleepAccessState: String, Codable, Equatable, Sendable {
+    case unavailable
+    case notDetermined
+    case denied
+    case restricted
+    case enabledUnverified
+    case authorized
+
+    var displayName: String {
+        switch self {
+        case .unavailable:
+            return "Unavailable"
+        case .notDetermined:
+            return "Not requested"
+        case .denied:
+            return "Permission denied"
+        case .restricted:
+            return "Restricted"
+        case .enabledUnverified:
+            return "Enabled · read access unverified"
+        case .authorized:
+            return "Authorized"
+        }
+    }
+}
+
+enum HealthKitSleepWriteAuthorization: String, Codable, Equatable, Sendable {
+    case notDetermined
+    case denied
+    case restricted
+    case authorized
+}
+
+struct HealthKitSleepAccessInput: Equatable, Sendable {
+    let isAvailable: Bool
+    let readEnabled: Bool
+    let writeEnabled: Bool
+    let authorizationWasRequested: Bool
+    let writeAuthorization: HealthKitSleepWriteAuthorization
+
+    init(
+        isAvailable: Bool,
+        readEnabled: Bool,
+        writeEnabled: Bool,
+        authorizationWasRequested: Bool,
+        writeAuthorization: HealthKitSleepWriteAuthorization = .notDetermined
+    ) {
+        self.isAvailable = isAvailable
+        self.readEnabled = readEnabled
+        self.writeEnabled = writeEnabled
+        self.authorizationWasRequested = authorizationWasRequested
+        self.writeAuthorization = writeAuthorization
+    }
+}
+
+struct HealthKitSleepAccessSnapshot: Equatable, Sendable {
+    let overall: HealthKitSleepAccessState
+    let read: HealthKitSleepAccessState
+    let write: HealthKitSleepAccessState
+    let readEnabled: Bool
+    let writeEnabled: Bool
+    let authorizationWasRequested: Bool
+
+    var displayName: String {
+        overall.displayName
+    }
+}
+
+enum HealthKitSleepAccessResolver {
+    /// Resolves the status that can be known without claiming HealthKit read
+    /// authorization. HealthKit intentionally does not expose the user's read
+    /// decision, so an enabled read request becomes `enabledUnverified` after
+    /// the authorization sheet completes.
+    static func resolve(_ input: HealthKitSleepAccessInput) -> HealthKitSleepAccessSnapshot {
+        guard input.isAvailable else {
+            return HealthKitSleepAccessSnapshot(
+                overall: .unavailable,
+                read: .unavailable,
+                write: .unavailable,
+                readEnabled: input.readEnabled,
+                writeEnabled: input.writeEnabled,
+                authorizationWasRequested: input.authorizationWasRequested
+            )
+        }
+
+        let read: HealthKitSleepAccessState
+        if !input.readEnabled {
+            read = .notDetermined
+        } else if !input.authorizationWasRequested {
+            read = .notDetermined
+        } else {
+            read = .enabledUnverified
+        }
+
+        let write: HealthKitSleepAccessState
+        if !input.writeEnabled {
+            write = .notDetermined
+        } else if !input.authorizationWasRequested {
+            write = .notDetermined
+        } else {
+            switch input.writeAuthorization {
+            case .notDetermined:
+                write = .notDetermined
+            case .denied:
+                write = .denied
+            case .restricted:
+                write = .restricted
+            case .authorized:
+                write = .authorized
+            }
+        }
+
+        let overall: HealthKitSleepAccessState
+        if write == .restricted {
+            overall = .restricted
+        } else if write == .denied {
+            overall = .denied
+        } else if input.readEnabled && input.authorizationWasRequested {
+            overall = .enabledUnverified
+        } else if input.writeEnabled && write == .authorized {
+            overall = .authorized
+        } else {
+            overall = .notDetermined
+        }
+
+        return HealthKitSleepAccessSnapshot(
+            overall: overall,
+            read: read,
+            write: write,
+            readEnabled: input.readEnabled,
+            writeEnabled: input.writeEnabled,
+            authorizationWasRequested: input.authorizationWasRequested
+        )
+    }
+}
+
+enum HealthKitSleepImportError: Error, LocalizedError, Equatable, Sendable {
+    case unavailable
+    case authorizationDenied
+    case restricted
+    case readFailed(String)
+    case unknown(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .unavailable:
+            return "Apple Health is not available on this device."
+        case .authorizationDenied:
+            return "Apple Health sleep read access was denied."
+        case .restricted:
+            return "Apple Health sleep access is restricted on this device."
+        case .readFailed(let message):
+            return "Apple Health sleep read failed. \(message)"
+        case .unknown(let message):
+            return message
+        }
+    }
+}
+
+enum HealthKitSleepImportResult: Equatable, Sendable {
+    case unavailable
+    case notRequested
+    case denied
+    case restricted
+    case importing
+    case noNewData(lastSyncedAt: Date?)
+    case imported(candidates: [HealthKitSleepImportCandidate], lastSyncedAt: Date?)
+    case error(HealthKitSleepImportError)
+
+    var importedCount: Int {
+        guard case .imported(let candidates, _) = self else { return 0 }
+        return candidates.count
+    }
+
+    var error: HealthKitSleepImportError? {
+        guard case .error(let error) = self else { return nil }
+        return error
+    }
+}
+
+enum HealthKitSleepImportPresentation: Equatable, Sendable {
+    case idle
+    case importing
+    case unavailable
+    case notRequested
+    case denied
+    case restricted
+    case lastSynced(Date)
+    case noNewData(lastSyncedAt: Date?)
+    case imported(count: Int, lastSyncedAt: Date?)
+    case error(String)
+
+    static func make(
+        result: HealthKitSleepImportResult,
+        lastSyncedAt: Date? = nil
+    ) -> HealthKitSleepImportPresentation {
+        switch result {
+        case .unavailable:
+            return .unavailable
+        case .notRequested:
+            return .notRequested
+        case .denied:
+            return .denied
+        case .restricted:
+            return .restricted
+        case .importing:
+            return .importing
+        case .noNewData(let resultLastSyncedAt):
+            return .noNewData(lastSyncedAt: resultLastSyncedAt ?? lastSyncedAt)
+        case .imported(let candidates, let resultLastSyncedAt):
+            return .imported(count: candidates.count, lastSyncedAt: resultLastSyncedAt ?? lastSyncedAt)
+        case .error(let error):
+            return .error(error.localizedDescription)
+        }
+    }
+}
+
 struct HealthKitSleepService {
+    /// Sleep-stage records are normally sparse (roughly one record every few
+    /// minutes), but HealthKit can contain overlapping sources. Keep the
+    /// optional import bounded even when a caller supplies a wide date range;
+    /// a partial result still groups into the best available sleep candidates.
+    static let sleepSampleQueryLimit = 10_000
+
     var isAvailable: Bool {
         #if canImport(HealthKit)
         HKHealthStore.isHealthDataAvailable()
@@ -18,15 +241,18 @@ struct HealthKitSleepService {
     private let healthStore = HKHealthStore()
     #endif
 
-    func requestReadAuthorization() async throws {
+    @discardableResult
+    func requestReadAuthorization() async throws -> HealthKitSleepAccessSnapshot {
         try await requestAuthorization(read: true, write: false)
     }
 
-    func requestWriteAuthorization() async throws {
+    @discardableResult
+    func requestWriteAuthorization() async throws -> HealthKitSleepAccessSnapshot {
         try await requestAuthorization(read: false, write: true)
     }
 
-    func requestAuthorization(read: Bool, write: Bool) async throws {
+    @discardableResult
+    func requestAuthorization(read: Bool, write: Bool) async throws -> HealthKitSleepAccessSnapshot {
         guard isAvailable else { throw HealthKitSyncError.unavailable }
 
         #if canImport(HealthKit)
@@ -48,24 +274,103 @@ struct HealthKitSleepService {
                 }
             }
         }
+
+        return accessSnapshot(
+            readEnabled: read,
+            writeEnabled: write,
+            authorizationWasRequested: true
+        )
         #else
         throw HealthKitSyncError.unavailable
         #endif
     }
 
-    func importRecentSleepCandidates(days: Int, existing: HealthKitSleepImportExistingSnapshot) async -> [HealthKitSleepImportCandidate] {
+    func accessSnapshot(
+        readEnabled: Bool,
+        writeEnabled: Bool,
+        authorizationWasRequested: Bool = false
+    ) -> HealthKitSleepAccessSnapshot {
+        let writeAuthorization: HealthKitSleepWriteAuthorization
+        #if canImport(HealthKit)
+        if writeEnabled && authorizationWasRequested,
+           let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) {
+            switch healthStore.authorizationStatus(for: sleepType) {
+            case .sharingAuthorized:
+                writeAuthorization = .authorized
+            case .sharingDenied:
+                writeAuthorization = .denied
+            case .notDetermined:
+                writeAuthorization = .notDetermined
+            @unknown default:
+                writeAuthorization = .restricted
+            }
+        } else {
+            writeAuthorization = .notDetermined
+        }
+        #else
+        writeAuthorization = .notDetermined
+        #endif
+
+        return HealthKitSleepAccessResolver.resolve(
+            HealthKitSleepAccessInput(
+                isAvailable: isAvailable,
+                readEnabled: readEnabled,
+                writeEnabled: writeEnabled,
+                authorizationWasRequested: authorizationWasRequested,
+                writeAuthorization: writeAuthorization
+            )
+        )
+    }
+
+    /// Structured import API. The result distinguishes no data from read failure
+    /// and permission states; callers should publish `.importing` before awaiting
+    /// this operation and only record a sync timestamp for a successful result.
+    func importRecentSleepCandidatesResult(
+        days: Int,
+        existing: HealthKitSleepImportExistingSnapshot,
+        access: HealthKitSleepAccessSnapshot? = nil
+    ) async -> HealthKitSleepImportResult {
         PerformanceTracer.mark(.healthKitSleepBridge, "importRecentSleepCandidates begin days=\(days)")
-        guard isAvailable else { return [] }
+        guard isAvailable else { return .unavailable }
+
+        if let access {
+            switch access.read {
+            case .unavailable:
+                return .unavailable
+            case .notDetermined:
+                return .notRequested
+            case .denied:
+                return .denied
+            case .restricted:
+                return .restricted
+            case .enabledUnverified, .authorized:
+                break
+            }
+        }
 
         #if canImport(HealthKit)
         do {
-            let start = Calendar.current.date(byAdding: .day, value: -days, to: .now) ?? .now.addingTimeInterval(-Double(days) * 86_400)
-            let samples = try await rawSleepSamples(from: start, to: .now)
+            // Capture one reference instant for the whole query. HealthKit's
+            // default sample predicate includes intervals that overlap the
+            // query window, so a clock anomaly or an in-progress sample can
+            // otherwise produce a group whose end is still in the future.
+            let referenceNow = Date.now
+            let start = Calendar.current.date(byAdding: .day, value: -days, to: referenceNow) ?? referenceNow.addingTimeInterval(-Double(days) * 86_400)
+            let samples = try await rawSleepSamples(from: start, to: referenceNow)
             PerformanceTracer.mark(.healthKitSleepBridge, "importRecentSleepCandidates samples=\(samples.count)")
             let grouped = groupedAsleepSamples(samples)
             var candidates: [HealthKitSleepImportCandidate] = []
 
             for group in grouped {
+                guard HealthKitSleepImportCandidate.isValidImportInterval(
+                    startDate: group.start,
+                    endDate: group.end,
+                    referenceNow: referenceNow
+                ) else {
+                    PerformanceTracer.mark(.healthKitSleepBridge, "importRecentSleepCandidates skipped future interval")
+                    continue
+                }
+
                 let identifiers = group.samples.map { $0.uuid.uuidString }
                 if identifiers.contains(where: { existing.healthSampleIds.contains($0) }) {
                     continue
@@ -101,14 +406,27 @@ struct HealthKitSleepService {
             }
 
             PerformanceTracer.mark(.healthKitSleepBridge, "importRecentSleepCandidates end candidates=\(candidates.count)")
-            return candidates
+            if candidates.isEmpty {
+                return .noNewData(lastSyncedAt: nil)
+            }
+            return .imported(candidates: candidates, lastSyncedAt: nil)
         } catch {
             PerformanceTracer.mark(.healthKitSleepBridge, "importRecentSleepCandidates error=\(error.localizedDescription)")
-            return []
+            return Self.importResult(for: error)
         }
         #else
-        return []
+        return .unavailable
         #endif
+    }
+
+    /// Compatibility wrapper for the pre-result API. New callers should use
+    /// `importRecentSleepCandidatesResult` so failures cannot be mistaken for an
+    /// empty HealthKit result.
+    @available(*, deprecated, message: "Use importRecentSleepCandidatesResult(days:existing:access:)")
+    func importRecentSleepCandidates(days: Int, existing: HealthKitSleepImportExistingSnapshot) async -> [HealthKitSleepImportCandidate] {
+        let result = await importRecentSleepCandidatesResult(days: days, existing: existing)
+        guard case .imported(let candidates, _) = result else { return [] }
+        return candidates
     }
 
     func writeConfirmedSession(_ session: HealthKitSleepWriteSnapshot) async throws -> [String] {
@@ -200,6 +518,29 @@ struct HealthKitSleepService {
         return Self.summary(for: sleepDate, samples: samples, intervalStart: window.start, intervalEnd: window.end)
     }
 
+    private static func importResult(for error: Error) -> HealthKitSleepImportResult {
+        if let syncError = error as? HealthKitSyncError {
+            switch syncError {
+            case .unavailable:
+                return .unavailable
+            case .authorizationDenied:
+                return .denied
+            case .readFailed(let message):
+                return .error(.readFailed(message))
+            case .unknown(let message):
+                return .error(.unknown(message))
+            case .missingQuantityType(let name), .invalidNutritionValue(let name):
+                return .error(.unknown("Apple Health does not support \(name)."))
+            case .noSupportedValues:
+                return .error(.unknown("Apple Health returned no supported sleep values."))
+            case .saveFailed(let message), .deleteFailed(let message):
+                return .error(.unknown(message))
+            }
+        }
+
+        return .error(.unknown(error.localizedDescription))
+    }
+
     static func summary(for sleepDate: Date, samples: [HealthSleepSample], intervalStart: Date, intervalEnd: Date) -> HealthSleepSummary? {
         let relevant = samples.filter { sample in
             sample.endDate > intervalStart && sample.startDate < intervalEnd
@@ -254,7 +595,7 @@ struct HealthKitSleepService {
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
 
         return try await withCheckedThrowingContinuation { continuation in
-            let query = HKSampleQuery(sampleType: sleepType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { _, samples, error in
+            let query = HKSampleQuery(sampleType: sleepType, predicate: predicate, limit: Self.sleepSampleQueryLimit, sortDescriptors: [sort]) { _, samples, error in
                 if let error {
                     continuation.resume(throwing: HealthKitSyncError.readFailed(error.localizedDescription))
                     return
@@ -385,14 +726,12 @@ struct HealthKitSleepImportExistingSnapshot: Sendable {
 
     init(sessions: [SleepSession], naps: [NapSession]) {
         self.healthSampleIds = Set(
-            sessions.filter { $0.source == .appleHealth }.flatMap(\.healthKitSampleIds)
-            + naps.filter { $0.source == .appleHealth }.flatMap(\.healthKitSampleIds)
+            sessions.flatMap(\.healthKitSampleIds)
+            + naps.flatMap(\.healthKitSampleIds)
         )
         self.appleHealthSessions = sessions
-            .filter { $0.source == .appleHealth }
             .map { Session(startDate: $0.confirmedSleepStartAt, endDate: $0.wakeAt) }
         self.appleHealthNaps = naps
-            .filter { $0.source == .appleHealth }
             .map { Session(startDate: $0.startDate, endDate: $0.endDate) }
     }
 
@@ -405,9 +744,30 @@ struct HealthKitSleepImportExistingSnapshot: Sendable {
     }
 }
 
-enum HealthKitSleepImportCandidate: Sendable {
+enum HealthKitSleepImportCandidate: Sendable, Equatable {
     case session(startDate: Date, endDate: Date, confidence: SleepConfidence, healthKitSampleIds: [String])
     case nap(startDate: Date, endDate: Date, healthKitSampleIds: [String])
+
+    static func isValidImportInterval(
+        startDate: Date,
+        endDate: Date,
+        referenceNow: Date
+    ) -> Bool {
+        startDate <= referenceNow
+            && endDate > startDate
+            && endDate <= referenceNow
+    }
+
+    func isValidForImport(at referenceNow: Date) -> Bool {
+        switch self {
+        case let .session(startDate, endDate, _, _), let .nap(startDate, endDate, _):
+            return Self.isValidImportInterval(
+                startDate: startDate,
+                endDate: endDate,
+                referenceNow: referenceNow
+            )
+        }
+    }
 }
 
 struct HealthKitSleepWriteSnapshot: Sendable {

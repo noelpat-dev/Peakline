@@ -91,16 +91,16 @@ The UI acceptance flow covers:
 
 ## Current Baseline
 
-The latest 12 August 2026 serial validation completed a Debug test build and passed all 151 unit tests. The focused route flow passed and reported:
+The latest 17 August 2026 Sleep validation completed a Debug test build, passed 13 focused Sleep tests and all 11 dedicated Sleep UI tests, and passed all 159 unit/reliability tests inside the canonical verifier. The focused route flow passed and reported:
 
 - `performance_acceptance=PASS`
-- Today-to-Coach: 132 ms
-- Coach-to-Preview: 191 ms
-- warmed root transition in the route flow: 201 ms
+- Today-to-Coach: 136 ms
+- Coach-to-Preview: 195 ms
+- warmed root transition in the route flow: 248 ms
 - Preview warm-cache hits: 2
 - mounted Preview refreshes: 0
 
-The separate cold first-load root-tab flow is not yet green: repeated runs varied from 302–405 ms against the unchanged 300 ms target, with Settings the most consistent over-budget surface after its prepared-profile improvement. The verifier now runs both route and root-tab methods, so this cold-load regression remains visible rather than being hidden by a warmed route result.
+The separate cold first-load root-tab flow is not yet green: the canonical run measured Workout 373 ms, History 304 ms, and Settings 396 ms against the unchanged 300 ms target. A standalone serial retry improved but still failed at Workout 329 ms and Settings 330 ms. The verifier runs both route and root-tab methods, so this cold-load regression remains visible rather than being hidden by a warmed route result.
 
 Treat these aggregate values as the current healthy baseline rather than a hard promise for every machine; the enforced thresholds remain the source of truth.
 

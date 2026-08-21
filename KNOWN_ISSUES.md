@@ -45,10 +45,11 @@ Current file: `KNOWN_ISSUES.md`
 - Keep sleep tied to an overnight session ending on the evaluated day, reject future training/history records, exclude today from nutrition qualification, and retain the five-sample/28-day threshold plus ±8 cap for personal calibration. Relaxing these gates can make stale or repeated data look more certain than it is.
 - Readiness refresh is calendar- and hydration-phase-sensitive. Preserve the one cancellable boundary task and recheck Provisional coverage, `Not included` rows, immediate Check-In refresh, midnight rollover, and pacing-boundary changes during the remaining physical-device acceptance pass.
 - Do not reintroduce a multi-question readiness form. The workout mode choice remains the main lightweight user control.
+- The Sleep rehaul now prevents provisional readiness from presenting Push/Recovery permission, but any future Sleep, Today, or Coach copy change must preserve that cross-surface rule. Sleep stages remain absent unless genuine stage data exists, and Apple Health must never be labelled connected solely from an import preference.
 
 ## UI And Design System
 
-- The app-wide premium-athletic migration has simulator evidence across all five root tabs in Dark, representative Today/History/Settings surfaces in forced Light, and maximum accessibility text on Today and Settings. Repeat the full matrix on an unlocked physical device, especially deep Preview, Logger, editor, scanner, Sleep, and Hydration surfaces.
+- The app-wide premium-athletic migration has simulator evidence across all five root tabs in Dark, representative Today/History/Settings surfaces in forced Light, and maximum accessibility text on Today and Settings. The redesigned populated Sleep dashboard was visually inspected on iPhone 17 and the dedicated Sleep suite exercised maximum accessibility text, contrast, Reduce Motion, and Reduce Transparency, but the Mac UI controller was locked and no smaller simulator was installed. Repeat Sleep's no-data, active, settings, editors, timer, morning, and detail matrix manually on an unlocked smallest-supported physical iPhone in Light and Dark with VoiceOver.
 - Preserve the single-title rule: a screen should not render both a native navigation title and a duplicate `FitnessScreenHeader` title.
 - Keep row ellipsis actions anchored to the originating row. Do not reintroduce screen-level action dialogs for exercise or split row menus.
 - Keep visible measurement copy on the shared notation (`60 kg × 8`, `350 mL`, `100 g`) and use plural-aware count helpers.
@@ -74,7 +75,7 @@ Current file: `KNOWN_ISSUES.md`
 - Protect the current acceptance thresholds:
   `today.route.appear coach` under 500ms in the verifier path, `root.notification.refresh` under 50ms in the interactive path, and one Preview `refresh onAppear` per open.
 - Coach and hydrated Workout Preview are data-backed deep routes with a 500 ms navigation budget. Lightweight warm routes remain on the 300 ms budget; do not reclassify a route merely to hide a regression.
-- The 12 August serial build and 151-unit-test suite are green. The focused route flow passed at Today-to-Coach 132 ms, Coach-to-Preview 191 ms, warmed root transition 201 ms, Preview warm-cache hits 2, and mounted Preview refreshes 0. Repeated cold first-load root-tab runs still fail the unchanged 300 ms gate variably at 302–405 ms; Settings was the most consistent over-budget surface after its prepared-profile improvement. Keep the thresholds unchanged and continue reducing cold tab construction work.
+- The 17 August Sleep validation passed the Debug build, 13 focused Sleep tests, all 11 dedicated Sleep UI tests, and all 159 unit/reliability tests. The focused route flow passed at Today-to-Coach 136 ms, Coach-to-Preview 195 ms, warmed root transition 248 ms, Preview warm-cache hits 2, and mounted Preview refreshes 0. The unchanged 300 ms cold root-tab gate still fails independently of Sleep: the canonical run measured Workout 373 ms, History 304 ms, and Settings 396 ms; a serial retry measured Workout 329 ms and Settings 330 ms. Keep the threshold unchanged and treat the canonical verifier as red until cold tab construction is reduced.
 
 ## Data And Analytics
 

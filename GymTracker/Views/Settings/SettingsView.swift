@@ -15,6 +15,69 @@ struct SettingsProfileSnapshot: Sendable {
     }
 }
 
+private struct SettingsLazyScreen<Content: View>: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let content: () -> Content
+
+    init(@ViewBuilder content: @escaping () -> Content) {
+        self.content = content
+    }
+
+    var body: some View {
+        ScrollView(.vertical) {
+            LazyVStack(
+                alignment: .leading,
+                spacing: appTheme.metrics.screenContentSpacing
+            ) {
+                content()
+            }
+            .padding(appTheme.metrics.screenPadding)
+            .padding(.bottom, appTheme.metrics.screenBottomPadding)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .submitLabel(.done)
+        .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
+    }
+}
+
+/// Keeps the section's content escaping until SwiftUI asks the lazy stack to
+/// render that section. `DashboardSection` stores its builder result eagerly,
+/// which makes every Settings card construct during the first frame.
+private struct SettingsLazySection<Content: View>: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let title: String
+    let content: () -> Content
+
+    init(title: String, @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.content = content
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: appTheme.metrics.sectionSpacing) {
+            Text(title)
+                .font(AppTypography.sectionTitle)
+                .foregroundStyle(appTheme.colors.textPrimary)
+
+            content()
+        }
+    }
+}
+
+private enum SettingsSection: String, CaseIterable, Identifiable {
+    case profile
+    case trainingSetup
+    case workoutTools
+    case appearance
+    case appleHealth
+    case safety
+    case localData
+
+    var id: String { rawValue }
+}
+
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
@@ -23,6 +86,7 @@ struct SettingsView: View {
     @State private var profile: UserProfile?
     @State private var showingProfileEditor = false
     @State private var didLoadProfile = false
+    @State private var deferredSectionsVisible = false
 
     private let initialProfileSnapshot: SettingsProfileSnapshot?
 
@@ -32,8 +96,11 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack {
-            FitnessScreen {
-                DashboardSection(title: "Profile") {
+            SettingsLazyScreen {
+                ForEach(visibleSettingsSections) { section in
+                    switch section {
+                    case .profile:
+                        SettingsLazySection(title: "Profile") {
                     if let profile {
                         NavigationLink {
                             ProfileEditorView(profile: profile)
@@ -80,7 +147,8 @@ struct SettingsView: View {
                     }
                 }
 
-                DashboardSection(title: "Training Setup") {
+                    case .trainingSetup:
+                        SettingsLazySection(title: "Training Setup") {
                     FitnessCard(style: .compact, padding: 12) {
                         VStack(spacing: 0) {
                             NavigationLink {
@@ -114,7 +182,8 @@ struct SettingsView: View {
                     }
                 }
 
-                DashboardSection(title: "Workout Tools") {
+                    case .workoutTools:
+                        SettingsLazySection(title: "Workout Tools") {
                     NavigationLink {
                         PlateCalculatorView()
                     } label: {
@@ -128,7 +197,8 @@ struct SettingsView: View {
                     .accessibilityIdentifier("settings-plate-calculator")
                 }
 
-                DashboardSection(title: "Appearance") {
+                    case .appearance:
+                        SettingsLazySection(title: "Appearance") {
                     NavigationLink {
                         AppearanceSettingsView()
                     } label: {
@@ -142,7 +212,8 @@ struct SettingsView: View {
                     .accessibilityIdentifier("settings-appearance")
                 }
 
-                DashboardSection(title: "Apple Health") {
+                    case .appleHealth:
+                        SettingsLazySection(title: "Apple Health") {
                     FitnessCard(style: .compact, padding: 12) {
                         VStack(spacing: 0) {
                         NavigationLink {
@@ -164,7 +235,8 @@ struct SettingsView: View {
                     }
                 }
 
-                DashboardSection(title: "Safety") {
+                    case .safety:
+                        SettingsLazySection(title: "Safety") {
                     FitnessCard(style: .compact) {
                         HStack(alignment: .top, spacing: 12) {
                             FitnessIconBadge(
@@ -182,7 +254,8 @@ struct SettingsView: View {
                     }
                 }
 
-                DashboardSection(title: "Local Data") {
+                    case .localData:
+                        SettingsLazySection(title: "Local Data") {
                     FitnessCard(style: .compact, padding: 12) {
                         VStack(spacing: 0) {
                             NavigationLink {
@@ -225,6 +298,8 @@ struct SettingsView: View {
                             .padding(.vertical, 12)
                         }
                     }
+                        }
+                    }
                 }
 
             }
@@ -237,15 +312,31 @@ struct SettingsView: View {
                 }
             }
         }
+        .task {
+            guard !deferredSectionsVisible else { return }
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            deferredSectionsVisible = true
+        }
         .onAppear {
             guard !didLoadProfile else { return }
             didLoadProfile = true
+            guard initialProfileSnapshot == nil else { return }
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(100))
                 guard !Task.isCancelled else { return }
                 loadProfile()
             }
         }
+        .onDisappear {
+            deferredSectionsVisible = false
+        }
+    }
+
+    private var visibleSettingsSections: [SettingsSection] {
+        deferredSectionsVisible
+            ? Array(SettingsSection.allCases)
+            : [.profile]
     }
 
     private func createProfile() {

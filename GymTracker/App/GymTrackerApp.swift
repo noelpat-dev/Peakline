@@ -3,6 +3,29 @@ import SwiftUI
 import UserNotifications
 import UIKit
 
+@MainActor
+final class SleepDeepLinkRouter: ObservableObject {
+    struct Request: Identifiable, Equatable {
+        let id = UUID()
+        let destination: SleepNotificationDestination
+    }
+
+    static let shared = SleepDeepLinkRouter()
+
+    @Published private(set) var pendingRequest: Request?
+
+    private init() {}
+
+    func receive(_ destination: SleepNotificationDestination) {
+        pendingRequest = Request(destination: destination)
+    }
+
+    func consume(_ request: Request) {
+        guard pendingRequest?.id == request.id else { return }
+        pendingRequest = nil
+    }
+}
+
 final class AppNotificationDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(
         _ application: UIApplication,
@@ -22,7 +45,7 @@ final class AppNotificationDelegate: NSObject, UIApplicationDelegate, UNUserNoti
     ) async {
         guard let destination = SleepNotificationDestination(userInfo: response.notification.request.content.userInfo) else { return }
         await MainActor.run {
-            NotificationCenter.default.post(name: .sleepNotificationTapped, object: destination)
+            SleepDeepLinkRouter.shared.receive(destination)
         }
     }
 

@@ -770,6 +770,10 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
     func testPerformanceAcceptanceRootTabTransitionsRemainResponsive() throws {
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            app.descendants(matching: .any)["startup-critical-ready"].waitForExistence(timeout: 5),
+            "Expected startup-critical work to settle before measuring root tab transitions"
+        )
 
         tapTabAndAssertResponsive(at: 1, expectedTitle: "Workout")
         tapTabAndAssertResponsive(at: 2, expectedTitle: "Splits")

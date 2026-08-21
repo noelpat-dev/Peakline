@@ -50,6 +50,38 @@ enum SeedDataService {
             if ProcessInfo.processInfo.arguments.contains("-UITestPRCelebrationFixture") {
                 try seedPRCelebrationFixture(in: context, exercises: existingExercises)
             }
+
+            let sleepUITestArguments: Set<String> = [
+                "-UITestSleepUI",
+                "-UITestSleepPopulatedFixture",
+                "-UITestSleepStaleFixture",
+                "-UITestSleepActiveFixture",
+                "-UITestSleepMorningFixture",
+                "-UITestNapElapsedFixture"
+            ]
+            if !sleepUITestArguments.isDisjoint(with: ProcessInfo.processInfo.arguments) {
+                // Sleep settings live in UserDefaults rather than the in-memory
+                // SwiftData store. Reset every Sleep UI launch so a prior test
+                // cannot change the source/HealthKit state for the next launch.
+                SleepSettingsStore().save(.default)
+                UserDefaults.standard.removeObject(forKey: "sleep.healthkit.authorizationRequested.v1")
+            }
+
+            if ProcessInfo.processInfo.arguments.contains("-UITestSleepPopulatedFixture") {
+                try seedSleepPopulatedFixture(in: context)
+            }
+
+            if ProcessInfo.processInfo.arguments.contains("-UITestSleepStaleFixture") {
+                try seedSleepStaleFixture(in: context)
+            }
+
+            if ProcessInfo.processInfo.arguments.contains("-UITestSleepActiveFixture") {
+                try seedSleepActiveFixture(in: context, morningConfirmation: false)
+            }
+
+            if ProcessInfo.processInfo.arguments.contains("-UITestSleepMorningFixture") {
+                try seedSleepActiveFixture(in: context, morningConfirmation: true)
+            }
 #endif
 
             try TrainingRotationService().normalizePersistedRotation(in: context)
@@ -376,6 +408,144 @@ enum SeedDataService {
         session.exerciseLogs = [log]
         context.insert(session)
     }
+
+#if DEBUG
+    private static func seedSleepPopulatedFixture(in context: ModelContext) throws {
+        let existingCount = try context.fetchCount(FetchDescriptor<SleepSession>())
+        guard existingCount == 0 else { return }
+
+        var calendar = Calendar.current
+        calendar.locale = Locale(identifier: "en_GB")
+        let today = calendar.startOfDay(for: .now)
+
+        // Keep the most recent completed night on the previous local bedtime.
+        // This avoids seeding a future completed session while preserving the
+        // app's local-night grouping convention.
+        let specifications: [(offset: Int, duration: Int, quality: Int, source: SleepSource, confidence: SleepConfidence)] = [
+            (1, 390, 3, .manual, .medium),
+            (2, 450, 4, .inAppTimer, .estimatedConfirmed),
+            (3, 480, 5, .appleHealth, .high),
+            (4, 420, 4, .manual, .medium),
+            (5, 510, 5, .manual, .medium),
+            (6, 360, 2, .inAppTimer, .estimatedConfirmed),
+            (7, 480, 4, .appleHealth, .high)
+        ]
+
+        for specification in specifications {
+            guard let nightDate = calendar.date(byAdding: .day, value: -specification.offset, to: today),
+                  let sleepStart = calendar.date(bySettingHour: 22, minute: 0, second: 0, of: nightDate)
+            else {
+                continue
+            }
+
+            let wakeAt = sleepStart.addingTimeInterval(TimeInterval(specification.duration * 60))
+            let createdAt = sleepStart.addingTimeInterval(30 * 60)
+            let sampleIDs = specification.source == .appleHealth
+                ? ["ui-test-health-sleep-\(specification.offset)"]
+                : []
+            let session = SleepSession(
+                confirmedSleepStartAt: sleepStart,
+                wakeAt: wakeAt,
+                durationMinutes: specification.duration,
+                qualityRating: specification.quality,
+                tags: specification.offset == 1 ? [.trainedLate] : [],
+                notes: "Deterministic UI sleep fixture",
+                source: specification.source,
+                confidence: specification.confidence,
+                status: .completed,
+                healthKitSampleIds: sampleIDs,
+                createdAt: createdAt,
+                updatedAt: createdAt
+            )
+            context.insert(session)
+        }
+
+        guard let napDay = calendar.date(byAdding: .day, value: -1, to: today),
+              let earlyNapStart = calendar.date(bySettingHour: 14, minute: 0, second: 0, of: napDay),
+              let eveningNapStart = calendar.date(bySettingHour: 19, minute: 0, second: 0, of: napDay)
+        else {
+            return
+        }
+
+        let earlyNap = NapSession(
+            startDate: earlyNapStart,
+            endDate: earlyNapStart.addingTimeInterval(30 * 60),
+            qualityRating: 4,
+            source: .manual,
+            timingCategory: .earlyAfternoon,
+            note: "Deterministic UI nap fixture",
+            createdAt: earlyNapStart,
+            updatedAt: earlyNapStart
+        )
+        let eveningNap = NapSession(
+            startDate: eveningNapStart,
+            endDate: eveningNapStart.addingTimeInterval(45 * 60),
+            qualityRating: 3,
+            source: .napTimer,
+            timingCategory: .evening,
+            note: "Deterministic UI nap fixture",
+            createdAt: eveningNapStart,
+            updatedAt: eveningNapStart
+        )
+        context.insert(earlyNap)
+        context.insert(eveningNap)
+    }
+
+    private static func seedSleepStaleFixture(in context: ModelContext) throws {
+        let existingCount = try context.fetchCount(FetchDescriptor<SleepSession>())
+        guard existingCount == 0 else { return }
+
+        var calendar = Calendar.current
+        calendar.locale = Locale(identifier: "en_GB")
+        let today = calendar.startOfDay(for: .now)
+        guard let staleNight = calendar.date(byAdding: .day, value: -3, to: today),
+              let sleepStart = calendar.date(bySettingHour: 22, minute: 0, second: 0, of: staleNight)
+        else {
+            return
+        }
+
+        let durationMinutes = 470
+        let wakeAt = sleepStart.addingTimeInterval(TimeInterval(durationMinutes * 60))
+        context.insert(
+            SleepSession(
+                confirmedSleepStartAt: sleepStart,
+                wakeAt: wakeAt,
+                durationMinutes: durationMinutes,
+                qualityRating: 4,
+                notes: "Deterministic stale Sleep UI fixture",
+                source: .manual,
+                confidence: .medium,
+                status: .completed,
+                createdAt: sleepStart,
+                updatedAt: sleepStart
+            )
+        )
+    }
+
+    private static func seedSleepActiveFixture(in context: ModelContext, morningConfirmation: Bool) throws {
+        let existingCount = try context.fetchCount(FetchDescriptor<SleepSession>())
+        guard existingCount == 0 else { return }
+
+        let now = Date.now
+        let elapsed: TimeInterval = morningConfirmation ? 8 * 60 * 60 : 90 * 60
+        let start = now.addingTimeInterval(-elapsed)
+        let session = SleepSession(
+            sleepModeStartedAt: start,
+            windDownDurationMinutes: 0,
+            estimatedSleepStartAt: start,
+            confirmedSleepStartAt: start,
+            wakeAt: start,
+            durationMinutes: 0,
+            notes: "Deterministic UI active sleep fixture",
+            source: .inAppTimer,
+            confidence: .low,
+            status: .active,
+            createdAt: start,
+            updatedAt: start
+        )
+        context.insert(session)
+    }
+#endif
 
     private static func seedSplitsFixture(in context: ModelContext, exercises: [Exercise]) throws {
         let existingSplits = try context.fetch(FetchDescriptor<TrainingSplit>())

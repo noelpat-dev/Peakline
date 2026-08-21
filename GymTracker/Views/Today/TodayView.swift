@@ -6,6 +6,7 @@ struct TodayView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var readinessRefreshClock = ReadinessRefreshClock.shared
+    @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
 
     @Query
     private var activeSplits: [TrainingSplit]
@@ -218,7 +219,15 @@ struct TodayView: View {
     }
 
     private var currentSleepReadinessSignature: SleepAnalyticsInputSignature {
-        SleepAnalyticsInputSignature(sessions: sleepSessions, naps: napSessions, workouts: Array(completedSessions.prefix(12)), settings: sleepSettings, sessionLimit: 45, workoutLimit: 12)
+        SleepAnalyticsInputSignature(
+            sessions: sleepSessions,
+            naps: napSessions,
+            workouts: Array(completedSessions.prefix(12)),
+            settings: sleepSettings,
+            sessionLimit: 45,
+            workoutLimit: 12,
+            workoutRevision: workoutWarmStartInvalidation.revision
+        )
     }
 
     private var sleepReadinessSignatureForObservation: SleepAnalyticsInputSignature? {
@@ -882,7 +891,12 @@ struct TodayView: View {
     }
 
     private var todayRecoveryRecommendation: String {
-        currentSleepReadinessSnapshot.adaptiveRecommendation?.message ?? sleepCoaching.recommendation(for: sleepSummary, settings: sleepSettings)
+        if readinessScore.isProvisional {
+            return sleepSummary.primarySession == nil
+                ? "Add sleep to improve this signal. Training guidance waits for enough daily readiness evidence."
+                : "Sleep is one supportive signal. Training guidance waits for enough daily readiness evidence."
+        }
+        return currentSleepReadinessSnapshot.adaptiveRecommendation?.message ?? sleepCoaching.recommendation(for: sleepSummary, settings: sleepSettings)
     }
 
     private var readinessQuickActionSubtitle: String {
@@ -907,6 +921,7 @@ struct TodayView: View {
                 naps: napSessions,
                 workouts: Array(completedSessions.prefix(12)),
                 settings: sleepSettings,
+                workoutRevision: workoutWarmStartInvalidation.revision,
                 force: force
             )
         }
@@ -1361,13 +1376,13 @@ private struct TodaySleepRecoveryCard: View {
         case .low, .veryLow:
             return "Sleep recovery may affect today"
         case .unknown:
-            return "No sleep data yet"
+            return "No sleep recorded last night"
         }
     }
 
     private var detailText: String {
         guard summary.primarySession != nil else {
-            return "Start Sleep Mode tonight to improve recovery coaching."
+            return "Add the missing overnight record, or start Sleep Mode tonight."
         }
 
         let quality = summary.qualityRating.map { SleepQualityPicker.label(for: $0) } ?? "No quality"

@@ -218,6 +218,7 @@ struct CoachContentView: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var readinessRefreshClock = ReadinessRefreshClock.shared
+    @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
 
     @Query
     private var activeSplits: [TrainingSplit]
@@ -508,6 +509,11 @@ struct CoachContentView: View {
         currentSleepSnapshot.dashboardSummary
     }
 
+    private var displayedSleepCoachingInsights: [SleepCoachingInsight] {
+        guard !readinessScore.isProvisional else { return [] }
+        return sleepDashboardSummary.coachingInsights
+    }
+
     private var readinessScore: ReadinessScore {
         currentCoachSnapshot.readiness
     }
@@ -518,6 +524,11 @@ struct CoachContentView: View {
 
     private var currentCoachSnapshot: CoachIntelligenceSnapshot {
         coachSnapshot
+    }
+
+    private var presentationDailyDecision: CoachDailyDecision {
+        guard currentCoachSnapshot.readiness.isProvisional else { return dailyDecision }
+        return dailyDecision.neutralizedForProvisionalReadiness()
     }
 
     private var currentCoachSnapshotSignature: String {
@@ -599,7 +610,15 @@ struct CoachContentView: View {
     }
 
     private var currentSleepAnalyticsSignature: SleepAnalyticsInputSignature {
-        SleepAnalyticsInputSignature(sessions: sleepSessions, naps: napSessions, workouts: recentCompletedSessions, settings: sleepSettings, sessionLimit: 90, workoutLimit: 20)
+        SleepAnalyticsInputSignature(
+            sessions: sleepSessions,
+            naps: napSessions,
+            workouts: recentCompletedSessions,
+            settings: sleepSettings,
+            sessionLimit: 90,
+            workoutLimit: 20,
+            workoutRevision: workoutWarmStartInvalidation.revision
+        )
     }
 
     private var observedSleepAnalyticsSignature: SleepAnalyticsInputSignature? {
@@ -625,6 +644,7 @@ struct CoachContentView: View {
     var body: some View {
         let _ = PerformanceTracer.mark(.todayCoachDestinationBody, "CoachContentView body hasLoaded=\(hasLoadedCoachSnapshot) initialSnapshot=\(initialSnapshot != nil)")
         let intelligence = currentCoachSnapshot
+        let dailyDecision = presentationDailyDecision
 
         FitnessScreen(
             title: "Coach",
@@ -704,7 +724,7 @@ struct CoachContentView: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("coach-hero-card")
 
-            if supportingDashboardMounted {
+            if previewRoute == nil, supportingDashboardMounted {
                 DashboardSection(title: "Why this?") {
                 TrainingCallAuditCard(snapshot: dailyDecision.trainingCall)
                 .accessibilityIdentifier("coach-why-this-section")
@@ -868,7 +888,13 @@ struct CoachContentView: View {
             }
 
             DashboardSection(title: "Sleep Coaching") {
-                if let recommendation = sleepDashboardSummary.adaptiveRecommendation {
+                if intelligence.readiness.isProvisional {
+                    FitnessCard {
+                        Text("Sleep is one supportive signal. Training guidance waits until daily readiness has enough evidence.")
+                            .font(.subheadline)
+                            .foregroundStyle(appTheme.mutedText)
+                    }
+                } else if let recommendation = sleepDashboardSummary.adaptiveRecommendation {
                     FitnessCard {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
@@ -891,14 +917,14 @@ struct CoachContentView: View {
                     }
                 }
 
-                if sleepDashboardSummary.coachingInsights.isEmpty {
+                if displayedSleepCoachingInsights.isEmpty {
                     FitnessCard {
                         Text("Keep tracking sleep and workouts to unlock personalised sleep-performance coaching.")
                             .font(.subheadline)
                             .foregroundStyle(appTheme.mutedText)
                     }
                 } else {
-                    ForEach(sleepDashboardSummary.coachingInsights.prefix(3)) { insight in
+                    ForEach(displayedSleepCoachingInsights.prefix(3)) { insight in
                         FitnessCard {
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack(alignment: .firstTextBaseline) {
@@ -1183,6 +1209,7 @@ struct CoachContentView: View {
                 workouts: recentCompletedSessions,
                 settings: sleepSettings,
                 workoutLimit: 20,
+                workoutRevision: workoutWarmStartInvalidation.revision,
                 force: force
             )
         }
@@ -1205,6 +1232,10 @@ struct CoachContentView: View {
             lastCoachSnapshotSignature = signature
             hasLoadedCoachSnapshot = true
         }
+        OverallReadinessSnapshotStore.shared.update(
+            readiness: nextSnapshot.readiness,
+            sourceSignature: signature
+        )
         CoachRouteSnapshotStore.shared.update(intelligence: coachSnapshot, signature: signature, source: "coach")
         refreshPresentationState()
         PerformanceTracer.mark(.unsafeBreadcrumb, "coach.snapshot after_make")
@@ -1239,7 +1270,7 @@ struct CoachContentView: View {
                 }
             }.value
 
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, !isLiveObservationSuspendedForPreview else { return }
             AppMotion.withoutAnimation {
                 weeklyReview = result
                 lastWeeklyReviewSignature = signature
@@ -1281,7 +1312,7 @@ struct CoachContentView: View {
                 }
             }.value
 
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, !isLiveObservationSuspendedForPreview else { return }
             AppMotion.withoutAnimation {
                 summary = result.summary
                 recentPRs = result.recentPRs
@@ -1699,8 +1730,9 @@ struct CoachContentView: View {
     }
 
     private func openRecommendedPreview() {
-        let liveSplit = recommendedSplit(named: dailyDecision.recommendedSplitName)
-            ?? activeSplits.first(where: { $0.name == dailyDecision.recommendedSplitName })
+        let decision = presentationDailyDecision
+        let liveSplit = recommendedSplit(named: decision.recommendedSplitName)
+            ?? activeSplits.first(where: { $0.name == decision.recommendedSplitName })
         let preparedSplit = liveSplit.map(WorkoutPreviewSplit.init)
             ?? initialSnapshot?.recommendedSplit
 
@@ -1708,7 +1740,7 @@ struct CoachContentView: View {
 
         let route = CoachWorkoutPreviewRoute(
             split: preparedSplit,
-            mode: dailyDecision.recommendedMode
+            mode: decision.recommendedMode
         )
 
         PerformanceTracer.mark(.previewRouteTap, "source=coach split=\(route.split.name) mode=\(route.mode.rawValue)")
@@ -1721,6 +1753,14 @@ struct CoachContentView: View {
             PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "navigation skip source=coach already_active split=\(route.split.id.uuidString)")
             return
         }
+
+        // A preview push should not compete with detached dashboard work that
+        // was started by the just-mounted Coach route. Cancellation is cheap and
+        // prevents late completions from invalidating the transition's parent.
+        weeklyReviewTask?.cancel()
+        weeklyReviewTask = nil
+        coachDerivedTask?.cancel()
+        coachDerivedTask = nil
 
         NavigationInteraction.perform(
             key: "coach.preview.\(route.id)",
@@ -2033,6 +2073,38 @@ struct CoachDailyDecision: Equatable {
         modeReason: "Peakline is confirming which mode fits today best.",
         trainingCall: .placeholder
     )
+}
+
+private extension CoachDailyDecision {
+    func neutralizedForProvisionalReadiness() -> CoachDailyDecision {
+        let safeTrainingCall = trainingCall.neutralizedForProvisionalReadiness(if: true)
+        return CoachDailyDecision(
+            recommendedSplitName: recommendedSplitName,
+            recommendedMode: .full,
+            headline: recommendedSplitName.map { "\($0) — Readiness pending" } ?? "Readiness is still settling",
+            targetLine: nil,
+            shortReason: safeTrainingCall.reason,
+            confidenceLabel: "Provisional",
+            badgeState: .baseline,
+            canOpenPreview: recommendedSplitName != nil,
+            primaryActionTitle: "Open Full Preview",
+            nextStep: recommendedSplitName.map {
+                "Next: preview \($0), adjust if needed, then start when ready."
+            } ?? "Keep tracking today’s signals while readiness builds.",
+            whySignals: [
+                CoachDecisionSignal(
+                    title: "Readiness",
+                    message: "Daily readiness is provisional; missing signals do not lower the score.",
+                    systemImage: "hourglass"
+                )
+            ],
+            primaryTarget: nil,
+            additionalTargetCount: 0,
+            targetFallback: "Readiness evidence is still building; no load or recovery prescription is available yet.",
+            modeReason: safeTrainingCall.reason,
+            trainingCall: safeTrainingCall
+        )
+    }
 }
 
 struct CoachWeeklyReviewSnapshot: Equatable {

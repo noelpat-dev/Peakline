@@ -59,8 +59,10 @@ The main value loop is:
 
 - Nutrition is local-first, with exact-day browsing, read-only historical totals/meals, startup-prepared value-only Saved Foods, food log snapshots, macro and optional fibre targets, barcode lookup, Open Food Facts import, OCR label scan, parser review, source comparison, insights, and HealthKit bridge work. Nutrition and Hydration share a single-settle swipe-reveal interaction for consistent deletion gestures.
 - Hydration supports quick water logging and daily context.
-- Sleep and recovery include sleep sessions, naps, readiness scoring, recovery labels, and coaching context.
-- HealthKit remains optional and should fail gracefully when unavailable, denied, or revoked.
+- Sleep is organised around explicit no-data, populated, and active-session states. The first frame prioritises the next useful action; populated nights lead with duration and modest source, quality, confidence, and Peakline-estimate context, followed by a bounded seven-night trend and progressively disclosed history, consistency, debt, naps, and genuine stage data only when available.
+- Sleep Mode, morning confirmation, manual sleep editing, nap logging, the date-derived Nap Timer, session detail/edit/delete, and Sleep Settings share confirmed destructive actions and specific persistent validation feedback. Nap quality is optional, an active timer cannot be silently dismissed, and saved naps can never end in the future.
+- Sleep presentation treats provisional daily readiness conservatively: a supportive sleep signal may be described without becoming permission to Push, prescribe Recovery Focus, or overstate the whole-day training decision.
+- HealthKit remains optional and reports truthful availability, authorization-attempt, access, import, last-sync, no-new-data, and error states. Simulator-unavailable and denied/revoked paths degrade without claiming that Apple Health is connected.
 - Firebase account backup uses email/password authentication plus a user passphrase to store encrypted full-app backups for reinstall recovery. The current backup envelope is schema version 3, while schema version 2 imports remain supported for compatibility.
 
 ### Settings And Utilities
@@ -100,7 +102,7 @@ The main value loop is:
 - Startup tracing covers account checks, backup metadata, local preparation, root snapshot preparation, critical readiness, presentation start/slow state, and reveal start/end.
 - A focused acceptance verifier exists at `Scripts/verify_performance_acceptance.sh`.
 - The verifier runs build, unit tests, a focused UI acceptance flow, and log scanning.
-- Current acceptance checks cover Today to Coach, Workout to Coach, Workout to Preview, one Preview mode change, one-back navigation, notification refresh timing, duplicate Coach pushes, repeated Workout Preview onAppear refreshes, gesture timeouts, toolbar constraint warnings, and `unsafeForcedSync` regressions.
+- Current acceptance checks cover Today to Coach, Workout to Coach, Workout to Preview, one Preview mode change, one-back navigation, notification refresh timing, duplicate Coach pushes, repeated Workout Preview onAppear refreshes, gesture timeouts, toolbar constraint warnings, and `unsafeForcedSync` regressions. Dedicated Sleep UI fixtures cover no-data, populated, active, morning-confirmation, editor-error, elapsed-nap, and HealthKit-unavailable behavior.
 - The verifier summary also carries the Preview warm-cache hit count so Xcode versions that omit individual app console lines can still enforce the warm-cache requirement.
 - Preview snapshot preparation precomputes used exercise IDs once, traverses workout history once for substitutions, and calculates the base target once per unique split input before applying mode adjustments. The parity fixture reduced target-service work from 24 calls to 7 without changing mode order, targets, alternatives, or cache semantics.
 - Focused Splits UI coverage verifies the five-day active programme, Edit Rotation, split detail navigation, Add Split presentation, and Other Splits expansion/collapse.
@@ -110,7 +112,7 @@ The main value loop is:
 - The main lifting loop is implemented end to end.
 - Coach, Progress, Nutrition, Sleep, Hydration, and export utilities now sit on top of that core instead of replacing it.
 - Recent performance cleanup materially improved route timing, notification refresh behavior, and Coach navigation stability.
-- The latest serial validation passed 151 unit tests. The route acceptance flow measured Today-to-Coach at 132 ms, Coach-to-Preview at 191 ms, a warmed root transition at 201 ms, two Preview warm-cache hits, and zero mounted Preview recomputations. Repeated cold first-load root-tab runs remain a known acceptance item at 302–405 ms against the 300 ms target.
+- The 17 August Sleep rehaul validation passed the Debug build, 13 focused Sleep reliability tests, all 11 dedicated Sleep UI tests, and all 159 unit/reliability tests inside the canonical verifier. Its focused route flow passed at Today-to-Coach 136 ms, Coach-to-Preview 195 ms, warmed root transition 248 ms, two Preview warm-cache hits, and zero mounted Preview recomputations. The verifier remains red only on the existing cold root-tab gate: the canonical run measured Workout 373 ms, History 304 ms, and Settings 396 ms against 300 ms; a serial retry measured Workout 329 ms and Settings 330 ms.
 
 ## Remaining Practical Expansion
 

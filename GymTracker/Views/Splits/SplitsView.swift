@@ -289,11 +289,10 @@ struct SplitsView: View {
     private var dashboardSignature: String {
         [
             splits.map { split in
-                let exerciseSignature = split.exercises
-                    .map { "\($0.id.uuidString):\($0.exerciseId.uuidString):\($0.orderIndex):\($0.targetSets):\($0.minReps):\($0.maxReps):\($0.notes ?? "")" }
-                    .sorted()
-                    .joined(separator: ";")
-                return "\(split.id.uuidString):\(split.name):\(split.isActive):\(split.activeRotationIndex ?? -1):\(split.updatedAt.timeIntervalSince1970):\(exerciseSignature)"
+                // Keep observation scalar-only. Exercise details are consumed
+                // by the deferred dashboard build, while split edits advance
+                // `updatedAt` and the workout generation covers history edits.
+                return "\(split.id.uuidString):\(split.name):\(split.isActive):\(split.activeRotationIndex ?? -1):\(split.updatedAt.timeIntervalSince1970)"
             }
             .joined(separator: "|"),
             "revision:\(workoutWarmStartInvalidation.revision)",
@@ -311,6 +310,11 @@ struct SplitsView: View {
     private func scheduleDashboardSnapshotRefresh(force: Bool = false) {
         dashboardRefreshTask?.cancel()
         dashboardRefreshTask = Task { @MainActor in
+            // The root tab's stable-frame marker uses one insertion-turn yield.
+            // Keep relationship-heavy target/recommendation projection behind
+            // that marker so selecting Splits cannot contend with its timing.
+            await Task.yield()
+            await Task.yield()
             await Task.yield()
             guard !Task.isCancelled, isDashboardVisible else { return }
             PerformanceTracer.mark(.unsafeBreadcrumb, "splits.dashboard deferred_refresh")

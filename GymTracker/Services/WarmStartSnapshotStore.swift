@@ -623,6 +623,7 @@ final class WorkoutPreviewWarmStartStore {
     private var routeSnapshotsByToken: [String: [WorkoutMode: WorkoutPreviewPreparedSnapshot]] = [:]
     private var routeTokens: [String] = []
     private var mountedRouteTokens: Set<String> = []
+    private var staleMountedRouteTokens: Set<String> = []
     private var pendingActiveSnapshots: [WorkoutPreviewWarmSnapshot]?
     private var pendingCatalog: ([WorkoutPreviewExerciseOption], [UUID: [ExerciseSubstitutionCandidate]])?
     private var pendingUpserts: [String: WorkoutPreviewWarmSnapshot] = [:]
@@ -643,6 +644,7 @@ final class WorkoutPreviewWarmStartStore {
         routeSnapshotsByToken.removeAll()
         routeTokens.removeAll()
         mountedRouteTokens.removeAll()
+        staleMountedRouteTokens.removeAll()
         pendingActiveSnapshots = nil
         pendingCatalog = nil
         pendingUpserts.removeAll()
@@ -656,6 +658,34 @@ final class WorkoutPreviewWarmStartStore {
             return
         }
         publishActiveSnapshots(snapshots)
+    }
+
+    /// Drops every cache generation that was prepared from an older source.
+    /// A mounted route remains pinned until dismissal; its token is then
+    /// discarded so a later route cannot accidentally reuse that old value.
+    func invalidateStaleSnapshots(reason: String) {
+        snapshotsByKey = snapshotsByKey.filter { $0.value.sourceSignature == "fallback" }
+        fallbackKeys = fallbackKeys.filter { snapshotsByKey[$0] != nil }
+
+        staleMountedRouteTokens.formUnion(mountedRouteTokens)
+        let mountedTokens = mountedRouteTokens
+        for token in routeTokens where !mountedTokens.contains(token) {
+            routeSnapshotsByToken.removeValue(forKey: token)
+        }
+        routeTokens = routeTokens.filter { mountedTokens.contains($0) }
+
+        pendingActiveSnapshots = nil
+        pendingCatalog = nil
+        pendingUpserts.removeAll()
+        if mountedRouteTokens.isEmpty {
+            preparationOptions.removeAll()
+            preparationCandidatesByExerciseID.removeAll()
+        }
+
+        PerformanceTracer.mark(
+            .workoutPreviewWarmCache,
+            "invalidated_stale_generation reason=\(reason) mounted=\(mountedRouteTokens.count)"
+        )
     }
 
     private func publishActiveSnapshots(_ snapshots: [WorkoutPreviewWarmSnapshot]) {
@@ -756,7 +786,15 @@ final class WorkoutPreviewWarmStartStore {
 
     func routeDidDismiss(_ route: WorkoutPreviewPreparedRoute) {
         mountedRouteTokens.remove(route.cacheToken)
+        let routeWasStale = staleMountedRouteTokens.remove(route.cacheToken) != nil
+        if routeWasStale {
+            routeSnapshotsByToken.removeValue(forKey: route.cacheToken)
+            routeTokens.removeAll { $0 == route.cacheToken }
+            preparationOptions.removeAll()
+            preparationCandidatesByExerciseID.removeAll()
+        }
         guard mountedRouteTokens.isEmpty else { return }
+        staleMountedRouteTokens.removeAll()
 
         if let pendingActiveSnapshots {
             self.pendingActiveSnapshots = nil

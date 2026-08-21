@@ -436,7 +436,9 @@ final class FullAppBackupReliabilityTests: XCTestCase {
         context.insert(workout)
         try context.save()
 
-        let snapshot = try await StartupSnapshotBuilder.make(in: context)
+        let projections = try StartupSnapshotBuilder.materialize(in: context)
+        let derived = await StartupSnapshotBuilder.makePure(from: projections.pureProjection)
+        let snapshot = StartupSnapshotBuilder.makeBundle(from: projections, derived: derived)
 
         XCTAssertEqual(snapshot.activeSplitCount, 5)
         XCTAssertEqual(snapshot.trainingCall.recommendedSplitName, "Upper")

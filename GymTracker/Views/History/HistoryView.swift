@@ -267,6 +267,32 @@ enum HistoryDisplaySnapshotBuilder {
     }
 }
 
+private struct HistoryLazyScreen<Content: View>: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let content: () -> Content
+
+    init(@ViewBuilder content: @escaping () -> Content) {
+        self.content = content
+    }
+
+    var body: some View {
+        ScrollView(.vertical) {
+            LazyVStack(
+                alignment: .leading,
+                spacing: appTheme.metrics.screenContentSpacing
+            ) {
+                content()
+            }
+            .padding(appTheme.metrics.screenPadding)
+            .padding(.bottom, appTheme.metrics.screenBottomPadding)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .submitLabel(.done)
+        .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
+    }
+}
+
 struct HistoryView: View {
     @Environment(\.appTheme) private var appTheme
     @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
@@ -292,20 +318,26 @@ struct HistoryView: View {
     @State private var historyRefreshPending = false
     @State private var isWorkoutCompletionPresentationActive = false
     @State private var isHistoryVisible = false
+    @State private var isCalendarVisible = false
+    @State private var showsHistoryRows = false
+    @State private var calendarRevealTask: Task<Void, Never>?
     @State private var sourceSnapshotRefreshTask: Task<Void, Never>?
     @State private var showingGoalEditor = false
+    @State private var hasWarmSnapshotToValidate = false
 
     private let initialWarmSnapshot: HistoryWarmSnapshot?
 
     init(startupSnapshot: HistoryWarmSnapshot? = nil) {
         _sessions = Query(Self.sessionsDescriptor)
+        _profiles = Query(Self.profileDescriptor)
         initialWarmSnapshot = startupSnapshot
         _displaySnapshot = State(initialValue: startupSnapshot?.display ?? .empty)
         _workoutSnapshots = State(initialValue: startupSnapshot?.workouts ?? [])
-        _lastSessionGeneration = State(
-            initialValue: startupSnapshot.map { Self.generation(for: $0.workouts) } ?? ""
-        )
+        // Defer the 120-workout generation string until the post-frame refresh;
+        // RootTabContainer recreates every tab value during selection.
+        _lastSessionGeneration = State(initialValue: "")
         _displaySnapshotReady = State(initialValue: startupSnapshot != nil)
+        _hasWarmSnapshotToValidate = State(initialValue: startupSnapshot != nil)
     }
 
     private static var sessionsDescriptor: FetchDescriptor<WorkoutSession> {
@@ -317,17 +349,21 @@ struct HistoryView: View {
         return descriptor
     }
 
+    private static var profileDescriptor: FetchDescriptor<UserProfile> {
+        var descriptor = FetchDescriptor<UserProfile>()
+        descriptor.fetchLimit = 1
+        return descriptor
+    }
+
     private var currentDisplaySnapshot: HistoryDisplaySnapshot {
         displaySnapshot
     }
 
     private var sessionGeneration: String {
-        [
-            "revision:\(workoutWarmStartInvalidation.revision)",
-            sessions.prefix(120).map {
-                "\($0.id.uuidString):\($0.splitNameSnapshot):\($0.date.timeIntervalSince1970):\($0.perceivedDifficulty ?? 0):\($0.durationSeconds ?? 0):\($0.durationMinutes ?? 0):\($0.endedAt?.timeIntervalSince1970 ?? 0)"
-            }.joined(separator: "|")
-        ].joined(separator: "|")
+        Self.liveSourceGeneration(
+            for: sessions,
+            revision: workoutWarmStartInvalidation.revision
+        )
     }
 
     private var profileGoalGeneration: String {
@@ -339,10 +375,28 @@ struct HistoryView: View {
         isWorkoutCompletionPresentationActive || !isHistoryVisible ? nil : sessionGeneration
     }
 
-    private static func generation(for workouts: [HistoryWorkoutSnapshot]) -> String {
-        workouts.map {
-            "\($0.id.uuidString):\($0.splitName):\($0.date.timeIntervalSince1970):\($0.rating ?? 0):\($0.durationSeconds ?? 0)"
-        }.joined(separator: "|")
+    private static func liveSourceGeneration(
+        for sessions: [WorkoutSession],
+        revision: Int
+    ) -> String {
+        [
+            "revision:\(revision)",
+            sessions.prefix(120).map { session in
+                "\(session.id.uuidString):\(session.splitNameSnapshot):\(session.date.timeIntervalSince1970):\(session.perceivedDifficulty ?? 0):\(session.durationSeconds ?? 0):\(session.durationMinutes ?? 0):\(session.endedAt?.timeIntervalSince1970 ?? 0)"
+            }.joined(separator: "|")
+        ].joined(separator: "|")
+    }
+
+    private static func warmSourceGeneration(
+        for workouts: [HistoryWorkoutSnapshot],
+        revision: Int
+    ) -> String {
+        [
+            "revision:\(revision)",
+            workouts.prefix(120).map { workout in
+                "\(workout.id.uuidString):\(workout.splitName):\(workout.date.timeIntervalSince1970):\(workout.rating ?? 0):\(workout.durationSeconds ?? 0):\(workout.durationMinutes ?? 0):\(workout.endedAt?.timeIntervalSince1970 ?? 0)"
+            }.joined(separator: "|")
+        ].joined(separator: "|")
     }
 
     private var sessionRows: [HistorySessionRowSnapshot] {
@@ -359,19 +413,21 @@ struct HistoryView: View {
 
     var body: some View {
         NavigationStack {
-            FitnessScreen {
+            HistoryLazyScreen {
                 HistoryOverviewCard(snapshot: currentDisplaySnapshot.overview) {
                     openGoalEditor()
                 }
 
-                FitnessCard(style: .compact, padding: 12) {
-                    WorkoutCalendarView(
-                        displayedMonth: $displayedMonth,
-                        selectedDate: $selectedCalendarDate,
-                        daySummaries: calendarDaySummaries
-                    )
+                if isCalendarVisible {
+                    FitnessCard(style: .compact, padding: 12) {
+                        WorkoutCalendarView(
+                            displayedMonth: $displayedMonth,
+                            selectedDate: $selectedCalendarDate,
+                            daySummaries: calendarDaySummaries
+                        )
+                    }
+                    .accessibilityIdentifier("history-calendar-card")
                 }
-                .accessibilityIdentifier("history-calendar-card")
 
                 filterChips
 
@@ -381,7 +437,7 @@ struct HistoryView: View {
                         message: displaySnapshotReady ? (sessions.isEmpty ? "Start Push, Pull, or Legs to build your first training history." : "Adjust filters to see more sessions.") : "Preparing recent sessions and filters.",
                         systemImage: displaySnapshotReady ? "clock" : "hourglass"
                     )
-                } else {
+                } else if showsHistoryRows {
                     ForEach(sessionRows) { row in
                         Button {
                             PerformanceTracer.mark(.motionHistoryRowOpen, "session=\(row.id.uuidString)")
@@ -400,6 +456,12 @@ struct HistoryView: View {
                         .buttonStyle(HistoryScrollRowButtonStyle())
                         .accessibilityIdentifier("history-session-row")
                     }
+                } else {
+                    DashboardEmptyStateCard(
+                        title: "Loading history",
+                        message: "Preparing recent sessions and filters.",
+                        systemImage: "hourglass"
+                    )
                 }
             }
             .accessibilityIdentifier("history-screen")
@@ -441,6 +503,19 @@ struct HistoryView: View {
         }
         .onAppear {
             isHistoryVisible = true
+            calendarRevealTask?.cancel()
+            calendarRevealTask = Task { @MainActor in
+                // Let the root tab's insertion turn and stable-frame marker
+                // finish before mounting the calendar's date grid.
+                await Task.yield()
+                await Task.yield()
+                await Task.yield()
+                guard !Task.isCancelled, isHistoryVisible else { return }
+                isCalendarVisible = true
+                showsHistoryRows = true
+                calendarRevealTask = nil
+            }
+            showsHistoryRows = false
             let shouldForceRefresh = !didRequestInitialRefresh
             didRequestInitialRefresh = true
             scheduleSourceSnapshotRefresh(force: shouldForceRefresh && initialWarmSnapshot == nil)
@@ -469,6 +544,10 @@ struct HistoryView: View {
         }
         .onDisappear {
             isHistoryVisible = false
+            calendarRevealTask?.cancel()
+            calendarRevealTask = nil
+            isCalendarVisible = false
+            showsHistoryRows = false
             sourceSnapshotRefreshTask?.cancel()
             sourceSnapshotRefreshTask = nil
         }
@@ -481,6 +560,10 @@ struct HistoryView: View {
         }
         sourceSnapshotRefreshTask?.cancel()
         sourceSnapshotRefreshTask = Task { @MainActor in
+            // Let the root stable-frame marker complete before materialising up
+            // to 120 history projections and rebuilding the display snapshot.
+            await Task.yield()
+            await Task.yield()
             await Task.yield()
             guard !Task.isCancelled, isHistoryVisible else { return }
             guard !historyScrollActive else {
@@ -495,6 +578,20 @@ struct HistoryView: View {
 
     private func refreshSourceSnapshots(force: Bool = false) {
         let generation = sessionGeneration
+
+        if hasWarmSnapshotToValidate {
+            hasWarmSnapshotToValidate = false
+            if !force,
+               let initialWarmSnapshot,
+               generation == Self.warmSourceGeneration(
+                   for: initialWarmSnapshot.workouts,
+                   revision: workoutWarmStartInvalidation.revision
+               ) {
+                lastSessionGeneration = generation
+                return
+            }
+        }
+
         guard force || generation != lastSessionGeneration else { return }
         workoutSnapshots = sessions.prefix(120).map(HistoryWorkoutSnapshot.init)
         lastSessionGeneration = generation

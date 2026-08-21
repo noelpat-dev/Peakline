@@ -1,10 +1,114 @@
 import SwiftData
 import SwiftUI
 
+private let healthKitSleepAuthorizationRequestedKey = "sleep.healthkit.authorizationRequested.v1"
+
+@MainActor
+private final class SleepHealthKitExportStatusStore: ObservableObject {
+    static let shared = SleepHealthKitExportStatusStore()
+
+    @Published private(set) var message: String?
+
+    private init() {}
+
+    func begin() {
+        message = "Saving confirmed sleep to Apple Health…"
+    }
+
+    func succeeded(sampleCount: Int) {
+        message = sampleCount == 1
+            ? "Saved confirmed sleep to Apple Health (1 sample)."
+            : "Saved confirmed sleep to Apple Health (\(sampleCount) samples)."
+    }
+
+    func failed(_ message: String) {
+        self.message = message
+    }
+}
+
+@MainActor
+private func applySleepHealthKitExport(
+    _ ids: [String],
+    to sessionID: UUID,
+    in container: ModelContainer,
+    statusStore: SleepHealthKitExportStatusStore
+) {
+    // Resolve the app's live context only after HealthKit has returned. The
+    // container is stable across the suspension; a ModelContext or model must
+    // not be retained by the task while the HealthKit write is in flight.
+    let modelContext = container.mainContext
+    let descriptor = FetchDescriptor<SleepSession>(
+        predicate: #Predicate<SleepSession> { $0.id == sessionID }
+    )
+
+    do {
+        guard let session = try modelContext.fetch(descriptor).first else {
+            statusStore.failed("Apple Health accepted the sleep, but Peakline could not record the export. Local sleep was saved.")
+            return
+        }
+
+        let previousSampleIDs = session.healthKitSampleIds
+        let hadChangesBeforeExport = modelContext.hasChanges
+        session.healthKitSampleIds = ids
+
+        do {
+            try modelContext.save()
+            statusStore.succeeded(sampleCount: ids.count)
+        } catch {
+            // Keep unrelated pending edits in this context, but never leave a
+            // failed export's sample IDs dirty for a later unrelated save.
+            if hadChangesBeforeExport {
+                session.healthKitSampleIds = previousSampleIDs
+            } else {
+                modelContext.rollback()
+            }
+            throw error
+        }
+    } catch {
+        statusStore.failed("Apple Health accepted the sleep, but Peakline could not record the export. Local sleep was saved. \(error.localizedDescription)")
+    }
+}
+
+@MainActor
+private func scheduleSleepHealthKitExport(
+    for session: SleepSession,
+    in modelContext: ModelContext
+) {
+    scheduleSleepHealthKitExport(
+        for: session,
+        in: modelContext,
+        statusStore: SleepHealthKitExportStatusStore.shared
+    )
+}
+
+@MainActor
+private func scheduleSleepHealthKitExport(
+    for session: SleepSession,
+    in modelContext: ModelContext,
+    statusStore: SleepHealthKitExportStatusStore
+) {
+    let writeSnapshot = HealthKitSleepWriteSnapshot(session: session)
+    let sessionID = writeSnapshot.id
+    let container = modelContext.container
+    statusStore.begin()
+    PerformanceTracer.mark(.healthKitSleepBridge, "export scheduled session=\(sessionID.uuidString)")
+
+    Task(priority: .utility) { @MainActor in
+        do {
+            let ids = try await HealthKitSleepService().writeConfirmedSession(writeSnapshot)
+            applySleepHealthKitExport(ids, to: sessionID, in: container, statusStore: statusStore)
+        } catch {
+            statusStore.failed("Apple Health export failed. Local sleep was saved. \(error.localizedDescription)")
+        }
+    }
+}
+
 struct SleepDashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
     @ObservedObject private var readinessRefreshClock = ReadinessRefreshClock.shared
+    @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
+    @ObservedObject private var healthKitExportStatus = SleepHealthKitExportStatusStore.shared
 
     @Query
     private var sessions: [SleepSession]
@@ -26,10 +130,12 @@ struct SleepDashboardView: View {
 
     @State private var settings = SleepSettingsStore().load()
     @State private var showingSettings = false
+    @State private var activeStartSheet: SleepStartSheet?
     @State private var confirmationSession: SleepSession?
     @State private var pendingDiscardSession: SleepSession?
     @State private var importedCount: Int?
     @State private var healthKitImportError: String?
+    @State private var dashboardErrorMessage: String?
     @State private var summaries: [SleepSummary] = []
     @State private var latestSummary = SleepScoringService.emptySummary()
     @State private var dashboardSummary = SleepAnalyticsService.emptyDashboardSummary()
@@ -40,6 +146,9 @@ struct SleepDashboardView: View {
     @State private var nutritionGoal = NutritionGoalService().loadGoal()
     @State private var healthKitSleepImportTask: Task<Void, Never>?
     @State private var didRequestInitialDashboardRefresh = false
+    @State private var didPresentMorningConfirmation = false
+    @State private var healthKitImportPresentation: HealthKitSleepImportPresentation = .idle
+    @State private var locallyResolvedSessionIDs: Set<UUID> = []
 
     private let repository = SleepSessionRepository()
     private let scoring = SleepScoringService()
@@ -126,28 +235,40 @@ struct SleepDashboardView: View {
     }
 
     private var completedSessions: [SleepSession] {
-        sessions.filter { $0.status == .completed }
+        sessions.filter { $0.status == .completed && $0.wakeAt <= Date.now }
     }
 
     private var activeSession: SleepSession? {
-        sessions.first { $0.status == .active }
+        sessions.first { $0.status == .active && !locallyResolvedSessionIDs.contains($0.id) }
     }
 
     private var currentAnalyticsSignature: SleepAnalyticsInputSignature {
-        SleepAnalyticsInputSignature(sessions: sessions, naps: naps, workouts: workouts, settings: settings)
+        SleepAnalyticsInputSignature(
+            sessions: sessions,
+            naps: naps,
+            workouts: workouts,
+            settings: settings,
+            workoutRevision: workoutWarmStartInvalidation.revision
+        )
+    }
+
+    private var analyticsObservationSignature: String {
+        [
+            signature(sessions, limit: 90) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970):\($0.status.rawValue)" },
+            signature(naps, limit: 90) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            signature(workouts, limit: 40) { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.endedAt?.timeIntervalSince1970 ?? 0)" },
+            "\(workoutWarmStartInvalidation.revision)",
+            "\(settings.targetSleepMinutes):\(settings.preferredSource.rawValue)",
+            readinessRefreshClock.token.signature
+        ].joined(separator: "|")
     }
 
     private var currentReadinessSignature: String {
         [
             signature(sessions, limit: 90) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970):\($0.status.rawValue)" },
             signature(naps, limit: 90) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
-            signature(workouts, limit: 40) { session in
-                let setSignature = session.exerciseLogs
-                    .flatMap(\.setLogs)
-                    .map { "\($0.id.uuidString):\($0.completed):\($0.isWarmup):\($0.weight):\($0.reps)" }
-                    .joined(separator: ",")
-                return "\(session.id.uuidString):\(session.date.timeIntervalSince1970):\(session.endedAt?.timeIntervalSince1970 ?? 0):\(setSignature)"
-            },
+            signature(workouts, limit: 40) { "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.endedAt?.timeIntervalSince1970 ?? 0)" },
+            "\(workoutWarmStartInvalidation.revision)",
             signature(hydrationEntries, limit: 120) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
             signature(foodLogEntries, limit: 200) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
             signature(coachCheckIns, limit: 30) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
@@ -173,32 +294,63 @@ struct SleepDashboardView: View {
             if let healthKitImportError {
                 Text(healthKitImportError)
                     .font(.subheadline)
-                    .foregroundStyle(appTheme.colors.danger)
+                    .foregroundStyle(appTheme.colors.textPrimary)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if let dashboardErrorMessage {
+                Text(dashboardErrorMessage)
+                    .font(.subheadline)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("sleep-dashboard-error")
+            }
+
+            if let exportStatus = healthKitExportStatus.message {
+                Text(exportStatus)
+                    .font(.subheadline)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel("Apple Health export status")
+                    .accessibilityValue(exportStatus)
+                    .accessibilityIdentifier("sleep-health-export-status")
             }
 
             if let activeSession {
                 activeSleepCard(activeSession)
-            } else {
-                recoveryCard
-                trainingCallCard
-                DashboardSection(title: "Coach Context") {
-                    ReadinessContextCard(
-                        readiness: readinessScore,
-                        focus: .sleep,
-                        title: "Sleep in daily readiness"
-                    )
+                activeStatusNote
+            } else if latestSummary.primarySession == nil {
+                if completedSessions.isEmpty {
+                    noDataHero
+                } else {
+                    missingLastNightHero
                 }
-                startCard
-                appleHealthConnectionCard
+                appleHealthAccessCard
+            } else {
+                populatedHero
+                readinessSupportSection
+                appleHealthAccessCard
             }
 
-            weeklyChartCard
-            napsSection
-            consistencyAndDebt
-            trainingInsightCard
-            coachingInsightsSection
-            historySection
+            if activeSession == nil, !completedSessions.isEmpty {
+                if trackedNightCount > 0 {
+                    weeklyChartCard
+                }
+                if !dashboardSummary.recentNaps.isEmpty {
+                    napsSection
+                }
+                if trackedNightCount >= 3 {
+                    consistencyAndDebt
+                }
+                if !readinessScore.isProvisional, !dashboardSummary.coachingInsights.isEmpty {
+                    coachingInsightsSection
+                }
+                if !completedSessions.isEmpty {
+                    historySection
+                }
+            }
         }
         .navigationTitle("Sleep")
         .navigationBarTitleDisplayMode(.inline)
@@ -214,13 +366,30 @@ struct SleepDashboardView: View {
                     Label("Sleep settings", systemImage: "slider.horizontal.3")
                 }
                 .accessibilityLabel("Sleep settings")
+                .accessibilityIdentifier("sleep-settings-button")
             }
         }
         .sheet(item: $confirmationSession) { session in
-            SleepMorningConfirmationView(session: session)
+            SleepMorningConfirmationView(session: session) { resolvedSessionID in
+                locallyResolvedSessionIDs.insert(resolvedSessionID)
+                refreshSleepAnalytics(force: true)
+                refreshReadinessScore(force: true)
+            }
         }
         .sheet(isPresented: $showingSettings) {
             SleepSettingsView(settings: $settings)
+        }
+        .sheet(item: $activeStartSheet) { sheet in
+            switch sheet {
+            case .sleepMode:
+                SleepModeView(settings: $settings)
+            case .napEntry:
+                NapSessionEditorView()
+            case .napTimer:
+                NapTimerView()
+            case .manualEntry:
+                SleepSessionEditorView(mode: .manual)
+            }
         }
         .alert("Discard active sleep?", isPresented: discardAlertBinding) {
             Button("Cancel", role: .cancel) {
@@ -237,7 +406,7 @@ struct SleepDashboardView: View {
             settings = settingsStore.load()
             hydrationTargetML = hydrationSettingsStore.dailyTargetML()
             nutritionGoal = nutritionGoalStore.loadGoal()
-            maybePromptForWakeTime()
+            presentMorningConfirmationIfNeeded()
             let currentSignature = currentAnalyticsSignature
             let warmSnapshotMatchesLiveData = hasInitialSnapshot && initialAnalyticsSignature == currentSignature
             let shouldForceRefresh = !didRequestInitialDashboardRefresh
@@ -265,7 +434,7 @@ struct SleepDashboardView: View {
             healthKitSleepImportTask?.cancel()
             PerformanceTracer.mark(.healthKitSleepBridge, "dashboard willResignActive cancel_import end")
         }
-        .onChange(of: currentAnalyticsSignature) { _, _ in
+        .onChange(of: analyticsObservationSignature) { _, _ in
             refreshSleepAnalytics()
             refreshReadinessScore()
         }
@@ -285,168 +454,119 @@ struct SleepDashboardView: View {
         }
     }
 
-    private var trainingCallCard: some View {
-        DashboardSection(title: "Today's Training Call") {
-            SleepGlassCard {
-                VStack(alignment: .leading, spacing: 14) {
-                    SleepGlassRow(
-                        title: trainingCallTitle,
-                        subtitle: trainingCallMessage,
-                        systemImage: trainingCallSystemImage,
-                        tint: trainingCallTint
-                    ) {
-                        Text(trainingCallBadge)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(trainingCallTint)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
-                            .background(trainingCallTint.opacity(0.14), in: Capsule())
-                    }
+    private var noDataHero: some View {
+        SleepCard(style: .hero) {
+            VStack(alignment: .leading, spacing: 16) {
+                SleepRow(title: "Sleep Recovery", subtitle: "Start with one night of tracking. Peakline will keep the estimate and its limits clear.", systemImage: "moon.stars.fill")
 
-                    if let recommendation = dashboardSummary.adaptiveRecommendation, !recommendation.suggestedActions.isEmpty {
-                        FlowLayout(spacing: 8) {
-                            ForEach(recommendation.suggestedActions) { action in
-                                Text(action.displayName)
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(appTheme.colors.textPrimary)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 7)
-                                    .background(appTheme.colors.cardBackgroundElevated, in: Capsule())
-                            }
-                        }
-                    }
-
-                    Text(trainingCallBasisText)
-                        .font(.caption)
-                        .foregroundStyle(appTheme.colors.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-    }
-
-    private var trainingCallTitle: String {
-        dashboardSummary.adaptiveRecommendation?.title ?? recoveryActionTitle
-    }
-
-    private var trainingCallMessage: String {
-        dashboardSummary.adaptiveRecommendation?.message ?? dashboardSummary.recommendation
-    }
-
-    private var trainingCallBadge: String {
-        dashboardSummary.adaptiveRecommendation?.level.displayName ?? latestSummary.recoveryState.displayName
-    }
-
-    private var trainingCallBasisText: String {
-        guard let recommendation = dashboardSummary.adaptiveRecommendation else {
-            return latestSummary.primarySession == nil
-                ? "Based on current sleep tracking status."
-                : "Based on last night's sleep score and recovery state."
-        }
-
-        guard !recommendation.basedOn.isEmpty else {
-            return "Based on sleep and recent training context."
-        }
-
-        return "Based on: \(recommendation.basedOn.map(\.displayName).joined(separator: ", "))."
-    }
-
-    private var trainingCallTint: Color {
-        if let recommendation = dashboardSummary.adaptiveRecommendation {
-            switch recommendation.level {
-            case .push, .normal:
-                return appTheme.colors.success
-            case .moderate:
-                return appTheme.colors.accent
-            case .light, .recovery:
-                return appTheme.colors.warning
-            case .rest:
-                return appTheme.colors.danger
-            }
-        }
-
-        switch latestSummary.recoveryState {
-        case .high, .good:
-            return appTheme.colors.success
-        case .moderate, .low:
-            return appTheme.colors.warning
-        case .veryLow:
-            return appTheme.colors.danger
-        case .unknown:
-            return appTheme.colors.textSecondary
-        }
-    }
-
-    private var trainingCallSystemImage: String {
-        if let recommendation = dashboardSummary.adaptiveRecommendation {
-            switch recommendation.level {
-            case .push:
-                return "bolt.fill"
-            case .normal:
-                return "checkmark.seal.fill"
-            case .moderate:
-                return "dial.medium.fill"
-            case .light:
-                return "arrow.down.forward.circle.fill"
-            case .recovery:
-                return "figure.cooldown"
-            case .rest:
-                return "moon.fill"
-            }
-        }
-
-        switch latestSummary.recoveryState {
-        case .high:
-            return "bolt.fill"
-        case .good:
-            return "checkmark.seal.fill"
-        case .moderate:
-            return "dial.medium.fill"
-        case .low:
-            return "arrow.down.forward.circle.fill"
-        case .veryLow:
-            return "figure.cooldown"
-        case .unknown:
-            return "moon.zzz.fill"
-        }
-    }
-
-    private var recoveryCard: some View {
-        SleepGlassCard(style: .hero) {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .top, spacing: 14) {
-                    SleepIconTile(systemImage: "moon.stars.fill", size: 50)
-
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Sleep Recovery")
-                            .font(.headline)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-
-                        Text(summaryMetadataText)
-                            .font(.subheadline)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer(minLength: 8)
-
-                }
-
-                Text(latestSummary.primarySession == nil ? "No sleep data yet" : SleepScoringService.durationText(minutes: latestSummary.totalSleepMinutes))
+                Text("No sleep tracked yet")
                     .font(AppTypography.heroMetric)
                     .foregroundStyle(appTheme.colors.textPrimary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("sleep-empty-title")
+                    .accessibilityIdentifier("sleep-no-data-hero")
 
-                VStack(alignment: .leading, spacing: 8) {
-                    SleepStatusChip(title: recoveryActionTitle, state: latestSummary.recoveryState)
+                SleepActionButton(title: "Start Sleep Mode", systemImage: "moon.zzz.fill", style: .primary) {
+                    activeStartSheet = .sleepMode
+                }
+                .accessibilityIdentifier("sleep-start-mode")
 
-                    Text(dashboardSummary.recommendation)
-                        .font(AppTypography.body)
+                sleepEntryActions
+            }
+        }
+    }
+
+    private var missingLastNightHero: some View {
+        SleepCard(style: .hero) {
+            VStack(alignment: .leading, spacing: 16) {
+                SleepRow(
+                    title: "Sleep Recovery",
+                    subtitle: "Older records stay in your history, but they do not fill today's missing overnight record.",
+                    systemImage: "moon.stars.fill"
+                )
+
+                Text("No sleep recorded last night")
+                    .font(AppTypography.heroMetric)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("sleep-no-overnight-hero")
+
+                Text("Today's sleep evidence remains unknown until you add the missing overnight record.")
+                    .font(AppTypography.body)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                SleepActionButton(title: "Start Sleep Mode", systemImage: "moon.zzz.fill", style: .primary) {
+                    activeStartSheet = .sleepMode
+                }
+                .accessibilityIdentifier("sleep-start-mode")
+
+                sleepEntryActions
+            }
+        }
+    }
+
+    private var sleepEntryActions: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                sleepEntryActionButtons
+            }
+
+            VStack(spacing: 10) {
+                sleepEntryActionButtons
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var sleepEntryActionButtons: some View {
+        SleepQuietAction(title: "Add Sleep", systemImage: "square.and.pencil") {
+            activeStartSheet = .manualEntry
+        }
+        .accessibilityIdentifier("sleep-add-manual")
+
+        SleepQuietAction(title: "Log Nap", systemImage: "moonphase.first.quarter") {
+            activeStartSheet = .napEntry
+        }
+        .accessibilityIdentifier("sleep-log-nap")
+    }
+
+    private var populatedHero: some View {
+        SleepCard(style: .hero) {
+            VStack(alignment: .leading, spacing: 14) {
+                SleepRow(
+                    title: "Last night's sleep",
+                    subtitle: summaryMetadataText,
+                    systemImage: "moon.stars.fill",
+                    tint: latestSummary.recoveryState == .unknown ? appTheme.colors.textSecondary : recoveryTint
+                )
+
+                Text(SleepScoringService.durationText(minutes: latestSummary.totalSleepMinutes))
+                    .font(AppTypography.heroMetric)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("sleep-last-night-duration")
+
+                Text("Peakline sleep estimate")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(appTheme.colors.textTertiary)
+                    .accessibilityIdentifier("sleep-populated-hero")
+
+                if let stageBreakdown = latestSummary.stageBreakdown, stageBreakdown.hasStages {
+                    SleepStageBreakdownView(breakdown: stageBreakdown)
+                        .accessibilityIdentifier("sleep-stage-breakdown")
+                } else if latestSummary.source == .appleHealth {
+                    Text("Apple Health stage detail is unavailable for this record. Peakline preserves the sleep interval without inventing stage values.")
+                        .font(.caption)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("sleep-stage-breakdown-unavailable")
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text(populatedHeroSupportText)
+                    .font(AppTypography.body)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 if latestSummary.napCreditMinutes > 0 {
                     Label("Nap added \(SleepScoringService.durationText(minutes: latestSummary.napCreditMinutes)) recovery credit", systemImage: "moonphase.first.quarter")
@@ -462,55 +582,178 @@ struct SleepDashboardView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                if latestSummary.primarySession != nil, latestSummary.qualityRating == nil {
-                    Text("Add a sleep quality rating to improve recovery coaching.")
-                        .font(.footnote)
-                        .foregroundStyle(appTheme.colors.warning)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
                 if let conflict = dashboardSummary.sourceConflict {
                     Text(conflict.displayMessage)
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.warning)
+                        .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if let stages = latestSummary.stageBreakdown, stages.hasStages {
-                    SleepStageBreakdownView(breakdown: stages)
                 }
             }
         }
     }
 
-    private var appleHealthConnectionCard: some View {
-        SleepGlassCard(style: .compact) {
-            SleepGlassRow(
-                title: appleHealthTitle,
-                subtitle: appleHealthSubtitle,
-                systemImage: "heart.text.square.fill"
-            )
+    private var readinessSupportSection: some View {
+        DashboardSection(title: "Readiness & training support") {
+            SleepCard(style: .compact) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(readinessScore.isProvisional ? "Provisional readiness" : supportTitle)
+                            .font(.headline)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                        Spacer(minLength: 8)
+                        Text("\(readinessScore.value)/100")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                    }
+
+                    Text(readinessScore.isProvisional ? "Training guidance waits for more evidence." : supportMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(readinessScore.confidenceNote)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(readinessScore.isProvisional ? appTheme.colors.textSecondary : appTheme.colors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("sleep-readiness-confidence")
+                }
+            }
+            .accessibilityIdentifier("sleep-readiness-support")
         }
+    }
+
+    private var activeStatusNote: some View {
+        Text("Charts and coaching will update after you confirm this session.")
+            .font(.caption)
+            .foregroundStyle(appTheme.colors.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("sleep-active-status-note")
+    }
+
+    private var appleHealthAccessCard: some View {
+        Button {
+            showingSettings = true
+        } label: {
+            SleepCard(style: .compact) {
+                SleepRow(
+                    title: appleHealthTitle,
+                    subtitle: appleHealthSubtitle,
+                    systemImage: "heart.text.square.fill",
+                    tint: HealthKitSleepService().isAvailable ? appTheme.colors.accent : appTheme.colors.textSecondary,
+                    showsChevron: true
+                ) {
+                    Text(appleHealthActionLabel)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(appleHealthTitle)
+        .accessibilityValue(appleHealthSubtitle)
+        .accessibilityHint(appleHealthAccessibilityHint)
+        .accessibilityIdentifier("sleep-health-access")
     }
 
     private var appleHealthTitle: String {
         if !HealthKitSleepService().isAvailable {
             return "Apple Health unavailable"
         }
-        return settings.enableAppleHealthImport ? "Apple Health Connected" : "Connect Apple Health"
+
+        switch (settings.enableAppleHealthImport, settings.enableAppleHealthExport) {
+        case (true, true):
+            return "Apple Health import and save"
+        case (true, false):
+            return "Apple Health import"
+        case (false, true):
+            return "Save to Apple Health"
+        case (false, false):
+            return "Apple Health off"
+        }
     }
 
     private var appleHealthSubtitle: String {
         if !HealthKitSleepService().isAvailable {
             return "This device does not support HealthKit sleep access."
         }
-        if settings.enableAppleHealthImport {
-            if let lastSync = settings.lastHealthKitSleepSyncAt {
-                return "Last synced: \(lastSync.formatted(date: .abbreviated, time: .shortened)). Sleep data improves recovery scoring."
-            }
-            return "Sleep data improves recovery scoring."
+
+        switch (settings.enableAppleHealthImport, settings.enableAppleHealthExport) {
+        case (true, true):
+            let exportStatus = healthKitExportStatus.message
+                ?? "Saving confirmed sleep is enabled; review Apple Health save access in Settings."
+            return "\(appleHealthImportSubtitle) \(exportStatus)"
+        case (true, false):
+            return appleHealthImportSubtitle
+        case (false, true):
+            return healthKitExportStatus.message
+                ?? "Confirmed sleep will be saved when Apple Health save access is authorized. Import is off."
+        case (false, false):
+            return "Apple Health import and saving confirmed sleep are off. Open Settings to change these preferences."
         }
-        return "Import sleep data automatically to improve recovery scoring."
+    }
+
+    private var appleHealthImportSubtitle: String {
+        if !healthKitAuthorizationWasRequested {
+            return "Import is enabled, but access has not been requested on this install. Open Settings to continue."
+        }
+
+        switch healthKitImportPresentation {
+        case .importing:
+            return "Checking Apple Health for recent sleep…"
+        case .denied:
+            return "Sleep access was denied. Review access in the Health app."
+        case .restricted:
+            return "Sleep access is restricted on this device."
+        case .error(let message):
+            return message
+        default:
+            break
+        }
+
+        if let importedCount {
+            return importedCount == 0
+                ? "Apple Health checked. No new sleep samples were found."
+                : "Imported \(importedCount) Apple Health sleep sample\(importedCount == 1 ? "" : "s")."
+        }
+        if let lastSync = settings.lastHealthKitSleepSyncAt {
+            return "Last synced: \(lastSync.formatted(date: .abbreviated, time: .shortened)). Sleep data improves recovery scoring."
+        }
+        return "Import is enabled. Apple Health does not reveal read permission, so Peakline verifies access only when an import succeeds."
+    }
+
+    private var appleHealthAccessibilityHint: String {
+        if !HealthKitSleepService().isAvailable {
+            return "Opens Sleep Settings to review Apple Health availability."
+        }
+
+        switch (settings.enableAppleHealthImport, settings.enableAppleHealthExport) {
+        case (true, true):
+            return "Opens Sleep Settings to request or review Apple Health import and save access."
+        case (true, false):
+            return "Opens Sleep Settings to request or review Apple Health import access."
+        case (false, true):
+            return "Opens Sleep Settings to review Apple Health save access."
+        case (false, false):
+            return "Opens Sleep Settings to change Apple Health import and save preferences."
+        }
+    }
+
+    private var appleHealthActionLabel: String {
+        if !HealthKitSleepService().isAvailable {
+            return "Review"
+        }
+
+        switch (settings.enableAppleHealthImport, settings.enableAppleHealthExport) {
+        case (true, true):
+            return "Review access"
+        case (true, false):
+            return "Review import"
+        case (false, true):
+            return "Review saving"
+        case (false, false):
+            return "Configure"
+        }
     }
 
     private var summaryMetadataText: String {
@@ -523,25 +766,71 @@ struct SleepDashboardView: View {
         return PeaklineText.joinedMetadata(["\(quality) quality", source])
     }
 
-    private var startCard: some View {
-        SleepStartCard(settings: $settings)
+    private var populatedHeroSupportText: String {
+        if latestSummary.qualityRating == nil {
+            return "Add a quality rating when you have a useful read on how rested you feel."
+        }
+        return "Sleep is one input to readiness. Use the context below with how you feel and how warm-ups move."
+    }
+
+    private var supportTitle: String {
+        guard let recommendation = dashboardSummary.adaptiveRecommendation else {
+            return latestSummary.recoveryState == .unknown ? "Use today's context" : "Train as planned"
+        }
+        switch recommendation.level {
+        case .rest, .recovery:
+            return "Recovery-focused support"
+        case .light, .moderate:
+            return "Keep today's work controlled"
+        case .push, .normal:
+            return "Train as planned"
+        }
+    }
+
+    private var supportMessage: String {
+        guard let recommendation = dashboardSummary.adaptiveRecommendation else {
+            return "Use sleep, recent training, and warm-ups together."
+        }
+        switch recommendation.level {
+        case .push:
+            return "Sleep and recent context support your planned session. Progress only if warm-ups feel good."
+        default:
+            return recommendation.message
+        }
+    }
+
+    private var recoveryTint: Color {
+        switch latestSummary.recoveryState {
+        case .high, .good:
+            return appTheme.colors.success
+        case .moderate, .low:
+            return appTheme.colors.warning
+        case .veryLow:
+            return appTheme.colors.danger
+        case .unknown:
+            return appTheme.colors.textSecondary
+        }
     }
 
     private func activeSleepCard(_ session: SleepSession) -> some View {
-        SleepGlassCard(style: .hero) {
+        SleepCard(style: .hero) {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top, spacing: 12) {
-                    SleepIconTile(systemImage: "moon.zzz.fill", size: 46)
+                    SleepIcon(systemImage: "moon.zzz.fill", size: 46)
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Sleep Mode Active")
                             .font(.headline)
                             .foregroundStyle(appTheme.colors.textPrimary)
+                            .accessibilityIdentifier("sleep-active-hero")
 
-                        Text(activeSleepDescription(for: session))
-                            .font(.subheadline)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        TimelineView(.periodic(from: Date.now, by: 60)) { timeline in
+                            Text(activeSleepDescription(for: session, at: timeline.date))
+                                .font(.subheadline)
+                                .foregroundStyle(appTheme.colors.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("sleep-active-elapsed")
+                        }
                     }
                 }
 
@@ -567,6 +856,7 @@ struct SleepDashboardView: View {
         ) {
             confirmationSession = session
         }
+        .accessibilityIdentifier("sleep-active-confirm")
 
         SleepActionButton(
             title: "Discard",
@@ -576,53 +866,44 @@ struct SleepDashboardView: View {
             pendingDiscardSession = session
         }
         .accessibilityLabel("Discard sleep session")
+        .accessibilityIdentifier("sleep-active-discard")
     }
 
-    private var recoveryActionTitle: String {
-        switch latestSummary.recoveryState {
-        case .high:
-            return "Push progression"
-        case .good:
-            return "Train normally"
-        case .moderate:
-            return "Train with caution"
-        case .low:
-            return "Reduce volume today"
-        case .veryLow:
-            return "Recovery focus"
-        case .unknown:
-            return "Track sleep tonight"
-        }
-    }
-
-    private func activeSleepDescription(for session: SleepSession) -> String {
+    private func activeSleepDescription(for session: SleepSession, at now: Date) -> String {
         let start = session.estimatedSleepStartAt ?? session.confirmedSleepStartAt
-        if Date.now < start {
+        if now < start {
             return "Wind-down is running. Estimated sleep starts at \(start.formatted(date: .omitted, time: .shortened))."
         }
 
-        let minutes = SleepSessionRepository().durationMinutes(start: start, wake: .now)
+        let minutes = SleepSessionRepository().durationMinutes(start: start, wake: now)
         return "Estimated sleep so far: \(SleepScoringService.durationText(minutes: minutes)). Confirm or edit wake time when you are up."
     }
 
     private func discardPendingSleepSession() {
         guard let session = pendingDiscardSession else { return }
         let discardedSessionID = session.id
-        try? repository.discard(session, in: modelContext)
-        pendingDiscardSession = nil
+        dashboardErrorMessage = nil
 
-        let sessionSnapshots = SleepNotificationScheduler.sessionSnapshots(from: sessions)
-        let workoutSnapshots = SleepNotificationScheduler.workoutSnapshots(from: workouts)
-        let notificationSettings = settings
-        Task {
-            SleepNotificationScheduler().cancelNotifications(for: discardedSessionID)
-            await SleepNotificationScheduler().refreshAllSleepNotifications(settings: notificationSettings, sessions: sessionSnapshots, workouts: workoutSnapshots)
+        do {
+            try repository.discard(session, in: modelContext)
+            locallyResolvedSessionIDs.insert(discardedSessionID)
+            pendingDiscardSession = nil
+
+            let sessionSnapshots = SleepNotificationScheduler.sessionSnapshots(from: sessions)
+            let workoutSnapshots = SleepNotificationScheduler.workoutSnapshots(from: workouts)
+            let notificationSettings = settings
+            Task {
+                SleepNotificationScheduler().cancelNotifications(for: discardedSessionID)
+                await SleepNotificationScheduler().refreshAllSleepNotifications(settings: notificationSettings, sessions: sessionSnapshots, workouts: workoutSnapshots)
+            }
+        } catch {
+            dashboardErrorMessage = "Couldn’t discard this sleep session. \(error.localizedDescription)"
         }
     }
 
     private var weeklyChartCard: some View {
         DashboardSection(title: "Last 7 Days") {
-            SleepGlassCard {
+            SleepCard {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
                         Text("Average \(SleepScoringService.durationText(minutes: averageSleepMinutes))")
@@ -656,6 +937,7 @@ struct SleepDashboardView: View {
                     .frame(height: 150)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Weekly sleep chart. Average \(averageSleepMinutes == 0 ? "no tracked sleep" : SleepScoringService.durationText(minutes: averageSleepMinutes)). Target \(SleepScoringService.durationText(minutes: settings.targetSleepMinutes)).")
+                    .accessibilityIdentifier("sleep-seven-day-trend")
                 }
             }
         }
@@ -670,9 +952,18 @@ struct SleepDashboardView: View {
     private var napsSection: some View {
         DashboardSection(title: "Naps") {
             VStack(spacing: 12) {
+                HStack {
+                    Spacer(minLength: 0)
+                    SleepQuietAction(title: "Nap Timer", systemImage: "timer") {
+                        activeStartSheet = .napTimer
+                    }
+                    .frame(maxWidth: 170)
+                    .accessibilityIdentifier("sleep-nap-timer")
+                }
+
                 if dashboardSummary.recentNaps.isEmpty {
-                    SleepGlassCard(style: .compact) {
-                        SleepGlassRow(
+                    SleepCard(style: .compact) {
+                        SleepRow(
                             title: "No naps logged recently",
                             subtitle: "Log a nap after short sleep to see whether it helped today's recovery.",
                             systemImage: "moonphase.first.quarter"
@@ -712,11 +1003,11 @@ struct SleepDashboardView: View {
 
     private var consistencyAndDebt: some View {
         DashboardSection(title: "Recovery Trends") {
-            SleepGlassCard {
+            SleepCard {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 10) {
-                        SleepGlassMetricTile(title: "Sleep Debt", value: sleepDebtHeadline, systemImage: "moon.zzz")
-                        SleepGlassMetricTile(title: "Consistency", value: dashboardSummary.consistencySummary.displayName, systemImage: "calendar")
+                        SleepMetric(title: "Sleep Debt", value: sleepDebtHeadline, systemImage: "moon.zzz")
+                        SleepMetric(title: "Consistency", value: dashboardSummary.consistencySummary.displayName, systemImage: "calendar")
                     }
 
                     Text(sleepDebtCopy)
@@ -726,8 +1017,8 @@ struct SleepDashboardView: View {
 
                     if let bed = dashboardSummary.consistencySummary.averageSleepStart, let wake = dashboardSummary.consistencySummary.averageWakeTime {
                         HStack(spacing: 10) {
-                            SleepGlassMetricTile(title: "Bedtime", value: bed.formatted(date: .omitted, time: .shortened), systemImage: "bed.double")
-                            SleepGlassMetricTile(title: "Wake", value: wake.formatted(date: .omitted, time: .shortened), systemImage: "sun.max")
+                            SleepMetric(title: "Bedtime", value: bed.formatted(date: .omitted, time: .shortened), systemImage: "bed.double")
+                            SleepMetric(title: "Wake", value: wake.formatted(date: .omitted, time: .shortened), systemImage: "sun.max")
                         }
                     }
 
@@ -742,8 +1033,8 @@ struct SleepDashboardView: View {
 
     private var trainingInsightCard: some View {
         DashboardSection(title: "Sleep And Training") {
-            SleepGlassCard(style: .compact) {
-                SleepGlassRow(
+            SleepCard(style: .compact) {
+                SleepRow(
                     title: "Training context",
                     subtitle: coaching.trainingInsight(summaries: summaries, workouts: workouts),
                     systemImage: "figure.strengthtraining.traditional"
@@ -756,8 +1047,8 @@ struct SleepDashboardView: View {
         DashboardSection(title: "Coaching Insights") {
             VStack(spacing: 10) {
                 if dashboardSummary.coachingInsights.isEmpty {
-                    SleepGlassCard(style: .compact) {
-                        SleepGlassRow(
+                    SleepCard(style: .compact) {
+                        SleepRow(
                             title: "Insights warming up",
                             subtitle: "Keep tracking sleep and workouts. Once there is enough history, Peakline can show how your sleep affects performance.",
                             systemImage: "sparkles"
@@ -775,8 +1066,8 @@ struct SleepDashboardView: View {
     private var historySection: some View {
         DashboardSection(title: "History") {
             if completedSessions.isEmpty {
-                SleepGlassCard(style: .compact) {
-                    SleepGlassRow(
+                SleepCard(style: .compact) {
+                    SleepRow(
                         title: "No sleep data yet",
                         subtitle: "Start Sleep Mode tonight to help the app understand your recovery.",
                         systemImage: "moon.zzz"
@@ -786,11 +1077,21 @@ struct SleepDashboardView: View {
                 VStack(spacing: 10) {
                     ForEach(completedSessions.prefix(14)) { session in
                         NavigationLink {
-                            SleepSessionDetailView(session: session)
+                            SleepSessionDetailView(
+                                session: session,
+                                recentSessions: completedSessions,
+                                stageBreakdown: summaries.first { $0.primarySession?.id == session.id }?.stageBreakdown,
+                                readinessIsProvisional: readinessScore.isProvisional
+                            )
                         } label: {
-                            SleepHistoryRow(session: session, qualityScore: scoring.score(for: session, recentSessions: completedSessions, settings: settings))
+                            SleepHistoryRow(
+                                session: session,
+                                qualityScore: scoring.score(for: session, recentSessions: completedSessions, settings: settings),
+                                readinessIsProvisional: readinessScore.isProvisional
+                            )
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("sleep-history-\(session.id.uuidString)")
                     }
                 }
             }
@@ -820,19 +1121,18 @@ struct SleepDashboardView: View {
         return "\(SleepScoringService.durationText(minutes: debt)) below target. Based on \(trackedNightCount) tracked night\(trackedNightCount == 1 ? "" : "s")."
     }
 
-    private func maybePromptForWakeTime() {
-        guard let activeSession else { return }
-        let sleepStart = activeSession.estimatedSleepStartAt ?? activeSession.confirmedSleepStartAt
-        if Date.now.timeIntervalSince(sleepStart) >= 60 * 60 {
-            confirmationSession = activeSession
-        }
-    }
-
     private func refreshSleepAnalytics(force: Bool = false) {
         let signature = currentAnalyticsSignature
         guard force || signature != lastAnalyticsSignature else { return }
 
-        let snapshot = analyticsStore.snapshot(sessions: sessions, naps: naps, workouts: workouts, settings: settings, force: force)
+        let snapshot = analyticsStore.snapshot(
+            sessions: sessions,
+            naps: naps,
+            workouts: workouts,
+            settings: settings,
+            workoutRevision: workoutWarmStartInvalidation.revision,
+            force: force
+        )
         AppMotion.withoutAnimation {
             summaries = snapshot.summaries
             latestSummary = snapshot.latestSummary
@@ -867,7 +1167,7 @@ struct SleepDashboardView: View {
     }
 
     private func scheduleSleepImportIfEnabled() {
-        guard settings.enableAppleHealthImport else { return }
+        guard settings.enableAppleHealthImport, healthKitAuthorizationWasRequested else { return }
         if let lastSync = settings.lastHealthKitSleepSyncAt, Date.now.timeIntervalSince(lastSync) < 30 * 60 {
             return
         }
@@ -876,25 +1176,60 @@ struct SleepDashboardView: View {
         healthKitSleepImportTask?.cancel()
         healthKitSleepImportTask = Task(priority: .utility) {
             PerformanceTracer.mark(.healthKitSleepBridge, "import task begin")
-            let candidates = await HealthKitSleepService().importRecentSleepCandidates(days: 14, existing: existing)
-            PerformanceTracer.mark(.healthKitSleepBridge, "import candidates_ready count=\(candidates.count)")
+            await MainActor.run {
+                healthKitImportPresentation = .importing
+            }
+            let service = HealthKitSleepService()
+            let access = service.accessSnapshot(
+                readEnabled: settings.enableAppleHealthImport,
+                writeEnabled: settings.enableAppleHealthExport,
+                authorizationWasRequested: healthKitAuthorizationWasRequested
+            )
+            let result = await service.importRecentSleepCandidatesResult(
+                days: 14,
+                existing: existing,
+                access: access
+            )
             guard !Task.isCancelled else { return }
-
-            applyHealthKitSleepImport(candidates)
+            applyHealthKitSleepImport(result)
         }
     }
 
     @MainActor
-    private func applyHealthKitSleepImport(_ candidates: [HealthKitSleepImportCandidate]) {
+    private func applyHealthKitSleepImport(_ result: HealthKitSleepImportResult) {
         PerformanceTracer.mark(.healthKitSleepBridge, "import main_apply begin")
+        healthKitImportPresentation = .make(result: result, lastSyncedAt: settings.lastHealthKitSleepSyncAt)
+        switch result {
+        case .imported(let candidates, _):
+            persistImportedHealthKitCandidates(candidates)
+        case .noNewData:
+            importedCount = 0
+            healthKitImportError = nil
+            markHealthKitSyncCompleted()
+        case .unavailable:
+            healthKitImportError = "Apple Health is unavailable on this device."
+        case .notRequested:
+            healthKitImportError = "Apple Health sleep access has not been requested."
+        case .denied:
+            healthKitImportError = "Apple Health sleep access was denied. Review access in the Health app."
+        case .restricted:
+            healthKitImportError = "Apple Health sleep access is restricted on this device."
+        case .error(let error):
+            healthKitImportError = error.localizedDescription
+        case .importing:
+            break
+        }
+        PerformanceTracer.mark(.healthKitSleepBridge, "import main_apply end")
+    }
+
+    @MainActor
+    private func persistImportedHealthKitCandidates(_ candidates: [HealthKitSleepImportCandidate]) {
         do {
             let count = try persistHealthKitSleepImport(candidates)
             settings = settingsStore.load()
             healthKitImportError = nil
             refreshSleepAnalytics(force: true)
-            if count > 0 {
-                importedCount = count
-            }
+            importedCount = count
 
             let notificationSettings = settings
             let sessionSnapshots = SleepNotificationScheduler.sessionSnapshots(from: sessions)
@@ -912,15 +1247,31 @@ struct SleepDashboardView: View {
             healthKitImportError = "Could not save Apple Health sleep data locally. Try again."
             PerformanceTracer.mark(.healthKitSleepBridge, "import save_failed error=\(error.localizedDescription)")
         }
-        PerformanceTracer.mark(.healthKitSleepBridge, "import main_apply end")
+    }
+
+    private var healthKitAuthorizationWasRequested: Bool {
+        UserDefaults.standard.bool(forKey: healthKitSleepAuthorizationRequestedKey)
+    }
+
+    private func markHealthKitSyncCompleted() {
+        var refreshedSettings = settingsStore.load()
+        refreshedSettings.lastHealthKitSleepSyncAt = .now
+        settingsStore.save(refreshedSettings)
+        settings = refreshedSettings
     }
 
     private func persistHealthKitSleepImport(_ candidates: [HealthKitSleepImportCandidate]) throws -> Int {
         var imported = 0
         var insertedSessions: [SleepSession] = []
         var insertedNaps: [NapSession] = []
+        let referenceNow = Date.now
 
         for candidate in candidates {
+            guard candidate.isValidForImport(at: referenceNow) else {
+                PerformanceTracer.mark(.healthKitSleepBridge, "import persistence skipped future interval")
+                continue
+            }
+
             switch candidate {
             case let .session(startDate, endDate, confidence, healthKitSampleIds):
                 let session = SleepSession(
@@ -959,11 +1310,17 @@ struct SleepDashboardView: View {
             }
         }
 
-        var refreshedSettings = settingsStore.load()
-        refreshedSettings.lastHealthKitSleepSyncAt = .now
-        settingsStore.save(refreshedSettings)
+        markHealthKitSyncCompleted()
 
         return imported
+    }
+
+    private func presentMorningConfirmationIfNeeded() {
+        guard !didPresentMorningConfirmation, let activeSession else { return }
+        let sleepStart = activeSession.estimatedSleepStartAt ?? activeSession.confirmedSleepStartAt
+        guard Date.now.timeIntervalSince(sleepStart) >= 4 * 60 * 60 else { return }
+        didPresentMorningConfirmation = true
+        confirmationSession = activeSession
     }
 }
 
@@ -976,69 +1333,6 @@ private enum SleepStartSheet: String, Identifiable {
     var id: String { rawValue }
 }
 
-private struct SleepStartCard: View {
-    @Binding var settings: SleepSettings
-    @State private var activeSheet: SleepStartSheet?
-
-    var body: some View {
-        SleepGlassCard {
-            VStack(alignment: .leading, spacing: 16) {
-                SleepGlassRow(
-                    title: "Sleep Mode",
-                    subtitle: "Sleep start is estimated from your wind-down timer. You can edit it in the morning.",
-                    systemImage: "bed.double.fill"
-                )
-
-                SleepActionButton(
-                    title: "Start Sleep Mode",
-                    systemImage: "moon.zzz.fill",
-                    style: .primary
-                ) {
-                    activeSheet = .sleepMode
-                }
-
-                VStack(spacing: 10) {
-                    SleepActionButton(
-                        title: "Log Nap",
-                        systemImage: "plus.circle.fill",
-                        style: .secondary
-                    ) {
-                        activeSheet = .napEntry
-                    }
-
-                    SleepActionButton(
-                        title: "Nap Timer",
-                        systemImage: "timer",
-                        style: .secondary
-                    ) {
-                        activeSheet = .napTimer
-                    }
-
-                    SleepActionButton(
-                        title: "Manual Entry",
-                        systemImage: "square.and.pencil",
-                        style: .secondary
-                    ) {
-                        activeSheet = .manualEntry
-                    }
-                }
-            }
-        }
-        .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .sleepMode:
-                SleepModeView(settings: $settings)
-            case .napEntry:
-                NapSessionEditorView()
-            case .napTimer:
-                NapTimerView()
-            case .manualEntry:
-                SleepSessionEditorView(mode: .manual)
-            }
-        }
-    }
-}
-
 private struct NapSummaryCard: View {
     @Environment(\.appTheme) private var appTheme
 
@@ -1046,8 +1340,8 @@ private struct NapSummaryCard: View {
     let creditMinutes: String
 
     var body: some View {
-        SleepGlassCard(style: .compact) {
-            SleepGlassRow(
+        SleepCard(style: .compact) {
+            SleepRow(
                 title: "\(nap.startDate.formatted(date: .omitted, time: .shortened))-\(nap.endDate.formatted(date: .omitted, time: .shortened))",
                 subtitle: napSubtitle,
                 systemImage: "moonphase.first.quarter"
@@ -1076,9 +1370,10 @@ struct NapSessionEditorView: View {
 
     @State private var start = Date.now.addingTimeInterval(-30 * 60)
     @State private var end = Date.now
-    @State private var quality = 3
+    @State private var quality: Int?
     @State private var note = ""
     @State private var errorText: String?
+    @State private var showingTimer = false
 
     private let repository = NapSessionRepository()
 
@@ -1089,30 +1384,38 @@ struct NapSessionEditorView: View {
                 subtitle: "Add short recovery sleep without changing overnight data.",
                 systemImage: "moonphase.first.quarter"
             ) {
-                SleepGlassCard {
+                SleepCard {
                     VStack(alignment: .leading, spacing: 14) {
-                        SleepGlassRow(
+                        SleepRow(
                             title: "Nap Time",
                             subtitle: "Set when the nap started and ended.",
                             systemImage: "clock"
                         )
 
-                    DatePicker("Start", selection: $start, displayedComponents: [.date, .hourAndMinute])
-                    DatePicker("End", selection: $end, displayedComponents: [.date, .hourAndMinute])
+                        DatePicker("Start", selection: $start, displayedComponents: [.date, .hourAndMinute])
+                            .accessibilityIdentifier("sleep-nap-start")
+                        DatePicker("End", selection: $end, displayedComponents: [.date, .hourAndMinute])
+                            .accessibilityIdentifier("sleep-nap-end")
                     }
                 }
 
-                SleepGlassCard {
+                SleepQuietAction(title: "Use Nap Timer", systemImage: "timer") {
+                    showingTimer = true
+                }
+                .accessibilityIdentifier("sleep-nap-timer")
+
+                SleepCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Quality")
                             .font(.headline)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                     SleepQualityPicker(selection: $quality)
+                        .accessibilityIdentifier("sleep-nap-quality")
                     }
                 }
 
-                SleepGlassCard {
+                SleepCard {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Note")
                             .font(.headline)
@@ -1128,12 +1431,14 @@ struct NapSessionEditorView: View {
                 if let errorText {
                     Text(errorText)
                         .font(.subheadline)
-                        .foregroundStyle(appTheme.colors.danger)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .accessibilityIdentifier("sleep-nap-error")
                 }
 
-                SleepGlassActionButton(title: "Save Nap", systemImage: "checkmark", style: .primary) {
+                SleepActionButton(title: "Save Nap", systemImage: "checkmark", style: .primary) {
                     saveNap()
                 }
+                .accessibilityIdentifier("sleep-nap-save")
             }
             .navigationTitle("Log Nap")
             .navigationBarTitleDisplayMode(.inline)
@@ -1141,6 +1446,9 @@ struct NapSessionEditorView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
+            }
+            .sheet(isPresented: $showingTimer) {
+                NapTimerView()
             }
         }
     }
@@ -1160,11 +1468,11 @@ struct NapTimerView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
 
-    @State private var selectedMinutes = 30
-    @State private var startedAt: Date?
+    @State private var timerState = NapTimerMachineState.idle(selectedMinutes: 30)
     @State private var now = Date.now
-    @State private var quality = 3
+    @State private var quality: Int?
     @State private var errorText: String?
+    @State private var showingCloseConfirmation = false
 
     private let options = [20, 30, 45, 90]
     private let repository = NapSessionRepository()
@@ -1174,92 +1482,229 @@ struct NapTimerView: View {
         NavigationStack {
             FitnessScreen(
                 title: "Nap Timer",
-                subtitle: "Set a short recovery window.",
+                subtitle: "Set a short recovery window. The saved end time always comes from the clock.",
                 systemImage: "timer"
             ) {
-                SleepGlassCard(style: .hero) {
+                SleepCard(style: .hero) {
                     VStack(alignment: .center, spacing: 14) {
-                        SleepGlassIcon(systemImage: startedAt == nil ? "timer" : "moon.zzz.fill", size: 66)
+                        SleepIcon(systemImage: timerState.phase == .idle ? "timer" : "moon.zzz.fill", size: 60)
 
                         Text(timerText)
                             .font(AppTypography.heroMetric)
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .monospacedDigit()
+                            .accessibilityIdentifier("sleep-nap-timer-value")
 
-                        Text(startedAt == nil ? "Ready when you are" : "Nap in progress")
+                        Text(stateTitle)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
                     .frame(maxWidth: .infinity)
                 }
+                .accessibilityIdentifier("sleep-nap-timer-hero")
 
-                SleepGlassCard {
+                SleepCard {
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("Timer")
+                        Text("Timer length")
                             .font(.headline)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
-                        Picker("Timer", selection: $selectedMinutes) {
+                        Menu {
                             ForEach(options, id: \.self) { minutes in
-                                Text("\(minutes)m").tag(minutes)
+                                Button("\(minutes) minutes") {
+                                    transition(.selectDuration(minutes: minutes))
+                                }
                             }
+                        } label: {
+                            HStack {
+                                Text("\(timerState.selectedMinutes) minutes")
+                                Spacer()
+                                Image(systemName: "chevron.up.chevron.down")
+                            }
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                            .frame(maxWidth: .infinity, minHeight: appTheme.metrics.minimumHitTarget, alignment: .leading)
                         }
-                        .pickerStyle(.segmented)
-                        .disabled(startedAt != nil)
+                        .disabled(timerState.phase != .idle)
+                        .accessibilityLabel("Nap timer length")
+                        .accessibilityValue("\(timerState.selectedMinutes) minutes")
+                        .accessibilityIdentifier("sleep-nap-timer-length")
 
                         SleepQualityPicker(selection: $quality)
+                            .disabled(timerState.phase != .idle)
+                            .accessibilityIdentifier("sleep-nap-timer-quality")
                     }
                 }
 
                 if let errorText {
                     Text(errorText)
                         .font(.footnote)
-                        .foregroundStyle(appTheme.colors.danger)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("sleep-nap-timer-error")
                 }
 
-                SleepGlassActionButton(
-                    title: startedAt == nil ? "Start Nap Timer" : "Finish Nap",
-                    systemImage: startedAt == nil ? "timer" : "checkmark.circle.fill",
+                SleepActionButton(
+                    title: primaryActionTitle,
+                    systemImage: primaryActionSystemImage,
                     style: .primary
                 ) {
-                    if startedAt == nil {
-                        startedAt = .now
-                    } else {
+                    switch timerState.phase {
+                    case .idle:
+                        transition(.start(now: timerStartDate))
+                    case .running, .elapsed:
                         finishNap()
+                    case .completed:
+                        dismiss()
+                    case .finishing, .discardConfirmation:
+                        break
                     }
                 }
+                .disabled(timerState.phase == .finishing || timerState.phase == .discardConfirmation)
+                .accessibilityIdentifier("sleep-nap-timer-primary")
             }
             .navigationTitle("Nap Timer")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(timerState.isActive)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
+                    Button("Close") { requestClose() }
+                        .disabled(timerState.phase == .finishing)
+                        .accessibilityIdentifier("sleep-nap-timer-close")
                 }
             }
             .onReceive(timer) { value in
                 now = value
+                transition(.tick(now: value))
+            }
+            .alert("Discard nap timer?", isPresented: $showingCloseConfirmation) {
+                Button("Keep Timer", role: .cancel) {
+                    transition(.cancelDiscard(now: .now))
+                }
+                Button("Discard", role: .destructive) {
+                    transition(.confirmDiscard)
+                    dismiss()
+                }
+            } message: {
+                Text("The running timer has not been saved.")
             }
         }
     }
 
-    private var timerText: String {
-        guard let startedAt else {
-            return "\(selectedMinutes):00"
-        }
+    private var elapsedSeconds: Int {
+        Int(timerState.elapsed(at: now))
+    }
 
-        let elapsed = Int(now.timeIntervalSince(startedAt))
-        let remaining = max(0, selectedMinutes * 60 - elapsed)
-        return "\(remaining / 60):\(String(format: "%02d", remaining % 60))"
+    private var timerText: String {
+        guard timerState.phase != .idle else { return "\(timerState.selectedMinutes):00" }
+        return "\(elapsedSeconds / 60):\(String(format: "%02d", elapsedSeconds % 60))"
+    }
+
+    private var stateTitle: String {
+        switch timerState.phase {
+        case .idle:
+            return "Ready when you are"
+        case .running:
+            return "Nap in progress"
+        case .elapsed:
+            return "Target reached · finish when ready"
+        case .finishing:
+            return "Saving nap"
+        case .completed:
+            return "Nap saved"
+        case .discardConfirmation:
+            return "Confirm discard"
+        }
+    }
+
+    private var primaryActionTitle: String {
+        switch timerState.phase {
+        case .idle:
+            return "Start Nap Timer"
+        case .running, .elapsed:
+            return "Finish Nap"
+        case .finishing:
+            return "Saving…"
+        case .completed:
+            return "Done"
+        case .discardConfirmation:
+            return "Finish Nap"
+        }
+    }
+
+    private var primaryActionSystemImage: String {
+        switch timerState.phase {
+        case .idle:
+            return "timer"
+        case .finishing:
+            return "arrow.triangle.2.circlepath"
+        case .completed:
+            return "checkmark.circle.fill"
+        case .running, .elapsed, .discardConfirmation:
+            return "checkmark.circle.fill"
+        }
+    }
+
+    private var timerStartDate: Date {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-UITestNapElapsedFixture") {
+            return Date.now.addingTimeInterval(-11 * 60)
+        }
+        #endif
+        return .now
+    }
+
+    private func requestClose() {
+        guard timerState.isActive else {
+            dismiss()
+            return
+        }
+        transition(.requestDiscard)
+        showingCloseConfirmation = true
     }
 
     private func finishNap() {
-        guard let startedAt else { return }
-        let end = max(Date.now, startedAt.addingTimeInterval(10 * 60))
-        do {
-            try repository.addNap(start: startedAt, end: end, quality: quality, note: "Nap timer", source: .napTimer, in: modelContext)
-            dismiss()
-        } catch {
+        let transition = NapTimerStateMachine.reduce(timerState, .finish(now: .now))
+        timerState = transition.state
+        errorText = nil
+
+        switch transition.effect {
+        case let .persist(completion):
+            do {
+                try repository.addNap(
+                    start: completion.startDate,
+                    end: completion.endDate,
+                    quality: quality,
+                    note: "Nap timer",
+                    source: .napTimer,
+                    in: modelContext
+                )
+                timerState = NapTimerStateMachine.reduce(timerState, .finishSucceeded).state
+            } catch {
+                timerState = NapTimerStateMachine.reduce(timerState, .finishFailed).state
+                errorText = error.localizedDescription
+            }
+        case let .error(error):
+            errorText = error == .tooShort
+                ? "Keep the timer running for at least 10 minutes before saving a nap."
+                : error.localizedDescription
+        case .none, .discard:
+            break
+        }
+    }
+
+    private func transition(_ action: NapTimerAction) {
+        let result = NapTimerStateMachine.reduce(timerState, action)
+        timerState = result.state
+        if case let .error(error) = result.effect {
             errorText = error.localizedDescription
+        } else {
+            switch action {
+            case .tick, .finishFailed:
+                break
+            default:
+                errorText = nil
+            }
         }
     }
 }
@@ -1268,6 +1713,7 @@ struct SleepModeView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     @Query
     private var sessions: [SleepSession]
@@ -1277,7 +1723,6 @@ struct SleepModeView: View {
 
     @Binding var settings: SleepSettings
     @State private var selectedMinutes: Int
-    @State private var session: SleepSession?
     @State private var now = Date()
     @State private var errorMessage: String?
 
@@ -1314,14 +1759,13 @@ struct SleepModeView: View {
 
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 18) {
-                        sleepModeHeader
                         windDownSummary
                         windDownOptionsCard
 
                         if let errorMessage {
                             Text(errorMessage)
                                 .font(.caption)
-                                .foregroundStyle(appTheme.colors.danger)
+                                .foregroundStyle(appTheme.colors.textPrimary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
@@ -1334,36 +1778,23 @@ struct SleepModeView: View {
             .safeAreaInset(edge: .bottom) {
                 sleepModeActions
             }
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationTitle("Sleep Mode")
+            .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled()
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                        .accessibilityIdentifier("sleep-mode-close")
+                }
+            }
             .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { value in
                 now = value
             }
         }
     }
 
-    private var sleepModeHeader: some View {
-        HStack(alignment: .center, spacing: 14) {
-            SleepGlassIcon(systemImage: "moon.zzz.fill", size: 50)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Sleep Mode")
-                    .font(.system(.title, design: .rounded).weight(.bold))
-                    .foregroundStyle(appTheme.colors.textPrimary)
-                    .lineLimit(1)
-
-                Text("Wind down before tracking starts.")
-                    .font(.subheadline)
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 4)
-    }
-
     private var windDownSummary: some View {
-        SleepGlassCard(style: .hero, padding: 22) {
+        SleepCard(style: .hero, padding: 22) {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -1375,8 +1806,7 @@ struct SleepModeView: View {
                         Text(durationHeadline)
                             .font(AppTypography.heroMetric)
                             .foregroundStyle(appTheme.colors.textPrimary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.78)
+                            .fixedSize(horizontal: false, vertical: true)
                             .monospacedDigit()
                     }
 
@@ -1429,18 +1859,32 @@ struct SleepModeView: View {
     }
 
     private var windDownOptionsCard: some View {
-        SleepGlassCard(padding: 18) {
+        SleepCard(padding: 18) {
             VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("Wind-down length")
-                        .font(.headline)
-                        .foregroundStyle(appTheme.colors.textPrimary)
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Wind-down length")
+                            .font(.headline)
+                            .foregroundStyle(appTheme.colors.textPrimary)
 
-                    Spacer()
+                        Spacer(minLength: 8)
 
-                    Text("Editable tomorrow")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.textSecondary)
+                        Text("You can adjust the start in the morning")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Wind-down length")
+                            .font(.headline)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+
+                        Text("You can adjust the start in the morning")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 10)], spacing: 10) {
@@ -1451,6 +1895,7 @@ struct SleepModeView: View {
                         ) {
                             selectedMinutes = minutes
                         }
+                        .accessibilityIdentifier("sleep-mode-winddown-\(minutes)")
                     }
                 }
             }
@@ -1462,21 +1907,29 @@ struct SleepModeView: View {
             SleepModeActionButton(title: "Start Sleep Mode", systemImage: "moon.zzz.fill", style: .primary) {
                 start(minutes: selectedMinutes)
             }
+            .accessibilityIdentifier("sleep-mode-start")
 
-            HStack(spacing: 10) {
-                SleepModeActionButton(title: "Start Now", systemImage: "play.fill", style: .secondary) {
-                    start(minutes: 0)
-                }
-
-                SleepModeActionButton(title: "Cancel", systemImage: "xmark", style: .secondary) {
-                    dismiss()
-                }
+            Button("Start now") {
+                start(minutes: 0)
             }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(appTheme.colors.textSecondary)
+            .frame(minHeight: appTheme.metrics.minimumHitTarget)
+            .accessibilityIdentifier("sleep-mode-start-now")
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
         .padding(.bottom, 8)
-        .background(.thinMaterial)
+        .background(
+            reduceTransparency
+                ? AnyShapeStyle(appTheme.colors.cardBackground)
+                : AnyShapeStyle(.thinMaterial)
+        )
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(appTheme.colors.cardBorder)
+                .frame(height: 1)
+        }
     }
 
     private var estimatedStart: Date {
@@ -1534,6 +1987,8 @@ private struct SleepWindDownOptionButton: View {
         }
         .buttonStyle(PeaklineButtonPressStyle())
         .accessibilityLabel("\(minutes) minute wind-down")
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var background: Color {
@@ -1562,11 +2017,11 @@ private struct SleepModeActionButton: View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
                 .font(.headline.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(foreground)
                 .frame(maxWidth: .infinity)
-                .frame(height: style == .primary ? 58 : 52)
+                .frame(minHeight: style == .primary ? 58 : 52)
                 .background(background, in: Capsule())
                 .overlay {
                     Capsule()
@@ -1617,23 +2072,26 @@ struct SleepMorningConfirmationView: View {
     private var workouts: [WorkoutSession]
 
     let session: SleepSession
+    let onResolved: (UUID) -> Void
 
     @State private var sleepStart: Date
     @State private var wakeAt: Date
-    @State private var qualityRating: Int = 3
+    @State private var qualityRating: Int?
     @State private var tags: Set<SleepTag> = []
     @State private var errorMessage: String?
+    @State private var showingDiscardConfirmation = false
 
     private let repository = SleepSessionRepository()
 
-    init(session: SleepSession) {
+    init(session: SleepSession, onResolved: @escaping (UUID) -> Void = { _ in }) {
         self.session = session
+        self.onResolved = onResolved
         self._sessions = Query(Self.sessionsDescriptor)
         self._workouts = Query(Self.workoutsDescriptor)
         let start = session.estimatedSleepStartAt ?? session.confirmedSleepStartAt
         self._sleepStart = State(initialValue: min(start, Date.now))
         self._wakeAt = State(initialValue: Date.now)
-        self._qualityRating = State(initialValue: session.qualityRating ?? 3)
+        self._qualityRating = State(initialValue: session.qualityRating)
         self._tags = State(initialValue: Set(session.tags))
     }
 
@@ -1661,7 +2119,7 @@ struct SleepMorningConfirmationView: View {
                 subtitle: "Did you wake up at \(wakeAt.formatted(date: .omitted, time: .shortened))?",
                 systemImage: "sun.max.fill"
             ) {
-                SleepGlassCard {
+                SleepCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Estimated sleep")
                             .font(.caption.weight(.semibold))
@@ -1673,17 +2131,20 @@ struct SleepMorningConfirmationView: View {
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         DatePicker("Sleep start", selection: $sleepStart, displayedComponents: [.date, .hourAndMinute])
+                            .accessibilityIdentifier("sleep-morning-start")
                         DatePicker("Wake time", selection: $wakeAt, displayedComponents: [.date, .hourAndMinute])
+                            .accessibilityIdentifier("sleep-morning-wake")
                     }
                 }
 
-                SleepGlassCard {
+                SleepCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("How rested do you feel?")
                             .font(.headline)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         SleepQualityPicker(selection: $qualityRating)
+                            .accessibilityIdentifier("sleep-morning-quality")
 
                         Text("Optional context")
                             .font(.caption.weight(.semibold))
@@ -1697,20 +2158,37 @@ struct SleepMorningConfirmationView: View {
                 if let errorMessage {
                     Text(errorMessage)
                         .font(.subheadline)
-                        .foregroundStyle(appTheme.colors.danger)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .accessibilityIdentifier("sleep-morning-error")
                 }
 
-                SleepGlassActionButton(title: "Confirm Wake Time", systemImage: "checkmark.seal.fill", style: .primary) {
+                SleepActionButton(title: "Confirm Wake Time", systemImage: "checkmark.seal.fill", style: .primary) {
                     confirm()
                 }
+                .accessibilityIdentifier("sleep-morning-confirm")
 
-                SleepGlassActionButton(title: "Discard Session", systemImage: "trash", style: .danger) {
-                    try? repository.discard(session, in: modelContext)
-                    dismiss()
+                SleepActionButton(title: "Discard Session", systemImage: "trash", style: .danger) {
+                    showingDiscardConfirmation = true
                 }
+                .accessibilityIdentifier("sleep-morning-discard")
             }
             .navigationTitle("Good morning")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled()
+            .alert("Discard this sleep session?", isPresented: $showingDiscardConfirmation) {
+                Button("Keep Session", role: .cancel) {}
+                Button("Discard", role: .destructive) {
+                    do {
+                        try repository.discard(session, in: modelContext)
+                        onResolved(session.id)
+                        dismiss()
+                    } catch {
+                        errorMessage = "Couldn’t discard this sleep session. \(error.localizedDescription)"
+                    }
+                }
+            } message: {
+                Text("This removes the unfinished session from today's recovery context.")
+            }
         }
     }
 
@@ -1728,15 +2206,7 @@ struct SleepMorningConfirmationView: View {
 
             let settings = SleepSettingsStore().load()
             if settings.enableAppleHealthExport, session.source == .inAppTimer {
-                let writeSnapshot = HealthKitSleepWriteSnapshot(session: session)
-                PerformanceTracer.mark(.sleepMorningConfirmation, "healthkit export snapshot_ready session=\(writeSnapshot.id.uuidString)")
-                Task(priority: .utility) {
-                    PerformanceTracer.mark(.healthKitSleepBridge, "export task begin session=\(writeSnapshot.id.uuidString)")
-                    if let ids = try? await HealthKitSleepService().writeConfirmedSession(writeSnapshot) {
-                        PerformanceTracer.mark(.healthKitSleepBridge, "export ids_ready count=\(ids.count)")
-                        applyHealthKitSleepExport(ids, to: writeSnapshot.id)
-                    }
-                }
+                scheduleSleepHealthKitExport(for: session, in: modelContext)
             }
 
             let sessionSnapshots = SleepNotificationScheduler.sessionSnapshots(from: sessions)
@@ -1749,23 +2219,13 @@ struct SleepMorningConfirmationView: View {
                 PerformanceTracer.mark(.sleepMorningConfirmation, "notification_refresh end")
             }
             PerformanceTracer.mark(.sleepMorningConfirmation, "confirm end")
+            onResolved(session.id)
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    @MainActor
-    private func applyHealthKitSleepExport(_ ids: [String], to sessionID: UUID) {
-        PerformanceTracer.mark(.healthKitSleepBridge, "export main_apply begin")
-        let descriptor = FetchDescriptor<SleepSession>(
-            predicate: #Predicate<SleepSession> { $0.id == sessionID }
-        )
-        guard let refreshedSession = try? modelContext.fetch(descriptor).first else { return }
-        refreshedSession.healthKitSampleIds = ids
-        try? modelContext.save()
-        PerformanceTracer.mark(.healthKitSleepBridge, "export main_apply end")
-    }
 }
 
 struct SleepSessionEditorView: View {
@@ -1788,7 +2248,7 @@ struct SleepSessionEditorView: View {
 
     @State private var sleepStart: Date
     @State private var wakeAt: Date
-    @State private var qualityRating: Int = 3
+    @State private var qualityRating: Int?
     @State private var tags: Set<SleepTag> = []
     @State private var notes = ""
     @State private var errorMessage: String?
@@ -1803,13 +2263,19 @@ struct SleepSessionEditorView: View {
         switch mode {
         case .manual:
             let wake = Date.now
+            #if DEBUG
+            let start = ProcessInfo.processInfo.arguments.contains("-UITestSleepInvalidEditorFixture")
+                ? wake
+                : Calendar.current.date(byAdding: .hour, value: -8, to: wake) ?? wake.addingTimeInterval(-28_800)
+            #else
             let start = Calendar.current.date(byAdding: .hour, value: -8, to: wake) ?? wake.addingTimeInterval(-28_800)
+            #endif
             self._sleepStart = State(initialValue: start)
             self._wakeAt = State(initialValue: wake)
         case .edit(let session):
             self._sleepStart = State(initialValue: session.confirmedSleepStartAt)
             self._wakeAt = State(initialValue: session.wakeAt)
-            self._qualityRating = State(initialValue: session.qualityRating ?? 3)
+            self._qualityRating = State(initialValue: session.qualityRating)
             self._tags = State(initialValue: Set(session.tags))
             self._notes = State(initialValue: session.notes ?? "")
         }
@@ -1839,10 +2305,12 @@ struct SleepSessionEditorView: View {
                 subtitle: "Keep sleep data honest and editable.",
                 systemImage: "square.and.pencil"
             ) {
-                SleepGlassCard {
+                SleepCard {
                     VStack(alignment: .leading, spacing: 14) {
                         DatePicker("Sleep start", selection: $sleepStart, displayedComponents: [.date, .hourAndMinute])
+                            .accessibilityIdentifier("sleep-editor-start")
                         DatePicker("Wake time", selection: $wakeAt, displayedComponents: [.date, .hourAndMinute])
+                            .accessibilityIdentifier("sleep-editor-wake")
 
                         SleepMiniMetric(
                             title: "Duration",
@@ -1851,10 +2319,12 @@ struct SleepSessionEditorView: View {
                     }
                 }
 
-                SleepGlassCard {
+                SleepCard {
                     VStack(alignment: .leading, spacing: 14) {
                         SleepQualityPicker(selection: $qualityRating)
+                            .accessibilityIdentifier("sleep-editor-quality")
                         SleepTagPicker(selection: $tags)
+                            .accessibilityIdentifier("sleep-editor-tags")
 
                         TextField("Notes", text: $notes, axis: .vertical)
                             .lineLimit(3, reservesSpace: true)
@@ -1866,12 +2336,14 @@ struct SleepSessionEditorView: View {
                 if let errorMessage {
                     Text(errorMessage)
                         .font(.subheadline)
-                        .foregroundStyle(appTheme.colors.danger)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .accessibilityIdentifier("sleep-editor-error")
                 }
 
-                SleepGlassActionButton(title: "Save Sleep Session", systemImage: "checkmark", style: .primary) {
+                SleepActionButton(title: "Save Sleep Session", systemImage: "checkmark", style: .primary) {
                     save()
                 }
+                .accessibilityIdentifier("sleep-editor-save")
             }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
@@ -1894,6 +2366,7 @@ struct SleepSessionEditorView: View {
 
     private func save() {
         do {
+            var manualSessionToExport: SleepSession?
             switch mode {
             case .manual:
                 try repository.startManualSession(
@@ -1904,6 +2377,9 @@ struct SleepSessionEditorView: View {
                     notes: notes.isEmpty ? nil : notes,
                     in: modelContext
                 )
+                if SleepSettingsStore().load().enableAppleHealthExport {
+                    manualSessionToExport = try recentlySavedManualSession(start: sleepStart, wake: wakeAt)
+                }
             case .edit(let session):
                 try repository.updateCompletedSession(
                     session,
@@ -1914,6 +2390,9 @@ struct SleepSessionEditorView: View {
                     notes: notes.isEmpty ? nil : notes,
                     in: modelContext
                 )
+            }
+            if let manualSessionToExport {
+                scheduleSleepHealthKitExport(for: manualSessionToExport, in: modelContext)
             }
             let refreshedSettings = SleepSettingsStore().load()
             let sessionSnapshots = SleepNotificationScheduler.sessionSnapshots(from: sessions)
@@ -1926,6 +2405,19 @@ struct SleepSessionEditorView: View {
             errorMessage = error.localizedDescription
         }
     }
+
+    private func recentlySavedManualSession(start: Date, wake: Date) throws -> SleepSession? {
+        var descriptor = FetchDescriptor<SleepSession>(
+            sortBy: [SortDescriptor(\SleepSession.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 90
+        return try modelContext.fetch(descriptor).first {
+            $0.source == .manual
+                && $0.status == .completed
+                && $0.confirmedSleepStartAt == start
+                && $0.wakeAt == wake
+        }
+    }
 }
 
 struct SleepSessionDetailView: View {
@@ -1934,18 +2426,30 @@ struct SleepSessionDetailView: View {
     @Environment(\.dismiss) private var dismiss
 
     let session: SleepSession
+    let recentSessions: [SleepSession]
+    let stageBreakdown: SleepStageBreakdown?
+    let readinessIsProvisional: Bool
     @State private var showingEditor = false
     @State private var showingDeleteConfirmation = false
+    @State private var errorMessage: String?
     @State private var qualityScore: Int
 
     private let repository = SleepSessionRepository()
 
-    init(session: SleepSession) {
+    init(
+        session: SleepSession,
+        recentSessions: [SleepSession] = [],
+        stageBreakdown: SleepStageBreakdown? = nil,
+        readinessIsProvisional: Bool = true
+    ) {
         self.session = session
+        self.recentSessions = recentSessions.isEmpty ? [session] : recentSessions
+        self.stageBreakdown = stageBreakdown
+        self.readinessIsProvisional = readinessIsProvisional
         let score = PerformanceTracer.trace(.sleepSessionQuality) {
             SleepScoringService().score(
                 for: session,
-                recentSessions: [session],
+                recentSessions: recentSessions.isEmpty ? [session] : recentSessions,
                 settings: SleepSettingsStore().load()
             )
         }
@@ -1958,7 +2462,7 @@ struct SleepSessionDetailView: View {
             subtitle: PeaklineText.joinedMetadata([session.source.displayName, session.confidence.displayName]),
             systemImage: "moon.stars.fill"
         ) {
-            SleepGlassCard {
+            SleepCard {
                 VStack(alignment: .leading, spacing: 14) {
                     Text(SleepScoringService.durationText(minutes: session.durationMinutes))
                         .font(AppTypography.heroMetric)
@@ -1970,11 +2474,22 @@ struct SleepSessionDetailView: View {
                     }
 
                     SleepMiniMetric(title: "Quality", value: session.qualityRating.map { SleepQualityPicker.label(for: $0) } ?? "Not rated")
+
+                    if let stageBreakdown, stageBreakdown.hasStages {
+                        SleepStageBreakdownView(breakdown: stageBreakdown)
+                            .accessibilityIdentifier("sleep-detail-stage-breakdown")
+                    } else if session.source == .appleHealth {
+                        Text("Apple Health stage detail is unavailable for this record. Peakline preserves the sleep interval without inventing stage values.")
+                            .font(.caption)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("sleep-detail-stage-breakdown-unavailable")
+                    }
                 }
             }
 
             if !session.tags.isEmpty {
-                SleepGlassCard {
+                SleepCard {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Context")
                             .font(.headline)
@@ -1992,19 +2507,22 @@ struct SleepSessionDetailView: View {
                 }
             }
 
-            SleepGlassCard {
+            SleepCard {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Session quality: \(qualityScore)")
                         .font(.headline)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
-                    Text("Estimated training support: \(SleepCoachingService().historyImpact(for: qualityScore))")
+                    Text(readinessIsProvisional
+                        ? "Sleep score is recorded; readiness guidance waits for more evidence."
+                        : "Estimated training support: \(SleepCoachingService().historyImpact(for: qualityScore))")
                         .font(.subheadline)
                         .foregroundStyle(appTheme.colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
-            SleepGlassCard {
+            SleepCard {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Session Details")
                         .font(.headline)
@@ -2019,10 +2537,11 @@ struct SleepSessionDetailView: View {
                 }
             }
 
-            SleepGlassActionButton(title: "Edit Sleep Session", systemImage: "pencil", style: .primary) {
+            SleepActionButton(title: "Edit Sleep Session", systemImage: "pencil", style: .primary) {
                 showingEditor = true
             }
             .disabled(session.source == .appleHealth)
+            .accessibilityIdentifier("sleep-detail-edit")
 
             if session.source == .appleHealth {
                 Text("Apple Health imported sleep is read-only in Peakline for now.")
@@ -2036,6 +2555,7 @@ struct SleepSessionDetailView: View {
                 } label: {
                     Label("Delete Session", systemImage: "trash")
                 }
+                .accessibilityIdentifier("sleep-detail-delete")
             } label: {
                 Label("More", systemImage: "ellipsis.circle")
                     .frame(maxWidth: .infinity)
@@ -2052,27 +2572,52 @@ struct SleepSessionDetailView: View {
                     .stroke(appTheme.colors.cardBorder, lineWidth: 1)
             }
             .accessibilityLabel("Sleep session actions")
+            .accessibilityIdentifier("sleep-detail-actions")
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.subheadline)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("sleep-detail-error")
+            }
         }
         .navigationTitle("Sleep Detail")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingEditor) {
             SleepSessionEditorView(mode: .edit(session))
         }
+        .onChange(of: session.updatedAt) { _, _ in
+            refreshQualityScore()
+        }
         .alert("Delete sleep session?", isPresented: $showingDeleteConfirmation) {
             Button("Delete", role: .destructive) {
-                try? repository.delete(session, in: modelContext)
-                dismiss()
+                do {
+                    try repository.delete(session, in: modelContext)
+                    dismiss()
+                } catch {
+                    errorMessage = "Couldn’t delete this sleep session. \(error.localizedDescription)"
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This will remove it from your sleep trends and recovery score.")
         }
     }
+
+    private func refreshQualityScore() {
+        qualityScore = SleepScoringService().score(
+            for: session,
+            recentSessions: recentSessions,
+            settings: SleepSettingsStore().load()
+        )
+    }
 }
 
 struct SleepSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.appTheme) private var appTheme
+    @ObservedObject private var healthKitExportStatus = SleepHealthKitExportStatusStore.shared
 
     @Binding var settings: SleepSettings
     @State private var healthStatus: String?
@@ -2087,7 +2632,7 @@ struct SleepSettingsView: View {
                 subtitle: "Keep recovery coaching transparent.",
                 systemImage: "slider.horizontal.3"
             ) {
-                SleepGlassCard {
+                SleepCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Default wind-down")
                             .font(.headline)
@@ -2115,18 +2660,37 @@ struct SleepSettingsView: View {
                     }
                 }
 
-                SleepGlassCard {
+                SleepCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Preferred Sleep Source")
                             .font(.headline)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
-                        Picker("Preferred Sleep Source", selection: $settings.preferredSource) {
+                        Menu {
                             ForEach(PreferredSleepSource.allCases) { source in
-                                Text(source.displayName).tag(source)
+                                Button {
+                                    settings.preferredSource = source
+                                } label: {
+                                    if settings.preferredSource == source {
+                                        Label(source.displayName, systemImage: "checkmark")
+                                    } else {
+                                        Text(source.displayName)
+                                    }
+                                }
                             }
+                        } label: {
+                            HStack {
+                                Text(settings.preferredSource.displayName)
+                                Spacer(minLength: 12)
+                                Image(systemName: "chevron.up.chevron.down")
+                            }
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                            .frame(maxWidth: .infinity, minHeight: appTheme.metrics.minimumHitTarget, alignment: .leading)
                         }
-                        .pickerStyle(.segmented)
+                        .accessibilityLabel("Preferred sleep source")
+                        .accessibilityValue(settings.preferredSource.displayName)
+                        .accessibilityIdentifier("sleep-settings-preferred-source")
 
                         Text("Automatic uses Apple Health when it is reliable, keeps Sleep Mode ratings and notes, and falls back gracefully when data is missing.")
                             .font(.caption)
@@ -2135,19 +2699,22 @@ struct SleepSettingsView: View {
                     }
                 }
 
-                SleepGlassCard(padding: 12) {
+                SleepCard(padding: 12) {
                     VStack(spacing: 0) {
                         SleepToggleRow(title: "Recovery coaching", subtitle: "Use sleep score in training guidance.", systemImage: "sparkles", isOn: $settings.recoveryCoachingEnabled)
+                            .accessibilityIdentifier("sleep-settings-recovery-coaching")
                         SleepSettingsDivider()
                         SleepToggleRow(title: "Apple Health import", subtitle: "Read sleep analysis when authorised.", systemImage: "heart.text.square", isOn: $settings.enableAppleHealthImport)
                             .disabled(!HealthKitSleepService().isAvailable)
+                            .accessibilityIdentifier("sleep-settings-health-import")
                         SleepSettingsDivider()
                         SleepToggleRow(title: "Save Sleep to Apple Health", subtitle: "Save confirmed Sleep Mode sessions as simple estimated sleep.", systemImage: "square.and.arrow.up", isOn: $settings.enableAppleHealthExport)
                             .disabled(!HealthKitSleepService().isAvailable)
+                            .accessibilityIdentifier("sleep-settings-health-export")
                     }
                 }
 
-                SleepGlassCard {
+                SleepCard {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(healthTitle)
                             .font(.headline)
@@ -2158,19 +2725,32 @@ struct SleepSettingsView: View {
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
 
-                        SleepGlassActionButton(
-                            title: settings.enableAppleHealthImport || settings.enableAppleHealthExport ? "Request Sleep Access" : "Connect Apple Health",
+                        SleepActionButton(
+                            title: HealthKitSleepService().isAvailable ? "Request Sleep Access" : "Apple Health Unavailable",
                             systemImage: "lock.open",
                             style: .primary
                         ) {
                             Task { await requestHealthAccess() }
                         }
                         .disabled(isRequestingHealth || !HealthKitSleepService().isAvailable)
+                        .accessibilityIdentifier("sleep-settings-health-request")
 
                         if let healthStatus {
                             Text(healthStatus)
                                 .font(.caption)
                                 .foregroundStyle(appTheme.colors.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("sleep-settings-health-status")
+                        }
+
+                        if let exportStatus = healthKitExportStatus.message {
+                            Text(exportStatus)
+                                .font(.caption)
+                                .foregroundStyle(appTheme.colors.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityLabel("Apple Health export status")
+                                .accessibilityValue(exportStatus)
+                                .accessibilityIdentifier("sleep-settings-health-export-status")
                         }
                     }
                 }
@@ -2183,6 +2763,7 @@ struct SleepSettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
+                        .accessibilityIdentifier("sleep-settings-done")
                 }
             }
             .task {
@@ -2193,16 +2774,16 @@ struct SleepSettingsView: View {
 
     private var sleepNotificationSettingsCard: some View {
         DashboardSection(title: "Sleep Notifications") {
-            SleepGlassCard {
+            SleepCard {
                 VStack(alignment: .leading, spacing: 16) {
-                    SleepGlassRow(
+                    SleepRow(
                         title: settings.notificationPreferences.isEnabled ? "Sleep Notifications On" : "Enable sleep reminders?",
                         subtitle: "We'll remind you to start Sleep Mode and confirm your wake time so recovery guidance stays accurate.",
                         systemImage: "bell.badge.fill"
                     )
 
                     HStack(spacing: 10) {
-                        SleepGlassActionButton(
+                        SleepActionButton(
                             title: settings.notificationPreferences.isEnabled ? "Turn Off" : "Enable Reminders",
                             systemImage: settings.notificationPreferences.isEnabled ? "bell.slash" : "bell",
                             style: .primary
@@ -2210,6 +2791,7 @@ struct SleepSettingsView: View {
                             Task { await toggleSleepNotifications() }
                         }
                         .disabled(isRequestingNotifications)
+                        .accessibilityIdentifier("sleep-settings-notifications")
                     }
 
                     if let notificationStatus {
@@ -2231,13 +2813,7 @@ struct SleepSettingsView: View {
                             .disabled(!settings.notificationPreferences.isEnabled || !settings.notificationPreferences.bedtimeReminderEnabled)
 
                         SleepToggleRow(title: "Wind-Down Reminder", subtitle: "A quieter nudge before your bedtime reminder.", systemImage: "timer", isOn: $settings.notificationPreferences.windDownReminderEnabled)
-                        Picker("Wind-down offset", selection: $settings.notificationPreferences.windDownOffsetMinutes) {
-                            ForEach(SleepNotificationPreferences.windDownOffsetOptions, id: \.self) { minutes in
-                                Text("\(minutes)m before").tag(minutes)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .disabled(!settings.notificationPreferences.isEnabled || !settings.notificationPreferences.windDownReminderEnabled)
+                        windDownOffsetControl
                     }
 
                     SleepSettingsDivider()
@@ -2285,9 +2861,47 @@ struct SleepSettingsView: View {
         }
     }
 
+    private var windDownOffsetControl: some View {
+        ViewThatFits(in: .horizontal) {
+            Picker("Wind-down offset", selection: $settings.notificationPreferences.windDownOffsetMinutes) {
+                ForEach(SleepNotificationPreferences.windDownOffsetOptions, id: \.self) { minutes in
+                    Text("\(minutes)m before").tag(minutes)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Menu {
+                ForEach(SleepNotificationPreferences.windDownOffsetOptions, id: \.self) { minutes in
+                    Button {
+                        settings.notificationPreferences.windDownOffsetMinutes = minutes
+                    } label: {
+                        if settings.notificationPreferences.windDownOffsetMinutes == minutes {
+                            Label("\(minutes)m before", systemImage: "checkmark")
+                        } else {
+                            Text("\(minutes)m before")
+                        }
+                    }
+                }
+            } label: {
+                HStack {
+                    Text("\(settings.notificationPreferences.windDownOffsetMinutes)m before")
+                    Spacer(minLength: 12)
+                    Image(systemName: "chevron.up.chevron.down")
+                }
+                .font(.body.weight(.semibold))
+                .foregroundStyle(appTheme.colors.textPrimary)
+                .frame(maxWidth: .infinity, minHeight: appTheme.metrics.minimumHitTarget, alignment: .leading)
+            }
+            .accessibilityLabel("Wind-down offset")
+            .accessibilityValue("\(settings.notificationPreferences.windDownOffsetMinutes) minutes before")
+        }
+        .disabled(!settings.notificationPreferences.isEnabled || !settings.notificationPreferences.windDownReminderEnabled)
+        .accessibilityIdentifier("sleep-settings-winddown-offset")
+    }
+
     private var advancedCoachingSettingsCard: some View {
         DashboardSection(title: "Sleep Coaching") {
-            SleepGlassCard(padding: 12) {
+            SleepCard(padding: 12) {
                 VStack(spacing: 0) {
                     SleepToggleRow(
                         title: "Sleep Coaching Insights",
@@ -2331,17 +2945,30 @@ struct SleepSettingsView: View {
         if !HealthKitSleepService().isAvailable {
             return "Apple Health unavailable"
         }
-        return settings.enableAppleHealthImport ? "Apple Health connected" : "Connect Apple Health"
+        return "Apple Health sleep access"
     }
 
     private var healthDescription: String {
         if !HealthKitSleepService().isAvailable {
             return "This device does not support HealthKit sleep access."
         }
-        if settings.enableAppleHealthExport {
-            return "Use sleep data from Apple Health to improve recovery scoring, and save confirmed Sleep Mode sessions only when you choose."
+
+        let preferenceSummary: String
+        switch (settings.enableAppleHealthImport, settings.enableAppleHealthExport) {
+        case (true, true):
+            preferenceSummary = "Apple Health import and saving confirmed sleep are enabled."
+        case (true, false):
+            preferenceSummary = "Apple Health import is enabled. Saving confirmed sleep is off."
+        case (false, true):
+            preferenceSummary = "Apple Health import is off. Saving confirmed sleep is enabled."
+        case (false, false):
+            preferenceSummary = "Apple Health import and saving confirmed sleep are off."
         }
-        return "Use sleep data from Apple Health to improve your recovery score and training recommendations."
+
+        if let healthStatus {
+            return "\(preferenceSummary) Current authorization result: \(healthStatus)"
+        }
+        return "\(preferenceSummary) Authorization is unverified until you request access below; a preference does not confirm permission."
     }
 
     private var bedtimeBinding: Binding<Date> {
@@ -2367,16 +2994,58 @@ struct SleepSettingsView: View {
     private func requestHealthAccess() async {
         isRequestingHealth = true
         defer { isRequestingHealth = false }
+        UserDefaults.standard.set(true, forKey: healthKitSleepAuthorizationRequestedKey)
 
         do {
             if !settings.enableAppleHealthImport && !settings.enableAppleHealthExport {
                 settings.enableAppleHealthImport = true
             }
-            try await HealthKitSleepService().requestAuthorization(read: settings.enableAppleHealthImport, write: settings.enableAppleHealthExport)
-            healthStatus = "Apple Health sleep access requested. If permission is granted, recent sleep can be imported."
+            let access = try await HealthKitSleepService().requestAuthorization(
+                read: settings.enableAppleHealthImport,
+                write: settings.enableAppleHealthExport
+            )
+            healthStatus = healthAccessStatus(for: access)
         } catch {
             healthStatus = error.localizedDescription
         }
+    }
+
+    private func healthAccessStatus(for access: HealthKitSleepAccessSnapshot) -> String {
+        var statuses: [String] = []
+
+        if settings.enableAppleHealthImport {
+            switch access.read {
+            case .unavailable:
+                statuses.append("Apple Health read access is unavailable.")
+            case .notDetermined:
+                statuses.append("Apple Health read access was not requested.")
+            case .denied:
+                statuses.append("Apple Health read access was denied. Review access in the Health app.")
+            case .restricted:
+                statuses.append("Apple Health read access is restricted on this device.")
+            case .enabledUnverified, .authorized:
+                statuses.append("Read access was requested. Apple Health keeps read permission private; Peakline will verify it when the next import succeeds.")
+            }
+        }
+
+        if settings.enableAppleHealthExport {
+            switch access.write {
+            case .unavailable:
+                statuses.append("Apple Health save access is unavailable.")
+            case .notDetermined:
+                statuses.append("Apple Health save access was not requested.")
+            case .denied:
+                statuses.append("Apple Health save access was denied. Confirm the permission in the Health app before exporting.")
+            case .restricted:
+                statuses.append("Apple Health save access is restricted on this device.")
+            case .enabledUnverified:
+                statuses.append("Apple Health save access was requested, but its state is not verified.")
+            case .authorized:
+                statuses.append("Apple Health save access is authorized.")
+            }
+        }
+
+        return statuses.isEmpty ? access.displayName : statuses.joined(separator: " ")
     }
 
     private func toggleSleepNotifications() async {
@@ -2448,7 +3117,7 @@ struct SleepSettingsStandaloneView: View {
     }
 }
 
-private struct SleepGlassCard<Content: View>: View {
+private struct SleepCard<Content: View>: View {
     var style: FitnessCardStyle = .standard
     var padding: CGFloat?
     @ViewBuilder var content: () -> Content
@@ -2460,7 +3129,7 @@ private struct SleepGlassCard<Content: View>: View {
     }
 }
 
-private struct SleepGlassIcon: View {
+private struct SleepIcon: View {
     let systemImage: String
     var size: CGFloat = 44
     var tint: Color?
@@ -2470,35 +3139,7 @@ private struct SleepGlassIcon: View {
     }
 }
 
-private typealias SleepIconTile = SleepGlassIcon
-
-private struct SleepStatusChip: View {
-    @Environment(\.appTheme) private var appTheme
-
-    let title: String
-    let state: RecoveryState
-
-    var body: some View {
-        Text(title)
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(tint)
-    }
-
-    private var tint: Color {
-        switch state {
-        case .high, .good:
-            return appTheme.colors.success
-        case .moderate, .low:
-            return appTheme.colors.warning
-        case .veryLow:
-            return appTheme.colors.danger
-        case .unknown:
-            return appTheme.colors.textSecondary
-        }
-    }
-}
-
-private struct SleepGlassRow<Trailing: View>: View {
+private struct SleepRow<Trailing: View>: View {
     @Environment(\.appTheme) private var appTheme
 
     let title: String
@@ -2526,14 +3167,13 @@ private struct SleepGlassRow<Trailing: View>: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            SleepGlassIcon(systemImage: systemImage, size: appTheme.metrics.rowIconSize, tint: tint)
+            SleepIcon(systemImage: systemImage, size: appTheme.metrics.rowIconSize, tint: tint)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.headline)
                     .foregroundStyle(appTheme.colors.textPrimary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.84)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Text(subtitle)
                     .font(.caption)
@@ -2557,7 +3197,30 @@ private struct SleepGlassRow<Trailing: View>: View {
     }
 }
 
-private struct SleepGlassActionButton: View {
+private struct SleepQuietAction: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let title: String
+    let systemImage: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(appTheme.colors.textSecondary)
+                .frame(maxWidth: .infinity, minHeight: appTheme.metrics.minimumHitTarget)
+                .background(appTheme.colors.cardBackgroundElevated, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(appTheme.colors.cardBorder, lineWidth: 1)
+                }
+        }
+        .buttonStyle(PeaklineButtonPressStyle())
+    }
+}
+
+private struct SleepActionButton: View {
     enum Style {
         case primary
         case secondary
@@ -2576,8 +3239,8 @@ private struct SleepGlassActionButton: View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
                 .font(labelFont)
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(foreground)
                 .padding(.horizontal, horizontalPadding)
                 .frame(minHeight: appTheme.metrics.buttonHeight)
@@ -2641,9 +3304,7 @@ private struct SleepGlassActionButton: View {
     }
 }
 
-private typealias SleepActionButton = SleepGlassActionButton
-
-private struct SleepGlassMetricTile: View {
+private struct SleepMetric: View {
     @Environment(\.appTheme) private var appTheme
 
     let title: String
@@ -2668,16 +3329,12 @@ private struct SleepGlassMetricTile: View {
             Text(value)
                 .font(.system(.headline, design: .rounded).weight(.bold))
                 .foregroundStyle(appTheme.colors.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.76)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(appTheme.colors.cardBackgroundElevated.opacity(0.82), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(appTheme.colors.cardBorder, lineWidth: 1)
-        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title), \(value)")
     }
 }
 
@@ -2745,12 +3402,13 @@ private struct SleepHistoryRow: View {
 
     let session: SleepSession
     let qualityScore: Int
+    let readinessIsProvisional: Bool
 
     var body: some View {
-        SleepGlassCard(style: .compact, padding: 16) {
-            SleepGlassRow(
+        SleepCard(style: .compact, padding: 16) {
+            SleepRow(
                 title: SleepCalendar.displayTitle(for: session.nightDate),
-                subtitle: "\(PeaklineText.joinedMetadata([SleepScoringService.durationText(minutes: session.durationMinutes), session.qualityRating.map { SleepQualityPicker.label(for: $0) } ?? "No quality", session.source.displayName])). Estimated training support: \(SleepCoachingService().historyImpact(for: qualityScore))",
+                subtitle: subtitle,
                 systemImage: session.source == .appleHealth ? "heart.text.square.fill" : "moon.zzz.fill",
                 showsChevron: true
             ) {
@@ -2769,6 +3427,18 @@ private struct SleepHistoryRow: View {
             }
         }
     }
+
+    private var subtitle: String {
+        let metadata = PeaklineText.joinedMetadata([
+            SleepScoringService.durationText(minutes: session.durationMinutes),
+            session.qualityRating.map { SleepQualityPicker.label(for: $0) } ?? "No quality",
+            session.source.displayName
+        ])
+        if readinessIsProvisional {
+            return "\(metadata). Sleep score is recorded; readiness guidance waits for more evidence."
+        }
+        return "\(metadata). Estimated training support: \(SleepCoachingService().historyImpact(for: qualityScore))"
+    }
 }
 
 private struct SleepMiniMetric: View {
@@ -2776,7 +3446,7 @@ private struct SleepMiniMetric: View {
     let value: String
 
     var body: some View {
-        SleepGlassMetricTile(title: title, value: value)
+        SleepMetric(title: title, value: value)
     }
 }
 
@@ -2786,19 +3456,19 @@ private struct SleepCoachingInsightCard: View {
     let insight: SleepCoachingInsight
 
     var body: some View {
-        SleepGlassCard(style: .compact) {
-            SleepGlassRow(
+        SleepCard(style: .compact) {
+            SleepRow(
                 title: insight.title,
                 subtitle: insightSubtitle,
                 systemImage: systemImage,
                 tint: tint
-            ) {
-                Text(insight.confidence.displayName)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(tint)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(tint.opacity(0.12), in: Capsule())
+                ) {
+                    Text(insight.confidence.displayName)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(tint.opacity(0.12), in: Capsule())
             }
         }
     }
@@ -2856,7 +3526,7 @@ private struct SleepStageBreakdownView: View {
                 .foregroundStyle(appTheme.colors.textSecondary)
                 .textCase(.uppercase)
 
-            HStack(spacing: 8) {
+            FlowLayout(spacing: 8) {
                 if let awakeMinutes = breakdown.awakeMinutes {
                     SleepMiniMetric(title: "Awake", value: SleepScoringService.durationText(minutes: awakeMinutes))
                 }
@@ -2878,38 +3548,57 @@ struct SleepQualityPicker: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @Binding var selection: Int
+    @Binding var selection: Int?
 
     var body: some View {
-        HStack(spacing: 8) {
+        Menu {
+            Button {
+                update(nil)
+            } label: {
+                if selection == nil {
+                    Label("Not rated", systemImage: "checkmark")
+                } else {
+                    Text("Not rated")
+                }
+            }
+
             ForEach(1...5, id: \.self) { value in
                 Button {
-                    AppHaptics.selection()
-                    PerformanceTracer.trace(.motionRatingSelect) {
-                        withAnimation(AppMotion.ratingSelect(reduceMotion: reduceMotion)) {
-                            selection = value
-                        }
-                    }
+                    update(value)
                 } label: {
-                    VStack(spacing: 3) {
-                        Text("\(value)")
-                            .font(.headline.bold())
-                        Text(Self.shortLabel(for: value))
-                            .font(.caption2.weight(.semibold))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
+                    if selection == value {
+                        Label(Self.label(for: value), systemImage: "checkmark")
+                    } else {
+                        Text(Self.label(for: value))
                     }
-                    .foregroundStyle(selection == value ? appTheme.colors.textPrimary : appTheme.colors.textSecondary)
-                    .frame(maxWidth: .infinity, minHeight: 58)
-                    .background(selection == value ? appTheme.colors.accentSurfaceStrong : appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(selection == value ? appTheme.colors.accent.opacity(0.32) : appTheme.colors.cardBorder, lineWidth: 1)
-                    }
-                    .peaklineSelectionMotion(isSelected: selection == value, reduceMotion: reduceMotion, role: .ratingSelect)
                 }
-                .buttonStyle(PressableCardButtonStyle())
-                .accessibilityLabel("Sleep quality \(Self.label(for: value))")
+            }
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Sleep quality")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                    Text(selection.map(Self.label) ?? "Not rated")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                }
+                Spacer(minLength: 12)
+                Image(systemName: "chevron.up.chevron.down")
+                    .foregroundStyle(appTheme.colors.textSecondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: appTheme.metrics.minimumHitTarget, alignment: .leading)
+        }
+        .accessibilityLabel("Sleep quality")
+        .accessibilityValue(selection.map(Self.label) ?? "Not rated")
+        .accessibilityIdentifier("sleep-quality-picker")
+    }
+
+    private func update(_ value: Int?) {
+        AppHaptics.selection()
+        PerformanceTracer.trace(.motionRatingSelect) {
+            withAnimation(AppMotion.ratingSelect(reduceMotion: reduceMotion)) {
+                selection = value
             }
         }
     }
@@ -2929,20 +3618,6 @@ struct SleepQualityPicker: View {
         }
     }
 
-    private static func shortLabel(for value: Int) -> String {
-        switch value {
-        case 1:
-            return "Very poor"
-        case 2:
-            return "Poor"
-        case 3:
-            return "Okay"
-        case 4:
-            return "Good"
-        default:
-            return "Excellent"
-        }
-    }
 }
 
 private struct SleepTagPicker: View {
@@ -2974,7 +3649,7 @@ private struct SleepToggleRow: View {
     var body: some View {
         Toggle(isOn: $isOn) {
             HStack(spacing: 12) {
-                SleepGlassIcon(systemImage: systemImage, size: appTheme.metrics.rowIconSize)
+                SleepIcon(systemImage: systemImage, size: appTheme.metrics.rowIconSize)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)

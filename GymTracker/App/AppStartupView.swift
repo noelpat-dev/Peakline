@@ -438,14 +438,137 @@ enum AppStartupPhase {
     case recoverableFailure(String, canContinueOffline: Bool)
 }
 
+struct OverallReadinessPresentationSnapshot: Equatable, Sendable {
+    let isProvisional: Bool
+    let sourceSignature: String
+    let revision: Int
+    let generatedAt: Date
+
+    static let empty = OverallReadinessPresentationSnapshot(
+        isProvisional: true,
+        sourceSignature: "",
+        revision: 0,
+        generatedAt: .distantPast
+    )
+}
+
+@MainActor
+final class OverallReadinessSnapshotStore: ObservableObject {
+    static let shared = OverallReadinessSnapshotStore()
+
+    @Published private(set) var snapshot = OverallReadinessPresentationSnapshot.empty
+
+    private init() {}
+
+    func update(readiness: ReadinessScore, sourceSignature: String) {
+        guard snapshot.sourceSignature != sourceSignature
+                || snapshot.isProvisional != readiness.isProvisional else { return }
+
+        snapshot = OverallReadinessPresentationSnapshot(
+            isProvisional: readiness.isProvisional,
+            sourceSignature: sourceSignature,
+            revision: snapshot.revision &+ 1,
+            generatedAt: readiness.generatedAt
+        )
+    }
+}
+
+extension TrainingCallSnapshot {
+    func neutralizedForProvisionalReadiness(if isProvisional: Bool) -> TrainingCallSnapshot {
+        guard isProvisional else { return self }
+
+        return TrainingCallSnapshot(
+            recommendedSplitName: recommendedSplitName,
+            recommendedMode: .full,
+            action: .repeatTarget,
+            title: "Readiness is still settling",
+            reason: "Daily readiness is provisional. Use planned targets and warm-ups while Peakline gathers enough evidence; no push or recovery prescription is available yet.",
+            confidence: .low,
+            targetSummary: nil,
+            sourceSignals: [
+                "The active programme rotation is available.",
+                "Daily readiness is still being verified."
+            ],
+            missingOrStaleInputs: Array(
+                (missingOrStaleInputs + ["Overall readiness is provisional."]).prefix(4)
+            ),
+            guardrailNotes: [
+                "Provisional readiness blocks Push, Recovery, deload, and lighter-training prescriptions."
+            ],
+            isConservative: true
+        )
+    }
+}
+
+struct WorkoutSleepReadinessSnapshot {
+    let hasPrimarySession: Bool
+    let sleepScore: Int?
+    let recoveryState: RecoveryState
+    let adaptiveRecommendation: AdaptiveTrainingRecommendation?
+
+    init(
+        hasPrimarySession: Bool,
+        sleepScore: Int?,
+        recoveryState: RecoveryState,
+        adaptiveRecommendation: AdaptiveTrainingRecommendation?
+    ) {
+        self.hasPrimarySession = hasPrimarySession
+        self.sleepScore = sleepScore
+        self.recoveryState = recoveryState
+        self.adaptiveRecommendation = adaptiveRecommendation
+    }
+
+    static let empty = WorkoutSleepReadinessSnapshot(
+        hasPrimarySession: false,
+        sleepScore: nil,
+        recoveryState: .unknown,
+        adaptiveRecommendation: nil
+    )
+
+    init(_ snapshot: SleepWorkoutReadinessSnapshot) {
+        hasPrimarySession = snapshot.latestSummary.primarySession != nil
+        sleepScore = snapshot.latestSummary.sleepScore
+        recoveryState = snapshot.latestSummary.recoveryState
+        adaptiveRecommendation = snapshot.adaptiveRecommendation
+    }
+}
+
+/// Value-only identifiers and settings needed to rebuild the sleep warm
+/// snapshots after startup's detached preparation has completed. Keeping this
+/// seed instead of the model-backed analytics structs prevents SwiftData
+/// objects from being retained across the await in `prepareLocalData`.
+struct StartupSleepSnapshotSeed: Sendable {
+    let sessionIDs: [UUID]
+    let analyticsNapIDs: [UUID]
+    let readinessNapIDs: [UUID]
+    let analyticsWorkoutIDs: [UUID]
+    let readinessWorkoutIDs: [UUID]
+    let settings: SleepSettings
+    let workoutRevision: Int
+}
+
+@MainActor
+struct StartupSleepSnapshots {
+    let analytics: SleepAnalyticsSnapshot
+    let readiness: SleepWorkoutReadinessSnapshot
+    let readinessInputSignature: SleepAnalyticsInputSignature
+}
+
 struct StartupSnapshotBundle {
     let preparedAt: Date
     let sourceSignature: String
     let trainingCall: TrainingCallSnapshot
     let coachSnapshot: CoachIntelligenceSnapshot
+    /// Value-only inputs used to produce `coachSnapshot.readiness`. Root can
+    /// reuse that startup value only when its live inputs still produce this
+    /// exact signature after the splash has finished.
+    let overallReadinessInputSignature: String
     let coachRouteSnapshot: CoachRouteRenderSnapshot
     let sleepAnalyticsSnapshot: SleepAnalyticsSnapshot
     let sleepReadinessSnapshot: SleepWorkoutReadinessSnapshot
+    let workoutSleepReadinessSnapshot: WorkoutSleepReadinessSnapshot
+    let sleepReadinessInputSignature: SleepAnalyticsInputSignature
+    let workoutFirstFrameSnapshot: WorkoutStartFirstFrameSnapshot
     let historySnapshot: HistoryWarmSnapshot
     let previewWarmSnapshots: [WorkoutPreviewWarmSnapshot]
     let savedFoodCatalogSnapshot: SavedFoodCatalogSnapshot
@@ -454,6 +577,50 @@ struct StartupSnapshotBundle {
     let completedWorkoutCount: Int
     let unfinishedWorkoutCount: Int
     let historyRowWarmCount: Int
+}
+
+enum OverallReadinessInputSignature {
+    static func make(
+        sleepSessions: [SleepSession],
+        napSessions: [NapSession],
+        completedWorkouts: [WorkoutSession],
+        hydrationEntries: [HydrationEntry],
+        foodLogs: [FoodLogEntry],
+        checkIns: [DailyCoachCheckIn],
+        sleepSettings: SleepSettings,
+        hydrationTargetML: Int,
+        nutritionGoal: NutritionGoal,
+        workoutRevision: Int,
+        dayStart: Date,
+        hydrationPhase: HydrationPacingPhase
+    ) -> String {
+        [
+            sleepSessions.map {
+                "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)"
+            }.sorted().joined(separator: ","),
+            napSessions.map {
+                "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)"
+            }.sorted().joined(separator: ","),
+            completedWorkouts.map {
+                "\($0.id.uuidString):\($0.date.timeIntervalSince1970):\($0.endedAt?.timeIntervalSince1970 ?? 0):\($0.durationSeconds ?? 0)"
+            }.sorted().joined(separator: ","),
+            hydrationEntries.map {
+                "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)"
+            }.sorted().joined(separator: ","),
+            foodLogs.map {
+                "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)"
+            }.sorted().joined(separator: ","),
+            checkIns.map {
+                "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)"
+            }.sorted().joined(separator: ","),
+            "sleep:\(sleepSettings.targetSleepMinutes):\(sleepSettings.recoveryCoachingEnabled):\(sleepSettings.preferredSource.rawValue)",
+            "hydrationTarget:\(hydrationTargetML)",
+            "nutrition:\(nutritionGoal.isEnabled):\(nutritionGoal.dailyCaloriesTarget ?? 0):\(nutritionGoal.dailyProteinTarget ?? 0):\(nutritionGoal.dailyCarbsTarget ?? 0):\(nutritionGoal.dailyFatTarget ?? 0):\(nutritionGoal.dailyFibreTarget ?? 0):\(nutritionGoal.trainingDayCaloriesTarget ?? 0):\(nutritionGoal.restDayCaloriesTarget ?? 0):\(nutritionGoal.updatedAt.timeIntervalSince1970)",
+            "workoutRevision:\(workoutRevision)",
+            "dayStart:\(dayStart.timeIntervalSince1970)",
+            "hydrationPhase:\(hydrationPhase.rawValue)"
+        ].joined(separator: "|")
+    }
 }
 
 @MainActor
@@ -596,7 +763,7 @@ final class AppStartupCoordinator: ObservableObject {
         await Task.yield()
 
         do {
-            let snapshot = try await PerformanceTracer.traceAsync(.startupLocalPreparation) {
+            let projections = try PerformanceTracer.trace(.startupLocalPreparation) {
                 SeedDataService.seedIfNeeded(in: context)
                 try AppStartupMigrationService.repairWorkoutDatesIfNeeded(
                     in: context,
@@ -605,8 +772,23 @@ final class AppStartupCoordinator: ObservableObject {
 
                 phase = .warmingScreens
                 stageText = "Preparing your dashboards"
-                return try await StartupSnapshotBuilder.make(in: context)
+                return try StartupSnapshotBuilder.materialize(
+                    in: context,
+                    deferSleepSnapshots: true
+                )
             }
+            let derived = await PerformanceTracer.traceAsync(.startupSnapshotPreparation) {
+                await StartupSnapshotBuilder.makePure(from: projections.pureProjection)
+            }
+            let sleepSnapshots = try StartupSnapshotBuilder.makeSleepSnapshots(
+                from: projections.sleepSnapshotSeed,
+                in: context
+            )
+            let snapshot = StartupSnapshotBuilder.makeBundle(
+                from: projections,
+                sleepSnapshots: sleepSnapshots,
+                derived: derived
+            )
 
             WorkoutDashboardWarmStartStore.shared.update(
                 trainingCall: snapshot.trainingCall,
@@ -621,6 +803,10 @@ final class AppStartupCoordinator: ObservableObject {
                 snapshot.previewWarmSnapshots
             )
             SavedFoodWarmStartStore.shared.update(snapshot.savedFoodCatalogSnapshot)
+            OverallReadinessSnapshotStore.shared.update(
+                readiness: snapshot.coachSnapshot.readiness,
+                sourceSignature: snapshot.sourceSignature
+            )
 
             phase = .ready(snapshot)
             PerformanceTracer.mark(
@@ -645,191 +831,491 @@ enum AppStartupMigrationService {
 }
 
 @MainActor
-enum StartupSnapshotBuilder {
-    static func make(in context: ModelContext) async throws -> StartupSnapshotBundle {
-        try await PerformanceTracer.traceAsync(.startupSnapshotPreparation) {
-            let sourceRevision = WorkoutWarmStartInvalidation.shared.revision
-            let splits = try context.fetch(
-                FetchDescriptor<TrainingSplit>(sortBy: [SortDescriptor(\.name)])
-            )
-            let orderedActiveSplits = TrainingRotationService().orderedActiveSplits(splits)
-            let splitSnapshots = try TrainingSplitSnapshotBuilder.snapshots(
-                from: orderedActiveSplits,
-                in: context
-            )
-            let profile = try context.fetch(FetchDescriptor<UserProfile>()).first
-            let trainingDaysPerWeek = profile?.trainingDaysPerWeek
+struct StartupModelProjections {
+    let sourceRevision: Int
+    let splitSnapshots: [TrainingSplitSnapshot]
+    let workoutSnapshots: [WorkoutAnalyticsSession]
+    let historyWorkouts: [HistoryWorkoutSnapshot]
+    let trainingDaysPerWeek: Int?
+    let sourceSignature: String
+    let overallReadinessInputSignature: String
+    let workoutDashboardSignature: String
+    let sleepReadinessInputSignature: SleepAnalyticsInputSignature
+    let sleepSnapshotSeed: StartupSleepSnapshotSeed
+    let sleepReadiness: SleepWorkoutReadinessSnapshot
+    let sleepAnalytics: SleepAnalyticsSnapshot
+    let coachSnapshot: CoachIntelligenceSnapshot
+    let previewWarmSnapshots: [WorkoutPreviewWarmSnapshot]
+    let recommendedSplits: [WorkoutPreviewSplit]
+    let savedFoodCatalogSnapshot: SavedFoodCatalogSnapshot
+    let settingsProfileSnapshot: SettingsProfileSnapshot?
+    let activeSplitCount: Int
+    let completedWorkoutCount: Int
+    let unfinishedWorkoutCount: Int
 
-            var completedDescriptor = FetchDescriptor<WorkoutSession>(
-                predicate: #Predicate<WorkoutSession> { $0.completed },
-                sortBy: [SortDescriptor(\.date, order: .reverse)]
-            )
-            completedDescriptor.fetchLimit = 40
-            let completedWorkouts = try context.fetch(completedDescriptor)
-            let workoutSnapshots = completedWorkouts.map(WorkoutAnalyticsSession.init)
+    var pureProjection: StartupPureProjection {
+        StartupPureProjection(
+            sourceRevision: sourceRevision,
+            splitSnapshots: splitSnapshots,
+            workoutSnapshots: workoutSnapshots,
+            historyWorkouts: historyWorkouts,
+            sourceSignature: sourceSignature,
+            workoutDashboardSignature: workoutDashboardSignature,
+            previewWarmSnapshots: previewWarmSnapshots
+        )
+    }
 
-            var historyDescriptor = FetchDescriptor<WorkoutSession>(
-                predicate: #Predicate<WorkoutSession> { $0.completed },
-                sortBy: [SortDescriptor(\.date, order: .reverse)]
-            )
-            historyDescriptor.fetchLimit = 120
-            let historyWorkouts = try context.fetch(historyDescriptor).map(HistoryWorkoutSnapshot.init)
+    @MainActor
+    static func make(
+        in context: ModelContext,
+        deferSleepSnapshots: Bool = false
+    ) throws -> StartupModelProjections {
+        let sourceRevision = WorkoutWarmStartInvalidation.shared.revision
+        let splits = try context.fetch(
+            FetchDescriptor<TrainingSplit>(sortBy: [SortDescriptor(\.name)])
+        )
+        let orderedActiveSplits = TrainingRotationService().orderedActiveSplits(splits)
+        let splitSnapshots = try TrainingSplitSnapshotBuilder.snapshots(
+            from: orderedActiveSplits,
+            in: context
+        )
+        let recommendedSplits = orderedActiveSplits.map(WorkoutPreviewSplit.init)
+        let profile = try context.fetch(FetchDescriptor<UserProfile>()).first
+        let trainingDaysPerWeek = profile?.trainingDaysPerWeek
 
-            var unfinishedDescriptor = FetchDescriptor<WorkoutSession>(
-                predicate: #Predicate<WorkoutSession> { !$0.completed },
-                sortBy: [SortDescriptor(\.date, order: .reverse)]
-            )
-            unfinishedDescriptor.fetchLimit = 5
-            let unfinishedWorkouts = try context.fetch(unfinishedDescriptor)
+        var completedDescriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        completedDescriptor.fetchLimit = 40
+        let completedWorkouts = try context.fetch(completedDescriptor)
+        let workoutSnapshots = completedWorkouts.map(WorkoutAnalyticsSession.init)
 
-            var exerciseDescriptor = FetchDescriptor<Exercise>(
-                predicate: #Predicate<Exercise> { !$0.isArchived },
-                sortBy: [SortDescriptor(\.name)]
-            )
-            exerciseDescriptor.fetchLimit = 180
-            let exercises = try context.fetch(exerciseDescriptor)
+        var historyDescriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        historyDescriptor.fetchLimit = 120
+        let historyWorkouts = try context.fetch(historyDescriptor).map(HistoryWorkoutSnapshot.init)
 
-            var sleepDescriptor = FetchDescriptor<SleepSession>(
-                sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
-            )
-            sleepDescriptor.fetchLimit = 90
-            let sleepSessions = try context.fetch(sleepDescriptor)
+        var unfinishedDescriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { !$0.completed },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        unfinishedDescriptor.fetchLimit = 5
+        let unfinishedWorkoutCount = try context.fetch(unfinishedDescriptor).count
 
-            var napDescriptor = FetchDescriptor<NapSession>(
-                sortBy: [SortDescriptor(\.startDate, order: .reverse)]
-            )
-            napDescriptor.fetchLimit = 60
-            let napSessions = try context.fetch(napDescriptor)
+        var exerciseDescriptor = FetchDescriptor<Exercise>(
+            predicate: #Predicate<Exercise> { !$0.isArchived },
+            sortBy: [SortDescriptor(\.name)]
+        )
+        exerciseDescriptor.fetchLimit = 180
+        let exercises = try context.fetch(exerciseDescriptor)
 
-            var hydrationDescriptor = FetchDescriptor<HydrationEntry>(
-                sortBy: [SortDescriptor(\.loggedAt, order: .reverse)]
-            )
-            hydrationDescriptor.fetchLimit = 120
-            let hydrationEntries = try context.fetch(hydrationDescriptor)
+        var sleepDescriptor = FetchDescriptor<SleepSession>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        sleepDescriptor.fetchLimit = 90
+        let sleepSessions = try context.fetch(sleepDescriptor)
 
-            var foodDescriptor = FetchDescriptor<FoodLogEntry>(
-                sortBy: [SortDescriptor(\.loggedAt, order: .reverse)]
-            )
-            foodDescriptor.fetchLimit = 160
-            let foodLogs = try context.fetch(foodDescriptor)
+        var napDescriptor = FetchDescriptor<NapSession>(
+            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        napDescriptor.fetchLimit = 60
+        let napSessions = try context.fetch(napDescriptor)
 
-            let savedFoods = try context.fetch(
-                FetchDescriptor<FoodItem>(sortBy: [SortDescriptor(\.name)])
-            )
-            let savedFoodCatalogSnapshot = PerformanceTracer.trace(.savedFoodsSnapshot) {
-                SavedFoodCatalogSnapshot(foods: savedFoods.map(SavedFoodSnapshot.init))
-            }
+        var hydrationDescriptor = FetchDescriptor<HydrationEntry>(
+            sortBy: [SortDescriptor(\.loggedAt, order: .reverse)]
+        )
+        hydrationDescriptor.fetchLimit = 120
+        let hydrationEntries = try context.fetch(hydrationDescriptor)
 
-            var checkInDescriptor = FetchDescriptor<DailyCoachCheckIn>(
-                sortBy: [SortDescriptor(\.date, order: .reverse)]
-            )
-            checkInDescriptor.fetchLimit = 30
-            let checkIns = try context.fetch(checkInDescriptor)
+        var foodDescriptor = FetchDescriptor<FoodLogEntry>(
+            sortBy: [SortDescriptor(\.loggedAt, order: .reverse)]
+        )
+        foodDescriptor.fetchLimit = 160
+        let foodLogs = try context.fetch(foodDescriptor)
 
-            let sourceSignature = WorkoutWarmStartSourceSignature.make(
-                revision: sourceRevision,
-                splitSignatures: splitSnapshots.map { WorkoutWarmStartSourceSignature.split($0) },
-                workoutSignatures: completedWorkouts.map { WorkoutWarmStartSourceSignature.workout($0) }
-            )
+        let savedFoods = try context.fetch(
+            FetchDescriptor<FoodItem>(sortBy: [SortDescriptor(\.name)])
+        )
+        let savedFoodCatalogSnapshot = PerformanceTracer.trace(.savedFoodsSnapshot) {
+            SavedFoodCatalogSnapshot(foods: savedFoods.map(SavedFoodSnapshot.init))
+        }
 
-            let trainingCallTask = Task.detached(priority: .userInitiated) {
-                let summary = CoachRecommendationEngine().makeSummary(
-                    activeSplits: splitSnapshots,
-                    completedSessions: workoutSnapshots
+        var checkInDescriptor = FetchDescriptor<DailyCoachCheckIn>(
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        checkInDescriptor.fetchLimit = 30
+        let checkIns = try context.fetch(checkInDescriptor)
+
+        let sourceSignature = WorkoutWarmStartSourceSignature.make(
+            revision: sourceRevision,
+            splitSignatures: splitSnapshots.map { WorkoutWarmStartSourceSignature.split($0) },
+            workoutSignatures: completedWorkouts.map { WorkoutWarmStartSourceSignature.workout($0) }
+        )
+        let workoutDashboardSignature = WorkoutDashboardInputSignature(
+            // StartWorkout's live query is name-sorted. Keep the pure seed's
+            // signature in that same order so a warm first frame does not
+            // schedule an unnecessary replacement pass on appearance.
+            splits: splits.filter(\.isActive).map {
+                .init(
+                    id: $0.id,
+                    name: $0.name,
+                    activeRotationIndex: $0.activeRotationIndex,
+                    updatedAt: $0.updatedAt
                 )
-                return TrainingCallSnapshotBuilder().make(
-                    decision: summary.trainingDecision,
-                    activeSplits: splitSnapshots,
-                    completedSessions: workoutSnapshots
+            },
+            sessions: completedWorkouts.prefix(20).map {
+                .init(
+                    id: $0.id,
+                    date: $0.date,
+                    endedAt: $0.endedAt,
+                    durationSeconds: $0.durationSeconds,
+                    perceivedDifficulty: $0.perceivedDifficulty
                 )
-            }
+            },
+            workoutRevision: sourceRevision
+        ).value
 
-            let coachRouteValuesTask = Task.detached(priority: .userInitiated) {
-                (
-                    CoachDerivedMetrics.make(
-                        activeSplits: splitSnapshots,
-                        completedSessions: workoutSnapshots
-                    ),
-                    WeeklyReviewBuilder().build(
-                        activeSplits: splitSnapshots,
-                        completedSessions: workoutSnapshots
-                    )
-                )
-            }
-            let trainingCall = await trainingCallTask.value
-            let coachRouteValues = await coachRouteValuesTask.value
-
-            let sleepSettings = SleepSettingsStore().load()
-            let sleepReadiness = SleepWorkoutReadinessSnapshotStore.shared.snapshot(
+        let sleepSettings = SleepSettingsStore().load()
+        let workoutReadinessNaps = Array(napSessions.prefix(30))
+        let workoutReadinessWorkouts = Array(completedWorkouts.prefix(12))
+        let sleepReadinessInputSignature = SleepAnalyticsInputSignature(
+            sessions: sleepSessions,
+            naps: workoutReadinessNaps,
+            workouts: workoutReadinessWorkouts,
+            settings: sleepSettings,
+            sessionLimit: 45,
+            workoutLimit: 12,
+            workoutRevision: sourceRevision
+        )
+        let sleepSnapshotSeed = StartupSleepSnapshotSeed(
+            sessionIDs: sleepSessions.map(\.id),
+            analyticsNapIDs: napSessions.map(\.id),
+            readinessNapIDs: workoutReadinessNaps.map(\.id),
+            analyticsWorkoutIDs: Array(completedWorkouts.prefix(28)).map(\.id),
+            readinessWorkoutIDs: workoutReadinessWorkouts.map(\.id),
+            settings: sleepSettings,
+            workoutRevision: sourceRevision
+        )
+        let sleepReadiness = deferSleepSnapshots
+            ? SleepAnalyticsService.emptyReadinessSnapshot()
+            : SleepWorkoutReadinessSnapshotStore.shared.snapshot(
                 sessions: sleepSessions,
-                naps: napSessions,
-                workouts: Array(completedWorkouts.prefix(12)),
+                naps: workoutReadinessNaps,
+                workouts: workoutReadinessWorkouts,
                 settings: sleepSettings,
+                workoutRevision: sourceRevision,
                 force: true
             )
-            let sleepAnalytics = SleepAnalyticsSnapshotStore.shared.snapshot(
+        let sleepAnalytics = deferSleepSnapshots
+            ? SleepAnalyticsService.emptySnapshot(settings: sleepSettings)
+            : SleepAnalyticsSnapshotStore.shared.snapshot(
                 sessions: sleepSessions,
                 naps: napSessions,
                 workouts: Array(completedWorkouts.prefix(28)),
                 settings: sleepSettings,
+                workoutRevision: sourceRevision,
                 force: true
             )
-            let coachSnapshot = CoachIntelligenceService().snapshot(
-                activeSplits: orderedActiveSplits,
-                exercises: exercises,
-                sleepSessions: sleepSessions,
-                napSessions: napSessions,
-                hydrationEntries: hydrationEntries,
-                completedWorkouts: completedWorkouts,
-                foodLogs: foodLogs,
-                checkIns: checkIns,
-                sleepSettings: sleepSettings,
-                hydrationTargetML: HydrationSettingsStore().dailyTargetML(),
-                nutritionGoal: NutritionGoalService().loadGoal()
-            )
-            let previewWarmSnapshots = WorkoutPreviewSnapshotBuilder.build(
-                activeSplits: orderedActiveSplits,
-                splitSnapshots: splitSnapshots,
-                completedSessions: workoutSnapshots,
-                completedWorkoutModels: completedWorkouts,
-                exercises: exercises,
-                sourceSignature: sourceSignature,
-                coachSnapshot: coachSnapshot
-            )
+        let hydrationTargetML = HydrationSettingsStore().dailyTargetML()
+        let nutritionGoal = NutritionGoalService().loadGoal()
+        let readinessEvaluatedAt = Date.now
+        let overallReadinessInputSignature = OverallReadinessInputSignature.make(
+            sleepSessions: sleepSessions,
+            napSessions: napSessions,
+            completedWorkouts: completedWorkouts,
+            hydrationEntries: hydrationEntries,
+            foodLogs: foodLogs,
+            checkIns: checkIns,
+            sleepSettings: sleepSettings,
+            hydrationTargetML: hydrationTargetML,
+            nutritionGoal: nutritionGoal,
+            workoutRevision: sourceRevision,
+            dayStart: Calendar.current.startOfDay(for: readinessEvaluatedAt),
+            hydrationPhase: HydrationPacingPhase(date: readinessEvaluatedAt)
+        )
+        let coachSnapshot = CoachIntelligenceService().snapshot(
+            for: readinessEvaluatedAt,
+            activeSplits: orderedActiveSplits,
+            exercises: exercises,
+            sleepSessions: sleepSessions,
+            napSessions: napSessions,
+            hydrationEntries: hydrationEntries,
+            completedWorkouts: completedWorkouts,
+            foodLogs: foodLogs,
+            checkIns: checkIns,
+            sleepSettings: sleepSettings,
+            hydrationTargetML: hydrationTargetML,
+            nutritionGoal: nutritionGoal
+        )
+        let previewWarmSnapshots = WorkoutPreviewSnapshotBuilder.build(
+            activeSplits: orderedActiveSplits,
+            splitSnapshots: splitSnapshots,
+            completedSessions: workoutSnapshots,
+            completedWorkoutModels: completedWorkouts,
+            exercises: exercises,
+            sourceSignature: sourceSignature,
+            coachSnapshot: coachSnapshot
+        )
 
-            return StartupSnapshotBundle(
-                preparedAt: .now,
-                sourceSignature: sourceSignature,
-                trainingCall: trainingCall,
-                coachSnapshot: coachSnapshot,
-                coachRouteSnapshot: CoachRouteRenderSnapshot(
-                    intelligence: coachSnapshot,
-                    weeklyReview: coachRouteValues.1,
-                    derivedMetrics: coachRouteValues.0,
-                    sleepAnalytics: sleepAnalytics,
-                    trainingCall: trainingCall,
-                    recommendedSplit: orderedActiveSplits
-                        .first { $0.name == trainingCall.recommendedSplitName }
-                        .map(WorkoutPreviewSplit.init)
-                ),
-                sleepAnalyticsSnapshot: sleepAnalytics,
-                sleepReadinessSnapshot: sleepReadiness,
-                historySnapshot: HistoryWarmSnapshot(
-                    workouts: historyWorkouts,
-                    display: HistoryDisplaySnapshotBuilder.build(
-                        workouts: historyWorkouts,
-                        trainingDaysPerWeek: trainingDaysPerWeek
-                    )
-                ),
-                previewWarmSnapshots: previewWarmSnapshots,
-                savedFoodCatalogSnapshot: savedFoodCatalogSnapshot,
-                settingsProfileSnapshot: profile.map(SettingsProfileSnapshot.init),
-                activeSplitCount: orderedActiveSplits.count,
-                completedWorkoutCount: completedWorkouts.count,
-                unfinishedWorkoutCount: unfinishedWorkouts.count,
-                historyRowWarmCount: historyWorkouts.count
+        return StartupModelProjections(
+            sourceRevision: sourceRevision,
+            splitSnapshots: splitSnapshots,
+            workoutSnapshots: workoutSnapshots,
+            historyWorkouts: historyWorkouts,
+            trainingDaysPerWeek: trainingDaysPerWeek,
+            sourceSignature: sourceSignature,
+            overallReadinessInputSignature: overallReadinessInputSignature,
+            workoutDashboardSignature: workoutDashboardSignature,
+            sleepReadinessInputSignature: sleepReadinessInputSignature,
+            sleepSnapshotSeed: sleepSnapshotSeed,
+            sleepReadiness: sleepReadiness,
+            sleepAnalytics: sleepAnalytics,
+            coachSnapshot: coachSnapshot,
+            previewWarmSnapshots: previewWarmSnapshots,
+            recommendedSplits: recommendedSplits,
+            savedFoodCatalogSnapshot: savedFoodCatalogSnapshot,
+            settingsProfileSnapshot: profile.map(SettingsProfileSnapshot.init),
+            activeSplitCount: orderedActiveSplits.count,
+            completedWorkoutCount: completedWorkouts.count,
+            unfinishedWorkoutCount: unfinishedWorkoutCount
+        )
+    }
+}
+
+struct StartupPureProjection: Sendable {
+    let sourceRevision: Int
+    let splitSnapshots: [TrainingSplitSnapshot]
+    let workoutSnapshots: [WorkoutAnalyticsSession]
+    let historyWorkouts: [HistoryWorkoutSnapshot]
+    let sourceSignature: String
+    let workoutDashboardSignature: String
+    let previewWarmSnapshots: [WorkoutPreviewWarmSnapshot]
+}
+
+struct StartupDerivedValues: Sendable {
+    let trainingCall: TrainingCallSnapshot
+    let coachDerivedMetrics: CoachDerivedMetrics
+    let weeklyReview: WeeklyReview
+}
+
+@MainActor
+enum StartupSnapshotBuilder {
+    /// Materializes every SwiftData relationship synchronously on the main actor.
+    /// Callers must finish this boundary before awaiting the pure builder below.
+    static func materialize(
+        in context: ModelContext,
+        deferSleepSnapshots: Bool = false
+    ) throws -> StartupModelProjections {
+        try PerformanceTracer.trace(.startupSnapshotPreparation) {
+            try StartupModelProjections.make(
+                in: context,
+                deferSleepSnapshots: deferSleepSnapshots
             )
         }
+    }
+
+    /// Builds only from Sendable/value projections. No ModelContext or SwiftData
+    /// model is accepted by this async portion.
+    nonisolated static func makePure(from projection: StartupPureProjection) async -> StartupDerivedValues {
+        let splitSnapshots = projection.splitSnapshots
+        let workoutSnapshots = projection.workoutSnapshots
+
+        let trainingCallTask = Task.detached(priority: .userInitiated) {
+            let summary = CoachRecommendationEngine().makeSummary(
+                activeSplits: splitSnapshots,
+                completedSessions: workoutSnapshots
+            )
+            return TrainingCallSnapshotBuilder().make(
+                decision: summary.trainingDecision,
+                activeSplits: splitSnapshots,
+                completedSessions: workoutSnapshots
+            )
+        }
+
+        let coachRouteValuesTask = Task.detached(priority: .userInitiated) {
+            (
+                CoachDerivedMetrics.make(
+                    activeSplits: splitSnapshots,
+                    completedSessions: workoutSnapshots
+                ),
+                WeeklyReviewBuilder().build(
+                    activeSplits: splitSnapshots,
+                    completedSessions: workoutSnapshots
+                )
+            )
+        }
+        let trainingCall = await trainingCallTask.value
+        let coachRouteValues = await coachRouteValuesTask.value
+
+        return StartupDerivedValues(
+            trainingCall: trainingCall,
+            coachDerivedMetrics: coachRouteValues.0,
+            weeklyReview: coachRouteValues.1
+        )
+    }
+
+    /// Re-fetches only the bounded model sets represented by the value-only
+    /// seed. This happens after the detached preparation has returned, so the
+    /// model-backed sleep snapshots never live across that await.
+    static func makeSleepSnapshots(
+        from seed: StartupSleepSnapshotSeed,
+        in context: ModelContext
+    ) throws -> StartupSleepSnapshots {
+        let sessions = try fetchSleepSessions(ids: seed.sessionIDs, in: context)
+        let naps = try fetchNapSessions(ids: seed.analyticsNapIDs, in: context)
+        let workouts = try fetchCompletedWorkouts(ids: seed.analyticsWorkoutIDs, in: context)
+
+        let readinessNaps = ordered(seed.readinessNapIDs, from: naps) { $0.id }
+        let readinessWorkouts = ordered(seed.readinessWorkoutIDs, from: workouts) { $0.id }
+        let analyticsWorkouts = ordered(seed.analyticsWorkoutIDs, from: workouts) { $0.id }
+
+        let readinessInputSignature = SleepAnalyticsInputSignature(
+            sessions: sessions,
+            naps: readinessNaps,
+            workouts: readinessWorkouts,
+            settings: seed.settings,
+            sessionLimit: 45,
+            workoutLimit: 12,
+            workoutRevision: seed.workoutRevision
+        )
+        let readiness = SleepWorkoutReadinessSnapshotStore.shared.snapshot(
+            sessions: sessions,
+            naps: readinessNaps,
+            workouts: readinessWorkouts,
+            settings: seed.settings,
+            workoutRevision: seed.workoutRevision,
+            force: true
+        )
+        let analytics = SleepAnalyticsSnapshotStore.shared.snapshot(
+            sessions: sessions,
+            naps: naps,
+            workouts: analyticsWorkouts,
+            settings: seed.settings,
+            workoutRevision: seed.workoutRevision,
+            force: true
+        )
+
+        return StartupSleepSnapshots(
+            analytics: analytics,
+            readiness: readiness,
+            readinessInputSignature: readinessInputSignature
+        )
+    }
+
+    private static func fetchSleepSessions(ids: [UUID], in context: ModelContext) throws -> [SleepSession] {
+        guard !ids.isEmpty else { return [] }
+        var descriptor = FetchDescriptor<SleepSession>(
+            sortBy: [SortDescriptor(\SleepSession.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = ids.count
+        let byID = Dictionary(uniqueKeysWithValues: try context.fetch(descriptor).map { ($0.id, $0) })
+        return ordered(ids, from: byID.values) { $0.id }
+    }
+
+    private static func fetchNapSessions(ids: [UUID], in context: ModelContext) throws -> [NapSession] {
+        guard !ids.isEmpty else { return [] }
+        var descriptor = FetchDescriptor<NapSession>(
+            sortBy: [SortDescriptor(\NapSession.startDate, order: .reverse)]
+        )
+        descriptor.fetchLimit = ids.count
+        let byID = Dictionary(uniqueKeysWithValues: try context.fetch(descriptor).map { ($0.id, $0) })
+        return ordered(ids, from: byID.values) { $0.id }
+    }
+
+    private static func fetchCompletedWorkouts(ids: [UUID], in context: ModelContext) throws -> [WorkoutSession] {
+        guard !ids.isEmpty else { return [] }
+        var descriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\WorkoutSession.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = ids.count
+        let byID = Dictionary(uniqueKeysWithValues: try context.fetch(descriptor).map { ($0.id, $0) })
+        return ordered(ids, from: byID.values) { $0.id }
+    }
+
+    private static func ordered<Model, CollectionType: Collection>(
+        _ ids: [UUID],
+        from models: CollectionType,
+        id: (Model) -> UUID
+    ) -> [Model] where CollectionType.Element == Model {
+        let byID = Dictionary(uniqueKeysWithValues: models.map { (id($0), $0) })
+        return ids.compactMap { byID[$0] }
+    }
+
+    @MainActor
+    static func makeBundle(
+        from projections: StartupModelProjections,
+        derived: StartupDerivedValues
+    ) -> StartupSnapshotBundle {
+        makeBundle(
+            from: projections,
+            sleepSnapshots: StartupSleepSnapshots(
+                analytics: projections.sleepAnalytics,
+                readiness: projections.sleepReadiness,
+                readinessInputSignature: projections.sleepReadinessInputSignature
+            ),
+            derived: derived
+        )
+    }
+
+    @MainActor
+    static func makeBundle(
+        from projections: StartupModelProjections,
+        sleepSnapshots: StartupSleepSnapshots,
+        derived: StartupDerivedValues
+    ) -> StartupSnapshotBundle {
+        let trainingCall = derived.trainingCall.neutralizedForProvisionalReadiness(
+            if: projections.coachSnapshot.readiness.isProvisional
+        )
+        let recommendedSplit = projections.recommendedSplits
+            .first { $0.name == trainingCall.recommendedSplitName }
+
+        let workoutFirstFrameSnapshot = WorkoutStartFirstFrameSnapshot.make(
+            trainingCall: trainingCall,
+            activeSplits: projections.splitSnapshots,
+            historyWorkouts: projections.historyWorkouts,
+            previewWarmSnapshots: projections.previewWarmSnapshots,
+            dashboardSignature: projections.workoutDashboardSignature,
+            workoutRevision: projections.sourceRevision
+        )
+
+        return StartupSnapshotBundle(
+            preparedAt: .now,
+            sourceSignature: projections.sourceSignature,
+            trainingCall: trainingCall,
+            coachSnapshot: projections.coachSnapshot,
+            overallReadinessInputSignature: projections.overallReadinessInputSignature,
+            coachRouteSnapshot: CoachRouteRenderSnapshot(
+                intelligence: projections.coachSnapshot,
+                weeklyReview: derived.weeklyReview,
+                derivedMetrics: derived.coachDerivedMetrics,
+                sleepAnalytics: sleepSnapshots.analytics,
+                trainingCall: trainingCall,
+                recommendedSplit: recommendedSplit
+            ),
+            sleepAnalyticsSnapshot: sleepSnapshots.analytics,
+            sleepReadinessSnapshot: sleepSnapshots.readiness,
+            workoutSleepReadinessSnapshot: WorkoutSleepReadinessSnapshot(sleepSnapshots.readiness),
+            sleepReadinessInputSignature: sleepSnapshots.readinessInputSignature,
+            workoutFirstFrameSnapshot: workoutFirstFrameSnapshot,
+            historySnapshot: HistoryWarmSnapshot(
+                workouts: projections.historyWorkouts,
+                display: HistoryDisplaySnapshotBuilder.build(
+                    workouts: projections.historyWorkouts,
+                    trainingDaysPerWeek: projections.trainingDaysPerWeek
+                )
+            ),
+            previewWarmSnapshots: projections.previewWarmSnapshots,
+            savedFoodCatalogSnapshot: projections.savedFoodCatalogSnapshot,
+            settingsProfileSnapshot: projections.settingsProfileSnapshot,
+            activeSplitCount: projections.activeSplitCount,
+            completedWorkoutCount: projections.completedWorkoutCount,
+            unfinishedWorkoutCount: projections.unfinishedWorkoutCount,
+            historyRowWarmCount: projections.historyWorkouts.count
+        )
     }
 }
 

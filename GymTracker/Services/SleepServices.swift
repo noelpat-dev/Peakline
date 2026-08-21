@@ -30,6 +30,7 @@ enum SleepSessionValidationError: LocalizedError, Equatable {
     case tooLong
     case wakeBeforeStart
     case startInFuture
+    case wakeInFuture
 
     var errorDescription: String? {
         switch self {
@@ -41,17 +42,90 @@ enum SleepSessionValidationError: LocalizedError, Equatable {
             return "Wake time must be after sleep start."
         case .startInFuture:
             return "Sleep start cannot be in the future."
+        case .wakeInFuture:
+            return "Wake time cannot be in the future."
         }
     }
 }
 
+/// Restores only the SleepSession fields changed by a repository operation when
+/// the ModelContext already contains unrelated pending edits. A clean context
+/// can use `rollback()` safely because the operation owns all of its changes.
+private struct SleepSessionPersistenceSnapshot {
+    let confirmedSleepStartAt: Date
+    let wakeAt: Date
+    let durationMinutes: Int
+    let qualityRating: Int?
+    let tagRawValues: [String]
+    let notes: String?
+    let confidence: SleepConfidence
+    let status: SleepSessionStatus
+    let updatedAt: Date
+
+    init(_ session: SleepSession) {
+        confirmedSleepStartAt = session.confirmedSleepStartAt
+        wakeAt = session.wakeAt
+        durationMinutes = session.durationMinutes
+        qualityRating = session.qualityRating
+        tagRawValues = session.tagRawValues
+        notes = session.notes
+        confidence = session.confidence
+        status = session.status
+        updatedAt = session.updatedAt
+    }
+
+    func restore(on session: SleepSession) {
+        session.confirmedSleepStartAt = confirmedSleepStartAt
+        session.wakeAt = wakeAt
+        session.durationMinutes = durationMinutes
+        session.qualityRating = qualityRating
+        session.tagRawValues = tagRawValues
+        session.notes = notes
+        session.confidence = confidence
+        session.status = status
+        session.updatedAt = updatedAt
+    }
+}
+
+private func saveSleepContextChanges(
+    in context: ModelContext,
+    hadChangesBeforeOperation: Bool,
+    save: (ModelContext) throws -> Void,
+    restore: () -> Void
+) throws {
+    do {
+        try save(context)
+    } catch {
+        if hadChangesBeforeOperation {
+            // Do not roll back unrelated pending edits. The caller restores only
+            // the model fields or insertion/deletion touched by this operation.
+            restore()
+        } else {
+            // The context was clean before this operation, so rollback is scoped
+            // to the failed Sleep/Nap mutation and restores the persisted state.
+            context.rollback()
+        }
+        throw error
+    }
+}
+
 struct SleepSessionRepository {
+    private let saveContext: (ModelContext) throws -> Void
+
+    init(saveContext: @escaping (ModelContext) throws -> Void = { context in
+        try context.save()
+    }) {
+        self.saveContext = saveContext
+    }
+
     func activeSession(in context: ModelContext) -> SleepSession? {
+        let activeStatus = SleepSessionStatus.active
         var descriptor = FetchDescriptor<SleepSession>(
+            predicate: #Predicate<SleepSession> { $0.status == activeStatus },
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
-        descriptor.fetchLimit = 20
-        return try? context.fetch(descriptor).first { $0.status == .active }
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
     }
 
     func startSleepMode(windDownMinutes: Int, in context: ModelContext) throws -> SleepSession {
@@ -72,8 +146,15 @@ struct SleepSessionRepository {
             confidence: .low,
             status: .active
         )
+        let hadChangesBeforeOperation = context.hasChanges
         context.insert(session)
-        try context.save()
+        try saveSleepContextChanges(
+            in: context,
+            hadChangesBeforeOperation: hadChangesBeforeOperation,
+            save: saveContext
+        ) {
+            context.delete(session)
+        }
         return session
     }
 
@@ -90,8 +171,15 @@ struct SleepSessionRepository {
             confidence: .medium,
             status: .completed
         )
+        let hadChangesBeforeOperation = context.hasChanges
         context.insert(session)
-        try context.save()
+        try saveSleepContextChanges(
+            in: context,
+            hadChangesBeforeOperation: hadChangesBeforeOperation,
+            save: saveContext
+        ) {
+            context.delete(session)
+        }
     }
 
     func confirmActiveSession(
@@ -103,6 +191,8 @@ struct SleepSessionRepository {
         in context: ModelContext
     ) throws {
         try validate(start: sleepStart, wake: wake)
+        let snapshot = SleepSessionPersistenceSnapshot(session)
+        let hadChangesBeforeOperation = context.hasChanges
         session.confirmedSleepStartAt = sleepStart
         session.wakeAt = wake
         session.durationMinutes = durationMinutes(start: sleepStart, wake: wake)
@@ -111,7 +201,13 @@ struct SleepSessionRepository {
         session.confidence = .estimatedConfirmed
         session.status = .completed
         session.updatedAt = .now
-        try context.save()
+        try saveSleepContextChanges(
+            in: context,
+            hadChangesBeforeOperation: hadChangesBeforeOperation,
+            save: saveContext
+        ) {
+            snapshot.restore(on: session)
+        }
     }
 
     func updateCompletedSession(
@@ -124,6 +220,8 @@ struct SleepSessionRepository {
         in context: ModelContext
     ) throws {
         try validate(start: sleepStart, wake: wake)
+        let snapshot = SleepSessionPersistenceSnapshot(session)
+        let hadChangesBeforeOperation = context.hasChanges
         session.confirmedSleepStartAt = sleepStart
         session.wakeAt = wake
         session.durationMinutes = durationMinutes(start: sleepStart, wake: wake)
@@ -131,18 +229,41 @@ struct SleepSessionRepository {
         session.tags = tags
         session.notes = notes
         session.updatedAt = .now
-        try context.save()
+        try saveSleepContextChanges(
+            in: context,
+            hadChangesBeforeOperation: hadChangesBeforeOperation,
+            save: saveContext
+        ) {
+            snapshot.restore(on: session)
+        }
     }
 
     func discard(_ session: SleepSession, in context: ModelContext) throws {
+        let snapshot = SleepSessionPersistenceSnapshot(session)
+        let hadChangesBeforeOperation = context.hasChanges
         session.status = .discarded
         session.updatedAt = .now
-        try context.save()
+        try saveSleepContextChanges(
+            in: context,
+            hadChangesBeforeOperation: hadChangesBeforeOperation,
+            save: saveContext
+        ) {
+            snapshot.restore(on: session)
+        }
     }
 
     func delete(_ session: SleepSession, in context: ModelContext) throws {
+        let hadChangesBeforeOperation = context.hasChanges
         context.delete(session)
-        try context.save()
+        try saveSleepContextChanges(
+            in: context,
+            hadChangesBeforeOperation: hadChangesBeforeOperation,
+            save: saveContext
+        ) {
+            // A pending delete can be re-registered without touching unrelated
+            // dirty models when rollback is intentionally not allowed.
+            context.insert(session)
+        }
     }
 
     func durationMinutes(start: Date, wake: Date) -> Int {
@@ -152,6 +273,7 @@ struct SleepSessionRepository {
     func validate(start: Date, wake: Date, allowTooLongWarning: Bool = false) throws {
         guard start <= Date.now.addingTimeInterval(60) else { throw SleepSessionValidationError.startInFuture }
         guard wake > start else { throw SleepSessionValidationError.wakeBeforeStart }
+        guard wake <= Date.now else { throw SleepSessionValidationError.wakeInFuture }
 
         let minutes = durationMinutes(start: start, wake: wake)
         guard minutes >= 60 else { throw SleepSessionValidationError.tooShort }
@@ -165,52 +287,101 @@ struct SleepSourceResolver {
     private let toleranceMinutes = 45
     private let largeConflictMinutes = 120
 
-    func resolvedSession(for date: Date, sessions: [SleepSession], settings: SleepSettings, calendar: Calendar = .current) -> ResolvedSleepSession? {
-        let completed = sessions.filter { $0.status == .completed }
+    func resolvedSession(
+        for date: Date,
+        sessions: [SleepSession],
+        settings: SleepSettings,
+        endingOn evaluationDate: Date = .now,
+        calendar: Calendar = .current
+    ) -> ResolvedSleepSession? {
+        let completed = sessions.filter { $0.status == .completed && $0.wakeAt <= evaluationDate }
         let appleHealth = bestSession(
-            from: completed.filter { $0.source == .appleHealth && calendar.isDate($0.nightDate, inSameDayAs: date) }
+            from: completed.filter {
+                $0.source == .appleHealth
+                    && calendar.isDate(
+                        SleepCalendar.nightDate(for: $0.confirmedSleepStartAt, calendar: calendar),
+                        inSameDayAs: date
+                    )
+            }
         )
         let sleepMode = bestSession(
-            from: completed.filter { $0.source == .inAppTimer && calendar.isDate($0.nightDate, inSameDayAs: date) }
+            from: completed.filter {
+                $0.source == .inAppTimer
+                    && calendar.isDate(
+                        SleepCalendar.nightDate(for: $0.confirmedSleepStartAt, calendar: calendar),
+                        inSameDayAs: date
+                    )
+            }
         )
         let manual = bestSession(
-            from: completed.filter { $0.source == .manual && calendar.isDate($0.nightDate, inSameDayAs: date) }
+            from: completed.filter {
+                $0.source == .manual
+                    && calendar.isDate(
+                        SleepCalendar.nightDate(for: $0.confirmedSleepStartAt, calendar: calendar),
+                        inSameDayAs: date
+                    )
+            }
         )
 
         switch settings.preferredSource {
         case .appleHealth:
-            return appleHealth.map { resolved(from: $0, source: .appleHealth) }
-                ?? sleepMode.map { resolved(from: $0, source: .inAppTimer) }
-                ?? manual.map { resolved(from: $0, source: .manual) }
+            return appleHealth.map { resolved(from: $0, source: .appleHealth, calendar: calendar) }
+                ?? sleepMode.map { resolved(from: $0, source: .inAppTimer, calendar: calendar) }
+                ?? manual.map { resolved(from: $0, source: .manual, calendar: calendar) }
         case .sleepMode:
-            return sleepMode.map { resolved(from: $0, source: .inAppTimer) }
-                ?? appleHealth.map { resolved(from: $0, source: .appleHealth) }
-                ?? manual.map { resolved(from: $0, source: .manual) }
+            return sleepMode.map { resolved(from: $0, source: .inAppTimer, calendar: calendar) }
+                ?? appleHealth.map { resolved(from: $0, source: .appleHealth, calendar: calendar) }
+                ?? manual.map { resolved(from: $0, source: .manual, calendar: calendar) }
         case .manual:
-            return manual.map { resolved(from: $0, source: .manual) }
-                ?? appleHealth.map { resolved(from: $0, source: .appleHealth) }
-                ?? sleepMode.map { resolved(from: $0, source: .inAppTimer) }
+            return manual.map { resolved(from: $0, source: .manual, calendar: calendar) }
+                ?? appleHealth.map { resolved(from: $0, source: .appleHealth, calendar: calendar) }
+                ?? sleepMode.map { resolved(from: $0, source: .inAppTimer, calendar: calendar) }
         case .automatic:
-            return automaticResolved(date: date, appleHealth: appleHealth, sleepMode: sleepMode, manual: manual)
+            return automaticResolved(
+                date: date,
+                appleHealth: appleHealth,
+                sleepMode: sleepMode,
+                manual: manual,
+                calendar: calendar
+            )
         }
     }
 
-    func resolvedSessions(from sessions: [SleepSession], settings: SleepSettings, days: Int = 28, calendar: Calendar = .current) -> [ResolvedSleepSession] {
-        let start = calendar.startOfDay(for: .now)
+    func resolvedSessions(
+        from sessions: [SleepSession],
+        settings: SleepSettings,
+        days: Int = 28,
+        endingOn evaluationDate: Date = .now,
+        calendar: Calendar = .current
+    ) -> [ResolvedSleepSession] {
+        let eligibleSessions = sessions.filter { $0.status == .completed && $0.wakeAt <= evaluationDate }
+        let start = calendar.startOfDay(for: evaluationDate)
         return (0..<days).compactMap { offset in
             guard let date = calendar.date(byAdding: .day, value: -offset, to: start) else { return nil }
-            return resolvedSession(for: date, sessions: sessions, settings: settings, calendar: calendar)
+            return resolvedSession(
+                for: date,
+                sessions: eligibleSessions,
+                settings: settings,
+                endingOn: evaluationDate,
+                calendar: calendar
+            )
         }
     }
 
-    private func automaticResolved(date: Date, appleHealth: SleepSession?, sleepMode: SleepSession?, manual: SleepSession?) -> ResolvedSleepSession? {
+    private func automaticResolved(
+        date: Date,
+        appleHealth: SleepSession?,
+        sleepMode: SleepSession?,
+        manual: SleepSession?,
+        calendar: Calendar
+    ) -> ResolvedSleepSession? {
         guard let appleHealth else {
-            return sleepMode.map { resolved(from: $0, source: .inAppTimer) }
-                ?? manual.map { resolved(from: $0, source: .manual) }
+            return sleepMode.map { resolved(from: $0, source: .inAppTimer, calendar: calendar) }
+                ?? manual.map { resolved(from: $0, source: .manual, calendar: calendar) }
         }
 
         guard let sleepMode else {
-            return resolved(from: appleHealth, source: .appleHealth)
+            return resolved(from: appleHealth, source: .appleHealth, calendar: calendar)
         }
 
         let difference = abs(appleHealth.durationMinutes - sleepMode.durationMinutes)
@@ -238,14 +409,14 @@ struct SleepSourceResolver {
             : (appleHealth.durationMinutes < sleepMode.durationMinutes ? .appleHealthShorter : .appEstimateShorter)
 
         if appleHealth.confidence == .high {
-            return resolved(from: appleHealth, source: .appleHealth, conflict: conflict)
+            return resolved(from: appleHealth, source: .appleHealth, conflict: conflict, calendar: calendar)
         }
 
         if sleepMode.confidence == .estimatedConfirmed {
-            return resolved(from: sleepMode, source: .inAppTimer, conflict: .lowConfidenceHealthKit)
+            return resolved(from: sleepMode, source: .inAppTimer, conflict: .lowConfidenceHealthKit, calendar: calendar)
         }
 
-        return resolved(from: appleHealth, source: .appleHealth, conflict: conflict)
+        return resolved(from: appleHealth, source: .appleHealth, conflict: conflict, calendar: calendar)
     }
 
     private func bestSession(from sessions: [SleepSession]) -> SleepSession? {
@@ -270,10 +441,15 @@ struct SleepSourceResolver {
         }
     }
 
-    private func resolved(from session: SleepSession, source: SleepSource, conflict: SleepSourceConflict? = nil) -> ResolvedSleepSession {
+    private func resolved(
+        from session: SleepSession,
+        source: SleepSource,
+        conflict: SleepSourceConflict? = nil,
+        calendar: Calendar
+    ) -> ResolvedSleepSession {
         ResolvedSleepSession(
             id: session.id,
-            sleepDate: session.nightDate,
+            sleepDate: SleepCalendar.nightDate(for: session.confirmedSleepStartAt, calendar: calendar),
             startDate: session.confirmedSleepStartAt,
             endDate: session.wakeAt,
             asleepDuration: TimeInterval(session.durationMinutes * 60),
@@ -300,6 +476,7 @@ enum NapSessionValidationError: LocalizedError, Equatable {
     case tooLong
     case endBeforeStart
     case startInFuture
+    case endInFuture
 
     var errorDescription: String? {
         switch self {
@@ -311,11 +488,301 @@ enum NapSessionValidationError: LocalizedError, Equatable {
             return "Nap end time must be after the start time."
         case .startInFuture:
             return "Nap start time cannot be in the future."
+        case .endInFuture:
+            return "Nap end time cannot be in the future."
         }
     }
 }
 
+/// A value-only timer model for the Nap Timer route.
+///
+/// The timer deliberately stores dates instead of an incrementing counter. A view
+/// can be recreated, backgrounded, or restored from persistence without drifting
+/// from wall-clock time. `completed` is only reached after the caller confirms
+/// that the repository save succeeded; a failed save returns to the running or
+/// elapsed state through the reducer.
+struct NapTimerMachineState: Codable, Equatable, Sendable {
+    enum Phase: String, Codable, Equatable, Sendable {
+        case idle
+        case running
+        case elapsed
+        case finishing
+        case completed
+        case discardConfirmation
+    }
+
+    var phase: Phase
+    var selectedMinutes: Int
+    var startedAt: Date?
+    var plannedEndAt: Date?
+    var endDate: Date?
+    var lastError: NapTimerError?
+
+    static func idle(selectedMinutes: Int = 30) -> NapTimerMachineState {
+        NapTimerMachineState(
+            phase: .idle,
+            selectedMinutes: max(NapTimerStateMachine.minimumDurationMinutes, selectedMinutes),
+            startedAt: nil,
+            plannedEndAt: nil,
+            endDate: nil,
+            lastError: nil
+        )
+    }
+
+    var isActive: Bool {
+        switch phase {
+        case .running, .elapsed, .finishing, .discardConfirmation:
+            return true
+        case .idle, .completed:
+            return false
+        }
+    }
+
+    /// Elapsed seconds derived from the state dates at the supplied instant.
+    func elapsed(at now: Date) -> TimeInterval {
+        guard let startedAt else { return 0 }
+
+        switch phase {
+        case .idle:
+            return 0
+        case .running, .discardConfirmation:
+            return max(0, now.timeIntervalSince(startedAt))
+        case .elapsed:
+            guard let plannedEndAt else { return max(0, now.timeIntervalSince(startedAt)) }
+            return max(0, plannedEndAt.timeIntervalSince(startedAt))
+        case .finishing, .completed:
+            guard let endDate else { return max(0, now.timeIntervalSince(startedAt)) }
+            return max(0, endDate.timeIntervalSince(startedAt))
+        }
+    }
+
+    /// Remaining seconds derived from the planned end date.
+    func remaining(at now: Date) -> TimeInterval {
+        switch phase {
+        case .idle:
+            return TimeInterval(max(0, selectedMinutes) * 60)
+        case .running, .discardConfirmation:
+            guard let plannedEndAt else { return 0 }
+            return max(0, plannedEndAt.timeIntervalSince(now))
+        case .elapsed, .finishing, .completed:
+            return 0
+        }
+    }
+
+    /// The only end date that may be persisted for a running timer.
+    ///
+    /// Finishing before the planned end uses the actual finish time. Finishing
+    /// after the planned end uses the planned end, so this value can never be in
+    /// the future relative to `now`.
+    func effectiveEndDate(at now: Date) -> Date? {
+        guard let startedAt, let plannedEndAt else { return nil }
+        guard now >= startedAt else { return nil }
+        return min(now, plannedEndAt)
+    }
+}
+
+enum NapTimerError: String, Codable, LocalizedError, Equatable, Sendable {
+    case invalidDuration
+    case notRunning
+    case tooShort
+    case clockBeforeStart
+    case cannotDiscardWhileIdle
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidDuration:
+            return "Choose a nap duration of at least 10 minutes."
+        case .notRunning:
+            return "There is no nap timer in progress."
+        case .tooShort:
+            return "Nap timers must run for at least 10 minutes before they can be saved."
+        case .clockBeforeStart:
+            return "The device clock moved before the timer started. Keep the timer running and try again."
+        case .cannotDiscardWhileIdle:
+            return "There is no active nap timer to discard."
+        }
+    }
+}
+
+struct NapTimerCompletion: Codable, Equatable, Sendable {
+    let startDate: Date
+    let endDate: Date
+
+    var duration: TimeInterval {
+        max(0, endDate.timeIntervalSince(startDate))
+    }
+
+    var durationMinutes: Int {
+        Int(duration / 60)
+    }
+}
+
+enum NapTimerAction: Equatable, Sendable {
+    case selectDuration(minutes: Int)
+    case start(now: Date)
+    case tick(now: Date)
+    case finish(now: Date)
+    case finishSucceeded
+    case finishFailed
+    case requestDiscard
+    case confirmDiscard
+    case cancelDiscard(now: Date)
+    case reset
+}
+
+enum NapTimerEffect: Equatable, Sendable {
+    case none
+    case persist(NapTimerCompletion)
+    case discard
+    case error(NapTimerError)
+}
+
+struct NapTimerTransition: Equatable, Sendable {
+    let state: NapTimerMachineState
+    let effect: NapTimerEffect
+}
+
+/// Pure reducer for Nap Timer lifecycle and destructive-action confirmation.
+enum NapTimerStateMachine {
+    static let minimumDurationMinutes = 10
+
+    static func reduce(_ state: NapTimerMachineState, _ action: NapTimerAction) -> NapTimerTransition {
+        switch action {
+        case let .selectDuration(minutes):
+            guard state.phase == .idle, minutes >= minimumDurationMinutes else {
+                return transition(state, effect: .error(.invalidDuration))
+            }
+            return transition(
+                NapTimerMachineState(
+                    phase: .idle,
+                    selectedMinutes: minutes,
+                    startedAt: nil,
+                    plannedEndAt: nil,
+                    endDate: nil,
+                    lastError: nil
+                )
+            )
+
+        case let .start(now):
+            guard state.phase == .idle, state.selectedMinutes >= minimumDurationMinutes else {
+                return transition(state, effect: .error(.invalidDuration))
+            }
+            let plannedEndAt = now.addingTimeInterval(TimeInterval(state.selectedMinutes * 60))
+            return transition(
+                NapTimerMachineState(
+                    phase: .running,
+                    selectedMinutes: state.selectedMinutes,
+                    startedAt: now,
+                    plannedEndAt: plannedEndAt,
+                    endDate: nil,
+                    lastError: nil
+                )
+            )
+
+        case let .tick(now):
+            guard state.phase == .running,
+                  let plannedEndAt = state.plannedEndAt,
+                  now >= plannedEndAt else {
+                return transition(state)
+            }
+            return transition(
+                state.with(phase: .elapsed, lastError: nil)
+            )
+
+        case let .finish(now):
+            guard state.phase == .running || state.phase == .elapsed else {
+                return transition(state, effect: .error(.notRunning))
+            }
+            guard let startedAt = state.startedAt, let plannedEndAt = state.plannedEndAt else {
+                return transition(state, effect: .error(.notRunning))
+            }
+            guard now >= startedAt else {
+                return transition(state.with(lastError: .clockBeforeStart), effect: .error(.clockBeforeStart))
+            }
+
+            let endDate = min(now, plannedEndAt)
+            let completion = NapTimerCompletion(startDate: startedAt, endDate: endDate)
+            guard completion.duration >= TimeInterval(minimumDurationMinutes * 60) else {
+                return transition(state.with(lastError: .tooShort), effect: .error(.tooShort))
+            }
+
+            return transition(
+                state.with(phase: .finishing, endDate: endDate, lastError: nil),
+                effect: .persist(completion)
+            )
+
+        case .finishSucceeded:
+            guard state.phase == .finishing else { return transition(state) }
+            return transition(state.with(phase: .completed, lastError: nil))
+
+        case .finishFailed:
+            guard state.phase == .finishing else { return transition(state) }
+            let phase: NapTimerMachineState.Phase
+            if let plannedEndAt = state.plannedEndAt, let now = state.endDate {
+                phase = now >= plannedEndAt ? .elapsed : .running
+            } else {
+                phase = .running
+            }
+            return transition(state.with(phase: phase, clearEndDate: true))
+
+        case .requestDiscard:
+            guard state.isActive else {
+                return transition(state, effect: .error(.cannotDiscardWhileIdle))
+            }
+            guard state.phase != .finishing else { return transition(state) }
+            return transition(state.with(phase: .discardConfirmation, lastError: nil))
+
+        case .confirmDiscard:
+            guard state.phase == .discardConfirmation else { return transition(state) }
+            return transition(.idle(selectedMinutes: state.selectedMinutes), effect: .discard)
+
+        case let .cancelDiscard(now):
+            guard state.phase == .discardConfirmation else { return transition(state) }
+            let phase: NapTimerMachineState.Phase
+            if let plannedEndAt = state.plannedEndAt, now >= plannedEndAt {
+                phase = .elapsed
+            } else {
+                phase = .running
+            }
+            return transition(state.with(phase: phase, lastError: nil))
+
+        case .reset:
+            return transition(.idle(selectedMinutes: state.selectedMinutes))
+        }
+    }
+
+    private static func transition(_ state: NapTimerMachineState, effect: NapTimerEffect = .none) -> NapTimerTransition {
+        NapTimerTransition(state: state, effect: effect)
+    }
+}
+
+private extension NapTimerMachineState {
+    func with(
+        phase: Phase? = nil,
+        endDate: Date? = nil,
+        clearEndDate: Bool = false,
+        lastError: NapTimerError? = nil
+    ) -> NapTimerMachineState {
+        NapTimerMachineState(
+            phase: phase ?? self.phase,
+            selectedMinutes: selectedMinutes,
+            startedAt: startedAt,
+            plannedEndAt: plannedEndAt,
+            endDate: clearEndDate ? nil : endDate ?? self.endDate,
+            lastError: lastError
+        )
+    }
+}
+
 struct NapSessionRepository {
+    private let saveContext: (ModelContext) throws -> Void
+
+    init(saveContext: @escaping (ModelContext) throws -> Void = { context in
+        try context.save()
+    }) {
+        self.saveContext = saveContext
+    }
+
     func addNap(start: Date, end: Date, quality: Int?, note: String?, source: NapSource = .manual, healthKitSampleIds: [String] = [], in context: ModelContext) throws {
         try validate(start: start, end: end)
         let nap = NapSession(
@@ -327,18 +794,33 @@ struct NapSessionRepository {
             note: note?.isEmpty == true ? nil : note,
             healthKitSampleIds: healthKitSampleIds
         )
+        let hadChangesBeforeOperation = context.hasChanges
         context.insert(nap)
-        try context.save()
+        try saveSleepContextChanges(
+            in: context,
+            hadChangesBeforeOperation: hadChangesBeforeOperation,
+            save: saveContext
+        ) {
+            context.delete(nap)
+        }
     }
 
     func delete(_ nap: NapSession, in context: ModelContext) throws {
+        let hadChangesBeforeOperation = context.hasChanges
         context.delete(nap)
-        try context.save()
+        try saveSleepContextChanges(
+            in: context,
+            hadChangesBeforeOperation: hadChangesBeforeOperation,
+            save: saveContext
+        ) {
+            context.insert(nap)
+        }
     }
 
     func validate(start: Date, end: Date) throws {
         guard start <= Date.now.addingTimeInterval(60) else { throw NapSessionValidationError.startInFuture }
         guard end > start else { throw NapSessionValidationError.endBeforeStart }
+        guard end <= Date.now else { throw NapSessionValidationError.endInFuture }
         let minutes = Int(end.timeIntervalSince(start) / 60)
         guard minutes >= 10 else { throw NapSessionValidationError.tooShort }
         guard minutes <= 180 else { throw NapSessionValidationError.tooLong }
@@ -921,14 +1403,25 @@ struct SleepWorkoutCorrelationService {
     private let performanceService = WorkoutPerformanceService()
     private let scoring = SleepScoringService()
 
-    func correlate(workouts: [WorkoutSession], sleepSessions: [ResolvedSleepSession], historicalSleepSessions: [SleepSession], settings: SleepSettings, calendar: Calendar = .current) -> [SleepWorkoutCorrelation] {
+    func correlate(
+        workouts: [WorkoutSession],
+        sleepSessions: [ResolvedSleepSession],
+        historicalSleepSessions: [SleepSession],
+        settings: SleepSettings,
+        endingOn evaluationDate: Date = .now,
+        calendar: Calendar = .current
+    ) -> [SleepWorkoutCorrelation] {
+        let eligibleResolvedSleep = sleepSessions.filter { $0.endDate <= evaluationDate }
+        let eligibleHistoricalSleep = historicalSleepSessions.filter {
+            $0.status == .completed && $0.wakeAt <= evaluationDate
+        }
         let sortedWorkouts = workouts.sorted { $0.date > $1.date }
         return sortedWorkouts.map { workout in
             let workoutDay = calendar.startOfDay(for: workout.date)
             let sleepDate = calendar.date(byAdding: .day, value: -1, to: workoutDay) ?? workoutDay.addingTimeInterval(-86_400)
-            let sleep = sleepSessions.first { calendar.isDate($0.sleepDate, inSameDayAs: sleepDate) }
+            let sleep = eligibleResolvedSleep.first { calendar.isDate($0.sleepDate, inSameDayAs: sleepDate) }
             let performance = performanceService.calculatePerformanceScore(for: workout, recentWorkouts: sortedWorkouts.filter { $0.date < workout.date })
-            let recoveryScore = sleep.map { scoring.score(for: $0, recentSessions: historicalSleepSessions, settings: settings) }
+            let recoveryScore = sleep.map { scoring.score(for: $0, recentSessions: eligibleHistoricalSleep, settings: settings) }
 
             return SleepWorkoutCorrelation(
                 workoutID: workout.id,
@@ -1465,29 +1958,84 @@ struct SleepScoringService {
     private let resolver = SleepSourceResolver()
     private let advancedRecovery = AdvancedRecoveryScoreService()
 
-    func summaries(from sessions: [SleepSession], settings: SleepSettings, days: Int = 7, endingOn date: Date = .now, calendar: Calendar = .current) -> [SleepSummary] {
-        summaries(from: sessions, naps: [], workouts: [], settings: settings, days: days, endingOn: date, calendar: calendar)
+    func summaries(from sessions: [SleepSession], settings: SleepSettings, days: Int = 7, endingOn evaluationDate: Date = .now, calendar: Calendar = .current) -> [SleepSummary] {
+        summaries(from: sessions, naps: [], workouts: [], settings: settings, days: days, endingOn: evaluationDate, calendar: calendar)
     }
 
-    func summaries(from sessions: [SleepSession], naps: [NapSession], workouts: [WorkoutSession], settings: SleepSettings, days: Int = 7, endingOn date: Date = .now, calendar: Calendar = .current) -> [SleepSummary] {
-        let completed = sessions.filter { $0.status == .completed }
+    func summaries(from sessions: [SleepSession], naps: [NapSession], workouts: [WorkoutSession], settings: SleepSettings, days: Int = 7, endingOn evaluationDate: Date = .now, calendar: Calendar = .current) -> [SleepSummary] {
+        // A restored/imported record can be marked completed before its wake
+        // time. It must not enter an evaluated snapshot until the overnight
+        // has actually finished at the evaluation instant.
+        let completed = sessions.filter {
+            $0.status == .completed && $0.wakeAt <= evaluationDate
+        }
         let grouped = Dictionary(grouping: completed, by: { SleepCalendar.nightDate(for: $0.confirmedSleepStartAt, calendar: calendar) })
-        let start = calendar.startOfDay(for: date)
+        let start = calendar.startOfDay(for: evaluationDate)
 
         return (0..<days).compactMap { offset in
-            guard let date = calendar.date(byAdding: .day, value: -offset, to: start) else { return nil }
-            let nightly = grouped[date] ?? []
-            return summary(for: date, sessions: nightly, allSessions: completed, naps: naps, workouts: workouts, settings: settings, calendar: calendar)
+            guard let summaryDate = calendar.date(byAdding: .day, value: -offset, to: start) else { return nil }
+            let nightly = grouped[summaryDate] ?? []
+            return summary(
+                for: summaryDate,
+                sessions: nightly,
+                allSessions: completed,
+                naps: naps,
+                workouts: workouts,
+                settings: settings,
+                endingOn: evaluationDate,
+                calendar: calendar
+            )
         }
     }
 
-    func latestSummary(from sessions: [SleepSession], settings: SleepSettings) -> SleepSummary {
-        latestSummary(from: sessions, naps: [], workouts: [], settings: settings)
+    func latestSummary(
+        from sessions: [SleepSession],
+        settings: SleepSettings,
+        endingOn date: Date = .now,
+        calendar: Calendar = .current
+    ) -> SleepSummary {
+        latestSummary(
+            from: sessions,
+            naps: [],
+            workouts: [],
+            settings: settings,
+            endingOn: date,
+            calendar: calendar
+        )
     }
 
-    func latestSummary(from sessions: [SleepSession], naps: [NapSession], workouts: [WorkoutSession], settings: SleepSettings) -> SleepSummary {
-        summaries(from: sessions, naps: naps, workouts: workouts, settings: settings, days: 14).first { $0.primarySession != nil }
-            ?? Self.emptySummary()
+    func latestSummary(
+        from sessions: [SleepSession],
+        naps: [NapSession],
+        workouts: [WorkoutSession],
+        settings: SleepSettings,
+        endingOn date: Date = .now,
+        calendar: Calendar = .current
+    ) -> SleepSummary {
+        let recentSummaries = summaries(
+            from: sessions,
+            naps: naps,
+            workouts: workouts,
+            settings: settings,
+            days: 14,
+            endingOn: date,
+            calendar: calendar
+        )
+        guard let lastNightDate = calendar.date(
+            byAdding: .day,
+            value: -1,
+            to: calendar.startOfDay(for: date)
+        ) else {
+            return Self.emptySummary(calendar: calendar)
+        }
+
+        // Sessions are grouped by bedtime date. On Monday, last night's
+        // completed overnight therefore belongs to Sunday's summary, not
+        // Monday's current-day summary and not the first populated day in the
+        // recent history window.
+        return recentSummaries.first {
+            calendar.isDate($0.date, inSameDayAs: lastNightDate)
+        } ?? Self.emptySummary(calendar: calendar)
     }
 
     static func emptySummary(calendar: Calendar = .current) -> SleepSummary {
@@ -1657,10 +2205,22 @@ struct SleepScoringService {
         return "\(hours)h \(mins)m"
     }
 
-    private func summary(for date: Date, sessions: [SleepSession], allSessions: [SleepSession], naps: [NapSession], workouts: [WorkoutSession], settings: SleepSettings, calendar: Calendar) -> SleepSummary {
+    private func summary(for date: Date, sessions: [SleepSession], allSessions: [SleepSession], naps: [NapSession], workouts: [WorkoutSession], settings: SleepSettings, endingOn evaluationDate: Date, calendar: Calendar) -> SleepSummary {
         let primary = primarySession(from: sessions)
-        let resolved = resolver.resolvedSession(for: date, sessions: allSessions, settings: settings)
-        let recentSleep = resolver.resolvedSessions(from: allSessions, settings: settings, days: 28, calendar: calendar)
+        let resolved = resolver.resolvedSession(
+            for: date,
+            sessions: allSessions,
+            settings: settings,
+            endingOn: evaluationDate,
+            calendar: calendar
+        )
+        let recentSleep = resolver.resolvedSessions(
+            from: allSessions,
+            settings: settings,
+            days: 28,
+            endingOn: evaluationDate,
+            calendar: calendar
+        )
         let dayNaps = naps.filter { calendar.isDate($0.startDate, inSameDayAs: date) }
         let recoveryBreakdown = advancedRecovery.calculateRecovery(
             sleep: resolved,
@@ -1741,40 +2301,122 @@ struct SleepScoringService {
     }
 }
 
-struct SleepAnalyticsInputSignature: Equatable {
-    private struct SessionFingerprint: Equatable {
+struct SleepSessionScoreSnapshot: Equatable, Sendable, Identifiable {
+    let id: UUID
+    let score: Int
+    let contextSessionIDs: [UUID]
+}
+
+/// Canonical score values for a bounded history context.
+///
+/// History rows and the detail route can consume the same value map instead of
+/// independently choosing different `recentSessions` arrays. The map retains
+/// only UUIDs and scores, never SwiftData models.
+struct SleepSessionScoreMap: Equatable, Sendable {
+    let contextSessionIDs: [UUID]
+    private let values: [UUID: Int]
+
+    init(
+        sessions: [SleepSession],
+        settings: SleepSettings,
+        limit: Int = 90,
+        scoring: SleepScoringService = SleepScoringService()
+    ) {
+        let context = Array(
+            sessions
+                .filter { $0.status == .completed }
+                .prefix(max(0, limit))
+        )
+        contextSessionIDs = context.map(\.id)
+        values = Dictionary(
+            uniqueKeysWithValues: context.map { session in
+                (
+                    session.id,
+                    scoring.score(for: session, recentSessions: context, settings: settings)
+                )
+            }
+        )
+    }
+
+    func score(for sessionID: UUID) -> Int? {
+        values[sessionID]
+    }
+
+    func snapshot(for sessionID: UUID) -> SleepSessionScoreSnapshot? {
+        guard let score = values[sessionID] else { return nil }
+        return SleepSessionScoreSnapshot(
+            id: sessionID,
+            score: score,
+            contextSessionIDs: contextSessionIDs
+        )
+    }
+}
+
+private enum SleepAnalyticsWorkoutGeneration {
+    // Keep the default readiness-store path aligned with the persisted
+    // WorkoutWarmStartInvalidation generation without touching that service's
+    // ownership boundary. Explicit SwiftUI callers pass the in-memory value.
+    private static let revisionKey = "Peakline.WorkoutWarmStartInvalidation.revision"
+
+    static var current: Int {
+        UserDefaults.standard.integer(forKey: revisionKey)
+    }
+}
+
+struct SleepAnalyticsInputSignature: Equatable, Sendable {
+    private struct SessionFingerprint: Equatable, Sendable {
         let id: UUID
-        let status: SleepSessionStatus
+        let status: String
         let updatedAt: Date
         let start: Date
         let wake: Date
         let durationMinutes: Int
         let qualityRating: Int?
-        let source: SleepSource
-        let confidence: SleepConfidence
+        let source: String
+        let confidence: String
+        let sleepModeStartedAt: Date?
+        let estimatedSleepStartAt: Date?
+        let windDownDurationMinutes: Int?
+        let tags: String
+        let notes: String?
+        let healthKitSampleIDs: String
     }
 
-    private struct WorkoutFingerprint: Equatable {
+    private struct WorkoutFingerprint: Equatable, Sendable {
         let id: UUID
         let date: Date
+        let splitNameSnapshot: String
+        let startedAt: Date?
+        let endedAt: Date?
         let completed: Bool
         let durationMinutes: Int?
+        let durationSeconds: Int?
+        let accumulatedPausedSeconds: Int
         let perceivedDifficulty: Int?
         let energyLevel: Int?
         let sorenessLevel: Int?
+        let notes: String?
+        /// Kept for compatibility with callers that do not provide the
+        /// workout-generation token. SwiftUI hot paths pass a generation and
+        /// leave this nil so constructing a signature never faults the
+        /// exerciseLogs/setLogs relationship graph.
+        let relationshipFingerprint: String?
     }
 
-    private struct NapFingerprint: Equatable {
+    private struct NapFingerprint: Equatable, Sendable {
         let id: UUID
         let start: Date
         let end: Date
         let durationMinutes: Int
         let qualityRating: Int?
-        let source: NapSource
+        let source: String
+        let timingCategory: String
+        let note: String?
+        let healthKitSampleIDs: String
         let updatedAt: Date
     }
 
-    private struct SettingsFingerprint: Equatable {
+    private struct SettingsFingerprint: Equatable, Sendable {
         let targetSleepMinutes: Int
         let recoveryCoachingEnabled: Bool
         let preferredSource: PreferredSleepSource
@@ -1790,37 +2432,78 @@ struct SleepAnalyticsInputSignature: Equatable {
 
     let sessionLimit: Int
     let workoutLimit: Int
+    let localDayToken: Date
+    /// The next wake boundary at which a completed future record becomes
+    /// eligible for summaries. This changes only when that boundary is
+    /// crossed, so cache reads do not churn with the current minute.
+    let nextSleepEligibilityBoundary: Date?
+    /// Monotonic source generation for workout and set edits. A generation is
+    /// cheaper and safer for repeated observation than traversing every
+    /// WorkoutSession relationship on each body evaluation.
+    let workoutRevision: Int?
     private let settings: SettingsFingerprint
     private let sessions: [SessionFingerprint]
     private let workouts: [WorkoutFingerprint]
     private let naps: [NapFingerprint]
 
-    init(sessions: [SleepSession], naps: [NapSession] = [], workouts: [WorkoutSession], settings: SleepSettings, sessionLimit: Int = 90, workoutLimit: Int = 28) {
+    init(
+        sessions: [SleepSession],
+        naps: [NapSession] = [],
+        workouts: [WorkoutSession],
+        settings: SleepSettings,
+        sessionLimit: Int = 90,
+        workoutLimit: Int = 28,
+        workoutRevision: Int? = nil,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) {
         self.sessionLimit = sessionLimit
         self.workoutLimit = workoutLimit
+        self.localDayToken = calendar.startOfDay(for: now)
+        self.nextSleepEligibilityBoundary = sessions
+            .prefix(sessionLimit)
+            .filter { $0.status == .completed && $0.wakeAt > now }
+            .map(\.wakeAt)
+            .min()
+        self.workoutRevision = workoutRevision
         self.settings = SettingsFingerprint(settings: settings)
         self.sessions = sessions.prefix(sessionLimit).map {
             SessionFingerprint(
                 id: $0.id,
-                status: $0.status,
+                status: $0.status.rawValue,
                 updatedAt: $0.updatedAt,
                 start: $0.confirmedSleepStartAt,
                 wake: $0.wakeAt,
                 durationMinutes: $0.durationMinutes,
                 qualityRating: $0.qualityRating,
-                source: $0.source,
-                confidence: $0.confidence
+                source: $0.source.rawValue,
+                confidence: $0.confidence.rawValue,
+                sleepModeStartedAt: $0.sleepModeStartedAt,
+                estimatedSleepStartAt: $0.estimatedSleepStartAt,
+                windDownDurationMinutes: $0.windDownDurationMinutes,
+                tags: $0.tagRawValues.sorted().joined(separator: ","),
+                notes: $0.notes,
+                healthKitSampleIDs: $0.healthKitSampleIds.sorted().joined(separator: ",")
             )
         }
         self.workouts = workouts.prefix(workoutLimit).map {
-            return WorkoutFingerprint(
+            WorkoutFingerprint(
                 id: $0.id,
                 date: $0.date,
+                splitNameSnapshot: $0.splitNameSnapshot,
+                startedAt: $0.startedAt,
+                endedAt: $0.endedAt,
                 completed: $0.completed,
                 durationMinutes: $0.durationMinutes,
+                durationSeconds: $0.durationSeconds,
+                accumulatedPausedSeconds: $0.accumulatedPausedSeconds,
                 perceivedDifficulty: $0.perceivedDifficulty,
                 energyLevel: $0.energyLevel,
-                sorenessLevel: $0.sorenessLevel
+                sorenessLevel: $0.sorenessLevel,
+                notes: $0.notes,
+                relationshipFingerprint: workoutRevision == nil
+                    ? Self.relationshipFingerprint(for: $0)
+                    : nil
             )
         }
         self.naps = naps.prefix(sessionLimit).map {
@@ -1830,10 +2513,49 @@ struct SleepAnalyticsInputSignature: Equatable {
                 end: $0.endDate,
                 durationMinutes: $0.durationMinutes,
                 qualityRating: $0.qualityRating,
-                source: $0.source,
+                source: $0.source.rawValue,
+                timingCategory: $0.timingCategory.rawValue,
+                note: $0.note,
+                healthKitSampleIDs: $0.healthKitSampleIds.sorted().joined(separator: ","),
                 updatedAt: $0.updatedAt
             )
         }
+    }
+
+    private static func relationshipFingerprint(for workout: WorkoutSession) -> String {
+        workout.exerciseLogs
+            .sorted { lhs, rhs in lhs.id.uuidString < rhs.id.uuidString }
+            .map { log in
+                let sets = log.setLogs
+                    .sorted { lhs, rhs in lhs.id.uuidString < rhs.id.uuidString }
+                    .map { set in
+                        [
+                            set.id.uuidString,
+                            set.exerciseLogId.uuidString,
+                            "\(set.setNumber)",
+                            "\(set.weight)",
+                            "\(set.reps)",
+                            set.rpe.map { "\($0)" } ?? "nil",
+                            String(set.isWarmup),
+                            String(set.completed)
+                        ].joined(separator: ":")
+                    }
+                    .joined(separator: ",")
+
+                return [
+                    log.id.uuidString,
+                    log.workoutSessionId.uuidString,
+                    log.exerciseId.uuidString,
+                    log.exerciseNameSnapshot,
+                    String(log.orderIndex),
+                    String(log.targetSets),
+                    String(log.minReps),
+                    String(log.maxReps),
+                    log.notes ?? "nil",
+                    sets
+                ].joined(separator: "|")
+            }
+            .joined(separator: ";")
     }
 }
 
@@ -1860,9 +2582,26 @@ final class SleepAnalyticsSnapshotStore {
 
     private init() {}
 
-    func snapshot(sessions: [SleepSession], naps: [NapSession] = [], workouts: [WorkoutSession], settings: SleepSettings, sessionLimit: Int = 90, workoutLimit: Int = 28, force: Bool = false) -> SleepAnalyticsSnapshot {
+    func snapshot(
+        sessions: [SleepSession],
+        naps: [NapSession] = [],
+        workouts: [WorkoutSession],
+        settings: SleepSettings,
+        sessionLimit: Int = 90,
+        workoutLimit: Int = 28,
+        workoutRevision: Int? = nil,
+        force: Bool = false
+    ) -> SleepAnalyticsSnapshot {
         PerformanceTracer.mark(.unsafeBreadcrumb, "sleep.analytics.cache before_signature sessions=\(min(sessions.count, sessionLimit)) workouts=\(min(workouts.count, workoutLimit))")
-        let signature = SleepAnalyticsInputSignature(sessions: sessions, naps: naps, workouts: workouts, settings: settings, sessionLimit: sessionLimit, workoutLimit: workoutLimit)
+        let signature = SleepAnalyticsInputSignature(
+            sessions: sessions,
+            naps: naps,
+            workouts: workouts,
+            settings: settings,
+            sessionLimit: sessionLimit,
+            workoutLimit: workoutLimit,
+            workoutRevision: workoutRevision
+        )
 
         if !force, signature == cachedSignature, let cachedSnapshot {
             PerformanceTracer.mark(.sleepAnalyticsCache, "hit sessions=\(min(sessions.count, sessionLimit)) workouts=\(min(workouts.count, workoutLimit))")
@@ -1898,9 +2637,27 @@ final class SleepWorkoutReadinessSnapshotStore {
 
     private init() {}
 
-    func snapshot(sessions: [SleepSession], naps: [NapSession] = [], workouts: [WorkoutSession], settings: SleepSettings, sessionLimit: Int = 45, workoutLimit: Int = 12, force: Bool = false) -> SleepWorkoutReadinessSnapshot {
+    func snapshot(
+        sessions: [SleepSession],
+        naps: [NapSession] = [],
+        workouts: [WorkoutSession],
+        settings: SleepSettings,
+        sessionLimit: Int = 45,
+        workoutLimit: Int = 12,
+        workoutRevision: Int? = nil,
+        force: Bool = false
+    ) -> SleepWorkoutReadinessSnapshot {
         PerformanceTracer.mark(.unsafeBreadcrumb, "sleep.readiness.cache before_signature sessions=\(min(sessions.count, sessionLimit)) workouts=\(min(workouts.count, workoutLimit))")
-        let signature = SleepAnalyticsInputSignature(sessions: sessions, naps: naps, workouts: workouts, settings: settings, sessionLimit: sessionLimit, workoutLimit: workoutLimit)
+        let effectiveWorkoutRevision = workoutRevision ?? SleepAnalyticsWorkoutGeneration.current
+        let signature = SleepAnalyticsInputSignature(
+            sessions: sessions,
+            naps: naps,
+            workouts: workouts,
+            settings: settings,
+            sessionLimit: sessionLimit,
+            workoutLimit: workoutLimit,
+            workoutRevision: effectiveWorkoutRevision
+        )
 
         if !force, signature == cachedSignature, let cachedSnapshot {
             PerformanceTracer.mark(.sleepReadinessCache, "hit sessions=\(min(sessions.count, sessionLimit)) workouts=\(min(workouts.count, workoutLimit))")
@@ -1927,24 +2684,97 @@ struct SleepAnalyticsService {
     private let adaptiveService = AdaptiveTrainingRecommendationService()
     private let insightService = SleepCoachingInsightService()
 
-    func snapshot(sessions: [SleepSession], naps: [NapSession] = [], workouts: [WorkoutSession], settings: SleepSettings, calendar: Calendar = .current) -> SleepAnalyticsSnapshot {
-        SleepAnalyticsSnapshot(
-            summaries: scoring.summaries(from: sessions, naps: naps, workouts: workouts, settings: settings, days: 7, calendar: calendar),
-            latestSummary: scoring.latestSummary(from: sessions, naps: naps, workouts: workouts, settings: settings),
-            dashboardSummary: dashboardSummary(sessions: sessions, naps: naps, workouts: workouts, settings: settings, calendar: calendar),
+    func snapshot(
+        sessions: [SleepSession],
+        naps: [NapSession] = [],
+        workouts: [WorkoutSession],
+        settings: SleepSettings,
+        endingOn date: Date = .now,
+        calendar: Calendar = .current
+    ) -> SleepAnalyticsSnapshot {
+        let sevenDaySummaries = scoring.summaries(
+            from: sessions,
+            naps: naps,
+            workouts: workouts,
+            settings: settings,
+            days: 7,
+            endingOn: date,
+            calendar: calendar
+        )
+        let twentyEightDaySummaries = scoring.summaries(
+            from: sessions,
+            naps: naps,
+            workouts: workouts,
+            settings: settings,
+            days: 28,
+            endingOn: date,
+            calendar: calendar
+        )
+        let lastNight = scoring.latestSummary(
+            from: sessions,
+            naps: naps,
+            workouts: workouts,
+            settings: settings,
+            endingOn: date,
+            calendar: calendar
+        )
+
+        return SleepAnalyticsSnapshot(
+            summaries: sevenDaySummaries,
+            latestSummary: lastNight,
+            dashboardSummary: makeDashboardSummary(
+                sessions: sessions,
+                naps: naps,
+                workouts: workouts,
+                settings: settings,
+                endingOn: date,
+                calendar: calendar,
+                sevenDaySummaries: sevenDaySummaries,
+                twentyEightDaySummaries: twentyEightDaySummaries,
+                lastNight: lastNight
+            ),
             generatedAt: .now
         )
     }
 
-    func workoutReadinessSnapshot(sessions: [SleepSession], naps: [NapSession] = [], workouts: [WorkoutSession], settings: SleepSettings, calendar: Calendar = .current) -> SleepWorkoutReadinessSnapshot {
-        let sevenDaySummaries = scoring.summaries(from: sessions, naps: naps, workouts: workouts, settings: settings, days: 7, calendar: calendar)
-        let lastNight = scoring.latestSummary(from: sessions, naps: naps, workouts: workouts, settings: settings)
-        let resolvedSleep = resolver.resolvedSessions(from: sessions, settings: settings, days: 14, calendar: calendar)
+    func workoutReadinessSnapshot(
+        sessions: [SleepSession],
+        naps: [NapSession] = [],
+        workouts: [WorkoutSession],
+        settings: SleepSettings,
+        endingOn date: Date = .now,
+        calendar: Calendar = .current
+    ) -> SleepWorkoutReadinessSnapshot {
+        let sevenDaySummaries = scoring.summaries(
+            from: sessions,
+            naps: naps,
+            workouts: workouts,
+            settings: settings,
+            days: 7,
+            endingOn: date,
+            calendar: calendar
+        )
+        let lastNight = scoring.latestSummary(
+            from: sessions,
+            naps: naps,
+            workouts: workouts,
+            settings: settings,
+            endingOn: date,
+            calendar: calendar
+        )
+        let resolvedSleep = resolver.resolvedSessions(
+            from: sessions,
+            settings: settings,
+            days: 14,
+            endingOn: date,
+            calendar: calendar
+        )
         let correlations = correlationService.correlate(
             workouts: Array(workouts.prefix(12)),
             sleepSessions: resolvedSleep,
             historicalSleepSessions: sessions,
             settings: settings,
+            endingOn: date,
             calendar: calendar
         )
         let interventions = interventionService.interventions(
@@ -2026,20 +2856,94 @@ struct SleepAnalyticsService {
         )
     }
 
-    func dashboardSummary(sessions: [SleepSession], workouts: [WorkoutSession], settings: SleepSettings, calendar: Calendar = .current) -> SleepDashboardSummary {
-        dashboardSummary(sessions: sessions, naps: [], workouts: workouts, settings: settings, calendar: calendar)
+    func dashboardSummary(
+        sessions: [SleepSession],
+        workouts: [WorkoutSession],
+        settings: SleepSettings,
+        endingOn date: Date = .now,
+        calendar: Calendar = .current
+    ) -> SleepDashboardSummary {
+        dashboardSummary(
+            sessions: sessions,
+            naps: [],
+            workouts: workouts,
+            settings: settings,
+            endingOn: date,
+            calendar: calendar
+        )
     }
 
-    func dashboardSummary(sessions: [SleepSession], naps: [NapSession], workouts: [WorkoutSession], settings: SleepSettings, calendar: Calendar = .current) -> SleepDashboardSummary {
-        let sevenDaySummaries = scoring.summaries(from: sessions, naps: naps, workouts: workouts, settings: settings, days: 7, calendar: calendar)
-        let twentyEightDaySummaries = scoring.summaries(from: sessions, naps: naps, workouts: workouts, settings: settings, days: 28, calendar: calendar)
-        let lastNight = scoring.latestSummary(from: sessions, naps: naps, workouts: workouts, settings: settings)
-        let resolvedSleep = resolver.resolvedSessions(from: sessions, settings: settings, days: 28, calendar: calendar)
+    func dashboardSummary(
+        sessions: [SleepSession],
+        naps: [NapSession],
+        workouts: [WorkoutSession],
+        settings: SleepSettings,
+        endingOn date: Date = .now,
+        calendar: Calendar = .current
+    ) -> SleepDashboardSummary {
+        let sevenDaySummaries = scoring.summaries(
+            from: sessions,
+            naps: naps,
+            workouts: workouts,
+            settings: settings,
+            days: 7,
+            endingOn: date,
+            calendar: calendar
+        )
+        let twentyEightDaySummaries = scoring.summaries(
+            from: sessions,
+            naps: naps,
+            workouts: workouts,
+            settings: settings,
+            days: 28,
+            endingOn: date,
+            calendar: calendar
+        )
+        let lastNight = scoring.latestSummary(
+            from: sessions,
+            naps: naps,
+            workouts: workouts,
+            settings: settings,
+            endingOn: date,
+            calendar: calendar
+        )
+        return makeDashboardSummary(
+            sessions: sessions,
+            naps: naps,
+            workouts: workouts,
+            settings: settings,
+            endingOn: date,
+            calendar: calendar,
+            sevenDaySummaries: sevenDaySummaries,
+            twentyEightDaySummaries: twentyEightDaySummaries,
+            lastNight: lastNight
+        )
+    }
+
+    private func makeDashboardSummary(
+        sessions: [SleepSession],
+        naps: [NapSession],
+        workouts: [WorkoutSession],
+        settings: SleepSettings,
+        endingOn evaluationDate: Date,
+        calendar: Calendar,
+        sevenDaySummaries: [SleepSummary],
+        twentyEightDaySummaries: [SleepSummary],
+        lastNight: SleepSummary
+    ) -> SleepDashboardSummary {
+        let resolvedSleep = resolver.resolvedSessions(
+            from: sessions,
+            settings: settings,
+            days: 28,
+            endingOn: evaluationDate,
+            calendar: calendar
+        )
         let correlations = correlationService.correlate(
             workouts: Array(workouts.prefix(28)),
             sleepSessions: resolvedSleep,
             historicalSleepSessions: sessions,
             settings: settings,
+            endingOn: evaluationDate,
             calendar: calendar
         )
         let interventions = interventionService.interventions(
@@ -2257,6 +3161,7 @@ struct SleepNotificationScheduler {
             await SleepNotificationService().authorizationStatus()
         }
         guard status == .authorized || status == .provisional || status == .ephemeral else {
+            await cancelSleepNotificationsAsync(sessions: sessions, workouts: workouts, calendar: calendar)
             PerformanceTracer.mark(.unsafeBreadcrumb, "root.notification.scheduler end unauthorized status=\(status.rawValue)")
             return
         }
@@ -2346,7 +3251,7 @@ struct SleepNotificationScheduler {
     func scheduleMissedSleepReminder(settings: SleepSettings, sessions: [SleepNotificationSessionSnapshot], calendar: Calendar = .current) {
         let preferences = settings.notificationPreferences
         guard preferences.missedSleepReminderEnabled else { return }
-        guard recentTrackedCount(sessions: sessions, calendar: calendar) >= 3 else { return }
+        guard recentTrackedCount(sessions: sessions, now: .now, calendar: calendar) >= 3 else { return }
         guard !hasSessionForLastNight(sessions: sessions, calendar: calendar) else { return }
 
         var components = DateComponents()
@@ -2477,21 +3382,44 @@ struct SleepNotificationScheduler {
         return ids
     }
 
-    private func hasSessionForUpcomingNight(sessions: [SleepNotificationSessionSnapshot], calendar: Calendar) -> Bool {
-        let tomorrow = calendar.date(byAdding: .day, value: 1, to: .now) ?? .now
-        let night = SleepCalendar.nightDate(for: tomorrow, calendar: calendar)
-        return sessions.contains { $0.status == .completed && calendar.isDate($0.nightDate, inSameDayAs: night) }
+    func hasSessionForUpcomingNight(
+        sessions: [SleepNotificationSessionSnapshot],
+        now: Date = .now,
+        calendar: Calendar
+    ) -> Bool {
+        let upcomingNight = calendar.startOfDay(for: now)
+        return sessions.contains {
+            $0.status == .completed && $0.wakeAt <= now
+                && calendar.isDate(
+                    SleepCalendar.nightDate(for: $0.confirmedSleepStartAt, calendar: calendar),
+                    inSameDayAs: upcomingNight
+                )
+        }
     }
 
-    private func hasSessionForLastNight(sessions: [SleepNotificationSessionSnapshot], calendar: Calendar) -> Bool {
-        let yesterday = calendar.date(byAdding: .day, value: -1, to: .now) ?? .now
-        let night = SleepCalendar.nightDate(for: yesterday, calendar: calendar)
-        return sessions.contains { $0.status == .completed && calendar.isDate($0.nightDate, inSameDayAs: night) }
+    func hasSessionForLastNight(
+        sessions: [SleepNotificationSessionSnapshot],
+        now: Date = .now,
+        calendar: Calendar
+    ) -> Bool {
+        let today = calendar.startOfDay(for: now)
+        let lastNight = calendar.date(byAdding: .day, value: -1, to: today) ?? today
+        return sessions.contains {
+            $0.status == .completed && $0.wakeAt <= now
+                && calendar.isDate(
+                    SleepCalendar.nightDate(for: $0.confirmedSleepStartAt, calendar: calendar),
+                    inSameDayAs: lastNight
+                )
+        }
     }
 
-    private func recentTrackedCount(sessions: [SleepNotificationSessionSnapshot], calendar: Calendar) -> Int {
-        let cutoff = calendar.date(byAdding: .day, value: -7, to: .now) ?? .now.addingTimeInterval(-7 * 86_400)
-        return Set(sessions.filter { $0.status == .completed && $0.confirmedSleepStartAt >= cutoff }.map(\.nightDate)).count
+    private func recentTrackedCount(sessions: [SleepNotificationSessionSnapshot], now: Date = .now, calendar: Calendar) -> Int {
+        let cutoff = calendar.date(byAdding: .day, value: -7, to: now) ?? now.addingTimeInterval(-7 * 86_400)
+        return Set(
+            sessions
+                .filter { $0.status == .completed && $0.wakeAt <= now && $0.confirmedSleepStartAt >= cutoff }
+                .map { SleepCalendar.nightDate(for: $0.confirmedSleepStartAt, calendar: calendar) }
+        ).count
     }
 
     private func likelyWorkoutTomorrow(workouts: [SleepNotificationWorkoutSnapshot], calendar: Calendar) -> Bool {
@@ -2517,6 +3445,7 @@ struct SleepNotificationSessionSnapshot: Sendable {
     let status: SleepSessionStatus
     let nightDate: Date
     let confirmedSleepStartAt: Date
+    let wakeAt: Date
     let sleepModeStartedAt: Date?
     let morningReminderSentAt: Date?
     let unfinishedReminderSentAt: Date?
@@ -2526,6 +3455,7 @@ struct SleepNotificationSessionSnapshot: Sendable {
         self.status = session.status
         self.nightDate = session.nightDate
         self.confirmedSleepStartAt = session.confirmedSleepStartAt
+        self.wakeAt = session.wakeAt
         self.sleepModeStartedAt = session.sleepModeStartedAt
         self.morningReminderSentAt = session.morningReminderSentAt
         self.unfinishedReminderSentAt = session.unfinishedReminderSentAt
