@@ -286,6 +286,9 @@ struct CoachContentView: View {
     @State private var liveObservationEnabled: Bool
     @State private var isLiveObservationSuspendedForPreview = false
     @State private var supportingDashboardMounted: Bool
+    @StateObject private var dashboardArrival = DashboardArrivalCoordinator()
+    @State private var supportingDashboardMountTask: Task<Void, Never>?
+    @State private var liveObservationActivationTask: Task<Void, Never>?
     @State private var hydrationTargetML = 2_500
     @State private var nutritionGoal = NutritionGoal.empty
 
@@ -549,6 +552,7 @@ struct CoachContentView: View {
             signature(exerciseMetadata, limit: 160) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
             signature(coachPreferences, limit: 3) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
             signature(splitMetadataRecords, limit: 30) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            "workoutRevision:\(workoutWarmStartInvalidation.revision)",
             sleepSettingsSignature,
             "\(hydrationTargetML)",
             "\(nutritionGoal.updatedAt.timeIntervalSince1970)",
@@ -727,8 +731,9 @@ struct CoachContentView: View {
             if previewRoute == nil, supportingDashboardMounted {
                 DashboardSection(title: "Why this?") {
                 TrainingCallAuditCard(snapshot: dailyDecision.trainingCall)
+                }
                 .accessibilityIdentifier("coach-why-this-section")
-            }
+                .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 0), index: 0)
 
             DashboardSection(title: "Main Target") {
                 if let primaryTarget = dailyDecision.primaryTarget {
@@ -825,6 +830,7 @@ struct CoachContentView: View {
                     .accessibilityIdentifier("coach-weekly-review-open")
                 }
             }
+            .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 1), index: 1)
 
             DashboardSection(title: "Weekly Review") {
                 FitnessInformationalActionCard {
@@ -862,8 +868,10 @@ struct CoachContentView: View {
                 }
                 .accessibilityIdentifier("coach-weekly-review-section")
             }
+            .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 2), index: 2)
 
             ReadinessDetailHeaderCard(readiness: intelligence.readiness)
+                .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 3), index: 3)
 
             DashboardSection(title: "Readiness Summary") {
                 ReadinessRecommendationCard(readiness: intelligence.readiness)
@@ -1134,6 +1142,11 @@ struct CoachContentView: View {
             PerformanceTracer.mark(.unsafeBreadcrumb, "coach.onDisappear cancel_tasks begin")
             coachDerivedTask?.cancel()
             weeklyReviewTask?.cancel()
+            supportingDashboardMountTask?.cancel()
+            supportingDashboardMountTask = nil
+            liveObservationActivationTask?.cancel()
+            liveObservationActivationTask = nil
+            dashboardArrival.cancel()
             PerformanceTracer.mark(.unsafeBreadcrumb, "coach.onDisappear cancel_tasks end")
         }
         .onReceive(NotificationCenter.default.publisher(for: .appWillResignActiveForCleanup)) { _ in
@@ -1163,19 +1176,26 @@ struct CoachContentView: View {
         // The complete snapshot-backed decision remains visible and actionable
         // immediately. Sections below the initial viewport join after the first
         // rendered frame so their large view graph cannot delay the native push.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+        supportingDashboardMountTask?.cancel()
+        supportingDashboardMountTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(50))
+            guard !Task.isCancelled else { return }
             supportingDashboardMounted = true
+            dashboardArrival.start(itemCount: 4, reduceMotion: reduceMotion)
+            supportingDashboardMountTask = nil
         }
     }
 
     private func scheduleLiveObservationActivationIfNeeded() {
         guard liveQueriesEnabled, !liveObservationEnabled else { return }
-        Task { @MainActor in
+        liveObservationActivationTask?.cancel()
+        liveObservationActivationTask = Task { @MainActor in
             await Task.yield()
             guard liveQueriesEnabled, !liveObservationEnabled else { return }
             loadLiveObservationSettings()
             liveObservationEnabled = true
             refreshLiveObservationInputs()
+            liveObservationActivationTask = nil
         }
     }
 

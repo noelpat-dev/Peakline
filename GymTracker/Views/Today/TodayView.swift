@@ -56,6 +56,15 @@ struct TodayView: View {
     @State private var checkInDraft: DailyCheckInDraft?
     @State private var isWorkoutCompletionPresentationActive = false
     @State private var isDashboardVisible = false
+    @StateObject private var dashboardArrival = DashboardArrivalCoordinator()
+    @State private var reentryWashCards: Set<TodayReentryCard> = []
+    @State private var reentryWashTask: Task<Void, Never>?
+    @State private var wasAwayForReentry = false
+    @State private var reentryComparisonPending = false
+    @State private var lastReadinessCardOutputSignature: String?
+    @State private var lastRecoveryCardOutputSignature: String?
+    @State private var lastNutritionCardOutputSignature: String?
+    @State private var dashboardRefreshTask: Task<Void, Never>?
 
     private let initialStartupSnapshot: StartupSnapshotBundle?
     private let coachIntelligence = CoachIntelligenceService()
@@ -195,14 +204,21 @@ struct TodayView: View {
                 .joined(separator: ",")
             return "\(session.id.uuidString):\(session.date.timeIntervalSince1970):\(session.endedAt?.timeIntervalSince1970 ?? 0):\(setSignature)"
         }
-        let unfinishedSignature = signature(unfinishedSessions, limit: 5) { "\($0.id.uuidString):\($0.date.timeIntervalSince1970)" }
+        let unfinishedSignature = signature(unfinishedSessions, limit: 5) { session in
+            let sets = session.exerciseLogs
+                .flatMap(\.setLogs)
+                .map { "\($0.id.uuidString):\($0.completed):\($0.weight):\($0.reps)" }
+                .joined(separator: ",")
+            return "\(session.id.uuidString):\(session.date.timeIntervalSince1970):\(sets)"
+        }
         let hydrationSignature = signature(hydrationEntries, limit: 120) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" }
         return [
             splitSignature,
             sessionSignature,
             unfinishedSignature,
             hydrationSignature,
-            String(hydrationTargetML)
+            String(hydrationTargetML),
+            "workoutRevision:\(workoutWarmStartInvalidation.revision)"
         ].joined(separator: "|")
     }
 
@@ -262,6 +278,7 @@ struct TodayView: View {
             signature(hydrationEntries, limit: 60) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
             signature(foodLogEntries, limit: 80) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
             signature(coachCheckIns, limit: 14) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
+            "workoutRevision:\(workoutWarmStartInvalidation.revision)",
             sleepSettingsSignature,
             "\(hydrationTargetML)",
             "\(nutritionGoal.updatedAt.timeIntervalSince1970)",
@@ -322,6 +339,7 @@ struct TodayView: View {
             trainingCall: nextTrainingCall,
             sourceSignature: signature
         )
+        scheduleReentryWashEvaluation()
     }
 
     private func makeTodaySnapshot() -> TodayDashboardSnapshot {
@@ -399,6 +417,7 @@ struct TodayView: View {
                         primaryAction: { openRoute(.workout) },
                         secondaryAction: previewSuggestedSplit
                     )
+                    .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 0), index: 0)
 
                     DashboardSection(title: "Daily Coach Brief") {
                         CoachBriefCard(
@@ -415,12 +434,15 @@ struct TodayView: View {
                             }
                         )
                     }
+                    .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 1), index: 1)
+                    .todayReentryWash(isActive: reentryWashCards.contains(.readiness))
 
                     DashboardSection(title: "Weekly Insight") {
                         WeeklyInsightPreviewCard(snapshot: intelligence) {
                             openCoachRoute()
                         }
                     }
+                    .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 2), index: 2)
 
                     DashboardSection(title: "Recovery") {
                         Button {
@@ -430,10 +452,13 @@ struct TodayView: View {
                         }
                         .buttonStyle(PressableCardButtonStyle())
                     }
+                    .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 3), index: 3)
+                    .todayReentryWash(isActive: reentryWashCards.contains(.recovery))
 
                     DashboardSection(title: "Quick Actions") {
                         QuickActionsGrid(actions: quickActions)
                     }
+                    .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 4), index: 4)
 
                     DashboardSection(title: "Nutrition") {
                         Button {
@@ -443,6 +468,8 @@ struct TodayView: View {
                         }
                         .buttonStyle(PressableCardButtonStyle())
                     }
+                    .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 5), index: 5)
+                    .todayReentryWash(isActive: reentryWashCards.contains(.nutrition))
 
                     DashboardSection(title: "Coach Insight") {
                         CoachInsightCard(
@@ -455,6 +482,7 @@ struct TodayView: View {
                             action: previewRecommendedSplit
                         )
                     }
+                    .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 6), index: 6)
 
                     DashboardSection(title: "This Week") {
                         LazyVGrid(columns: weekColumns, spacing: 12) {
@@ -490,10 +518,12 @@ struct TodayView: View {
                             items: splitCoverageItems
                         )
                     }
+                    .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 7), index: 7)
 
                     DashboardSection(title: "Last Workout") {
                         lastWorkoutInsight
                     }
+                    .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 8), index: 8)
                 }
                 .padding(appTheme.metrics.screenPadding)
                 .padding(.bottom, appTheme.metrics.screenBottomPadding)
@@ -520,6 +550,7 @@ struct TodayView: View {
             }
             .sheet(item: $checkInDraft) { draft in
                 DailyCheckInSheet(draft: draft)
+                    .sheetContentEntrance()
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
@@ -529,14 +560,21 @@ struct TodayView: View {
                 Text("Persistent rest-day logging is still on the roadmap. For now, your workout history remains unchanged.")
             }
             .onAppear {
+                let isReentry = wasAwayForReentry && didRequestInitialRefresh
+                wasAwayForReentry = false
+                reentryComparisonPending = isReentry
                 isDashboardVisible = true
+                dashboardArrival.start(itemCount: 9, reduceMotion: reduceMotion)
                 readinessRefreshClock.start()
                 sleepSettings = sleepSettingsStore.load()
                 hydrationTargetML = hydrationSettingsStore.dailyTargetML()
                 nutritionGoal = nutritionGoalStore.loadGoal()
                 let shouldForceRefresh = !didRequestInitialRefresh
                 didRequestInitialRefresh = true
-                DispatchQueue.main.async {
+                dashboardRefreshTask?.cancel()
+                dashboardRefreshTask = Task { @MainActor in
+                    await Task.yield()
+                    guard !Task.isCancelled, isDashboardVisible else { return }
                     refreshTodaySnapshot(force: shouldForceRefresh)
                     if initialStartupSnapshot == nil {
                         refreshSleepReadiness(force: shouldForceRefresh)
@@ -545,6 +583,8 @@ struct TodayView: View {
                         lastSleepReadinessSignature = currentSleepReadinessSignature
                         lastCoachSnapshotSignature = currentCoachSnapshotSignature
                     }
+                    scheduleReentryWashEvaluation()
+                    dashboardRefreshTask = nil
                 }
                 Task { await refreshBackupWarning() }
             }
@@ -570,6 +610,12 @@ struct TodayView: View {
             }
             .onDisappear {
                 isDashboardVisible = false
+                wasAwayForReentry = true
+                dashboardRefreshTask?.cancel()
+                dashboardRefreshTask = nil
+                reentryWashTask?.cancel()
+                reentryWashTask = nil
+                dashboardArrival.cancel()
             }
         }
     }
@@ -911,6 +957,93 @@ struct TodayView: View {
         CoachRouteSnapshotStore.shared.snapshot ?? initialStartupSnapshot?.coachRouteSnapshot
     }
 
+    private var readinessCardOutputSignature: String {
+        let readiness = currentCoachSnapshot.readiness
+        let factors = readiness.topFactors.map {
+            "\($0.kind.rawValue):\($0.title):\($0.detail):\($0.impact.rawValue):\($0.contribution)"
+        }.joined(separator: ",")
+        return [
+            "value:\(readiness.value)",
+            "category:\(readiness.category.rawValue)",
+            "confidence:\(readiness.confidence.rawValue)",
+            "provisional:\(readiness.isProvisional)",
+            "coverage:\(readiness.coverageSummary)",
+            "checkIn:\(readiness.hasCompletedTodayCheckIn)",
+            "title:\(readiness.recommendation.title)",
+            "summary:\(readiness.recommendation.summary)",
+            "factors:\(factors)"
+        ].joined(separator: "|")
+    }
+
+    private var recoveryCardOutputSignature: String {
+        let summary = sleepSummary
+        return [
+            "state:\(summary.recoveryState.rawValue)",
+            "minutes:\(summary.totalSleepMinutes)",
+            "quality:\(summary.qualityRating ?? -1)",
+            "source:\(summary.source?.rawValue ?? "none")",
+            "score:\(summary.sleepScore ?? -1)",
+            "recommendation:\(todayRecoveryRecommendation)"
+        ].joined(separator: "|")
+    }
+
+    private var nutritionCardOutputSignature: String {
+        let summary = NutritionHomeSummarySnapshot.make(
+            foodLogs: foodLogEntries,
+            completedSessions: completedSessions,
+            goal: nutritionGoal
+        )
+        return [
+            "calories:\(summary.today.calories)",
+            "protein:\(summary.today.protein)",
+            "training:\(summary.today.isTrainingDay)",
+            "calorieTarget:\(summary.goal.calorieTarget(isTrainingDay: summary.today.isTrainingDay) ?? -1)",
+            "proteinTarget:\(summary.goal.dailyProteinTarget ?? -1)",
+            "insight:\(summary.topInsight?.title ?? "none")"
+        ].joined(separator: "|")
+    }
+
+    private func captureTodayCardOutputSignatures() {
+        lastReadinessCardOutputSignature = readinessCardOutputSignature
+        lastRecoveryCardOutputSignature = recoveryCardOutputSignature
+        lastNutritionCardOutputSignature = nutritionCardOutputSignature
+    }
+
+    private func scheduleReentryWashEvaluation() {
+        guard isDashboardVisible else { return }
+        guard reentryComparisonPending else {
+            captureTodayCardOutputSignatures()
+            return
+        }
+
+        reentryWashTask?.cancel()
+        reentryWashTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled, isDashboardVisible, reentryComparisonPending else { return }
+
+            var changed: Set<TodayReentryCard> = []
+            if lastReadinessCardOutputSignature != readinessCardOutputSignature {
+                changed.insert(.readiness)
+            }
+            if lastRecoveryCardOutputSignature != recoveryCardOutputSignature {
+                changed.insert(.recovery)
+            }
+            if lastNutritionCardOutputSignature != nutritionCardOutputSignature {
+                changed.insert(.nutrition)
+            }
+
+            reentryWashCards = changed
+            reentryComparisonPending = false
+            captureTodayCardOutputSignatures()
+            reentryWashTask = nil
+
+            guard !changed.isEmpty else { return }
+            try? await Task.sleep(nanoseconds: UInt64(AppMotion.todayReentryWashDuration * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            reentryWashCards = []
+        }
+    }
+
     private func refreshSleepReadiness(force: Bool = false) {
         let signature = currentSleepReadinessSignature
         guard force || signature != lastSleepReadinessSignature else { return }
@@ -929,6 +1062,7 @@ struct TodayView: View {
             sleepReadinessSnapshot = nextSnapshot
             lastSleepReadinessSignature = signature
         }
+        scheduleReentryWashEvaluation()
     }
 
     private func refreshCoachSnapshot(force: Bool = false) {
@@ -967,6 +1101,7 @@ struct TodayView: View {
             .coachSnapshot,
             "route_snapshot_store after_update source=today scenePhase=\(String(describing: scenePhase)) main=\(Thread.isMainThread)"
         )
+        scheduleReentryWashEvaluation()
     }
 
     private func signature<Value>(_ values: [Value], limit: Int, transform: (Value) -> String) -> String {
@@ -1282,6 +1417,12 @@ private enum TodayRoute: Hashable, Identifiable {
     }
 }
 
+private enum TodayReentryCard: Hashable {
+    case readiness
+    case recovery
+    case nutrition
+}
+
 private struct TodayRouteNavigationStart {
     let route: TodayRoute
     let startedAt: ContinuousClock.Instant
@@ -1317,9 +1458,11 @@ private struct BackupHealthWarningCard: View {
 
 private struct TodaySleepRecoveryCard: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let summary: SleepSummary
     let recommendation: String
+    @State private var displayedScore: Double?
 
     var body: some View {
         FitnessCard {
@@ -1359,9 +1502,31 @@ private struct TodaySleepRecoveryCard: View {
                 Spacer(minLength: 8)
 
                 if let score = summary.sleepScore {
-                    Text("\(score)%")
+                    ZStack {
+                        AnimatedMetricNumber(
+                            value: displayedScore ?? Double(score),
+                            suffix: "%"
+                        )
                         .font(.headline.bold())
                         .foregroundStyle(appTheme.colors.textAccent)
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Sleep recovery score")
+                    .accessibilityValue("\(score) percent")
+                    .onAppear {
+                        if displayedScore == nil {
+                            displayedScore = Double(score)
+                        }
+                    }
+                    .onChange(of: score) { _, newScore in
+                        if reduceMotion {
+                            displayedScore = Double(newScore)
+                        } else {
+                            withAnimation(AppMotion.animation(for: .metricChange, reduceMotion: false)) {
+                                displayedScore = Double(newScore)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1740,16 +1905,27 @@ struct HydrationView: View {
     }
 
     private func delete(_ entry: HydrationEntry) {
-        modelContext.delete(entry)
-        do {
-            try modelContext.save()
+        var saveError: Error?
+        withAnimation(AppMotion.rowCollapse(reduceMotion: reduceMotion)) {
+            modelContext.delete(entry)
+            do {
+                try modelContext.save()
+            } catch {
+                saveError = error
+            }
+        }
+
+        if saveError == nil {
             AppHaptics.warning()
+            errorText = nil
+            activeHydrationSwipeID = nil
             if confirmation?.id == entry.id {
-                withAnimation(AppMotion.gentleFade(reduceMotion: reduceMotion)) {
+                withAnimation(AppMotion.rowCollapse(reduceMotion: reduceMotion)) {
                     confirmation = nil
                 }
             }
-        } catch {
+        } else {
+            modelContext.rollback()
             AppHaptics.error()
             errorText = "Could not delete that water entry."
         }
@@ -1758,6 +1934,7 @@ struct HydrationView: View {
 
 private struct HydrationLogRow: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let entry: HydrationEntry
     @Binding var activeSwipeID: UUID?
@@ -1770,6 +1947,7 @@ private struct HydrationLogRow: View {
             deleteAction
         }
         .accessibilityAction(named: "Delete Entry", delete)
+        .transition(AppMotion.rowInsertRemoveTransition(reduceMotion: reduceMotion))
     }
 
     private var rowContent: some View {

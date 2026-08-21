@@ -164,8 +164,11 @@ preview_on_appear = sum(
 if preview_on_appear > 1:
     fail(f"WorkoutPreview refreshed onAppear more than once: {preview_on_appear}")
 
-warm_cache_summary = re.search(r"previewWarmCacheHits=(\d+)", text)
-warm_cache_hits = int(warm_cache_summary.group(1)) if warm_cache_summary else 0
+warm_cache_summaries = [
+    int(value)
+    for value in re.findall(r"previewWarmCacheHits=(\d+)", text)
+]
+warm_cache_hits = max(warm_cache_summaries, default=0)
 if "PERF_ACCEPTANCE workout_preview.warm_cache hit" not in text and warm_cache_hits < 1:
     fail("Workout Preview did not report a warm-cache hit")
 

@@ -12,6 +12,7 @@ struct ProgressView: View {
 
 struct ProgressContentView: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.modelContext) private var modelContext
     @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
 
@@ -309,24 +310,24 @@ struct ProgressContentView: View {
 
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .bottom, spacing: 16) {
-                        ProgressWeekPrimaryMetric(value: "\(displayedWeeklySummary.completedWorkouts)")
+                        ProgressWeekPrimaryMetric(value: displayedWeeklySummary.completedWorkouts)
 
                         Divider()
                             .overlay(appTheme.colors.cardBorder)
                             .frame(height: 62)
 
                         HStack(alignment: .bottom, spacing: 16) {
-                            ProgressWeekSupportingMetric(label: "Working sets", value: "\(displayedWeeklySummary.workingSets)")
-                            ProgressWeekSupportingMetric(label: "PRs", value: "\(displayedWeeklySummary.prCount)")
+                            ProgressWeekSupportingMetric(label: "Working sets", value: displayedWeeklySummary.workingSets)
+                            ProgressWeekSupportingMetric(label: "PRs", value: displayedWeeklySummary.prCount)
                         }
                         .frame(maxWidth: .infinity, alignment: .trailing)
                     }
 
                     VStack(alignment: .leading, spacing: 12) {
-                        ProgressWeekPrimaryMetric(value: "\(displayedWeeklySummary.completedWorkouts)")
+                        ProgressWeekPrimaryMetric(value: displayedWeeklySummary.completedWorkouts)
                         HStack(alignment: .bottom, spacing: 16) {
-                            ProgressWeekSupportingMetric(label: "Working sets", value: "\(displayedWeeklySummary.workingSets)")
-                            ProgressWeekSupportingMetric(label: "PRs", value: "\(displayedWeeklySummary.prCount)")
+                            ProgressWeekSupportingMetric(label: "Working sets", value: displayedWeeklySummary.workingSets)
+                            ProgressWeekSupportingMetric(label: "PRs", value: displayedWeeklySummary.prCount)
                         }
                     }
                 }
@@ -551,43 +552,57 @@ struct ProgressAnalyticsInputSignature: Equatable {
 
 private struct ProgressWeekPrimaryMetric: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    let value: String
+    let value: Int
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(value)
+            AnimatedMetricNumber(value: Double(value))
                 .font(AppTypography.heroMetric)
                 .foregroundStyle(appTheme.colors.textPrimary)
                 .lineLimit(1)
+                .animation(
+                    reduceMotion ? .easeOut(duration: 0.01) : AppMotion.expressive,
+                    value: value
+                )
             Text("Workouts")
                 .font(AppTypography.metadataEmphasis)
                 .foregroundStyle(appTheme.colors.textSecondary)
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Workouts")
+        .accessibilityValue("\(value)")
     }
 }
 
 private struct ProgressWeekSupportingMetric: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let label: String
-    let value: String
+    let value: Int
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(value)
+            AnimatedMetricNumber(value: Double(value))
                 .font(AppTypography.largeMetric)
                 .foregroundStyle(appTheme.colors.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
+                .animation(
+                    reduceMotion ? .easeOut(duration: 0.01) : AppMotion.expressive,
+                    value: value
+                )
             Text(label)
                 .font(AppTypography.metadata)
                 .foregroundStyle(appTheme.colors.textSecondary)
                 .lineLimit(2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue("\(value)")
     }
 }
 
@@ -612,6 +627,7 @@ private struct ExerciseProgressDetailView: View {
     @State private var entries: [ExerciseProgressEntry] = []
     @State private var lastEntriesSignature: String?
     @State private var entriesLoaded = false
+    @State private var didRevealTrendChart = false
 
     init(exercise: Exercise) {
         self.exercise = exercise
@@ -682,7 +698,11 @@ private struct ExerciseProgressDetailView: View {
                     )
                 } else {
                     FitnessCard {
-                        ExerciseTrendChart(entries: entries.reversed())
+                        ExerciseTrendChart(
+                            entries: entries.reversed(),
+                            revealOnAppear: !didRevealTrendChart,
+                            markRevealed: { didRevealTrendChart = true }
+                        )
                             .frame(height: 220)
                     }
                 }
@@ -814,7 +834,12 @@ private struct ExerciseProgressChartsIndexView: View {
 
 private struct ExerciseTrendChart: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let entries: ReversedCollection<[ExerciseProgressEntry]>
+    let revealOnAppear: Bool
+    let markRevealed: () -> Void
+
+    @State private var revealProgress = 0.0
 
     var body: some View {
         Chart(Array(entries)) { entry in
@@ -828,7 +853,15 @@ private struct ExerciseTrendChart: View {
                 x: .value("Date", entry.session.date),
                 y: .value("Estimated 1RM", entry.estimatedOneRepMax)
             )
-            .foregroundStyle(appTheme.colors.textAccent)
+                .foregroundStyle(appTheme.colors.textAccent)
+        }
+        .chartPlotStyle { plotArea in
+            plotArea.mask(alignment: .leading) {
+                GeometryReader { proxy in
+                    Rectangle()
+                        .frame(width: reduceMotion ? proxy.size.width : proxy.size.width * revealProgress)
+                }
+            }
         }
         .chartYAxisLabel("Est. 1RM kg")
         .chartXAxis {
@@ -851,6 +884,34 @@ private struct ExerciseTrendChart: View {
                     .foregroundStyle(appTheme.colors.textSecondary)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Estimated 1RM trend")
+        .accessibilityValue(accessibilityValue)
+        .onAppear {
+            guard revealOnAppear else {
+                revealProgress = 1
+                return
+            }
+
+            if reduceMotion {
+                revealProgress = 1
+                markRevealed()
+                return
+            }
+
+            revealProgress = 0
+            withAnimation(AppMotion.chartDrawIn(reduceMotion: false)) {
+                revealProgress = 1
+            }
+            markRevealed()
+        }
+    }
+
+    private var accessibilityValue: String {
+        guard let latest = Array(entries).last else {
+            return "No trend data"
+        }
+        return "Latest estimated 1RM \(latest.estimatedOneRepMax.formatted(.number.precision(.fractionLength(0...1)))) kilograms"
     }
 }
 

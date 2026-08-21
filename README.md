@@ -86,7 +86,9 @@ The main implementation boundaries are documented in [ARCHITECTURE.md](ARCHITECT
 
 The main lifting loop is implemented end to end and the app is in an active quality and acceptance phase. The current focus is physical-device validation across Light and Dark appearance, large Dynamic Type, VoiceOver, Reduce Motion, Reduce Transparency, Firebase restore, and the most performance-sensitive workout routes.
 
-The 17 August 2026 Sleep validation passed the Debug build, 13 focused Sleep tests, all 11 dedicated Sleep UI tests, and all 159 unit/reliability tests inside the canonical verifier. The focused route flow measured Today-to-Coach at 136 ms, Coach-to-Preview at 195 ms, and a warmed root transition at 248 ms, with two Preview warm-cache hits and zero mounted Preview refreshes. The canonical performance gate is not fully green because its cold run measured Workout 373 ms, History 304 ms, and Settings 396 ms against the unchanged 300 ms target; a serial retry still measured Workout 329 ms and Settings 330 ms. These figures are a dated engineering baseline, not a promise that every device will produce the same timing.
+Peakline now uses one role-based motion system built on `snappy`, `smooth`, and `expressive` presets. Dashboard arrivals, meaningful metric changes, set completion, rest urgency, directional steppers, committed deletion collapse, sheet content, charts, and Today re-entry cues share bounded motion and explicit Reduce Motion fallbacks; saves, logging, dismissal, tab changes, and native navigation remain immediate.
+
+The 22 August 2026 motion validation passed the Debug build, strict-concurrency build lane, all 186 unit/reliability tests, the focused Logger flow, and cached-History UI coverage. The final canonical UI run measured Today-to-Coach at 178 ms, Coach-to-Preview at 209 ms, a warmed root transition at 186 ms, and the dedicated root-tab sequence at 290 ms, with two Preview warm-cache hits and zero mounted Preview refreshes. These simulator figures are dated engineering samples rather than device guarantees.
 
 ## Run locally
 

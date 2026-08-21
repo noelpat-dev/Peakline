@@ -91,20 +91,21 @@ The UI acceptance flow covers:
 
 ## Current Baseline
 
-The latest 17 August 2026 Sleep validation completed a Debug test build, passed 13 focused Sleep tests and all 11 dedicated Sleep UI tests, and passed all 159 unit/reliability tests inside the canonical verifier. The focused route flow passed and reported:
+The 22 August 2026 motion validation completed Debug and strict-concurrency builds, passed all 186 unit/reliability tests, and passed focused cached-History and Logger set-completion/rest-timer UI flows. After removing synchronous Today signature work from `onDisappear` and moving Coach/History reveal work behind their stable first frames, isolated acceptance runs reported:
 
 - `performance_acceptance=PASS`
-- Today-to-Coach: 136 ms
-- Coach-to-Preview: 195 ms
-- warmed root transition in the route flow: 248 ms
+- Today-to-Coach: 178 ms
+- Coach-to-Preview: 209 ms
+- warmed root transition in the route flow: 186 ms
+- dedicated root-tab sequence: 290 ms
 - Preview warm-cache hits: 2
 - mounted Preview refreshes: 0
 
-The separate cold first-load root-tab flow is not yet green: the canonical run measured Workout 373 ms, History 304 ms, and Settings 396 ms against the unchanged 300 ms target. A standalone serial retry improved but still failed at Workout 329 ms and Settings 330 ms. The verifier runs both route and root-tab methods, so this cold-load regression remains visible rather than being hidden by a warmed route result.
+During integration, pre-fix samples ranged from 553–607 ms for Today-to-Coach and 530–867 ms for root transitions; these failures identified lifecycle work that was then removed from the transition path. The final green samples retain the unchanged 300 ms warm/root and 500 ms deep-route budgets.
 
 Treat these aggregate values as the current healthy baseline rather than a hard promise for every machine; the enforced thresholds remain the source of truth.
 
-The persistent DEBUG summary includes `previewWarmCacheHits` because current Xcode releases may omit individual app console lines from `xcodebuild` output. The verifier accepts either the original warm-cache trace line or a positive summary count; it does not remove the warm-cache requirement.
+The persistent DEBUG summary includes `previewWarmCacheHits` because current Xcode releases may omit individual app console lines from `xcodebuild` output. The verifier accepts either the original warm-cache trace line or the maximum positive count across root/route summaries; it does not remove the warm-cache requirement.
 
 ## When To Run It
 

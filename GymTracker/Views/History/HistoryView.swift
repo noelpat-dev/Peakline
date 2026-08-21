@@ -92,6 +92,7 @@ private struct HistoryLazyScreen<Content: View>: View {
 
 struct HistoryView: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
 
     @Query
@@ -116,11 +117,11 @@ struct HistoryView: View {
     @State private var isWorkoutCompletionPresentationActive = false
     @State private var isHistoryVisible = false
     @State private var isCalendarVisible = false
-    @State private var showsHistoryRows = false
     @State private var calendarRevealTask: Task<Void, Never>?
     @State private var sourceSnapshotRefreshTask: Task<Void, Never>?
     @State private var showingGoalEditor = false
     @State private var hasWarmSnapshotToValidate = false
+    @State private var revealedAttendanceGeneration: String?
 
     private let initialWarmSnapshot: HistoryWarmSnapshot?
 
@@ -211,9 +212,11 @@ struct HistoryView: View {
     var body: some View {
         NavigationStack {
             HistoryLazyScreen {
-                HistoryOverviewCard(snapshot: currentDisplaySnapshot.overview) {
-                    openGoalEditor()
-                }
+                HistoryOverviewCard(
+                    snapshot: currentDisplaySnapshot.overview,
+                    revealedAttendanceGeneration: $revealedAttendanceGeneration,
+                    editGoal: openGoalEditor
+                )
 
                 if isCalendarVisible {
                     FitnessCard(style: .compact, padding: 12) {
@@ -234,7 +237,7 @@ struct HistoryView: View {
                         message: displaySnapshotReady ? (sessions.isEmpty ? "Start Push, Pull, or Legs to build your first training history." : "Adjust filters to see more sessions.") : "Preparing recent sessions and filters.",
                         systemImage: displaySnapshotReady ? "clock" : "hourglass"
                     )
-                } else if showsHistoryRows {
+                } else {
                     ForEach(sessionRows) { row in
                         Button {
                             PerformanceTracer.mark(.motionHistoryRowOpen, "session=\(row.id.uuidString)")
@@ -252,12 +255,11 @@ struct HistoryView: View {
                         }
                         .buttonStyle(HistoryScrollRowButtonStyle())
                         .accessibilityIdentifier("history-session-row")
+                        .transition(.opacity)
                     }
-                } else {
-                    DashboardEmptyStateCard(
-                        title: "Loading history",
-                        message: "Preparing recent sessions and filters.",
-                        systemImage: "hourglass"
+                    .animation(
+                        AppMotion.gentleFade(reduceMotion: reduceMotion),
+                        value: lastSessionGeneration
                     )
                 }
             }
@@ -309,10 +311,8 @@ struct HistoryView: View {
                 await Task.yield()
                 guard !Task.isCancelled, isHistoryVisible else { return }
                 isCalendarVisible = true
-                showsHistoryRows = true
                 calendarRevealTask = nil
             }
-            showsHistoryRows = false
             let shouldForceRefresh = !didRequestInitialRefresh
             didRequestInitialRefresh = true
             scheduleSourceSnapshotRefresh(force: shouldForceRefresh && initialWarmSnapshot == nil)
@@ -344,7 +344,6 @@ struct HistoryView: View {
             calendarRevealTask?.cancel()
             calendarRevealTask = nil
             isCalendarVisible = false
-            showsHistoryRows = false
             sourceSnapshotRefreshTask?.cancel()
             sourceSnapshotRefreshTask = nil
         }
@@ -521,9 +520,10 @@ struct HistoryView: View {
                             }
                         }
                     }
-                }
-                .padding()
             }
+            .padding()
+            .sheetContentEntrance()
+        }
             .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
             .peaklineKeyboardDismissal()
             .navigationTitle("Filters")
@@ -697,9 +697,22 @@ private struct HistoryScrollRowButtonStyle: ButtonStyle {
 
 private struct HistoryOverviewCard: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let snapshot: HistoryOverviewSnapshot
+    @Binding var revealedAttendanceGeneration: String?
     let editGoal: () -> Void
+
+    @State private var displayedVisitCount: Double?
+
+    private var attendanceGeneration: String {
+        [
+            snapshot.monthTitle,
+            "\(snapshot.currentVisitCount)",
+            snapshot.monthlyTarget.map(String.init) ?? "none",
+            snapshot.progress.formatted(.number.precision(.fractionLength(4)))
+        ].joined(separator: "|")
+    }
 
     var body: some View {
         FitnessCard(style: .hero) {
@@ -727,9 +740,15 @@ private struct HistoryOverviewCard: View {
                 }
 
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("\(snapshot.currentVisitCount)")
+                    AnimatedMetricNumber(
+                        value: displayedVisitCount ?? Double(snapshot.currentVisitCount)
+                    )
                         .font(AppTypography.heroMetric)
                         .foregroundStyle(appTheme.colors.textPrimary)
+                        .animation(
+                            reduceMotion ? .easeOut(duration: 0.01) : AppMotion.expressive,
+                            value: displayedVisitCount
+                        )
                     if let monthlyTarget = snapshot.monthlyTarget {
                         Text("of \(monthlyTarget) gym visits")
                             .font(AppTypography.bodyEmphasis)
@@ -740,14 +759,18 @@ private struct HistoryOverviewCard: View {
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
                 }
-                .accessibilityElement(children: .combine)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Monthly gym attendance")
+                .accessibilityValue(attendanceAccessibilityValue)
 
-                if snapshot.monthlyTarget != nil {
-                    SwiftUI.ProgressView(value: snapshot.progress)
-                        .tint(appTheme.colors.accent)
-                        .accessibilityLabel("Monthly gym visit progress")
-                        .accessibilityValue("\(Int(snapshot.progress * 100)) percent")
-                }
+                AttendanceRingView(
+                    value: snapshot.progress,
+                    label: "Attendance",
+                    caption: snapshot.monthlyTarget.map { "of \($0)" } ?? "Set goal",
+                    generation: attendanceGeneration,
+                    revealedGeneration: $revealedAttendanceGeneration
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .bottom, spacing: 14) {
@@ -772,6 +795,25 @@ private struct HistoryOverviewCard: View {
             }
         }
         .accessibilityIdentifier("history-overview-card")
+        .onChange(of: snapshot.currentVisitCount) { oldValue, newValue in
+            if displayedVisitCount == nil {
+                displayedVisitCount = Double(oldValue)
+            }
+
+            withAnimation(
+                reduceMotion ? .easeOut(duration: 0.01) : AppMotion.expressive
+            ) {
+                displayedVisitCount = Double(newValue)
+            }
+        }
+    }
+
+    private var attendanceAccessibilityValue: String {
+        let visits = snapshot.currentVisitCount == 1 ? "1 gym visit" : "\(snapshot.currentVisitCount) gym visits"
+        if let monthlyTarget = snapshot.monthlyTarget {
+            return "\(visits), of \(monthlyTarget) target visits, \(Int((snapshot.progress * 100).rounded())) percent"
+        }
+        return visits
     }
 }
 
@@ -834,6 +876,7 @@ private struct HistoryTrainingGoalSheet: View {
                         .accessibilityIdentifier("history-training-goal-stepper")
                     }
                 }
+                .sheetContentEntrance()
             }
             .navigationTitle("Gym Visit Goal")
             .navigationBarTitleDisplayMode(.inline)

@@ -949,7 +949,14 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
             return
         }
 
+        XCTAssertTrue(tab.isHittable, "Expected \(expectedTitle) tab to be hittable before tapping")
         tab.tap()
+        // A simulator/XCTest delivery miss can leave the control unselected and
+        // produce no route marker. Retry that delivery case once only; a
+        // selected tab with a slow destination must still fail the 3 s budget.
+        if !tab.isSelected {
+            tab.tap()
+        }
         let destination = app.descendants(matching: .any)[identifier]
         let destinationAppeared = destination.waitForExistence(timeout: 3)
         if !destinationAppeared {

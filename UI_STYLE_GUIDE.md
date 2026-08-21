@@ -234,6 +234,12 @@ Implementation and latency ownership live in [ARCHITECTURE.md](ARCHITECTURE.md) 
 
 Use `AppMotion`; do not create local curves for an existing role.
 
+- `snappy` — response `0.32`, damping `0.85` for presses, chips, steppers, reorder, and swipes.
+- `smooth` — response `0.42`, damping `0.92` for cards, sheet content, and committed row collapse.
+- `expressive` — response `0.55`, damping `0.75` for meaningful hero metrics and genuine PR presentation only.
+- Durations use micro up to 120 ms, standard 220–280 ms, and expressive 350–500 ms. The 150 ms numeric roll and 180 ms set checkmark are explicit bounded interaction timings.
+- Cascades use 35 ms per item for the first eight items; everything after eight enters as one group.
+
 | Behaviour | Roles | Expected feel |
 |---|---|---|
 | Touch acknowledgement | `tapDown`, `tapRelease`, `cardPress`, `buttonPress`, `primaryAction`, `secondaryAction` | Immediate, tiny scale or opacity, no bounce |
@@ -247,6 +253,9 @@ Rules:
 - Card and button feedback uses roughly `0.985` scale with subtle opacity, 80 ms press-down, and 120 ms release. Reduce Motion keeps opacity only.
 - Chips, filters, ratings, and check-ins may use one restrained selection haptic.
 - Live workout logging stays quiet: no slow steppers, whole-card transitions for weight/reps edits, or haptics for every tiny update.
+- Completing a set mutates and saves first, then draws one checkmark, flashes one local accent surface, and presents rest timing. The final ten seconds use warning colour plus opacity only; Rest Complete crossfades without an alarm or scale pulse.
+- Meaningful readiness, attendance, and Progress metrics animate only from a valid previous value. Their visual interpolation is hidden from accessibility while the final value remains exposed.
+- Native sheets may reveal inner content once after the shared 70 ms content delay; dismissal and primary actions remain available immediately.
 - Success, deletion, and completion feedback never delay logging, saving, dismissal, Done, or navigation.
 - Reduce Motion removes spatial movement, scale, peripheral sparks, and bounce; retain opacity or instant state change.
 

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct CoachBriefCard: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let readiness: ReadinessScore
     let viewBrief: () -> Void
@@ -68,17 +69,24 @@ struct CoachBriefCard: View {
 
     private var readinessScoreBlock: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("\(readiness.value)")
+            AnimatedMetricNumber(value: Double(readiness.value))
                 .font(AppTypography.heroTitle)
                 .foregroundStyle(scoreColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
+                .animation(
+                    AppMotion.animation(for: .metricChange, reduceMotion: reduceMotion),
+                    value: readiness.value
+                )
                 .accessibilityIdentifier("today-readiness-score-value")
 
             Text("/100")
                 .font(AppTypography.bodyEmphasis)
                 .foregroundStyle(appTheme.colors.textTertiary)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Readiness score")
+        .accessibilityValue("\(readiness.value) out of 100")
     }
 
     private var readinessBadge: some View {
@@ -1322,7 +1330,7 @@ private struct CheckInRatingRow: View {
 
     private var selectionAnimation: Animation? {
         guard animationsEnabled, !reduceMotion else { return nil }
-        return .easeOut(duration: 0.18)
+        return AppMotion.checkInSelect(reduceMotion: false)
     }
 
     private var identifierSuffix: String {
