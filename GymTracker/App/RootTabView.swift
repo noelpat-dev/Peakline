@@ -38,6 +38,7 @@ struct RootTabView: View {
     @State private var tabSelectionState = RootTabSelectionState(selectedTab: .launchArgumentSelection)
     @State private var sleepSettings = SleepSettingsStore().load()
     @State private var sleepDestination: SleepNotificationDestination?
+    @State private var tabSelectionStateBeforeSleepDeepLink: RootTab?
     @State private var didStartRootTabPrewarm = false
     @State private var didStartDeferredServices = false
     @State private var sleepNotificationRefreshTask: Task<Void, Never>?
@@ -154,6 +155,7 @@ struct RootTabView: View {
         .tint(appTheme.colors.accent)
         .sheet(item: $sleepDestination) { destination in
             sleepDestinationView(destination)
+                .onDisappear { restoreTabAfterSleepDeepLinkDismissal() }
         }
         .onChange(of: sleepDeepLinkRouter.pendingRequest) { _, request in
             presentSleepDeepLinkIfReady(request)
@@ -264,10 +266,19 @@ struct RootTabView: View {
         guard startupRevealComplete, let request else { return }
         PerformanceTracer.mark(.appLifecycle, "sleep_deep_link present begin destination=\(request.destination.id)")
         sleepSettings = sleepSettingsStore.load()
+        if tabSelectionState.selectedTab != .today {
+            tabSelectionStateBeforeSleepDeepLink = tabSelectionState.selectedTab
+        }
         tabSelectionState.selectedTab = .today
         sleepDestination = request.destination
         sleepDeepLinkRouter.consume(request)
         PerformanceTracer.mark(.appLifecycle, "sleep_deep_link present end destination=\(request.destination.id)")
+    }
+
+    private func restoreTabAfterSleepDeepLinkDismissal() {
+        guard let previousTab = tabSelectionStateBeforeSleepDeepLink else { return }
+        tabSelectionStateBeforeSleepDeepLink = nil
+        tabSelectionState.selectedTab = previousTab
     }
 
     private func startDeferredServicesIfNeeded() {
@@ -924,9 +935,10 @@ private struct DeferredSplitsTabHost: View {
             }
         }
         .onDisappear {
+            // Keep the tab mounted after its first appearance so pushed
+            // navigation state survives tab switches like the other roots.
             mountTask?.cancel()
             mountTask = nil
-            isSplitsMounted = false
         }
     }
 }

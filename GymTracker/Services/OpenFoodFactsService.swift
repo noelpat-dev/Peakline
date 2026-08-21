@@ -15,7 +15,7 @@ enum OpenFoodFactsError: LocalizedError {
         case .productNotFound:
             return "No Open Food Facts product matched this barcode."
         case .httpStatus(let code):
-            return "Open Food Facts returned HTTP \(code)."
+            return code == 429 ? "Open Food Facts is rate-limiting requests. Wait a moment and try again." : "Open Food Facts is unavailable right now (error \(code)). Try again later."
         }
     }
 }

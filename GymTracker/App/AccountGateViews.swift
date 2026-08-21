@@ -72,17 +72,17 @@ struct AccountGateView: View {
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
                                 .padding(12)
-                                .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius8, style: .continuous))
 
                             SecureField("Password", text: $password)
                                 .textContentType(.password)
                                 .padding(12)
-                                .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius8, style: .continuous))
 
                             SecureField("Backup passphrase", text: $backupPassphrase)
                                 .textContentType(.newPassword)
                                 .padding(12)
-                                .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius8, style: .continuous))
                         }
                         .disabled(isWorking)
                     }
@@ -196,7 +196,7 @@ struct CloudBackupRestorePromptView: View {
                 SecureField("Backup passphrase", text: $passphrase)
                     .textContentType(.password)
                     .padding(12)
-                    .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius8, style: .continuous))
                     .disabled(isWorking)
 
                 if let errorMessage {
