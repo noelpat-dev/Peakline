@@ -226,19 +226,37 @@ struct SleepWorkoutReadinessSnapshot {
 final class SleepAnalyticsSnapshotStore {
     static let shared = SleepAnalyticsSnapshotStore()
 
+    private struct CachedEntry {
+        let signature: SleepAnalyticsInputSignature
+        let snapshot: SleepAnalyticsSnapshot
+    }
+
+    private static let canonicalSessionLimit = 90
+    private static let canonicalWorkoutLimit = 28
+    private static let maximumCachedEntries = 6
     private let service = SleepAnalyticsService()
-    private var cachedSignature: SleepAnalyticsInputSignature?
-    private var cachedSnapshot: SleepAnalyticsSnapshot?
+    private var cachedEntries: [CachedEntry] = []
 
     private init() {}
 
-    /// The most recent analytics snapshot this store computed, together with
-    /// the input signature it was built from. Route destinations read this
-    /// before navigating so a warm first frame matches live inputs instead of
-    /// serving a launch-time value that has since gone stale.
+    /// The most recent canonical dashboard snapshot. Route-specific callers
+    /// should use `cachedAnalytics(matching:)` so another route's bounded
+    /// profile cannot seed a stale first frame.
     var cachedAnalytics: (snapshot: SleepAnalyticsSnapshot, signature: SleepAnalyticsInputSignature)? {
-        guard let cachedSnapshot, let cachedSignature else { return nil }
-        return (cachedSnapshot, cachedSignature)
+        guard let entry = cachedEntries.last(where: {
+            $0.signature.sessionLimit == Self.canonicalSessionLimit
+                && $0.signature.workoutLimit == Self.canonicalWorkoutLimit
+        }) else { return nil }
+        return (entry.snapshot, entry.signature)
+    }
+
+    func cachedAnalytics(
+        matching signature: SleepAnalyticsInputSignature
+    ) -> (snapshot: SleepAnalyticsSnapshot, signature: SleepAnalyticsInputSignature)? {
+        guard let entry = cachedEntries.last(where: { $0.signature == signature }) else {
+            return nil
+        }
+        return (entry.snapshot, entry.signature)
     }
 
     func snapshot(
@@ -262,10 +280,10 @@ final class SleepAnalyticsSnapshotStore {
             workoutRevision: workoutRevision
         )
 
-        if !force, signature == cachedSignature, let cachedSnapshot {
+        if !force, let cachedSnapshot = cachedEntries.last(where: { $0.signature == signature })?.snapshot {
             PerformanceTracer.mark(.sleepAnalyticsCache, "hit sessions=\(min(sessions.count, sessionLimit)) workouts=\(min(workouts.count, workoutLimit))")
             let refreshedSnapshot = snapshotForCacheHit(cachedSnapshot, settings: settings)
-            self.cachedSnapshot = refreshedSnapshot
+            store(refreshedSnapshot, signature: signature)
             return refreshedSnapshot
         }
 
@@ -275,9 +293,16 @@ final class SleepAnalyticsSnapshotStore {
         let limitedWorkouts = Array(workouts.prefix(workoutLimit))
         var snapshot = service.snapshot(sessions: limitedSessions, naps: limitedNaps, workouts: limitedWorkouts, settings: settings)
         snapshot.inputSignature = signature
-        cachedSignature = signature
-        cachedSnapshot = snapshot
+        store(snapshot, signature: signature)
         return snapshot
+    }
+
+    private func store(_ snapshot: SleepAnalyticsSnapshot, signature: SleepAnalyticsInputSignature) {
+        cachedEntries.removeAll { $0.signature == signature }
+        cachedEntries.append(CachedEntry(signature: signature, snapshot: snapshot))
+        if cachedEntries.count > Self.maximumCachedEntries {
+            cachedEntries.removeFirst(cachedEntries.count - Self.maximumCachedEntries)
+        }
     }
 
     private func snapshotForCacheHit(_ snapshot: SleepAnalyticsSnapshot, settings: SleepSettings) -> SleepAnalyticsSnapshot {
@@ -290,11 +315,30 @@ final class SleepAnalyticsSnapshotStore {
 final class SleepWorkoutReadinessSnapshotStore {
     static let shared = SleepWorkoutReadinessSnapshotStore()
 
+    private struct CachedEntry {
+        let signature: SleepAnalyticsInputSignature
+        let snapshot: SleepWorkoutReadinessSnapshot
+    }
+
+    private static let maximumCachedEntries = 4
     private let service = SleepAnalyticsService()
-    private var cachedSignature: SleepAnalyticsInputSignature?
-    private var cachedSnapshot: SleepWorkoutReadinessSnapshot?
+    private var cachedEntries: [CachedEntry] = []
 
     private init() {}
+
+    var cachedReadiness: (snapshot: SleepWorkoutReadinessSnapshot, signature: SleepAnalyticsInputSignature)? {
+        guard let entry = cachedEntries.last else { return nil }
+        return (entry.snapshot, entry.signature)
+    }
+
+    func cachedReadiness(
+        matching signature: SleepAnalyticsInputSignature
+    ) -> (snapshot: SleepWorkoutReadinessSnapshot, signature: SleepAnalyticsInputSignature)? {
+        guard let entry = cachedEntries.last(where: { $0.signature == signature }) else {
+            return nil
+        }
+        return (entry.snapshot, entry.signature)
+    }
 
     func snapshot(
         sessions: [SleepSession],
@@ -318,7 +362,7 @@ final class SleepWorkoutReadinessSnapshotStore {
             workoutRevision: effectiveWorkoutRevision
         )
 
-        if !force, signature == cachedSignature, let cachedSnapshot {
+        if !force, let cachedSnapshot = cachedEntries.last(where: { $0.signature == signature })?.snapshot {
             PerformanceTracer.mark(.sleepReadinessCache, "hit sessions=\(min(sessions.count, sessionLimit)) workouts=\(min(workouts.count, workoutLimit))")
             return cachedSnapshot
         }
@@ -328,8 +372,11 @@ final class SleepWorkoutReadinessSnapshotStore {
         let limitedNaps = Array(naps.prefix(sessionLimit))
         let limitedWorkouts = Array(workouts.prefix(workoutLimit))
         let snapshot = service.workoutReadinessSnapshot(sessions: limitedSessions, naps: limitedNaps, workouts: limitedWorkouts, settings: settings)
-        cachedSignature = signature
-        cachedSnapshot = snapshot
+        cachedEntries.removeAll { $0.signature == signature }
+        cachedEntries.append(CachedEntry(signature: signature, snapshot: snapshot))
+        if cachedEntries.count > Self.maximumCachedEntries {
+            cachedEntries.removeFirst(cachedEntries.count - Self.maximumCachedEntries)
+        }
         return snapshot
     }
 }

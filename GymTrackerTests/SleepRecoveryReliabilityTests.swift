@@ -60,6 +60,47 @@ final class SleepRecoveryReliabilityTests: XCTestCase {
         )
     }
 
+    func testSleepAnalyticsCacheKeepsTwentyAndTwentyEightWorkoutProfilesDistinct() {
+        let sessions = [sleepSession(day: 9, startHour: 23, durationMinutes: 480, quality: 4, confidence: .high, source: .manual)]
+        let workouts = (0..<28).map { index in
+            WorkoutSession(
+                date: Date(timeIntervalSince1970: TimeInterval(2_000 + index)),
+                splitNameSnapshot: "Push",
+                durationMinutes: 60,
+                completed: true
+            )
+        }
+        let store = SleepAnalyticsSnapshotStore.shared
+        let profile20 = store.snapshot(
+            sessions: sessions,
+            naps: [],
+            workouts: Array(workouts.prefix(20)),
+            settings: .default,
+            sessionLimit: 90,
+            workoutLimit: 20,
+            force: true
+        )
+        let profile28 = store.snapshot(
+            sessions: sessions,
+            naps: [],
+            workouts: workouts,
+            settings: .default,
+            sessionLimit: 90,
+            workoutLimit: 28,
+            force: true
+        )
+        guard let signature20 = profile20.inputSignature,
+              let signature28 = profile28.inputSignature else {
+            XCTFail("Expected both cache profiles to retain their input signatures")
+            return
+        }
+
+        XCTAssertNotEqual(signature20, signature28)
+        XCTAssertEqual(store.cachedAnalytics(matching: signature20)?.signature, signature20)
+        XCTAssertEqual(store.cachedAnalytics(matching: signature28)?.signature, signature28)
+        XCTAssertEqual(store.cachedAnalytics?.signature.workoutLimit, 28)
+    }
+
     func testLastNightDoesNotPromoteAnOlderFridaySessionOnMonday() {
         let calendar = utcCalendar()
         let mondayNoon = date(day: 18, hour: 12)

@@ -144,7 +144,7 @@ struct TodayView: View {
         var descriptor = FetchDescriptor<SleepSession>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
-        descriptor.fetchLimit = 60
+        descriptor.fetchLimit = 90
         return descriptor
     }
 
@@ -152,7 +152,7 @@ struct TodayView: View {
         var descriptor = FetchDescriptor<NapSession>(
             sortBy: [SortDescriptor(\.startDate, order: .reverse)]
         )
-        descriptor.fetchLimit = 30
+        descriptor.fetchLimit = 90
         return descriptor
     }
 
@@ -228,6 +228,36 @@ struct TodayView: View {
             workoutLimit: 12,
             workoutRevision: workoutWarmStartInvalidation.revision
         )
+    }
+
+    private var currentSleepAnalyticsSignature: SleepAnalyticsInputSignature {
+        SleepAnalyticsInputSignature(
+            sessions: sleepSessions,
+            naps: napSessions,
+            workouts: completedSessions,
+            settings: sleepSettings,
+            sessionLimit: 90,
+            workoutLimit: 28,
+            workoutRevision: workoutWarmStartInvalidation.revision
+        )
+    }
+
+    private var currentOverallReadinessSourceSignature: String {
+        let inputSignature = OverallReadinessInputSignature.make(
+            sleepSessions: sleepSessions,
+            napSessions: napSessions,
+            completedWorkouts: completedSessions,
+            hydrationEntries: hydrationEntries,
+            foodLogs: foodLogEntries,
+            checkIns: coachCheckIns,
+            sleepSettings: sleepSettings,
+            hydrationTargetML: hydrationTargetML,
+            nutritionGoal: nutritionGoal,
+            workoutRevision: workoutWarmStartInvalidation.revision,
+            dayStart: readinessRefreshClock.token.dayStart,
+            hydrationPhase: readinessRefreshClock.token.hydrationPhase
+        )
+        return "\(inputSignature)|readinessGeneration:\(readinessRefreshClock.token.generation)"
     }
 
     private var sleepReadinessSignatureForObservation: SleepAnalyticsInputSignature? {
@@ -723,13 +753,17 @@ struct TodayView: View {
             case .progress:
                 ProgressContentView()
             case .nutrition:
-                NutritionDashboardView()
+                DeferredNutritionDashboardHost(
+                    initialPayload: NutritionWarmStartStore.shared.dashboard
+                )
             case .sleep:
-                SleepDashboardView(
+                DeferredSleepDashboardHost(
                     initialSnapshot: WarmRouteSnapshots.sleepAnalytics(
+                        matching: currentSleepAnalyticsSignature,
                         fallback: initialStartupSnapshot?.sleepAnalyticsSnapshot
                     ),
                     initialReadinessScore: WarmRouteSnapshots.overallReadiness(
+                        matching: currentOverallReadinessSourceSignature,
                         fallback: initialStartupSnapshot?.coachSnapshot.readiness
                     )
                 )
@@ -947,7 +981,7 @@ struct TodayView: View {
         let nextTrainingCall = makeTrainingCall(
             decision: trainingDecision,
             coachSnapshot: nextSnapshot
-        )
+        ).neutralizedForProvisionalReadiness(if: nextSnapshot.readiness.isProvisional)
         AppMotion.withoutAnimation {
             trainingCallSnapshot = nextTrainingCall
         }
@@ -970,10 +1004,16 @@ struct TodayView: View {
         // refreshes. Rebuilding from this fresh intelligence (with startup
         // pieces as structural fallback) keeps the Readiness quick action's
         // first frame populated instead of reverting to a launch-time value.
+        let nextRecommendedSplit = activeSplits.first {
+            $0.name == nextTrainingCall.recommendedSplitName
+        }.map(WorkoutPreviewSplit.init)
         CoachRouteSnapshotStore.shared.update(
-            intelligence: coachSnapshot,
+            intelligence: nextSnapshot,
+            trainingCall: nextTrainingCall,
+            recommendedSplit: nextRecommendedSplit,
             fallback: initialStartupSnapshot?.coachRouteSnapshot,
             signature: signature,
+            sourceGeneration: CoachRouteSnapshotStore.shared.nextSourceGeneration(),
             source: "today"
         )
         PerformanceTracer.mark(
@@ -1199,6 +1239,61 @@ struct TodayView: View {
             previewNavigationKey = navigationKey
         }) else {
             return
+        }
+    }
+}
+
+private struct DeferredSleepDashboardHost: View {
+    let initialSnapshot: SleepAnalyticsSnapshot?
+    let initialReadinessScore: ReadinessScore
+
+    @State private var isLiveMounted = false
+    @State private var isVisible = false
+
+    var body: some View {
+        content
+            .onAppear {
+                isVisible = true
+                guard !isLiveMounted else { return }
+                DispatchQueue.main.async {
+                    DispatchQueue.main.async {
+                        guard isVisible else { return }
+                        isLiveMounted = true
+                    }
+                }
+            }
+            .onDisappear { isVisible = false }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if isLiveMounted {
+            SleepDashboardView(
+                initialSnapshot: initialSnapshot,
+                initialReadinessScore: initialReadinessScore
+            )
+        } else {
+            FitnessScreen {
+                FitnessCard(style: .hero) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Sleep")
+                            .font(AppTypography.cardTitle)
+                        if let latest = initialSnapshot?.summaries.first {
+                            Text(SleepScoringService.durationText(minutes: latest.totalSleepMinutes))
+                                .font(AppTypography.heroMetric)
+                                .accessibilityIdentifier("sleep-last-night-duration")
+                        } else {
+                            Text("Start Sleep Mode or add a sleep entry to build your recovery view.")
+                                .font(AppTypography.body)
+                                .foregroundStyle(.secondary)
+                                .accessibilityIdentifier("sleep-no-data-hero")
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Sleep")
+            .navigationBarTitleDisplayMode(.inline)
+            .accessibilityIdentifier("sleep-screen")
         }
     }
 }

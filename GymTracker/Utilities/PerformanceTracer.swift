@@ -172,12 +172,24 @@ enum PerformanceAcceptanceState {
 
         let status = failures.isEmpty ? "PASS" : "FAIL"
         let failureText = failures.isEmpty ? "none" : failures.joined(separator: "; ")
+        let routeTimingText = navigationRouteMaxMilliseconds
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key):\($0.value)" }
+            .joined(separator: ",")
+        let rootTabTimingText = rootTabMaxMillisecondsByName
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key):\($0.value)" }
+            .joined(separator: ",")
         return [
             "performance_acceptance=\(status)",
+            "startupLocalMax=\(startupLocalMaxMilliseconds)",
+            "startupSnapshotMax=\(startupSnapshotMaxMilliseconds)",
             "todayCoachMax=\(todayCoachMaxMilliseconds)",
             "coachPreviewMax=\(coachPreviewMaxMilliseconds)",
             "rootTabMax=\(rootTabMaxMilliseconds)",
+            "rootTabTimings=\(rootTabTimingText)",
             "rootNotificationMax=\(rootNotificationMaxMilliseconds)",
+            "routeTimings=\(routeTimingText)",
             "previewWarmCacheHits=\(workoutPreviewWarmCacheHits)",
             "previewOnAppearRefreshes=\(workoutPreviewOnAppearRefreshes)",
             "failures=\(failureText)"
@@ -237,8 +249,12 @@ enum PerformanceAcceptanceState {
         case .motionTabSelect where message.contains("stable_frame"):
             if let milliseconds = firstInteger(after: "elapsed_ms=", in: message) {
                 rootTabMaxMilliseconds = max(rootTabMaxMilliseconds, milliseconds)
+                let tab = firstToken(after: "tab=", in: message) ?? "unknown"
+                rootTabMaxMillisecondsByName[tab] = max(
+                    rootTabMaxMillisecondsByName[tab] ?? 0,
+                    milliseconds
+                )
                 if milliseconds > 300 {
-                    let tab = firstToken(after: "tab=", in: message) ?? "unknown"
                     addFailureLocked("motion.tab.select \(tab) stable frame in \(milliseconds)ms")
                 }
             }
@@ -248,6 +264,10 @@ enum PerformanceAcceptanceState {
             if let milliseconds = firstInteger(after: "elapsed_ms=", in: message),
                let threshold = firstInteger(after: "threshold_ms=", in: message) {
                 let key = firstToken(after: "key=", in: message) ?? "unknown"
+                navigationRouteMaxMilliseconds[key] = max(
+                    navigationRouteMaxMilliseconds[key] ?? 0,
+                    milliseconds
+                )
                 if key.hasPrefix("coach.preview.") {
                     coachPreviewMaxMilliseconds = max(coachPreviewMaxMilliseconds, milliseconds)
                 }
@@ -272,24 +292,35 @@ enum PerformanceAcceptanceState {
         lock.lock()
         defer { lock.unlock() }
 
-        if metric == .rootNotificationRefresh {
+        switch metric {
+        case .startupLocalPreparation:
+            startupLocalMaxMilliseconds = max(startupLocalMaxMilliseconds, Int(milliseconds))
+        case .startupSnapshotPreparation:
+            startupSnapshotMaxMilliseconds = max(startupSnapshotMaxMilliseconds, Int(milliseconds))
+        case .rootNotificationRefresh:
             let value = Int(milliseconds)
             rootNotificationMaxMilliseconds = max(rootNotificationMaxMilliseconds, value)
             if value > 50 {
                 addFailureLocked("root.notification.refresh completed in \(value)ms")
             }
+        default:
+            break
         }
     }
 
     private static let lock = NSLock()
     private static var failures: [String] = []
     private static var failureSet = Set<String>()
+    private static var startupLocalMaxMilliseconds = 0
+    private static var startupSnapshotMaxMilliseconds = 0
     private static var todayCoachMaxMilliseconds = 0
     private static var coachPreviewMaxMilliseconds = 0
     private static var rootTabMaxMilliseconds = 0
+    private static var rootTabMaxMillisecondsByName: [String: Int] = [:]
     private static var rootNotificationMaxMilliseconds = 0
     private static var workoutPreviewWarmCacheHits = 0
     private static var workoutPreviewOnAppearRefreshes = 0
+    private static var navigationRouteMaxMilliseconds: [String: Int] = [:]
     private static var pendingWorkoutCoachAppend = false
     private static var pendingCheckInPresentation = false
 

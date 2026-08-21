@@ -19,9 +19,9 @@ struct ProgressContentView: View {
     @Query private var observedCompletedSessions: [WorkoutSession]
     @Query private var observedActiveSplits: [TrainingSplit]
 
-    @State private var exercises: [Exercise] = []
+    @State private var exerciseRows: [ProgressExerciseRowSnapshot] = []
     @State private var exercisesLoaded = false
-    @State private var selectedExercise: Exercise?
+    @State private var selectedExercise: ProgressExerciseRowSnapshot?
     @State private var isExerciseChartsPresented = false
     @State private var isPRTimelinePresented = false
     @State private var weeklySummary: WeeklyTrainingSummary?
@@ -33,6 +33,7 @@ struct ProgressContentView: View {
     @State private var isProgressVisible = false
 
     private let analytics = TrainingAnalyticsService()
+    private let initialWarmPayload: ProgressWarmStartPayload?
 
     init() {
         _observedExercises = Query(Self.exercisesDescriptor)
@@ -40,10 +41,14 @@ struct ProgressContentView: View {
         _observedActiveSplits = Query(Self.activeSplitsDescriptor)
         // Startup and the root's deferred refresh keep these summaries warm so
         // the first frame shows real weekly data instead of loading cards.
-        let warmWeeklySummary = ProgressWarmStartStore.shared.weeklySummary
-        let warmSplitConsistency = ProgressWarmStartStore.shared.splitConsistency
+        let warmPayload = ProgressWarmStartStore.shared.payload
+        initialWarmPayload = warmPayload
+        let warmWeeklySummary = warmPayload?.weeklySummary
+        let warmSplitConsistency = warmPayload?.splitConsistency
         _weeklySummary = State(initialValue: warmWeeklySummary)
         _splitConsistency = State(initialValue: warmSplitConsistency)
+        _exerciseRows = State(initialValue: warmPayload?.exerciseRows ?? [])
+        _exercisesLoaded = State(initialValue: warmPayload != nil)
     }
 
     private static var exercisesDescriptor: FetchDescriptor<Exercise> {
@@ -51,7 +56,7 @@ struct ProgressContentView: View {
             predicate: #Predicate<Exercise> { !$0.isArchived },
             sortBy: [SortDescriptor(\.name)]
         )
-        descriptor.fetchLimit = 120
+        descriptor.fetchLimit = 180
         return descriptor
     }
 
@@ -90,7 +95,7 @@ struct ProgressContentView: View {
             DashboardSection(title: "Progress Charts") {
                 if !exercisesLoaded {
                     progressLoadingCard
-                } else if exercises.isEmpty {
+                } else if exerciseRows.isEmpty {
                     DashboardEmptyStateCard(
                         title: "More data needed",
                         message: "Add exercises and finish workouts to unlock progress charts.",
@@ -114,7 +119,7 @@ struct ProgressContentView: View {
             DashboardSection(title: "Exercises") {
                 if !exercisesLoaded {
                     progressLoadingCard
-                } else if exercises.isEmpty {
+                } else if exerciseRows.isEmpty {
                     DashboardEmptyStateCard(
                         title: "No exercises yet",
                         message: "Create split exercises to build a progress dashboard.",
@@ -122,7 +127,7 @@ struct ProgressContentView: View {
                     )
                 } else {
                     LazyVStack(spacing: 12) {
-                        ForEach(exercises) { exercise in
+                            ForEach(exerciseRows) { exercise in
                             Button {
                                 navigate(
                                     key: "progress.exercise.\(exercise.id.uuidString)",
@@ -134,7 +139,7 @@ struct ProgressContentView: View {
                                 FitnessCard(padding: 16) {
                                     HStack(alignment: .top, spacing: 12) {
                                         ExerciseIconView(
-                                            iconKey: ExerciseIconMapper.iconKey(for: exercise),
+                                            iconKey: ExerciseIconKey(rawValue: exercise.iconKey) ?? .genericExercise,
                                             size: 40,
                                             showBackground: true,
                                             isDecorative: true
@@ -147,7 +152,7 @@ struct ProgressContentView: View {
                                                 .lineLimit(2)
                                                 .minimumScaleFactor(0.85)
                                                 .fixedSize(horizontal: false, vertical: true)
-                                            Text(exercise.primaryMuscleGroup.displayName)
+                                            Text(exercise.primaryMuscleGroup)
                                                 .font(AppTypography.body)
                                                 .foregroundStyle(appTheme.colors.textSecondary)
                                         }
@@ -170,7 +175,7 @@ struct ProgressContentView: View {
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("progress-screen")
         .navigationDestination(isPresented: $isExerciseChartsPresented) {
-            ExerciseProgressChartsIndexView(exercises: exercises, selectedExercise: $selectedExercise)
+            ExerciseProgressChartsIndexView(exercises: exerciseRows, selectedExercise: $selectedExercise)
                 .onAppear {
                     NavigationInteraction.destinationDidAppear(key: "progress.exercise-charts")
                 }
@@ -182,7 +187,7 @@ struct ProgressContentView: View {
                 }
         }
         .navigationDestination(item: $selectedExercise) { exercise in
-            ExerciseProgressDetailView(exercise: exercise)
+                ExerciseProgressDetailView(exercise: exercise)
                 .onAppear {
                     NavigationInteraction.destinationDidAppear(
                         key: "progress.exercise.\(exercise.id.uuidString)"
@@ -212,21 +217,20 @@ struct ProgressContentView: View {
     }
 
     private var progressSourceSignature: String {
-        let activeSplitNames = TrainingRotationService()
-            .orderedActiveSplits(observedActiveSplits)
-            .map(\.name)
-        let scalarSignature = ProgressAnalyticsInputSignature(
-            sessions: Array(observedCompletedSessions.prefix(40)),
-            exerciseIDs: observedExercises.map(\.id),
-            activeSplitNames: activeSplitNames
-        ).rawValue
-        let exerciseScalarSignature = observedExercises
-            .map {
-                "\($0.id.uuidString):\($0.name):\($0.primaryMuscleGroup.rawValue):\($0.updatedAt.timeIntervalSince1970)"
-            }
-            .joined(separator: ",")
-
-        return "\(workoutWarmStartInvalidation.revision)||\(exerciseScalarSignature)||\(scalarSignature)"
+        WorkoutWarmStartSourceSignature.make(
+            revision: workoutWarmStartInvalidation.revision,
+            splitSignatures: observedActiveSplits
+                .sorted { $0.updatedAt > $1.updatedAt }
+                .prefix(12)
+                .map(WorkoutWarmStartSourceSignature.split),
+            workoutSignatures: observedCompletedSessions
+                .prefix(40)
+                .map(WorkoutWarmStartSourceSignature.workout),
+            exerciseSignatures: observedExercises
+                .sorted { $0.updatedAt > $1.updatedAt }
+                .prefix(180)
+                .map(WorkoutWarmStartSourceSignature.exercise)
+        )
     }
 
     private func scheduleProgressRefresh(force: Bool = false) {
@@ -441,14 +445,23 @@ struct ProgressContentView: View {
 
     private func refreshExercises(force: Bool = false) {
         let signature = observedExercises
-            .map {
-                "\($0.id.uuidString):\($0.name):\($0.primaryMuscleGroup.rawValue):\($0.updatedAt.timeIntervalSince1970)"
-            }
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .prefix(ProgressWarmStartLimits.exerciseRowLimit)
+            .map { ProgressExerciseRowSnapshot($0) }
+            .map { "\($0.id.uuidString):\($0.name):\($0.primaryMuscleGroup):\($0.updatedAt.timeIntervalSince1970)" }
             .joined(separator: ",")
         guard force || signature != lastExercisesSignature else { return }
 
         AppMotion.withoutAnimation {
-            exercises = observedExercises
+            exerciseRows = Array(
+                observedExercises
+                    .map(ProgressExerciseRowSnapshot.init)
+                    .sorted {
+                        let comparison = $0.name.localizedStandardCompare($1.name)
+                        return comparison == .orderedSame ? $0.id.uuidString < $1.id.uuidString : comparison == .orderedAscending
+                    }
+                    .prefix(ProgressWarmStartLimits.exerciseRowLimit)
+            )
         }
         AppMotion.withoutAnimation {
             exercisesLoaded = true
@@ -461,13 +474,8 @@ struct ProgressContentView: View {
         let activeSplitNames = TrainingRotationService()
             .orderedActiveSplits(observedActiveSplits)
             .map(\.name)
-        let scalarSignature = ProgressAnalyticsInputSignature(
-            sessions: recentSessions,
-            exerciseIDs: observedExercises.map(\.id),
-            activeSplitNames: activeSplitNames
-        ).rawValue
         let generation = workoutWarmStartInvalidation.revision
-        let signature = "\(generation)||\(scalarSignature)"
+        let signature = progressSourceSignature
         guard force || signature != lastSummarySignature else { return }
         summaryTask?.cancel()
 
@@ -503,8 +511,11 @@ struct ProgressContentView: View {
                 lastSummarySignature = signature
             }
             ProgressWarmStartStore.shared.update(
+                sourceSignature: signature,
+                workoutRevision: generation,
                 weeklySummary: result.0,
-                splitConsistency: result.1
+                splitConsistency: result.1,
+                exerciseRows: exerciseRows
             )
         }
     }
@@ -613,11 +624,11 @@ private struct ProgressActionCard: View {
     }
 }
 
-private struct ExerciseProgressDetailView: View {
+    private struct ExerciseProgressDetailView: View {
     @Environment(\.appTheme) private var appTheme
     @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
 
-    let exercise: Exercise
+    let exercise: ProgressExerciseRowSnapshot
 
     @Query
     private var sessions: [WorkoutSession]
@@ -625,7 +636,7 @@ private struct ExerciseProgressDetailView: View {
     @State private var lastEntriesSignature: String?
     @State private var entriesLoaded = false
 
-    init(exercise: Exercise) {
+    init(exercise: ProgressExerciseRowSnapshot) {
         self.exercise = exercise
         _sessions = Query(Self.completedSessionsDescriptor)
     }
@@ -665,7 +676,7 @@ private struct ExerciseProgressDetailView: View {
     var body: some View {
         FitnessScreen(
             title: exercise.name,
-            subtitle: exercise.primaryMuscleGroup.displayName,
+            subtitle: exercise.primaryMuscleGroup,
             systemImage: "chart.xyaxis.line"
         ) {
             if !entriesLoaded {
@@ -770,8 +781,8 @@ private struct ExerciseProgressDetailView: View {
 private struct ExerciseProgressChartsIndexView: View {
     @Environment(\.appTheme) private var appTheme
 
-    let exercises: [Exercise]
-    @Binding var selectedExercise: Exercise?
+    let exercises: [ProgressExerciseRowSnapshot]
+    @Binding var selectedExercise: ProgressExerciseRowSnapshot?
 
     var body: some View {
         FitnessScreen(
@@ -793,7 +804,7 @@ private struct ExerciseProgressChartsIndexView: View {
                         FitnessCard(padding: 16) {
                             HStack(spacing: 12) {
                                 ExerciseIconView(
-                                    iconKey: ExerciseIconMapper.iconKey(for: exercise),
+                                    iconKey: ExerciseIconKey(rawValue: exercise.iconKey) ?? .genericExercise,
                                     size: 40,
                                     showBackground: true,
                                     isDecorative: true
@@ -802,7 +813,7 @@ private struct ExerciseProgressChartsIndexView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(exercise.name)
                                         .font(AppTypography.sectionTitle)
-                                    Text(exercise.primaryMuscleGroup.displayName)
+                                    Text(exercise.primaryMuscleGroup)
                                         .font(AppTypography.body)
                                         .foregroundStyle(appTheme.colors.textSecondary)
                                 }

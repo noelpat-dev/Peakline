@@ -206,6 +206,11 @@ final class OverallReadinessSnapshotStore: ObservableObject {
             generatedAt: readiness.generatedAt
         )
     }
+
+    func readiness(matching sourceSignature: String) -> ReadinessScore? {
+        guard snapshot.sourceSignature == sourceSignature else { return nil }
+        return latestReadiness
+    }
 }
 
 /// Resolves the freshest pre-computed route seed for destinations that would
@@ -215,13 +220,24 @@ final class OverallReadinessSnapshotStore: ObservableObject {
 @MainActor
 enum WarmRouteSnapshots {
     static func sleepAnalytics(
+        matching signature: SleepAnalyticsInputSignature,
         fallback: SleepAnalyticsSnapshot?
     ) -> SleepAnalyticsSnapshot? {
-        SleepAnalyticsSnapshotStore.shared.cachedAnalytics?.snapshot ?? fallback
+        if let cached = SleepAnalyticsSnapshotStore.shared.cachedAnalytics(matching: signature) {
+            return cached.snapshot
+        }
+        guard fallback?.inputSignature == signature else { return nil }
+        return fallback
     }
 
-    static func overallReadiness(fallback: ReadinessScore?) -> ReadinessScore {
-        OverallReadinessSnapshotStore.shared.latestReadiness
+    static func overallReadiness(
+        matching sourceSignature: String? = nil,
+        fallback: ReadinessScore?
+    ) -> ReadinessScore {
+        let cached = sourceSignature.flatMap {
+            OverallReadinessSnapshotStore.shared.readiness(matching: $0)
+        } ?? (sourceSignature == nil ? OverallReadinessSnapshotStore.shared.latestReadiness : nil)
+        return cached
             ?? fallback
             ?? CoachIntelligenceService.emptySnapshot().readiness
     }
@@ -326,6 +342,9 @@ struct StartupSnapshotBundle {
     let historySnapshot: HistoryWarmSnapshot
     let previewWarmSnapshots: [WorkoutPreviewWarmSnapshot]
     let savedFoodCatalogSnapshot: SavedFoodCatalogSnapshot
+    let progressWarmStartPayload: ProgressWarmStartPayload
+    let nutritionDashboardWarmStartPayload: NutritionDashboardWarmStartPayload
+    let nutritionInsightsWarmStartPayload: NutritionInsightsWarmStartPayload
     let settingsProfileSnapshot: SettingsProfileSnapshot?
     let activeSplitCount: Int
     let completedWorkoutCount: Int
@@ -561,10 +580,9 @@ final class AppStartupCoordinator: ObservableObject {
                 readiness: snapshot.coachSnapshot.readiness,
                 sourceSignature: snapshot.sourceSignature
             )
-            ProgressWarmStartStore.shared.update(
-                weeklySummary: derived.progressWeeklySummary,
-                splitConsistency: derived.progressSplitConsistency
-            )
+            ProgressWarmStartStore.shared.update(snapshot.progressWarmStartPayload)
+            NutritionWarmStartStore.shared.update(dashboard: snapshot.nutritionDashboardWarmStartPayload)
+            NutritionWarmStartStore.shared.update(insights: snapshot.nutritionInsightsWarmStartPayload)
 
             phase = .ready(snapshot)
             PerformanceTracer.mark(
@@ -606,6 +624,9 @@ struct StartupModelProjections {
     let previewWarmSnapshots: [WorkoutPreviewWarmSnapshot]
     let recommendedSplits: [WorkoutPreviewSplit]
     let savedFoodCatalogSnapshot: SavedFoodCatalogSnapshot
+    let progressExerciseRows: [ProgressExerciseRowSnapshot]
+    let nutritionDashboardWarmStartPayload: NutritionDashboardWarmStartPayload
+    let nutritionInsightsWarmStartPayload: NutritionInsightsWarmStartPayload
     let settingsProfileSnapshot: SettingsProfileSnapshot?
     let activeSplitCount: Int
     let completedWorkoutCount: Int
@@ -618,8 +639,7 @@ struct StartupModelProjections {
             workoutSnapshots: workoutSnapshots,
             historyWorkouts: historyWorkouts,
             sourceSignature: sourceSignature,
-            workoutDashboardSignature: workoutDashboardSignature,
-            previewWarmSnapshots: previewWarmSnapshots
+            workoutDashboardSignature: workoutDashboardSignature
         )
     }
 
@@ -629,9 +649,12 @@ struct StartupModelProjections {
         deferSleepSnapshots: Bool = false
     ) throws -> StartupModelProjections {
         let sourceRevision = WorkoutWarmStartInvalidation.shared.revision
-        let splits = try context.fetch(
-            FetchDescriptor<TrainingSplit>(sortBy: [SortDescriptor(\.name)])
+        var splitDescriptor = FetchDescriptor<TrainingSplit>(
+            predicate: #Predicate<TrainingSplit> { $0.isActive },
+            sortBy: [SortDescriptor(\.name)]
         )
+        splitDescriptor.fetchLimit = 12
+        let splits = try context.fetch(splitDescriptor)
         let orderedActiveSplits = TrainingRotationService().orderedActiveSplits(splits)
         let splitSnapshots = try TrainingSplitSnapshotBuilder.snapshots(
             from: orderedActiveSplits,
@@ -679,7 +702,7 @@ struct StartupModelProjections {
         var napDescriptor = FetchDescriptor<NapSession>(
             sortBy: [SortDescriptor(\.startDate, order: .reverse)]
         )
-        napDescriptor.fetchLimit = 60
+        napDescriptor.fetchLimit = 90
         let napSessions = try context.fetch(napDescriptor)
 
         var hydrationDescriptor = FetchDescriptor<HydrationEntry>(
@@ -694,12 +717,65 @@ struct StartupModelProjections {
         foodDescriptor.fetchLimit = 160
         let foodLogs = try context.fetch(foodDescriptor)
 
-        let savedFoods = try context.fetch(
-            FetchDescriptor<FoodItem>(sortBy: [SortDescriptor(\.name)])
-        )
+        var savedFoodDescriptor = FetchDescriptor<FoodItem>(sortBy: [SortDescriptor(\.name)])
+        savedFoodDescriptor.fetchLimit = 180
+        let savedFoods = try context.fetch(savedFoodDescriptor)
         let savedFoodCatalogSnapshot = PerformanceTracer.trace(.savedFoodsSnapshot) {
             SavedFoodCatalogSnapshot(foods: savedFoods.map(SavedFoodSnapshot.init))
         }
+
+        let nutritionGoal = NutritionGoalService().loadGoal()
+        let nutritionWarmSourceSignature = [
+            "revision:\(sourceRevision)",
+            foodLogs.prefix(160).map {
+                "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)"
+            }.joined(separator: ","),
+            nutritionGoal.updatedAt.timeIntervalSince1970.description
+        ].joined(separator: "|")
+        let nutritionCalendar = Calendar.current
+        let nutritionToday = nutritionCalendar.startOfDay(for: .now)
+        let nutritionRows = foodLogs
+            .filter { nutritionCalendar.isDate($0.loggedAt, inSameDayAs: nutritionToday) }
+            .map(NutritionFoodLogSnapshot.init)
+        let nutritionMealEntries = Dictionary(
+            grouping: nutritionRows.sorted { $0.loggedAt < $1.loggedAt },
+            by: \.mealType
+        )
+        let recentFoodIDs = foodLogs.map(\.foodItemId)
+        var seenFoodIDs = Set<UUID>()
+        let recentFoods = recentFoodIDs.compactMap { id -> SavedFoodSnapshot? in
+            guard seenFoodIDs.insert(id).inserted else { return nil }
+            return savedFoodCatalogSnapshot.foods.first { $0.id == id }
+        }
+        let nutritionSummaryService = NutritionSummaryService()
+        let nutritionTrendService = NutritionTrendService()
+        let nutritionContextService = TrainingNutritionContextService()
+        let nutritionInsightService = NutritionInsightService()
+        let nutritionTodaySummary = nutritionSummaryService.dailySummary(
+            for: .now,
+            foodLogs: foodLogs,
+            workouts: completedWorkouts
+        )
+        let nutritionWeeklySummary = nutritionTrendService.weeklySummary(
+            dailySummaries: nutritionSummaryService.dailySummaries(
+                endingOn: .now,
+                days: 7,
+                foodLogs: foodLogs,
+                workouts: completedWorkouts
+            ),
+            goal: nutritionGoal
+        )
+        let nutritionContext = nutritionContextService.context(
+            for: .now,
+            foodLogs: foodLogs,
+            workouts: completedWorkouts
+        )
+        let nutritionInsights = nutritionInsightService.insights(
+            today: nutritionTodaySummary,
+            weekly: nutritionWeeklySummary,
+            goal: nutritionGoal,
+            context: nutritionContext
+        )
 
         var checkInDescriptor = FetchDescriptor<DailyCoachCheckIn>(
             sortBy: [SortDescriptor(\.date, order: .reverse)]
@@ -710,7 +786,8 @@ struct StartupModelProjections {
         let sourceSignature = WorkoutWarmStartSourceSignature.make(
             revision: sourceRevision,
             splitSignatures: splitSnapshots.map { WorkoutWarmStartSourceSignature.split($0) },
-            workoutSignatures: completedWorkouts.map { WorkoutWarmStartSourceSignature.workout($0) }
+            workoutSignatures: completedWorkouts.map { WorkoutWarmStartSourceSignature.workout($0) },
+            exerciseSignatures: exercises.map { WorkoutWarmStartSourceSignature.exercise($0) }
         )
         let workoutDashboardSignature = WorkoutDashboardInputSignature(
             // StartWorkout's live query is name-sorted. Keep the pure seed's
@@ -778,7 +855,6 @@ struct StartupModelProjections {
                 force: true
             )
         let hydrationTargetML = HydrationSettingsStore().dailyTargetML()
-        let nutritionGoal = NutritionGoalService().loadGoal()
         let readinessEvaluatedAt = Date.now
         let overallReadinessInputSignature = OverallReadinessInputSignature.make(
             sleepSessions: sleepSessions,
@@ -835,6 +911,28 @@ struct StartupModelProjections {
             previewWarmSnapshots: previewWarmSnapshots,
             recommendedSplits: recommendedSplits,
             savedFoodCatalogSnapshot: savedFoodCatalogSnapshot,
+            progressExerciseRows: Array(exercises.prefix(ProgressWarmStartLimits.exerciseRowLimit))
+                .map(ProgressExerciseRowSnapshot.init),
+            nutritionDashboardWarmStartPayload: NutritionDashboardWarmStartPayload(
+                sourceSignature: nutritionWarmSourceSignature,
+                selectedDate: nutritionToday,
+                dayEntries: nutritionRows,
+                totals: NutritionCalculatorService().totals(from: foodLogs.filter { nutritionCalendar.isDate($0.loggedAt, inSameDayAs: nutritionToday) }),
+                readiness: coachSnapshot.readiness,
+                recentlyLoggedFoods: Array((recentFoods.isEmpty ? Array(savedFoodCatalogSnapshot.foods.prefix(3)) : recentFoods).prefix(3)),
+                mealEntries: nutritionMealEntries,
+                isTrainingDay: completedWorkouts.contains { nutritionCalendar.isDate($0.date, inSameDayAs: nutritionToday) },
+                shouldShowHealthKitStatus: HealthKitPreferenceStore().load().isHealthKitEnabled,
+                healthKitSyncRecordsByEntryId: [:]
+            ),
+            nutritionInsightsWarmStartPayload: NutritionInsightsWarmStartPayload(
+                sourceSignature: nutritionWarmSourceSignature,
+                goal: nutritionGoal,
+                todaySummary: nutritionTodaySummary,
+                weeklySummary: nutritionWeeklySummary,
+                trainingContext: nutritionContext,
+                insights: nutritionInsights
+            ),
             settingsProfileSnapshot: profile.map(SettingsProfileSnapshot.init),
             activeSplitCount: orderedActiveSplits.count,
             completedWorkoutCount: completedWorkouts.count,
@@ -850,7 +948,6 @@ struct StartupPureProjection: Sendable {
     let historyWorkouts: [HistoryWorkoutSnapshot]
     let sourceSignature: String
     let workoutDashboardSignature: String
-    let previewWarmSnapshots: [WorkoutPreviewWarmSnapshot]
 }
 
 struct StartupDerivedValues: Sendable {
@@ -1084,6 +1181,15 @@ enum StartupSnapshotBuilder {
             ),
             previewWarmSnapshots: projections.previewWarmSnapshots,
             savedFoodCatalogSnapshot: projections.savedFoodCatalogSnapshot,
+            progressWarmStartPayload: ProgressWarmStartPayload(
+                sourceSignature: projections.sourceSignature,
+                workoutRevision: projections.sourceRevision,
+                weeklySummary: derived.progressWeeklySummary,
+                splitConsistency: derived.progressSplitConsistency,
+                exerciseRows: projections.progressExerciseRows
+            ),
+            nutritionDashboardWarmStartPayload: projections.nutritionDashboardWarmStartPayload,
+            nutritionInsightsWarmStartPayload: projections.nutritionInsightsWarmStartPayload,
             settingsProfileSnapshot: projections.settingsProfileSnapshot,
             activeSplitCount: projections.activeSplitCount,
             completedWorkoutCount: projections.completedWorkoutCount,

@@ -30,6 +30,146 @@ final class WarmStartSnapshotStoreTests: XCTestCase {
         XCTAssertEqual(before, WorkoutWarmStartSourceSignature.workout(session))
     }
 
+    func testWorkoutWarmStartSourceSignatureCanonicalizesCollectionOrder() {
+        let first = WorkoutWarmStartSourceSignature.make(
+            revision: 4,
+            splitSignatures: ["split-b", "split-a"],
+            workoutSignatures: ["workout-b", "workout-a"],
+            exerciseSignatures: ["exercise-b", "exercise-a"]
+        )
+        let second = WorkoutWarmStartSourceSignature.make(
+            revision: 4,
+            splitSignatures: ["split-a", "split-b"],
+            workoutSignatures: ["workout-a", "workout-b"],
+            exerciseSignatures: ["exercise-a", "exercise-b"]
+        )
+
+        XCTAssertEqual(first, second)
+    }
+
+    func testCoachRoutePublicationKeepsFreshReadinessCallAndSplitInOneGeneration() {
+        let store = CoachRouteSnapshotStore.shared
+        store.resetForTesting()
+        defer { store.resetForTesting() }
+
+        let base = CoachRouteRenderSnapshot(
+            intelligence: CoachIntelligenceService.emptySnapshot(),
+            weeklyReview: nil,
+            derivedMetrics: .placeholder,
+            sleepAnalytics: SleepAnalyticsService.emptySnapshot(),
+            trainingCall: .placeholder,
+            sourceGeneration: 1
+        )
+        store.update(snapshot: base, signature: "old", source: "test", sourceGeneration: 1)
+
+        let freshCheckIn = DailyCoachCheckIn(
+            date: .now,
+            energy: 5,
+            soreness: 1,
+            stress: 1,
+            motivation: 5,
+            calendar: .current
+        )
+        let freshIntelligence = CoachIntelligenceService().snapshot(
+            sleepSessions: [],
+            napSessions: [],
+            hydrationEntries: [],
+            completedWorkouts: [],
+            foodLogs: [],
+            checkIns: [freshCheckIn],
+            sleepSettings: .default,
+            hydrationTargetML: 2_500,
+            nutritionGoal: .empty
+        )
+        let freshCall = TrainingCallSnapshot(
+            recommendedSplitName: "Pull",
+            recommendedMode: .quick,
+            action: .repeatTarget,
+            title: "Pull ready",
+            reason: "Fresh local evidence supports the next Pull session.",
+            confidence: .medium,
+            targetSummary: "Keep the main lifts crisp.",
+            sourceSignals: ["Fresh workout history"],
+            missingOrStaleInputs: [],
+            guardrailNotes: ["Use warm-ups to confirm the load."],
+            isConservative: false
+        )
+        let freshSplit = WorkoutPreviewSplit(id: UUID(), name: "Pull", exercises: [])
+        let generation = store.nextSourceGeneration()
+
+        store.update(
+            intelligence: freshIntelligence,
+            trainingCall: freshCall,
+            recommendedSplit: freshSplit,
+            fallback: base,
+            signature: "fresh",
+            sourceGeneration: generation,
+            source: "test"
+        )
+
+        XCTAssertEqual(store.snapshot?.sourceGeneration, generation)
+        XCTAssertEqual(store.snapshot?.intelligence.readiness.value, freshIntelligence.readiness.value)
+        XCTAssertEqual(store.snapshot?.dailyDecision.trainingCall, freshCall)
+        XCTAssertEqual(store.snapshot?.dailyDecision.recommendedSplitName, freshCall.recommendedSplitName)
+        XCTAssertEqual(store.snapshot?.recommendedSplit?.name, freshSplit.name)
+
+        store.update(snapshot: base, signature: "stale", source: "test", sourceGeneration: generation - 1)
+        XCTAssertEqual(store.signature, "fresh")
+        XCTAssertEqual(store.snapshot?.sourceGeneration, generation)
+    }
+
+    func testProgressWarmStartPayloadBoundsRowsAndRejectsOldGenerations() {
+        let store = ProgressWarmStartStore.shared
+        store.resetForTesting()
+        defer { store.resetForTesting() }
+
+        let revision = WorkoutWarmStartInvalidation.shared.revision
+        let exercises = (0..<(ProgressWarmStartLimits.exerciseRowLimit + 4)).map { index in
+            Exercise(
+                name: String(format: "Exercise %03d", index),
+                primaryMuscleGroup: .chest,
+                movementPattern: .push,
+                equipment: .barbell,
+                isCompound: true
+            )
+        }
+        let weekly = WeeklyTrainingSummary(
+            weekStart: Date(timeIntervalSince1970: 1),
+            weekEnd: Date(timeIntervalSince1970: 2),
+            completedWorkouts: 1,
+            workingSets: 2,
+            splitCounts: ["Push": 1],
+            totalTonnage: 100,
+            bestSetVolumeTotal: 100,
+            prCount: 0,
+            consistencyMessage: "Keep going"
+        )
+        let consistency = SplitConsistencySummary(
+            orderedCounts: [.init(name: "Push", count: 1)],
+            missedSplitName: nil,
+            balanceDescription: "Balanced"
+        )
+        let payload = ProgressWarmStartPayload(
+            sourceSignature: "progress-source",
+            workoutRevision: revision,
+            weeklySummary: weekly,
+            splitConsistency: consistency,
+            exerciseRows: exercises.map(ProgressExerciseRowSnapshot.init)
+        )
+
+        store.update(payload)
+
+        XCTAssertEqual(store.payload?.sourceSignature, "progress-source")
+        XCTAssertEqual(store.payload?.workoutRevision, revision)
+        XCTAssertEqual(store.exerciseRows.count, ProgressWarmStartLimits.exerciseRowLimit)
+        XCTAssertNotNil(store.payload(matching: "progress-source", workoutRevision: revision))
+        XCTAssertNil(store.payload(matching: "other-source", workoutRevision: revision))
+
+        WorkoutWarmStartInvalidation.shared.invalidate(reason: .completedWorkoutSetEdited)
+        XCTAssertNil(store.payload)
+        XCTAssertNil(store.weeklySummary)
+    }
+
     func testWorkoutWarmStartInvalidationAdvancesRevision() {
         let invalidation = WorkoutWarmStartInvalidation.shared
         let previousRevision = invalidation.revision

@@ -175,11 +175,16 @@ struct RootTabView: View {
             isWorkoutCompletionPresentationActive = true
             rootTabTransitionGate.previewWarmRefreshTask?.cancel()
             rootTabTransitionGate.previewWarmRefreshTask = nil
+            warmSleepRefreshTask?.cancel()
+            warmSleepRefreshTask = nil
+            rootTabTransitionGate.warmSleepRefreshPending = true
             PerformanceTracer.mark(.workoutLoggerFinish, "root_warm_refresh_suspended")
         }
         .onReceive(NotificationCenter.default.publisher(for: .workoutCompletionPresentationEnded)) { _ in
             isWorkoutCompletionPresentationActive = false
             PerformanceTracer.mark(.workoutLoggerFinish, "root_warm_refresh_resumed")
+            rootTabTransitionGate.warmSleepRefreshPending = false
+            scheduleWarmSleepAnalyticsRefresh(reason: "workout_completion_ended")
             schedulePreviewWarmRefresh(for: previewWarmSourceSignature)
         }
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).receive(on: RunLoop.main)) { _ in
@@ -207,6 +212,7 @@ struct RootTabView: View {
             case .active:
                 PerformanceTracer.mark(.appLifecycle, "active refresh notification input cache")
                 refreshCachedSleepNotificationInputs(reason: "scene_active")
+                refreshOverallReadinessIfNeeded(reason: "scene_active")
                 scheduleWarmSleepAnalyticsRefresh(reason: "scene_active")
             @unknown default:
                 PerformanceTracer.mark(.appLifecycle, "unknown scenePhase no-op")
@@ -219,6 +225,7 @@ struct RootTabView: View {
             PerformanceTracer.mark(.appLifecycle, "sleepSettings changed save end")
             refreshCachedSleepNotificationInputs(reason: "sleep_settings_changed")
             refreshOverallReadinessIfNeeded(reason: "sleep_settings_changed")
+            scheduleWarmSleepAnalyticsRefresh(reason: "sleep_settings_changed")
         }
         .onChange(of: sleepNotificationRefreshSourceSignature) { _, _ in
             guard startupRevealComplete else { return }
@@ -278,6 +285,14 @@ struct RootTabView: View {
         guard startupRevealComplete, let request else { return }
         PerformanceTracer.mark(.appLifecycle, "sleep_deep_link present begin destination=\(request.destination.id)")
         sleepSettings = sleepSettingsStore.load()
+        switch request.destination {
+        case .sleepDashboard, .recoverySummary:
+            prepareSleepDeepLinkWarmData()
+        case .wakeConfirmation(let sessionID) where sleepSession(withID: sessionID) == nil:
+            prepareSleepDeepLinkWarmData()
+        case .sleepMode, .manualBackfill, .wakeConfirmation(_):
+            break
+        }
         if tabSelectionState.selectedTab != .today {
             tabSelectionStateBeforeSleepDeepLink = tabSelectionState.selectedTab
         }
@@ -402,7 +417,7 @@ struct RootTabView: View {
            lastOverallReadinessSourceSignature == nil,
            startupSnapshot.overallReadinessInputSignature == inputSignature {
             let startupReadiness = startupSnapshot.coachSnapshot.readiness
-            if OverallReadinessSnapshotStore.shared.snapshot.revision == 0 {
+            if OverallReadinessSnapshotStore.shared.snapshot.sourceSignature != signature {
                 OverallReadinessSnapshotStore.shared.update(
                     readiness: startupReadiness,
                     sourceSignature: signature
@@ -450,6 +465,8 @@ struct RootTabView: View {
             return
         }
         rootTabTransitionGate.previewWarmRefreshTask?.cancel()
+        rootTabTransitionGate.previewWarmRefreshGeneration &+= 1
+        let requestedGeneration = rootTabTransitionGate.previewWarmRefreshGeneration
         let requestedWorkoutRevision = workoutWarmStartInvalidation.revision
         // Root refreshes must stay value-only. The startup bundle is already a
         // coherent snapshot; never re-enter the broad SwiftData projection
@@ -463,11 +480,17 @@ struct RootTabView: View {
             savedFoodCatalogSnapshot: startupSnapshot.savedFoodCatalogSnapshot
         )
         rootTabTransitionGate.previewWarmRefreshTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(180))
+            defer {
+                if rootTabTransitionGate.previewWarmRefreshGeneration == requestedGeneration {
+                    rootTabTransitionGate.previewWarmRefreshTask = nil
+                }
+            }
+            await Task.yield()
             guard !Task.isCancelled,
                   startupRevealComplete,
                   !rootTabTransitionGate.isActive,
                   !isWorkoutCompletionPresentationActive,
+                  requestedGeneration == rootTabTransitionGate.previewWarmRefreshGeneration,
                   requestedWorkoutRevision == workoutWarmStartInvalidation.revision,
                   signature == previewWarmSourceSignature else { return }
 
@@ -496,26 +519,66 @@ struct RootTabView: View {
     /// Keeps the sleep analytics/readiness warm caches and the Progress
     /// summary seed aligned with live inputs while the app runs. Route
     /// destinations read these pre-computed values on push, so their first
-    /// frame is fully populated instead of stale or loading. Debounced and
+    /// frame is fully populated instead of stale or loading. Coalesced and
     /// gated so it never contends with a tab transition or completion flow.
     private func scheduleWarmSleepAnalyticsRefresh(reason: String) {
         guard startupRevealComplete else {
+            rootTabTransitionGate.warmSleepRefreshPending = true
             PerformanceTracer.mark(.appLifecycle, "warm_sleep_refresh deferred_until_reveal reason=\(reason)")
             return
         }
-        guard !isWorkoutCompletionPresentationActive else { return }
+        if startupSnapshot.sourceSignature == previewWarmSourceSignature,
+           SleepAnalyticsSnapshotStore.shared.cachedAnalytics(
+               matching: deepLinkSleepAnalyticsSignature
+           ) != nil,
+           ProgressWarmStartStore.shared.payload(
+               matching: previewWarmSourceSignature,
+               workoutRevision: workoutWarmStartInvalidation.revision
+           ) != nil,
+           OverallReadinessSnapshotStore.shared.snapshot.sourceSignature
+                == deepLinkOverallReadinessSourceSignature,
+           NutritionWarmStartStore.shared.dashboard?.sourceSignature
+                == warmNutritionSourceSignature,
+           NutritionWarmStartStore.shared.insights?.sourceSignature
+                == warmNutritionSourceSignature {
+            // Startup has already published this exact bounded generation.
+            // Rebuilding Sleep, Nutrition, and Progress immediately after the
+            // reveal duplicates relationship work and contends with the first
+            // user-selected root tab.
+            rootTabTransitionGate.warmSleepRefreshPending = false
+            PerformanceTracer.mark(.appLifecycle, "warm_routes reused startup generation")
+            return
+        }
+        guard !isWorkoutCompletionPresentationActive else {
+            rootTabTransitionGate.warmSleepRefreshPending = true
+            PerformanceTracer.mark(.workoutLoggerFinish, "warm_sleep_refresh deferred_for_completion reason=\(reason)")
+            return
+        }
         guard !rootTabTransitionGate.isActive else {
             rootTabTransitionGate.warmSleepRefreshPending = true
             PerformanceTracer.mark(.appLifecycle, "warm_sleep_refresh deferred_for_tab_transition reason=\(reason)")
             return
         }
         warmSleepRefreshTask?.cancel()
+        rootTabTransitionGate.warmSleepRefreshPending = false
+        rootTabTransitionGate.warmSleepRefreshGeneration &+= 1
+        let requestedGeneration = rootTabTransitionGate.warmSleepRefreshGeneration
         let requestedRevision = workoutWarmStartInvalidation.revision
         warmSleepRefreshTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(180))
+            defer {
+                if rootTabTransitionGate.warmSleepRefreshGeneration == requestedGeneration {
+                    warmSleepRefreshTask = nil
+                }
+            }
+
+            // Let the current SwiftUI/model-update turn settle, then perform
+            // the bounded value work immediately. A source change or tab
+            // transition can cancel this generation without a fixed delay.
+            await Task.yield()
             guard !Task.isCancelled,
                   startupRevealComplete,
                   !isWorkoutCompletionPresentationActive,
+                  requestedGeneration == rootTabTransitionGate.warmSleepRefreshGeneration,
                   requestedRevision == workoutWarmStartInvalidation.revision else { return }
 
             // A tab transition can begin during the debounce window. Yield the
@@ -526,26 +589,30 @@ struct RootTabView: View {
                 return
             }
 
-            refreshWarmSleepAnalytics(reason: reason)
-
-            // Progress snapshots traverse workout relationships. Give recent
-            // interaction extra quiet time before that main-actor pass.
-            try? await Task.sleep(for: .milliseconds(500))
+            guard refreshWarmSleepAnalytics(reason: reason) else { return }
             guard !Task.isCancelled,
                   !rootTabTransitionGate.isActive,
-                  !isWorkoutCompletionPresentationActive else {
+                  !isWorkoutCompletionPresentationActive,
+                  requestedGeneration == rootTabTransitionGate.warmSleepRefreshGeneration,
+                  requestedRevision == workoutWarmStartInvalidation.revision else {
                 rootTabTransitionGate.warmSleepRefreshPending = true
                 return
             }
-            await refreshWarmProgressSummaries(reason: reason)
+            await refreshWarmProgressSummaries(
+                reason: reason,
+                requestedRevision: requestedRevision,
+                requestedGeneration: requestedGeneration
+            )
         }
     }
 
-    private func refreshWarmSleepAnalytics(reason: String) {
+    @discardableResult
+    private func refreshWarmSleepAnalytics(reason: String) -> Bool {
         // The nap order matches SleepDashboardView's own query (startDate
         // descending) so the cached signature equals what the dashboard
         // recomputes on push and the warm snapshot is accepted without a
         // visible correction pass.
+        let requestedRevision = workoutWarmStartInvalidation.revision
         let orderedNaps = naps.sorted { $0.startDate > $1.startDate }
         PerformanceTracer.mark(.appLifecycle, "warm_sleep_refresh begin reason=\(reason)")
         _ = SleepAnalyticsSnapshotStore.shared.snapshot(
@@ -564,14 +631,99 @@ struct RootTabView: View {
             workoutLimit: 12,
             workoutRevision: workoutWarmStartInvalidation.revision
         )
+        refreshWarmNutritionSnapshots()
         PerformanceTracer.mark(.appLifecycle, "warm_sleep_refresh end reason=\(reason)")
+        return requestedRevision == workoutWarmStartInvalidation.revision
     }
 
-    private func refreshWarmProgressSummaries(reason: String) async {
+    private func refreshWarmNutritionSnapshots() {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: .now)
+        let todayEntries = foodLogs
+            .filter { calendar.isDate($0.loggedAt, inSameDayAs: today) }
+            .map(NutritionFoodLogSnapshot.init)
+        let catalog = SavedFoodWarmStartStore.shared.catalog ?? .empty
+        let recentFoods = foodLogs.prefix(160).reduce(into: [SavedFoodSnapshot]()) { result, entry in
+            guard result.count < 3,
+                  !result.contains(where: { $0.id == entry.foodItemId }),
+                  let food = catalog.foods.first(where: { $0.id == entry.foodItemId }) else { return }
+            result.append(food)
+        }
+        let goal = nutritionGoalService.loadGoal()
+        let sourceSignature = warmNutritionSourceSignature
+        let summaryService = NutritionSummaryService()
+        let trendService = NutritionTrendService()
+        let contextService = TrainingNutritionContextService()
+        let insightService = NutritionInsightService()
+        let todaySummary = summaryService.dailySummary(for: .now, foodLogs: foodLogs, workouts: workouts)
+        let weekly = trendService.weeklySummary(
+            dailySummaries: summaryService.dailySummaries(endingOn: .now, days: 7, foodLogs: foodLogs, workouts: workouts),
+            goal: goal
+        )
+        let context = contextService.context(for: .now, foodLogs: foodLogs, workouts: workouts)
+        NutritionWarmStartStore.shared.update(
+            dashboard: NutritionDashboardWarmStartPayload(
+                sourceSignature: sourceSignature,
+                selectedDate: today,
+                dayEntries: todayEntries,
+                totals: NutritionMacroSnapshot(
+                    calories: todayEntries.reduce(0) { $0 + $1.caloriesSnapshot },
+                    protein: todayEntries.reduce(0) { $0 + $1.proteinSnapshot },
+                    carbs: todayEntries.reduce(0) { $0 + $1.carbsSnapshot },
+                    fat: todayEntries.reduce(0) { $0 + $1.fatSnapshot },
+                    sugar: nil,
+                    fibre: nil,
+                    salt: nil
+                ),
+                readiness: OverallReadinessSnapshotStore.shared.latestReadiness ?? CoachIntelligenceService.emptySnapshot().readiness,
+                recentlyLoggedFoods: recentFoods.isEmpty ? Array(catalog.foods.prefix(3)) : recentFoods,
+                mealEntries: Dictionary(grouping: todayEntries, by: \.mealType),
+                isTrainingDay: workouts.contains { calendar.isDate($0.date, inSameDayAs: today) },
+                shouldShowHealthKitStatus: HealthKitPreferenceStore().load().isHealthKitEnabled,
+                healthKitSyncRecordsByEntryId: [:]
+            )
+        )
+        NutritionWarmStartStore.shared.update(
+            insights: NutritionInsightsWarmStartPayload(
+                sourceSignature: sourceSignature,
+                goal: goal,
+                todaySummary: todaySummary,
+                weeklySummary: weekly,
+                trainingContext: context,
+                insights: insightService.insights(today: todaySummary, weekly: weekly, goal: goal, context: context)
+            )
+        )
+    }
+
+    private var warmNutritionSourceSignature: String {
+        let goal = nutritionGoalService.loadGoal()
+        return [
+            "revision:\(workoutWarmStartInvalidation.revision)",
+            foodLogs.prefix(160).map {
+                "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)"
+            }.joined(separator: ","),
+            goal.updatedAt.timeIntervalSince1970.description
+        ].joined(separator: "|")
+    }
+
+    private func refreshWarmProgressSummaries(
+        reason: String,
+        requestedRevision: Int,
+        requestedGeneration: Int
+    ) async {
+        guard requestedRevision == workoutWarmStartInvalidation.revision,
+              requestedGeneration == rootTabTransitionGate.warmSleepRefreshGeneration,
+              !rootTabTransitionGate.isActive,
+              !isWorkoutCompletionPresentationActive else {
+            rootTabTransitionGate.warmSleepRefreshPending = true
+            return
+        }
+
         let recentSessions = Array(workouts.prefix(40))
         let activeSplitNames = TrainingRotationService()
             .orderedActiveSplits(previewSplits)
             .map(\.name)
+        let sourceSignature = previewWarmSourceSignature
         let snapshots: [WorkoutAnalyticsSession]
         do {
             snapshots = try WorkoutAnalyticsSnapshotBuilder.snapshots(from: recentSessions, in: modelContext)
@@ -587,10 +739,21 @@ struct RootTabView: View {
                 analytics.splitConsistency(from: snapshots, activeSplitNames: activeSplitNames)
             )
         }.value
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled,
+              requestedRevision == workoutWarmStartInvalidation.revision,
+              requestedGeneration == rootTabTransitionGate.warmSleepRefreshGeneration,
+              sourceSignature == previewWarmSourceSignature,
+              !rootTabTransitionGate.isActive,
+              !isWorkoutCompletionPresentationActive else {
+            rootTabTransitionGate.warmSleepRefreshPending = true
+            return
+        }
         ProgressWarmStartStore.shared.update(
+            sourceSignature: sourceSignature,
+            workoutRevision: requestedRevision,
             weeklySummary: result.0,
-            splitConsistency: result.1
+            splitConsistency: result.1,
+            exerciseRows: Array(previewExercises.map(ProgressExerciseRowSnapshot.init))
         )
         PerformanceTracer.mark(.appLifecycle, "warm_progress_refresh end reason=\(reason)")
     }
@@ -620,6 +783,62 @@ struct RootTabView: View {
         schedulePreviewWarmRefresh(for: previewWarmSourceSignature)
     }
 
+    private var deepLinkSleepAnalyticsSignature: SleepAnalyticsInputSignature {
+        SleepAnalyticsInputSignature(
+            sessions: sleepSessions,
+            naps: naps.sorted { $0.startDate > $1.startDate },
+            workouts: workouts,
+            settings: sleepSettingsStore.load(),
+            workoutRevision: workoutWarmStartInvalidation.revision
+        )
+    }
+
+    private var deepLinkOverallReadinessSourceSignature: String {
+        let currentSleepSettings = sleepSettingsStore.load()
+        let inputSignature = OverallReadinessInputSignature.make(
+            sleepSessions: sleepSessions,
+            napSessions: naps,
+            completedWorkouts: workouts,
+            hydrationEntries: hydrationEntries,
+            foodLogs: foodLogs,
+            checkIns: checkIns,
+            sleepSettings: currentSleepSettings,
+            hydrationTargetML: hydrationSettingsStore.dailyTargetML(),
+            nutritionGoal: nutritionGoalService.loadGoal(),
+            workoutRevision: workoutWarmStartInvalidation.revision,
+            dayStart: readinessRefreshClock.token.dayStart,
+            hydrationPhase: readinessRefreshClock.token.hydrationPhase
+        )
+        return "\(inputSignature)|readinessGeneration:\(readinessRefreshClock.token.generation)"
+    }
+
+    private func prepareSleepDeepLinkWarmData() {
+        warmSleepRefreshTask?.cancel()
+        warmSleepRefreshTask = nil
+        refreshOverallReadinessIfNeeded(reason: "sleep_deep_link")
+
+        let signature = deepLinkSleepAnalyticsSignature
+        guard SleepAnalyticsSnapshotStore.shared.cachedAnalytics(matching: signature) == nil else {
+            return
+        }
+
+        _ = refreshWarmSleepAnalytics(reason: "sleep_deep_link")
+    }
+
+    private func sleepAnalyticsSeedForDeepLink(fallback: SleepAnalyticsSnapshot?) -> SleepAnalyticsSnapshot? {
+        SleepAnalyticsSnapshotStore.shared.cachedAnalytics(matching: deepLinkSleepAnalyticsSignature)?.snapshot
+            ?? fallback
+    }
+
+    private func overallReadinessSeedForDeepLink(fallback: ReadinessScore?) -> ReadinessScore {
+        guard OverallReadinessSnapshotStore.shared.snapshot.sourceSignature == deepLinkOverallReadinessSourceSignature else {
+            return fallback ?? CoachIntelligenceService.emptySnapshot().readiness
+        }
+        return OverallReadinessSnapshotStore.shared.latestReadiness
+            ?? fallback
+            ?? CoachIntelligenceService.emptySnapshot().readiness
+    }
+
     @ViewBuilder
     private func sleepDestinationView(_ destination: SleepNotificationDestination) -> some View {
         switch destination {
@@ -631,10 +850,10 @@ struct RootTabView: View {
             } else {
                 NavigationStack {
                     SleepDashboardView(
-                        initialSnapshot: WarmRouteSnapshots.sleepAnalytics(
+                        initialSnapshot: sleepAnalyticsSeedForDeepLink(
                             fallback: startupSnapshot.sleepAnalyticsSnapshot
                         ),
-                        initialReadinessScore: WarmRouteSnapshots.overallReadiness(
+                        initialReadinessScore: overallReadinessSeedForDeepLink(
                             fallback: startupSnapshot.coachSnapshot.readiness
                         )
                     )
@@ -645,10 +864,10 @@ struct RootTabView: View {
         case .sleepDashboard, .recoverySummary:
             NavigationStack {
                 SleepDashboardView(
-                    initialSnapshot: WarmRouteSnapshots.sleepAnalytics(
+                    initialSnapshot: sleepAnalyticsSeedForDeepLink(
                         fallback: startupSnapshot.sleepAnalyticsSnapshot
                     ),
-                    initialReadinessScore: WarmRouteSnapshots.overallReadiness(
+                    initialReadinessScore: overallReadinessSeedForDeepLink(
                         fallback: startupSnapshot.coachSnapshot.readiness
                     )
                 )
@@ -844,6 +1063,8 @@ struct RootTabView: View {
 private final class RootTabTransitionGate {
     var isActive = false
     var previewWarmRefreshTask: Task<Void, Never>?
+    var previewWarmRefreshGeneration = 0
+    var warmSleepRefreshGeneration = 0
     var overallReadinessRefreshPending = false
     var warmSleepRefreshPending = false
 }
@@ -928,12 +1149,17 @@ private struct RootTabContainer: View {
     let onTabSelectionStarted: () -> Void
     let onTabSelectionSettled: () -> Void
 
-    @State private var pendingTab: RootTab?
-    @State private var pendingSelectionStartedAt: Date?
+    // Timing state must not participate in SwiftUI observation. Updating two
+    // `@State` scalars here rebuilt every tab value on the selection-critical
+    // turn, re-running their query initializers before the destination frame.
+    @State private var transitionMeasurement = RootTabTransitionMeasurement()
 
     var body: some View {
         TabView(selection: selectedTabBinding) {
-            TodayView(startupSnapshot: startupSnapshot)
+            RootTabContentHost(key: "today|\(startupSnapshot.sourceSignature)") {
+                TodayView(startupSnapshot: startupSnapshot)
+            }
+                .equatable()
                 .onAppear { scheduleStableFrame(for: .today) }
                 .tabItem {
                     Label("Today", systemImage: "calendar")
@@ -941,12 +1167,15 @@ private struct RootTabContainer: View {
                 .tag(RootTab.today)
                 .accessibilityIdentifier("tab-today")
 
-            StartWorkoutView(
-                initialReadinessSnapshot: startupSnapshot.workoutSleepReadinessSnapshot,
-                initialReadinessSignature: startupSnapshot.sleepReadinessInputSignature,
-                initialFirstFrameSnapshot: startupSnapshot.workoutFirstFrameSnapshot,
-                initialOverallReadinessIsProvisional: startupSnapshot.coachSnapshot.readiness.isProvisional
-            )
+            RootTabContentHost(key: "workout|\(startupSnapshot.sourceSignature)") {
+                DeferredWorkoutTabHost(
+                    initialReadinessSnapshot: startupSnapshot.workoutSleepReadinessSnapshot,
+                    initialReadinessSignature: startupSnapshot.sleepReadinessInputSignature,
+                    initialFirstFrameSnapshot: startupSnapshot.workoutFirstFrameSnapshot,
+                    initialOverallReadinessIsProvisional: startupSnapshot.coachSnapshot.readiness.isProvisional
+                )
+            }
+                .equatable()
                 .onAppear { scheduleStableFrame(for: .workout) }
                 .tabItem {
                     Label("Workout", systemImage: "figure.strengthtraining.traditional")
@@ -954,7 +1183,12 @@ private struct RootTabContainer: View {
                 .tag(RootTab.workout)
                 .accessibilityIdentifier("tab-workout")
 
-            DeferredSplitsTabHost()
+            RootTabContentHost(key: "splits|\(startupSnapshot.sourceSignature)") {
+                DeferredSplitsTabHost(
+                    preparedRows: startupSnapshot.workoutFirstFrameSnapshot.splitCards
+                )
+            }
+                .equatable()
                 .onAppear { scheduleStableFrame(for: .splits) }
                 .tabItem {
                     Label("Splits", systemImage: "list.bullet.rectangle")
@@ -962,7 +1196,10 @@ private struct RootTabContainer: View {
                 .tag(RootTab.splits)
                 .accessibilityIdentifier("tab-splits")
 
-            HistoryView(startupSnapshot: startupSnapshot.historySnapshot)
+            RootTabContentHost(key: "history|\(startupSnapshot.sourceSignature)") {
+                DeferredHistoryTabHost(startupSnapshot: startupSnapshot.historySnapshot)
+            }
+                .equatable()
                 .onAppear { scheduleStableFrame(for: .history) }
                 .tabItem {
                     Label("History", systemImage: "clock.arrow.circlepath")
@@ -970,7 +1207,12 @@ private struct RootTabContainer: View {
                 .tag(RootTab.history)
                 .accessibilityIdentifier("tab-history")
 
-            SettingsView(initialProfileSnapshot: startupSnapshot.settingsProfileSnapshot)
+            RootTabContentHost(key: "settings|\(startupSnapshot.sourceSignature)") {
+                DeferredSettingsTabHost(
+                    initialProfileSnapshot: startupSnapshot.settingsProfileSnapshot
+                )
+            }
+                .equatable()
                 .onAppear { scheduleStableFrame(for: .settings) }
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")
@@ -985,8 +1227,8 @@ private struct RootTabContainer: View {
             selectionState.selectedTab
         } set: { newTab in
             guard selectionState.selectedTab != newTab else { return }
-            pendingTab = newTab
-            pendingSelectionStartedAt = .now
+            transitionMeasurement.pendingTab = newTab
+            transitionMeasurement.startedAt = .now
             onTabSelectionStarted()
             PerformanceTracer.mark(.motionTabSelect, "requested tab=\(newTab.rawValue)")
             PerformanceTracer.trace(.motionTabSelect) {
@@ -1004,7 +1246,8 @@ private struct RootTabContainer: View {
     }
 
     private func markStableFrame(for tab: RootTab) {
-        guard pendingTab == tab, let pendingSelectionStartedAt else { return }
+        guard transitionMeasurement.pendingTab == tab,
+              let pendingSelectionStartedAt = transitionMeasurement.startedAt else { return }
         let elapsedMilliseconds = max(
             0,
             Int(Date.now.timeIntervalSince(pendingSelectionStartedAt) * 1_000)
@@ -1014,18 +1257,155 @@ private struct RootTabContainer: View {
             "stable_frame tab=\(tab.rawValue) elapsed_ms=\(elapsedMilliseconds)"
         )
         onTabSelectionSettled()
-        pendingTab = nil
-        self.pendingSelectionStartedAt = nil
+        transitionMeasurement.pendingTab = nil
+        transitionMeasurement.startedAt = nil
     }
 
     private func scheduleStableFrame(for tab: RootTab) {
-        Task { @MainActor in
-            // `onAppear` can run before the replacement hierarchy is committed.
-            // Yield past the insertion turn before recording the visible frame.
-            await Task.yield()
-            guard !Task.isCancelled else { return }
+        // `onAppear` can run before the replacement hierarchy is committed.
+        // Queue exactly one main-run-loop turn; unlike a yielding unstructured
+        // task, this cannot sit behind unrelated utility warm jobs.
+        DispatchQueue.main.async {
             markStableFrame(for: tab)
         }
+    }
+}
+
+private struct RootTabContentHost<Content: View>: View, Equatable {
+    let key: String
+    let content: () -> Content
+
+    init(key: String, @ViewBuilder content: @escaping () -> Content) {
+        self.key = key
+        self.content = content
+    }
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.key == rhs.key
+    }
+
+    var body: some View {
+        content()
+    }
+}
+
+@MainActor
+private final class RootTabTransitionMeasurement {
+    var pendingTab: RootTab?
+    var startedAt: Date?
+}
+
+private struct DeferredWorkoutTabHost: View {
+    let initialReadinessSnapshot: WorkoutSleepReadinessSnapshot
+    let initialReadinessSignature: SleepAnalyticsInputSignature
+    let initialFirstFrameSnapshot: WorkoutStartFirstFrameSnapshot
+    let initialOverallReadinessIsProvisional: Bool
+
+    @State private var isLiveMounted = false
+    @State private var isVisible = false
+
+    var body: some View {
+        Group {
+            if isLiveMounted {
+                StartWorkoutView(
+                    initialReadinessSnapshot: initialReadinessSnapshot,
+                    initialReadinessSignature: initialReadinessSignature,
+                    initialFirstFrameSnapshot: initialFirstFrameSnapshot,
+                    initialOverallReadinessIsProvisional: initialOverallReadinessIsProvisional
+                )
+            } else {
+                NavigationStack {
+                    FitnessScreen {
+                        FitnessCard(style: .hero) {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Recommended workout")
+                                    .font(AppTypography.eyebrow)
+                                Text(
+                                    initialFirstFrameSnapshot.dashboard.recommendedSplit?.name
+                                        ?? initialFirstFrameSnapshot.dashboard.trainingCall.title
+                                )
+                                .font(AppTypography.cardTitle)
+                                Text(initialFirstFrameSnapshot.dashboard.trainingCall.reason)
+                                    .font(AppTypography.body)
+                                    .foregroundStyle(.secondary)
+
+                                Button("Open Preview") {
+                                    isLiveMounted = true
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .accessibilityIdentifier("workout-recommended-preview")
+                            }
+                        }
+                    }
+                    .navigationTitle("Workout")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .accessibilityIdentifier("workout-screen")
+                }
+            }
+        }
+        .onAppear {
+            isVisible = true
+            mountAfterPreparedFrame()
+        }
+        .onDisappear { isVisible = false }
+    }
+
+    private func mountAfterPreparedFrame() {
+        guard !isLiveMounted else { return }
+        DispatchQueue.main.async {
+            DispatchQueue.main.async {
+                guard isVisible else { return }
+                isLiveMounted = true
+            }
+        }
+    }
+}
+
+private struct DeferredSettingsTabHost: View {
+    let initialProfileSnapshot: SettingsProfileSnapshot?
+
+    @State private var isLiveMounted = false
+    @State private var isVisible = false
+
+    var body: some View {
+        Group {
+            if isLiveMounted {
+                SettingsView(initialProfileSnapshot: initialProfileSnapshot)
+            } else {
+                NavigationStack {
+                    FitnessScreen {
+                        FitnessCard(style: .compact) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(initialProfileSnapshot?.goalTitle ?? "Profile")
+                                    .font(AppTypography.cardTitle)
+                                Text(
+                                    initialProfileSnapshot.map {
+                                        "\($0.experienceTitle) · \($0.trainingDaysPerWeek) days/week"
+                                    } ?? "Add your goal and training details."
+                                )
+                                .font(AppTypography.body)
+                                .foregroundStyle(.secondary)
+                            }
+                        }
+                        .accessibilityIdentifier("settings-profile")
+                    }
+                    .navigationTitle("Settings")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .accessibilityIdentifier("settings-screen")
+                }
+            }
+        }
+        .onAppear {
+            isVisible = true
+            guard !isLiveMounted else { return }
+            DispatchQueue.main.async {
+                DispatchQueue.main.async {
+                    guard isVisible else { return }
+                    isLiveMounted = true
+                }
+            }
+        }
+        .onDisappear { isVisible = false }
     }
 }
 
@@ -1033,8 +1413,9 @@ private struct RootTabContainer: View {
 /// the real `SplitsView` and its navigation routes; only its relationship-heavy
 /// construction is moved past the root tab's stable-frame turn.
 private struct DeferredSplitsTabHost: View {
+    let preparedRows: [StartWorkoutSplitCardSnapshot]
     @State private var isSplitsMounted = false
-    @State private var mountTask: Task<Void, Never>?
+    @State private var isVisible = false
 
     var body: some View {
         Group {
@@ -1043,9 +1424,19 @@ private struct DeferredSplitsTabHost: View {
             } else {
                 NavigationStack {
                     FitnessScreen {
-                        SwiftUI.ProgressView("Loading splits…")
-                            .frame(maxWidth: .infinity, minHeight: 180)
-                            .accessibilityIdentifier("splits-loading")
+                        ForEach(preparedRows.prefix(5)) { row in
+                            FitnessCard(style: .compact) {
+                                HStack {
+                                    Text(row.splitName)
+                                        .font(AppTypography.cardTitle)
+                                    Spacer()
+                                    Text(row.estimatedDurationText)
+                                        .font(AppTypography.metadata)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .accessibilityIdentifier("split-card-\(row.splitName)")
+                        }
                     }
                     .accessibilityIdentifier("splits-screen")
                     .navigationTitle("Splits")
@@ -1054,23 +1445,19 @@ private struct DeferredSplitsTabHost: View {
             }
         }
         .onAppear {
-            mountTask?.cancel()
-            mountTask = Task { @MainActor in
-                // RootTabContainer records its stable frame after one yield.
-                // Use a second turn so Splits' live queries cannot participate
-                // in that measurement.
-                await Task.yield()
-                await Task.yield()
-                guard !Task.isCancelled else { return }
-                isSplitsMounted = true
-                mountTask = nil
+            isVisible = true
+            guard !isSplitsMounted else { return }
+            DispatchQueue.main.async {
+                DispatchQueue.main.async {
+                    guard isVisible else { return }
+                    isSplitsMounted = true
+                }
             }
         }
         .onDisappear {
             // Keep the tab mounted after its first appearance so pushed
             // navigation state survives tab switches like the other roots.
-            mountTask?.cancel()
-            mountTask = nil
+            isVisible = false
         }
     }
 }

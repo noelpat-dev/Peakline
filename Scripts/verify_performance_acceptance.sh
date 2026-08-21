@@ -42,16 +42,34 @@ xcrun simctl shutdown all >/dev/null 2>&1 || true
 xcrun simctl boot "$SIMULATOR_NAME" >/dev/null 2>&1 || true
 xcrun simctl bootstatus "$SIMULATOR_NAME" -b
 
-run_and_log performance_ui_test \
-    xcodebuild \
-    -project GymTracker.xcodeproj \
-    -scheme GymTracker \
-    -configuration Debug \
-    -destination "$DESTINATION" \
-    -parallel-testing-enabled NO \
-    test \
-    -only-testing:GymTrackerUITests/CoachWorkoutPreviewUITests/testPerformanceAcceptanceRoutes \
-    -only-testing:GymTrackerUITests/CoachWorkoutPreviewUITests/testPerformanceAcceptanceRootTabTransitionsRemainResponsive
+run_performance_ui_test() {
+    local name="$1"
+    local test_name="$2"
+
+    xcrun simctl shutdown "$SIMULATOR_NAME" >/dev/null 2>&1 || true
+    xcrun simctl boot "$SIMULATOR_NAME" >/dev/null 2>&1 || true
+    xcrun simctl bootstatus "$SIMULATOR_NAME" -b
+
+    run_and_log "$name" \
+        xcodebuild \
+        -project GymTracker.xcodeproj \
+        -scheme GymTracker \
+        -configuration Debug \
+        -destination "$DESTINATION" \
+        -parallel-testing-enabled NO \
+        test \
+        "-only-testing:GymTrackerUITests/CoachWorkoutPreviewUITests/$test_name"
+}
+
+run_performance_ui_test performance_routes testPerformanceAcceptanceRoutes
+run_performance_ui_test performance_root_tabs testPerformanceAcceptanceRootTabTransitionsRemainResponsive
+run_performance_ui_test data_rich_root_correctness testDataRichRootTabsRemainPopulated
+run_performance_ui_test performance_data_rich_readiness testPerformanceAcceptanceDataRichReadinessRoute
+run_performance_ui_test performance_data_rich_sleep testPerformanceAcceptanceDataRichSleepRoute
+run_performance_ui_test performance_data_rich_nutrition testPerformanceAcceptanceDataRichNutritionRoute
+run_performance_ui_test performance_data_rich_progress testPerformanceAcceptanceDataRichProgressRoute
+run_performance_ui_test performance_data_rich_hydration testPerformanceAcceptanceDataRichHydrationRoute
+run_performance_ui_test performance_data_rich_preview testPerformanceAcceptanceDataRichPreviewRoute
 
 cat "$LOG_DIR"/*.log > "$LOG_DIR/combined.log"
 
@@ -164,8 +182,10 @@ preview_on_appear = sum(
 if preview_on_appear > 1:
     fail(f"WorkoutPreview refreshed onAppear more than once: {preview_on_appear}")
 
-warm_cache_summary = re.search(r"previewWarmCacheHits=(\d+)", text)
-warm_cache_hits = int(warm_cache_summary.group(1)) if warm_cache_summary else 0
+warm_cache_hits = max(
+    (int(value) for value in re.findall(r"previewWarmCacheHits=(\d+)", text)),
+    default=0,
+)
 if "PERF_ACCEPTANCE workout_preview.warm_cache hit" not in text and warm_cache_hits < 1:
     fail("Workout Preview did not report a warm-cache hit")
 

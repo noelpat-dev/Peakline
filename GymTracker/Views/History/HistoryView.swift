@@ -63,6 +63,61 @@ struct HistoryWarmSnapshot: Sendable {
     static let empty = HistoryWarmSnapshot(workouts: [], display: .empty)
 }
 
+/// Presents the already-built startup value projection for the first root-tab
+/// frame, then attaches the live SwiftData-backed History view. The prepared
+/// frame contains the real overview and recent rows, so deferring the live
+/// query does not move the stable marker ahead of meaningful content.
+struct DeferredHistoryTabHost: View {
+    let startupSnapshot: HistoryWarmSnapshot
+
+    @State private var isLiveHistoryMounted = false
+    @State private var isVisible = false
+
+    var body: some View {
+        Group {
+            if isLiveHistoryMounted {
+                HistoryView(startupSnapshot: startupSnapshot)
+            } else {
+                NavigationStack {
+                    HistoryLazyScreen {
+                        HistoryOverviewCard(snapshot: startupSnapshot.display.overview) {}
+
+                        if startupSnapshot.display.sessionRows.isEmpty {
+                            DashboardEmptyStateCard(
+                                title: "No workouts logged yet",
+                                message: "Start a workout to build your training history.",
+                                systemImage: "clock"
+                            )
+                        } else {
+                            ForEach(startupSnapshot.display.sessionRows.prefix(3)) { row in
+                                HistoryScrollRowSurface {
+                                    HistorySessionRowCard(row: row)
+                                }
+                            }
+                        }
+                    }
+                    .accessibilityIdentifier("history-screen")
+                    .navigationTitle("History")
+                    .navigationBarTitleDisplayMode(.inline)
+                }
+            }
+        }
+        .onAppear {
+            isVisible = true
+            guard !isLiveHistoryMounted else { return }
+            DispatchQueue.main.async {
+                DispatchQueue.main.async {
+                    guard isVisible else { return }
+                    isLiveHistoryMounted = true
+                }
+            }
+        }
+        .onDisappear {
+            isVisible = false
+        }
+    }
+}
+
 
 private struct HistoryLazyScreen<Content: View>: View {
     @Environment(\.appTheme) private var appTheme

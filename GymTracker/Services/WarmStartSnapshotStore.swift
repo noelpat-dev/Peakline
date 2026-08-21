@@ -46,10 +46,16 @@ enum WorkoutWarmStartSourceSignature {
     ) -> String {
         [
             "revision:\(revision)",
-            splitSignatures.joined(separator: ","),
-            workoutSignatures.joined(separator: ","),
-            exerciseSignatures.joined(separator: ",")
+            canonicalList(splitSignatures),
+            canonicalList(workoutSignatures),
+            canonicalList(exerciseSignatures)
         ].joined(separator: "|")
+    }
+
+    /// Source queries can use different sort descriptors. Canonicalise each
+    /// bounded collection so startup and root produce the same generation.
+    private static func canonicalList(_ values: [String]) -> String {
+        values.sorted().joined(separator: ",")
     }
 
     // These projections intentionally read scalar model properties only. They are
@@ -86,26 +92,128 @@ final class WorkoutDashboardWarmStartStore {
     }
 }
 
-/// Value-backed Progress route seed. Startup and the root's deferred refresh
-/// keep these summaries current so the Progress tab renders real weekly data
-/// on its first frame instead of loading placeholders.
+struct ProgressExerciseRowSnapshot: Identifiable, Hashable, Sendable {
+    let id: UUID
+    let name: String
+    let primaryMuscleGroup: String
+    let iconKey: String
+    let updatedAt: Date
+
+    init(_ exercise: Exercise) {
+        id = exercise.id
+        name = exercise.name
+        primaryMuscleGroup = exercise.primaryMuscleGroup.rawValue
+        iconKey = ExerciseIconMapper.iconKey(forName: exercise.name).rawValue
+        updatedAt = exercise.updatedAt
+    }
+}
+
+enum ProgressWarmStartLimits {
+    static let exerciseRowLimit = 120
+}
+
+struct ProgressWarmStartPayload: Equatable, Sendable {
+    let sourceSignature: String
+    let workoutRevision: Int
+    let weeklySummary: WeeklyTrainingSummary
+    let splitConsistency: SplitConsistencySummary
+    let exerciseRows: [ProgressExerciseRowSnapshot]
+
+    init(
+        sourceSignature: String,
+        workoutRevision: Int,
+        weeklySummary: WeeklyTrainingSummary,
+        splitConsistency: SplitConsistencySummary,
+        exerciseRows: [ProgressExerciseRowSnapshot]
+    ) {
+        self.sourceSignature = sourceSignature
+        self.workoutRevision = workoutRevision
+        self.weeklySummary = weeklySummary
+        self.splitConsistency = splitConsistency
+        self.exerciseRows = Array(
+            exerciseRows
+                .sorted {
+                    let comparison = $0.name.localizedStandardCompare($1.name)
+                    if comparison == .orderedSame {
+                        return $0.id.uuidString < $1.id.uuidString
+                    }
+                    return comparison == .orderedAscending
+                }
+                .prefix(ProgressWarmStartLimits.exerciseRowLimit)
+        )
+    }
+}
+
+/// Value-backed Progress route seed. Startup and deferred refreshes publish a
+/// complete generation so a route cannot render summaries from one workout
+/// revision with exercise rows from another.
 @MainActor
 final class ProgressWarmStartStore {
     static let shared = ProgressWarmStartStore()
 
-    private(set) var weeklySummary: WeeklyTrainingSummary?
-    private(set) var splitConsistency: SplitConsistencySummary?
+    private var storedPayload: ProgressWarmStartPayload?
+
+    private var currentPayload: ProgressWarmStartPayload? {
+        guard let storedPayload,
+              storedPayload.workoutRevision == WorkoutWarmStartInvalidation.shared.revision else {
+            return nil
+        }
+        return storedPayload
+    }
+
+    var payload: ProgressWarmStartPayload? { currentPayload }
+    var weeklySummary: WeeklyTrainingSummary? { currentPayload?.weeklySummary }
+    var splitConsistency: SplitConsistencySummary? { currentPayload?.splitConsistency }
+    var exerciseRows: [ProgressExerciseRowSnapshot] { currentPayload?.exerciseRows ?? [] }
+    var sourceSignature: String? { currentPayload?.sourceSignature }
 
     private init() {}
 
+    func update(_ payload: ProgressWarmStartPayload) {
+        guard payload.workoutRevision >= WorkoutWarmStartInvalidation.shared.revision else { return }
+        storedPayload = payload
+    }
+
+    func update(
+        sourceSignature: String,
+        workoutRevision: Int,
+        weeklySummary: WeeklyTrainingSummary,
+        splitConsistency: SplitConsistencySummary,
+        exerciseRows: [ProgressExerciseRowSnapshot]
+    ) {
+        update(
+            ProgressWarmStartPayload(
+                sourceSignature: sourceSignature,
+                workoutRevision: workoutRevision,
+                weeklySummary: weeklySummary,
+                splitConsistency: splitConsistency,
+                exerciseRows: exerciseRows
+            )
+        )
+    }
+
+    func payload(matching sourceSignature: String, workoutRevision: Int) -> ProgressWarmStartPayload? {
+        guard let payload = currentPayload,
+              payload.workoutRevision == workoutRevision,
+              payload.sourceSignature == sourceSignature else {
+            return nil
+        }
+        return payload
+    }
+
     func update(weeklySummary: WeeklyTrainingSummary, splitConsistency: SplitConsistencySummary) {
-        self.weeklySummary = weeklySummary
-        self.splitConsistency = splitConsistency
+        let revision = WorkoutWarmStartInvalidation.shared.revision
+        update(
+            sourceSignature: storedPayload?.sourceSignature ?? "legacy|revision:\(revision)",
+            workoutRevision: revision,
+            weeklySummary: weeklySummary,
+            splitConsistency: splitConsistency,
+            exerciseRows: storedPayload?.exerciseRows ?? []
+        )
     }
 
     func resetForTesting() {
-        weeklySummary = nil
-        splitConsistency = nil
+        storedPayload = nil
     }
 }
 
@@ -146,6 +254,73 @@ struct SavedFoodSnapshot: Identifiable, Hashable, Sendable {
         verificationStatus = food.verificationStatus
         createdAt = food.createdAt
         updatedAt = food.updatedAt
+    }
+}
+
+struct NutritionFoodLogSnapshot: Identifiable, Hashable {
+    let id: UUID
+    let foodItemId: UUID
+    let foodNameSnapshot: String
+    let consumedAmount: Double
+    let amountUnit: FoodAmountUnit
+    let mealType: MealType
+    let caloriesSnapshot: Double
+    let proteinSnapshot: Double
+    let carbsSnapshot: Double
+    let fatSnapshot: Double
+    let loggedAt: Date
+
+    init(_ entry: FoodLogEntry) {
+        id = entry.id
+        foodItemId = entry.foodItemId
+        foodNameSnapshot = entry.foodNameSnapshot
+        consumedAmount = entry.consumedAmount
+        amountUnit = entry.amountUnit
+        mealType = entry.mealType
+        caloriesSnapshot = entry.caloriesSnapshot
+        proteinSnapshot = entry.proteinSnapshot
+        carbsSnapshot = entry.carbsSnapshot
+        fatSnapshot = entry.fatSnapshot
+        loggedAt = entry.loggedAt
+    }
+}
+
+struct NutritionDashboardWarmStartPayload {
+    let sourceSignature: String
+    let selectedDate: Date
+    let dayEntries: [NutritionFoodLogSnapshot]
+    let totals: NutritionMacroSnapshot
+    let readiness: ReadinessScore
+    let recentlyLoggedFoods: [SavedFoodSnapshot]
+    let mealEntries: [MealType: [NutritionFoodLogSnapshot]]
+    let isTrainingDay: Bool
+    let shouldShowHealthKitStatus: Bool
+    let healthKitSyncRecordsByEntryId: [UUID: HealthKitFoodLogSyncRecord]
+}
+
+struct NutritionInsightsWarmStartPayload {
+    let sourceSignature: String
+    let goal: NutritionGoal
+    let todaySummary: DailyNutritionSummary
+    let weeklySummary: WeeklyNutritionSummary
+    let trainingContext: TrainingNutritionContext
+    let insights: [NutritionInsight]
+}
+
+@MainActor
+final class NutritionWarmStartStore {
+    static let shared = NutritionWarmStartStore()
+    private(set) var dashboard: NutritionDashboardWarmStartPayload?
+    private(set) var insights: NutritionInsightsWarmStartPayload?
+
+    private init() {}
+
+    func update(dashboard: NutritionDashboardWarmStartPayload) {
+        self.dashboard = dashboard
+    }
+
+    func update(insights: NutritionInsightsWarmStartPayload) {
+        self.insights = insights
     }
 }
 

@@ -91,20 +91,23 @@ The UI acceptance flow covers:
 
 ## Current Baseline
 
-The latest 17 August 2026 Sleep validation completed a Debug test build, passed 13 focused Sleep tests and all 11 dedicated Sleep UI tests, and passed all 159 unit/reliability tests inside the canonical verifier. The focused route flow passed and reported:
+The 21 August 2026 warm-route architecture pass completed a Debug build and all 180 unit/reliability tests. Boot-isolated iPhone 17 simulator samples retained the unchanged thresholds and reported:
 
-- `performance_acceptance=PASS`
-- Today-to-Coach: 136 ms
-- Coach-to-Preview: 195 ms
-- warmed root transition in the route flow: 248 ms
-- Preview warm-cache hits: 2
-- mounted Preview refreshes: 0
+- default Today-to-Coach: 219 ms
+- default Coach-to-Preview: 283 ms
+- default root-tab maximum: 147 ms
+- data-rich Sleep: 46 ms
+- data-rich Nutrition: 113 ms
+- data-rich Progress: 178 ms
+- data-rich Hydration: 296 ms
+- data-rich Workout/Preview: 174 ms + 387 ms
+- Preview warm-cache hits: 1–2; mounted Preview refreshes: 0
 
-The separate cold first-load root-tab flow is not yet green: the canonical run measured Workout 373 ms, History 304 ms, and Settings 396 ms against the unchanged 300 ms target. A standalone serial retry improved but still failed at Workout 329 ms and Settings 330 ms. The verifier runs both route and root-tab methods, so this cold-load regression remains visible rather than being hidden by a warmed route result.
+The data-rich fixture inserts thousands of SwiftData objects during its launch, unlike a real accumulated-history store. Its root-tab pass is correctness coverage, while the unchanged 300 ms cold root gate remains enforced by an independently booted default fixture. Each performance route is boot-isolated so one route's post-frame observation cannot contaminate the next sample.
 
 Treat these aggregate values as the current healthy baseline rather than a hard promise for every machine; the enforced thresholds remain the source of truth.
 
-The persistent DEBUG summary includes `previewWarmCacheHits` because current Xcode releases may omit individual app console lines from `xcodebuild` output. The verifier accepts either the original warm-cache trace line or a positive summary count; it does not remove the warm-cache requirement.
+The persistent DEBUG summary includes startup phase durations, per-route and per-root-tab timings, `previewWarmCacheHits`, and mounted refresh counts because current Xcode releases may omit individual app console lines from `xcodebuild` output. The verifier does not remove the warm-cache requirement or weaken the 300/500 ms budgets.
 
 ## When To Run It
 

@@ -2,6 +2,11 @@ import SwiftData
 import SwiftUI
 
 struct CoachRouteRenderSnapshot: @unchecked Sendable {
+    /// Monotonic source generation for the complete route payload. Readiness,
+    /// the training call, and the recommended split must be published as one
+    /// generation so a newer intelligence score cannot be paired with an
+    /// older actionable decision.
+    let sourceGeneration: Int
     let intelligence: CoachIntelligenceSnapshot
     let weeklyReview: WeeklyReview?
     let derivedMetrics: CoachDerivedMetrics
@@ -16,8 +21,10 @@ struct CoachRouteRenderSnapshot: @unchecked Sendable {
         derivedMetrics: CoachDerivedMetrics,
         sleepAnalytics: SleepAnalyticsSnapshot,
         trainingCall: TrainingCallSnapshot,
-        recommendedSplit: WorkoutPreviewSplit? = nil
+        recommendedSplit: WorkoutPreviewSplit? = nil,
+        sourceGeneration: Int = 0
     ) {
+        self.sourceGeneration = sourceGeneration
         self.intelligence = intelligence.routeCacheValueSnapshot
         self.weeklyReview = weeklyReview
         self.derivedMetrics = derivedMetrics
@@ -72,14 +79,29 @@ struct CoachRouteRenderSnapshot: @unchecked Sendable {
         )
     }
 
-    func replacingIntelligence(_ intelligence: CoachIntelligenceSnapshot) -> CoachRouteRenderSnapshot {
+    func replacing(
+        intelligence: CoachIntelligenceSnapshot,
+        trainingCall: TrainingCallSnapshot,
+        recommendedSplit: WorkoutPreviewSplit?,
+        sourceGeneration: Int
+    ) -> CoachRouteRenderSnapshot {
         CoachRouteRenderSnapshot(
             intelligence: intelligence,
             weeklyReview: weeklyReview,
             derivedMetrics: derivedMetrics,
             sleepAnalytics: sleepAnalytics,
+            trainingCall: trainingCall,
+            recommendedSplit: recommendedSplit,
+            sourceGeneration: sourceGeneration
+        )
+    }
+
+    func withSourceGeneration(_ sourceGeneration: Int) -> CoachRouteRenderSnapshot {
+        replacing(
+            intelligence: intelligence,
             trainingCall: dailyDecision.trainingCall,
-            recommendedSplit: recommendedSplit
+            recommendedSplit: recommendedSplit,
+            sourceGeneration: sourceGeneration
         )
     }
 }
@@ -90,48 +112,67 @@ final class CoachRouteSnapshotStore {
 
     private(set) var snapshot: CoachRouteRenderSnapshot?
     private(set) var signature: String?
+    private(set) var sourceGeneration = 0
 
     private init() {}
 
-    func update(snapshot: CoachRouteRenderSnapshot, signature: String, source: String) {
+    func update(
+        snapshot: CoachRouteRenderSnapshot,
+        signature: String,
+        source: String,
+        sourceGeneration: Int? = nil
+    ) {
+        let generation = sourceGeneration ?? snapshot.sourceGeneration
+        guard generation >= self.sourceGeneration else {
+            PerformanceTracer.mark(
+                .coachSnapshot,
+                "route_snapshot_store reject_older source=\(source) generation=\(generation) current=\(self.sourceGeneration)"
+            )
+            return
+        }
+        let normalizedSnapshot = snapshot.sourceGeneration == generation
+            ? snapshot
+            : snapshot.withSourceGeneration(generation)
         PerformanceTracer.mark(
             .coachSnapshot,
-            "route_snapshot_store update_begin source=\(source) main=\(Thread.isMainThread) contains_model_checkIn=\(snapshot.intelligence.readiness.checkIn != nil)"
+            "route_snapshot_store update_begin source=\(source) generation=\(generation) main=\(Thread.isMainThread) contains_model_checkIn=\(normalizedSnapshot.intelligence.readiness.checkIn != nil)"
         )
-        self.snapshot = snapshot
+        self.snapshot = normalizedSnapshot
         self.signature = signature
+        self.sourceGeneration = generation
         PerformanceTracer.mark(.coachSnapshot, "route_snapshot_store update source=\(source)")
         PerformanceTracer.mark(
             .coachSnapshot,
-            "route_snapshot_store update_end source=\(source) stored_model_checkIn=\(self.snapshot?.intelligence.readiness.checkIn != nil)"
+            "route_snapshot_store update_end source=\(source) generation=\(generation) stored_model_checkIn=\(self.snapshot?.intelligence.readiness.checkIn != nil)"
         )
     }
 
-    func update(intelligence: CoachIntelligenceSnapshot, signature: String, source: String) {
-        update(
-            intelligence: intelligence,
-            fallback: nil,
-            signature: signature,
-            source: source
-        )
-    }
-
-    /// Refreshes the stored route snapshot's intelligence. When the store was
-    /// invalidated (its render snapshot is nil), `fallback` supplies the
-    /// structural pieces — weekly review, derived metrics, sleep analytics —
-    /// so the route keeps a complete, freshly-intelligent seed instead of
-    /// leaving destinations to fall back to a launch-time value.
     func update(
         intelligence: CoachIntelligenceSnapshot,
-        fallback: CoachRouteRenderSnapshot?,
+        trainingCall: TrainingCallSnapshot,
+        recommendedSplit: WorkoutPreviewSplit?,
+        fallback: CoachRouteRenderSnapshot? = nil,
         signature: String,
+        sourceGeneration: Int,
         source: String
     ) {
-        guard let base = snapshot ?? fallback else { return }
+        guard let base = snapshot ?? fallback else {
+            PerformanceTracer.mark(
+                .coachSnapshot,
+                "route_snapshot_store skip incomplete_update source=\(source) generation=\(sourceGeneration)"
+            )
+            return
+        }
         update(
-            snapshot: base.replacingIntelligence(intelligence),
+            snapshot: base.replacing(
+                intelligence: intelligence,
+                trainingCall: trainingCall,
+                recommendedSplit: recommendedSplit,
+                sourceGeneration: sourceGeneration
+            ),
             signature: signature,
-            source: source
+            source: source,
+            sourceGeneration: sourceGeneration
         )
     }
 
@@ -139,6 +180,20 @@ final class CoachRouteSnapshotStore {
         snapshot = nil
         signature = nil
         PerformanceTracer.mark(.coachSnapshot, "route_snapshot_store invalidate source=\(source)")
+    }
+
+    /// Reserves a monotonic publication generation before any asynchronous
+    /// preparation starts. A late completion carrying an older reservation is
+    /// rejected by `update`, regardless of which input family changed.
+    func nextSourceGeneration() -> Int {
+        sourceGeneration &+= 1
+        return sourceGeneration
+    }
+
+    func resetForTesting() {
+        snapshot = nil
+        signature = nil
+        sourceGeneration = 0
     }
 }
 
@@ -1251,11 +1306,34 @@ struct CoachContentView: View {
             lastCoachSnapshotSignature = signature
             hasLoadedCoachSnapshot = true
         }
+        let canonicalDecision = TrainingDecisionService().decision(
+            activeSplits: activeSplits,
+            completedSessions: coachHistorySessions
+        )
+        let nextTrainingCall = trainingCallBuilder.make(
+            decision: canonicalDecision,
+            activeSplits: activeSplits,
+            completedSessions: coachHistorySessions,
+            readiness: nextSnapshot.readiness,
+            fatigueRisk: nextSnapshot.fatigueRisk
+        ).neutralizedForProvisionalReadiness(
+            if: nextSnapshot.readiness.isProvisional
+        )
+        let nextRecommendedSplit = recommendedSplit(named: nextTrainingCall.recommendedSplitName)
+            .map(WorkoutPreviewSplit.init)
         OverallReadinessSnapshotStore.shared.update(
             readiness: nextSnapshot.readiness,
             sourceSignature: signature
         )
-        CoachRouteSnapshotStore.shared.update(intelligence: coachSnapshot, signature: signature, source: "coach")
+        CoachRouteSnapshotStore.shared.update(
+            intelligence: nextSnapshot,
+            trainingCall: nextTrainingCall,
+            recommendedSplit: nextRecommendedSplit,
+            fallback: initialSnapshot,
+            signature: signature,
+            sourceGeneration: CoachRouteSnapshotStore.shared.nextSourceGeneration(),
+            source: "coach"
+        )
         refreshPresentationState()
         PerformanceTracer.mark(.unsafeBreadcrumb, "coach.snapshot after_make")
     }

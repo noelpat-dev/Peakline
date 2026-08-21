@@ -22,7 +22,7 @@ The app should stay centered on lifting: fast logging, an editable ordered train
 - Profile is compact and adaptive, Gym Utilities has been replaced by purposeful Workout Tools plus Appearance, Workout Preview has real route-local drag ordering, and Logger transition motivation now rotates through 28 nonrepeating messages.
 - The premium-athletic style guide is implemented across the shared design system and major Today, Workout, Splits, History, Settings, Coach, Progress, Nutrition, Sleep, Preview, Logger, completion, and Summary surfaces in both semantic appearances.
 - Preview duration ranges are calibrated from valid recent working-set history, and Logger intercepts four-hour timer outliers before rating while retaining an explicit long-session path.
-- The 17 August Sleep validation passed the Debug build, 13 focused Sleep tests, 11 dedicated Sleep UI tests, and all 159 verifier unit/reliability tests. The focused route flow remains green at Today-to-Coach 136 ms and Coach-to-Preview 195 ms. The full verifier remains blocked by cold first-load root tabs over 300 ms: Workout 373 ms, History 304 ms, and Settings 396 ms in the canonical run.
+- The 21 August warm-route architecture pass added coherent generations, prepared Nutrition/Progress/root first frames, explicit completion replay, and boot-isolated route coverage. The Debug build and all 180 unit/reliability tests pass; simulator samples are under the unchanged budgets, with physical-device memory and first-frame acceptance still outstanding.
 
 ## Current Near-Term Priority
 

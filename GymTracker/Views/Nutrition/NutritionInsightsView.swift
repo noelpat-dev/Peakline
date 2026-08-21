@@ -21,6 +21,7 @@ struct NutritionInsightsDashboardView: View {
     @State private var didRequestInitialSnapshot = false
     @State private var healthContextTask: Task<Void, Never>?
     @State private var isPreparingInitialSnapshot = true
+    @State private var insightsRefreshTask: Task<Void, Never>?
 
     private let goalService = NutritionGoalService()
     private let summaryService = NutritionSummaryService()
@@ -33,6 +34,11 @@ struct NutritionInsightsDashboardView: View {
     init() {
         _foodLogs = Query(Self.foodLogsDescriptor)
         _completedSessions = Query(Self.completedSessionsDescriptor)
+        if let warm = NutritionWarmStartStore.shared.insights {
+            _goal = State(initialValue: warm.goal)
+            _insightsSnapshot = State(initialValue: NutritionInsightsSnapshot(warm))
+            _isPreparingInitialSnapshot = State(initialValue: false)
+        }
     }
 
     private static var foodLogsDescriptor: FetchDescriptor<FoodLogEntry> {
@@ -204,11 +210,17 @@ struct NutritionInsightsDashboardView: View {
             // frame is fully populated instead of a "Preparing" placeholder.
             let shouldForceRefresh = !didRequestInitialSnapshot
             didRequestInitialSnapshot = true
-            refreshInsightsSnapshot(force: shouldForceRefresh)
+            insightsRefreshTask?.cancel()
+            insightsRefreshTask = Task { @MainActor in
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                refreshInsightsSnapshot(force: shouldForceRefresh)
+            }
             refreshAppleHealthContext()
         }
         .onDisappear {
             healthContextTask?.cancel()
+            insightsRefreshTask?.cancel()
         }
         .onChange(of: insightsSignature) { _, _ in
             refreshInsightsSnapshot()
@@ -434,6 +446,18 @@ private struct NutritionInsightsSnapshot {
     let trainingContext: TrainingNutritionContext
     let insights: [NutritionInsight]
 
+    init(
+        todaySummary: DailyNutritionSummary,
+        weeklySummary: WeeklyNutritionSummary,
+        trainingContext: TrainingNutritionContext,
+        insights: [NutritionInsight]
+    ) {
+        self.todaySummary = todaySummary
+        self.weeklySummary = weeklySummary
+        self.trainingContext = trainingContext
+        self.insights = insights
+    }
+
     static let empty: NutritionInsightsSnapshot = {
         let date = Date(timeIntervalSince1970: 0)
         let daily = DailyNutritionSummary(
@@ -486,6 +510,13 @@ private struct NutritionInsightsSnapshot {
             insights: []
         )
     }()
+
+    init(_ payload: NutritionInsightsWarmStartPayload) {
+        todaySummary = payload.todaySummary
+        weeklySummary = payload.weeklySummary
+        trainingContext = payload.trainingContext
+        insights = payload.insights
+    }
 }
 
 struct NutritionTargetsView: View {

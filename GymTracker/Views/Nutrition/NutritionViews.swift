@@ -1,12 +1,76 @@
 import SwiftData
 import SwiftUI
 
+struct DeferredNutritionDashboardHost: View {
+    let initialPayload: NutritionDashboardWarmStartPayload?
+
+    @State private var isLiveMounted = false
+    @State private var isVisible = false
+
+    private var totals: NutritionMacroSnapshot {
+        initialPayload?.totals
+            ?? NutritionMacroSnapshot(
+                calories: 0,
+                protein: 0,
+                carbs: 0,
+                fat: 0,
+                sugar: nil,
+                fibre: nil,
+                salt: nil
+            )
+    }
+
+    var body: some View {
+        Group {
+            if isLiveMounted {
+                NutritionDashboardView()
+            } else {
+                FitnessScreen(title: nil) {
+                    NutritionHeroCard(
+                        totals: totals,
+                        entryCount: initialPayload?.dayEntries.count ?? 0,
+                        isToday: true
+                    )
+                    .accessibilityIdentifier("nutrition-hero")
+
+                    DashboardSection(title: "Coach Context") {
+                        ReadinessContextCard(
+                            readiness: initialPayload?.readiness
+                                ?? CoachIntelligenceService.emptySnapshot().readiness,
+                            focus: .nutrition,
+                            title: "Nutrition in today's readiness"
+                        )
+                    }
+
+                    DashboardSection(title: "Macros") {
+                        MacroSummaryGrid(totals: totals)
+                    }
+                }
+                .navigationTitle("Nutrition")
+                .navigationBarTitleDisplayMode(.inline)
+                .accessibilityIdentifier("nutrition-screen")
+            }
+        }
+        .onAppear {
+            isVisible = true
+            guard !isLiveMounted else { return }
+            DispatchQueue.main.async {
+                DispatchQueue.main.async {
+                    guard isVisible else { return }
+                    isLiveMounted = true
+                }
+            }
+        }
+        .onDisappear { isVisible = false }
+    }
+}
+
 struct NutritionDashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var readinessRefreshClock = ReadinessRefreshClock.shared
 
-    @Query(sort: \FoodItem.name)
+    @Query
     private var foodItems: [FoodItem]
 
     @Query
@@ -15,44 +79,36 @@ struct NutritionDashboardView: View {
     @Query
     private var completedSessions: [WorkoutSession]
 
-    @Query
-    private var sleepSessions: [SleepSession]
-
-    @Query
-    private var napSessions: [NapSession]
-
-    @Query
-    private var hydrationEntries: [HydrationEntry]
-
-    @Query
-    private var coachCheckIns: [DailyCoachCheckIn]
-
-    @State private var sleepSettings = SleepSettingsStore().load()
     @State private var healthPreferences = HealthKitPreferenceStore().load()
-    @State private var hydrationTargetML = HydrationSettingsStore().dailyTargetML()
     @State private var nutritionGoal = NutritionGoalService().loadGoal()
     @State private var selectedDate = Calendar.current.startOfDay(for: .now)
 
-    private let coachIntelligence = CoachIntelligenceService()
     private let calculator = NutritionCalculatorService()
-    private let sleepSettingsStore = SleepSettingsStore()
-    private let hydrationSettingsStore = HydrationSettingsStore()
     private let nutritionGoalStore = NutritionGoalService()
-    @State private var pendingDeleteLogEntry: FoodLogEntry?
+    @State private var pendingDeleteLogEntryID: UUID?
     @State private var dashboardSnapshot = NutritionDashboardSnapshot.empty
     @State private var lastDashboardSignature: String?
     @State private var selectedRoute: NutritionRoute?
     @State private var activeFoodLogSwipeID: UUID?
     @State private var didRequestInitialRefresh = false
     @State private var isPreparingInitialSnapshot = true
+    @State private var dashboardRefreshTask: Task<Void, Never>?
 
     init() {
+        _foodItems = Query(Self.foodItemsDescriptor)
         _logEntries = Query(Self.logEntriesDescriptor)
         _completedSessions = Query(Self.completedSessionsDescriptor)
-        _sleepSessions = Query(Self.sleepSessionsDescriptor)
-        _napSessions = Query(Self.napSessionsDescriptor)
-        _hydrationEntries = Query(Self.hydrationEntriesDescriptor)
-        _coachCheckIns = Query(Self.coachCheckInsDescriptor)
+        if let warm = NutritionWarmStartStore.shared.dashboard {
+            _dashboardSnapshot = State(initialValue: NutritionDashboardSnapshot(warm))
+            _selectedDate = State(initialValue: warm.selectedDate)
+            _isPreparingInitialSnapshot = State(initialValue: false)
+        }
+    }
+
+    private static var foodItemsDescriptor: FetchDescriptor<FoodItem> {
+        var descriptor = FetchDescriptor<FoodItem>(sortBy: [SortDescriptor(\.name)])
+        descriptor.fetchLimit = 180
+        return descriptor
     }
 
     private static var logEntriesDescriptor: FetchDescriptor<FoodLogEntry> {
@@ -72,64 +128,20 @@ struct NutritionDashboardView: View {
         return descriptor
     }
 
-    private static var sleepSessionsDescriptor: FetchDescriptor<SleepSession> {
-        var descriptor = FetchDescriptor<SleepSession>(
-            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
-        )
-        descriptor.fetchLimit = 60
-        return descriptor
-    }
-
-    private static var napSessionsDescriptor: FetchDescriptor<NapSession> {
-        var descriptor = FetchDescriptor<NapSession>(
-            sortBy: [SortDescriptor(\.startDate, order: .reverse)]
-        )
-        descriptor.fetchLimit = 30
-        return descriptor
-    }
-
-    private static var hydrationEntriesDescriptor: FetchDescriptor<HydrationEntry> {
-        var descriptor = FetchDescriptor<HydrationEntry>(
-            sortBy: [SortDescriptor(\.loggedAt, order: .reverse)]
-        )
-        descriptor.fetchLimit = 120
-        return descriptor
-    }
-
-    private static var coachCheckInsDescriptor: FetchDescriptor<DailyCoachCheckIn> {
-        var descriptor = FetchDescriptor<DailyCoachCheckIn>(
-            sortBy: [SortDescriptor(\.date, order: .reverse)]
-        )
-        descriptor.fetchLimit = 30
-        return descriptor
-    }
-
     private var currentDashboardSnapshot: NutritionDashboardSnapshot {
         dashboardSnapshot
     }
 
     private var dashboardSignature: String {
-        let foodItemsSignature = foodItems.map(foodItemSignature).joined(separator: ",")
+        let foodItemsSignature = foodItems.prefix(180).map(foodItemSignature).joined(separator: ",")
         let logEntriesSignature = logEntries.prefix(160).map(foodLogEntrySignature).joined(separator: ",")
         let workoutsSignature = completedSessions.prefix(40).map(workoutSignature).joined(separator: ",")
-        let sleepSignature = sleepSessions.prefix(60).map(sleepSessionSignature).joined(separator: ",")
-        let napSignature = napSessions.prefix(30).map(napSessionSignature).joined(separator: ",")
-        let hydrationSignature = hydrationEntries.prefix(120).map(hydrationEntrySignature).joined(separator: ",")
-        let checkInSignature = coachCheckIns.prefix(30).map(coachCheckInSignature).joined(separator: ",")
-        let sleepSettingsSignature = String(sleepSettings.lastHealthKitSleepSyncAt?.timeIntervalSince1970 ?? 0)
-        let hydrationTargetSignature = String(hydrationTargetML)
         let nutritionGoalSignature = String(nutritionGoal.updatedAt.timeIntervalSince1970)
         let healthKitSignature = healthPreferences.isHealthKitEnabled ? "healthkit-on" : "healthkit-off"
         let parts: [String] = [
             foodItemsSignature,
             logEntriesSignature,
             workoutsSignature,
-            sleepSignature,
-            napSignature,
-            hydrationSignature,
-            checkInSignature,
-            sleepSettingsSignature,
-            hydrationTargetSignature,
             nutritionGoalSignature,
             healthKitSignature,
             String(selectedDate.timeIntervalSince1970),
@@ -151,22 +163,6 @@ struct NutritionDashboardView: View {
         "\(entry.id.uuidString):\(entry.updatedAt.timeIntervalSince1970):\(entry.loggedAt.timeIntervalSince1970)"
     }
 
-    private func sleepSessionSignature(_ session: SleepSession) -> String {
-        "\(session.id.uuidString):\(session.updatedAt.timeIntervalSince1970)"
-    }
-
-    private func napSessionSignature(_ session: NapSession) -> String {
-        "\(session.id.uuidString):\(session.updatedAt.timeIntervalSince1970)"
-    }
-
-    private func hydrationEntrySignature(_ entry: HydrationEntry) -> String {
-        "\(entry.id.uuidString):\(entry.updatedAt.timeIntervalSince1970)"
-    }
-
-    private func coachCheckInSignature(_ checkIn: DailyCoachCheckIn) -> String {
-        "\(checkIn.id.uuidString):\(checkIn.updatedAt.timeIntervalSince1970)"
-    }
-
     private func refreshDashboardSnapshot(force: Bool = false) {
         let signature = dashboardSignature
         guard force || signature != lastDashboardSignature else {
@@ -186,26 +182,15 @@ struct NutritionDashboardView: View {
     private func makeDashboardSnapshot() -> NutritionDashboardSnapshot {
         let dayEntries = foodLogs(on: selectedDate)
         let recentFoods = recentlyLoggedFoods(from: logEntries, foodItems: foodItems)
-        let mealEntries = Dictionary(grouping: dayEntries.sorted { $0.loggedAt < $1.loggedAt }, by: \.mealType)
-        let readiness = coachIntelligence.readiness(
-            sleepSessions: Array(sleepSessions.prefix(60)),
-            napSessions: Array(napSessions.prefix(30)),
-            hydrationEntries: Array(hydrationEntries.prefix(120)),
-            completedWorkouts: Array(completedSessions.prefix(40)),
-            foodLogs: Array(logEntries.prefix(160)),
-            checkIns: Array(coachCheckIns.prefix(30)),
-            sleepSettings: sleepSettings,
-            hydrationTargetML: hydrationTargetML,
-            nutritionGoal: nutritionGoal
-        )
+        let readiness = WarmRouteSnapshots.overallReadiness(fallback: CoachIntelligenceService.emptySnapshot().readiness)
         let healthKitSyncRecords = healthKitSyncRecordsByEntryId(for: dayEntries)
 
         return NutritionDashboardSnapshot(
-            dayEntries: dayEntries,
+            dayEntries: dayEntries.map(NutritionFoodLogSnapshot.init),
             totals: calculator.totals(from: dayEntries),
             readiness: readiness,
-            recentlyLoggedFoods: recentFoods,
-            mealEntries: mealEntries,
+            recentlyLoggedFoods: recentFoods.map(SavedFoodSnapshot.init),
+            mealEntries: Dictionary(grouping: dayEntries.map(NutritionFoodLogSnapshot.init), by: \.mealType),
             isTrainingDay: hasCompletedWorkout(on: selectedDate),
             shouldShowHealthKitStatus: healthPreferences.isHealthKitEnabled,
             healthKitSyncRecordsByEntryId: healthKitSyncRecords
@@ -216,12 +201,13 @@ struct NutritionDashboardView: View {
         guard let interval = Calendar.current.dateInterval(of: .day, for: date) else { return [] }
         let start = interval.start
         let end = interval.end
-        let descriptor = FetchDescriptor<FoodLogEntry>(
+        var descriptor = FetchDescriptor<FoodLogEntry>(
             predicate: #Predicate<FoodLogEntry> { entry in
                 entry.loggedAt >= start && entry.loggedAt < end
             },
             sortBy: [SortDescriptor(\.loggedAt)]
         )
+        descriptor.fetchLimit = 160
         return (try? modelContext.fetch(descriptor)) ?? []
     }
 
@@ -290,6 +276,7 @@ struct NutritionDashboardView: View {
                 entryCount: snapshot.dayEntries.count,
                 isToday: isToday
             )
+            .accessibilityIdentifier("nutrition-hero")
 
             if isToday {
                 DashboardSection(title: "Coach Context") {
@@ -364,8 +351,8 @@ struct NutritionDashboardView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
                             ForEach(snapshot.recentlyLoggedFoods) { food in
-                                NavigationLink {
-                                    LogFoodView(food: food)
+                                    NavigationLink {
+                                    LogFoodView(snapshot: food)
                                 } label: {
                                     QuickLogFoodCard(food: food)
                                 }
@@ -415,7 +402,7 @@ struct NutritionDashboardView: View {
                                     syncRecordsByEntryId: snapshot.healthKitSyncRecordsByEntryId,
                                     allowsDeletion: isToday,
                                     activeSwipeID: $activeFoodLogSwipeID,
-                                    requestDelete: { pendingDeleteLogEntry = $0 }
+                                    requestDelete: { pendingDeleteLogEntryID = $0.id }
                                 )
                             }
                         }
@@ -452,7 +439,7 @@ struct NutritionDashboardView: View {
         }
         .alert("Remove food log?", isPresented: deleteLogAlertBinding) {
             Button("Cancel", role: .cancel) {
-                pendingDeleteLogEntry = nil
+                pendingDeleteLogEntryID = nil
             }
             Button("Remove Log", role: .destructive) {
                 deletePendingLogEntry()
@@ -462,26 +449,42 @@ struct NutritionDashboardView: View {
         }
         .onAppear {
             readinessRefreshClock.start()
-            sleepSettings = sleepSettingsStore.load()
             healthPreferences = HealthKitPreferenceStore().load()
-            hydrationTargetML = hydrationSettingsStore.dailyTargetML()
             nutritionGoal = nutritionGoalStore.loadGoal()
             // Build the first snapshot on the appear turn so the pushed
             // frame is fully populated instead of a "Preparing" placeholder.
             let shouldForceRefresh = !didRequestInitialRefresh
             didRequestInitialRefresh = true
-            refreshDashboardSnapshot(force: shouldForceRefresh)
+            dashboardRefreshTask?.cancel()
+            dashboardRefreshTask = Task { @MainActor in
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                refreshDashboardSnapshot(force: shouldForceRefresh)
+            }
         }
         .onChange(of: dashboardSignature) { _, _ in
-            refreshDashboardSnapshot()
+            dashboardRefreshTask?.cancel()
+            dashboardRefreshTask = Task { @MainActor in
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                refreshDashboardSnapshot()
+            }
         }
         .onChange(of: selectedDate) { _, newDate in
             selectedDate = min(
                 Calendar.current.startOfDay(for: newDate),
                 Calendar.current.startOfDay(for: .now)
             )
-            pendingDeleteLogEntry = nil
-            refreshDashboardSnapshot(force: true)
+            pendingDeleteLogEntryID = nil
+            dashboardRefreshTask?.cancel()
+            dashboardRefreshTask = Task { @MainActor in
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                refreshDashboardSnapshot(force: true)
+            }
+        }
+        .onDisappear {
+            dashboardRefreshTask?.cancel()
         }
     }
 
@@ -523,21 +526,24 @@ struct NutritionDashboardView: View {
 
     private var deleteLogAlertBinding: Binding<Bool> {
         Binding {
-            pendingDeleteLogEntry != nil
+            pendingDeleteLogEntryID != nil
         } set: { isShowing in
             if !isShowing {
-                pendingDeleteLogEntry = nil
+                pendingDeleteLogEntryID = nil
             }
         }
     }
 
     private func deletePendingLogEntry() {
-        guard let pendingDeleteLogEntry else { return }
-        HealthKitSyncStateStore().removeRecord(for: pendingDeleteLogEntry.id)
-        modelContext.delete(pendingDeleteLogEntry)
+        guard let pendingDeleteLogEntryID else { return }
+        let id = pendingDeleteLogEntryID
+        let descriptor = FetchDescriptor<FoodLogEntry>(predicate: #Predicate { $0.id == id })
+        guard let entry = try? modelContext.fetch(descriptor).first else { return }
+        HealthKitSyncStateStore().removeRecord(for: id)
+        modelContext.delete(entry)
         try? modelContext.save()
         AppHaptics.warning()
-        self.pendingDeleteLogEntry = nil
+        self.pendingDeleteLogEntryID = nil
     }
 }
 
@@ -674,14 +680,34 @@ fileprivate enum NutritionRoute: Hashable, Identifiable {
 }
 
 private struct NutritionDashboardSnapshot {
-    var dayEntries: [FoodLogEntry]
+    var dayEntries: [NutritionFoodLogSnapshot]
     var totals: NutritionMacroSnapshot
     var readiness: ReadinessScore
-    var recentlyLoggedFoods: [FoodItem]
-    var mealEntries: [MealType: [FoodLogEntry]]
+    var recentlyLoggedFoods: [SavedFoodSnapshot]
+    var mealEntries: [MealType: [NutritionFoodLogSnapshot]]
     var isTrainingDay: Bool
     var shouldShowHealthKitStatus: Bool
     var healthKitSyncRecordsByEntryId: [UUID: HealthKitFoodLogSyncRecord]
+
+    init(
+        dayEntries: [NutritionFoodLogSnapshot],
+        totals: NutritionMacroSnapshot,
+        readiness: ReadinessScore,
+        recentlyLoggedFoods: [SavedFoodSnapshot],
+        mealEntries: [MealType: [NutritionFoodLogSnapshot]],
+        isTrainingDay: Bool,
+        shouldShowHealthKitStatus: Bool,
+        healthKitSyncRecordsByEntryId: [UUID: HealthKitFoodLogSyncRecord]
+    ) {
+        self.dayEntries = dayEntries
+        self.totals = totals
+        self.readiness = readiness
+        self.recentlyLoggedFoods = recentlyLoggedFoods
+        self.mealEntries = mealEntries
+        self.isTrainingDay = isTrainingDay
+        self.shouldShowHealthKitStatus = shouldShowHealthKitStatus
+        self.healthKitSyncRecordsByEntryId = healthKitSyncRecordsByEntryId
+    }
 
     static let empty = NutritionDashboardSnapshot(
         dayEntries: [],
@@ -693,6 +719,17 @@ private struct NutritionDashboardSnapshot {
         shouldShowHealthKitStatus: false,
         healthKitSyncRecordsByEntryId: [:]
     )
+
+    init(_ payload: NutritionDashboardWarmStartPayload) {
+        dayEntries = payload.dayEntries
+        totals = payload.totals
+        readiness = payload.readiness
+        recentlyLoggedFoods = payload.recentlyLoggedFoods
+        mealEntries = payload.mealEntries
+        isTrainingDay = payload.isTrainingDay
+        shouldShowHealthKitStatus = payload.shouldShowHealthKitStatus
+        healthKitSyncRecordsByEntryId = payload.healthKitSyncRecordsByEntryId
+    }
 }
 
 struct AddFoodHubView: View {
@@ -1609,17 +1646,23 @@ private struct MealSectionCard: View {
     @Environment(\.appTheme) private var appTheme
 
     let mealType: MealType
-    let entries: [FoodLogEntry]
+    let entries: [NutritionFoodLogSnapshot]
     let shouldShowHealthKitStatus: Bool
     let syncRecordsByEntryId: [UUID: HealthKitFoodLogSyncRecord]
     let allowsDeletion: Bool
     @Binding var activeSwipeID: UUID?
-    let requestDelete: (FoodLogEntry) -> Void
-
-    private let calculator = NutritionCalculatorService()
+    let requestDelete: (NutritionFoodLogSnapshot) -> Void
 
     private var totals: NutritionMacroSnapshot {
-        calculator.totals(from: entries)
+        NutritionMacroSnapshot(
+            calories: entries.reduce(0) { $0 + $1.caloriesSnapshot },
+            protein: entries.reduce(0) { $0 + $1.proteinSnapshot },
+            carbs: entries.reduce(0) { $0 + $1.carbsSnapshot },
+            fat: entries.reduce(0) { $0 + $1.fatSnapshot },
+            sugar: nil,
+            fibre: nil,
+            salt: nil
+        )
     }
 
     var body: some View {
@@ -1675,7 +1718,7 @@ private struct MealSectionCard: View {
 private struct FoodLogRow: View {
     @Environment(\.appTheme) private var appTheme
 
-    let entry: FoodLogEntry
+    let entry: NutritionFoodLogSnapshot
     let shouldShowHealthKitStatus: Bool
     let syncRecord: HealthKitFoodLogSyncRecord?
     let allowsDeletion: Bool
@@ -1932,7 +1975,7 @@ private struct ManualFoodTrustCard: View {
 }
 
 private struct QuickLogFoodCard: View {
-    let food: FoodItem
+    let food: SavedFoodSnapshot
 
     var body: some View {
         DashboardActionTile(

@@ -101,9 +101,9 @@ The main value loop is:
 - Startup snapshot queries are bounded; deep charts, scanners, HealthKit, notification scheduling, and automatic backup remain deferred until the splash reveal is fully complete.
 - Startup tracing covers account checks, backup metadata, local preparation, root snapshot preparation, critical readiness, presentation start/slow state, and reveal start/end.
 - A focused acceptance verifier exists at `Scripts/verify_performance_acceptance.sh`.
-- The verifier runs build, unit tests, a focused UI acceptance flow, and log scanning.
-- Current acceptance checks cover Today to Coach, Workout to Coach, Workout to Preview, one Preview mode change, one-back navigation, notification refresh timing, duplicate Coach pushes, repeated Workout Preview onAppear refreshes, gesture timeouts, toolbar constraint warnings, and `unsafeForcedSync` regressions. Dedicated Sleep UI fixtures cover no-data, populated, active, morning-confirmation, editor-error, elapsed-nap, and HealthKit-unavailable behavior.
-- The verifier summary also carries the Preview warm-cache hit count so Xcode versions that omit individual app console lines can still enforce the warm-cache requirement.
+- The verifier runs build, unit tests, boot-isolated default route/root tests, data-rich per-route tests, root correctness coverage, and log scanning.
+- Current acceptance checks cover Today to Coach, Sleep, Nutrition, Progress, Hydration, Workout to Coach/Preview, one Preview mode change, one-back navigation, notification refresh timing, duplicate pushes, repeated Workout Preview onAppear refreshes, gesture timeouts, toolbar constraint warnings, and `unsafeForcedSync` regressions. Dedicated Sleep UI fixtures cover no-data, populated, active, morning-confirmation, editor-error, elapsed-nap, and HealthKit-unavailable behavior.
+- The verifier summary carries startup phase durations, per-route and per-root-tab timings, and the Preview warm-cache hit count so Xcode versions that omit individual app console lines can still enforce the requirements.
 - Preview snapshot preparation precomputes used exercise IDs once, traverses workout history once for substitutions, and calculates the base target once per unique split input before applying mode adjustments. The parity fixture reduced target-service work from 24 calls to 7 without changing mode order, targets, alternatives, or cache semantics.
 - Focused Splits UI coverage verifies the five-day active programme, Edit Rotation, split detail navigation, Add Split presentation, and Other Splits expansion/collapse.
 
@@ -112,7 +112,7 @@ The main value loop is:
 - The main lifting loop is implemented end to end.
 - Coach, Progress, Nutrition, Sleep, Hydration, and export utilities now sit on top of that core instead of replacing it.
 - Recent performance cleanup materially improved route timing, notification refresh behavior, and Coach navigation stability.
-- The 17 August Sleep rehaul validation passed the Debug build, 13 focused Sleep reliability tests, all 11 dedicated Sleep UI tests, and all 159 unit/reliability tests inside the canonical verifier. Its focused route flow passed at Today-to-Coach 136 ms, Coach-to-Preview 195 ms, warmed root transition 248 ms, two Preview warm-cache hits, and zero mounted Preview recomputations. The verifier remains red only on the existing cold root-tab gate: the canonical run measured Workout 373 ms, History 304 ms, and Settings 396 ms against 300 ms; a serial retry measured Workout 329 ms and Settings 330 ms.
+- The 21 August warm-route architecture pass builds successfully and passes all 180 unit/reliability tests. Boot-isolated default Coach/Preview/root samples and data-rich Sleep, Nutrition, Progress, Hydration, and Preview samples pass the unchanged 300/500 ms budgets; physical-device memory and first-frame verification remains outstanding.
 
 ## Remaining Practical Expansion
 

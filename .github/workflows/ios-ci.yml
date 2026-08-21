@@ -59,15 +59,30 @@ jobs:
 
       - name: Run focused performance route smoke test
         run: |
-          xcodebuild \
-            -project GymTracker.xcodeproj \
-            -scheme GymTracker \
-            -configuration Debug \
-            -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}" \
-            -parallel-testing-enabled NO \
-            CODE_SIGNING_ALLOWED=NO \
-            -only-testing:GymTrackerUITests/CoachWorkoutPreviewUITests/testPerformanceAcceptanceRoutes \
-            test
+          for test_name in \
+            testPerformanceAcceptanceRoutes \
+            testPerformanceAcceptanceRootTabTransitionsRemainResponsive \
+            testDataRichRootTabsRemainPopulated \
+            testPerformanceAcceptanceDataRichReadinessRoute \
+            testPerformanceAcceptanceDataRichSleepRoute \
+            testPerformanceAcceptanceDataRichNutritionRoute \
+            testPerformanceAcceptanceDataRichProgressRoute \
+            testPerformanceAcceptanceDataRichHydrationRoute \
+            testPerformanceAcceptanceDataRichPreviewRoute
+          do
+            xcrun simctl shutdown "${SIMULATOR_UDID}" || true
+            xcrun simctl boot "${SIMULATOR_UDID}" || true
+            xcrun simctl bootstatus "${SIMULATOR_UDID}" -b
+            xcodebuild \
+              -project GymTracker.xcodeproj \
+              -scheme GymTracker \
+              -configuration Debug \
+              -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}" \
+              -parallel-testing-enabled NO \
+              CODE_SIGNING_ALLOWED=NO \
+              "-only-testing:GymTrackerUITests/CoachWorkoutPreviewUITests/${test_name}" \
+              test
+          done
 
       - name: Strict-concurrency diagnostics lane
         run: |

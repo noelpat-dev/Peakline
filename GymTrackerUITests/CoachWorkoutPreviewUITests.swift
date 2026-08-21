@@ -16,6 +16,9 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         if name.contains("HistoryRowsOpenAfterMotionRehaul") {
             launchArguments.append("-UITestLargeHistoryFixture")
         }
+        if name.contains("DataRich") {
+            launchArguments += ["-UITestLargeHistoryFixture", "-UITestSavedFoodsFixture"]
+        }
         if name.contains("BrandedStartupSlow") {
             launchArguments += [
                 "-UITestStartupAnimationMaxMS", "250",
@@ -785,6 +788,182 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         assertPerformanceAcceptancePassed()
     }
 
+    func testPerformanceAcceptanceDataRichReadinessRoute() throws {
+        prepareDataRichPerformanceRoute()
+        measurePrimaryQuickAction(
+            identifier: "quick-action-readiness",
+            routeIdentifier: "coach-route-screen",
+            route: "readiness",
+            actionable: {
+                let call = self.app.descendants(matching: .any)["coach-todays-call"]
+                return call.exists && !call.label.localizedCaseInsensitiveContains("preparing")
+            }
+        )
+        assertPerformanceAcceptancePassed()
+    }
+
+    func testPerformanceAcceptanceDataRichSleepRoute() throws {
+        prepareDataRichPerformanceRoute()
+        measurePrimaryQuickAction(
+            identifier: "quick-action-sleep",
+            routeIdentifier: "sleep-screen",
+            route: "sleep",
+            actionable: {
+                self.app.descendants(matching: .any)["sleep-no-data-hero"].exists
+                    || self.app.descendants(matching: .any)["sleep-last-night-duration"].exists
+                    || self.app.descendants(matching: .any)["sleep-active-hero"].exists
+            }
+        )
+        assertPerformanceAcceptancePassed()
+    }
+
+    func testPerformanceAcceptanceDataRichNutritionRoute() throws {
+        prepareDataRichPerformanceRoute()
+        measurePrimaryQuickAction(
+            identifier: "quick-action-nutrition",
+            routeIdentifier: "nutrition-screen",
+            route: "nutrition",
+            actionable: {
+                !self.app.descendants(matching: .any)["nutrition-loading"].exists
+                    && self.app.descendants(matching: .any)["nutrition-hero"].exists
+            }
+        )
+        assertPerformanceAcceptancePassed()
+    }
+
+    func testPerformanceAcceptanceDataRichProgressRoute() throws {
+        prepareDataRichPerformanceRoute()
+        measurePrimaryQuickAction(
+            identifier: "quick-action-progress",
+            routeIdentifier: "progress-screen",
+            route: "progress",
+            actionable: {
+                self.app.buttons["progress-pr-timeline-open"].exists
+                    && !self.app.staticTexts["Loading progress data"].exists
+            }
+        )
+        assertPerformanceAcceptancePassed()
+    }
+
+    func testPerformanceAcceptanceDataRichHydrationRoute() throws {
+        prepareDataRichPerformanceRoute()
+        measurePrimaryQuickAction(
+            identifier: "quick-action-hydration",
+            routeIdentifier: "hydration-screen",
+            route: "hydration",
+            actionable: {
+                self.app.progressIndicators["Hydration progress"].exists
+            }
+        )
+        assertPerformanceAcceptancePassed()
+    }
+
+    func testPerformanceAcceptanceDataRichPreviewRoute() throws {
+        prepareDataRichPerformanceRoute()
+        scrollTodayToTop()
+        tapElement(identifier: "quick-action-workout", maxSwipes: 8)
+        XCTAssertTrue(waitForWorkoutScreen(), "Expected the Workout quick action to open Start Workout")
+        let previewButton = tappableElement(identifier: "workout-recommended-preview")
+        XCTAssertTrue(previewButton.waitForExistence(timeout: 8))
+        previewButton.tap()
+        XCTAssertTrue(waitForPreviewScreen(), "Expected Workout Preview to open")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["workout-preview-hydrated-content"].waitForExistence(timeout: 5),
+            "Expected Preview's actionable hydrated content"
+        )
+        assertPerformanceAcceptancePassed()
+    }
+
+    func testDataRichPrimaryQuickActionsRemainPopulated() throws {
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["startup-critical-ready"].waitForExistence(timeout: 5))
+        waitForDataRichFixtureInsertionToSettle()
+
+        measurePrimaryQuickAction(
+            identifier: "quick-action-readiness",
+            routeIdentifier: "coach-route-screen",
+            route: "readiness",
+            actionable: {
+                let call = self.app.descendants(matching: .any)["coach-todays-call"]
+                return call.exists && !call.label.localizedCaseInsensitiveContains("preparing")
+            }
+        )
+        tapBackButton(from: "Coach")
+
+        measurePrimaryQuickAction(
+            identifier: "quick-action-sleep",
+            routeIdentifier: "sleep-screen",
+            route: "sleep",
+            actionable: {
+                self.app.descendants(matching: .any)["sleep-no-data-hero"].exists
+                    || self.app.descendants(matching: .any)["sleep-last-night-duration"].exists
+                    || self.app.descendants(matching: .any)["sleep-active-hero"].exists
+            }
+        )
+        tapBackButton(from: "Sleep")
+
+        measurePrimaryQuickAction(
+            identifier: "quick-action-nutrition",
+            routeIdentifier: "nutrition-screen",
+            route: "nutrition",
+            actionable: {
+                !self.app.descendants(matching: .any)["nutrition-loading"].exists
+                    && self.app.descendants(matching: .any)["nutrition-hero"].exists
+            }
+        )
+        tapBackButton(from: "Nutrition")
+
+        measurePrimaryQuickAction(
+            identifier: "quick-action-progress",
+            routeIdentifier: "progress-screen",
+            route: "progress",
+            actionable: {
+                self.app.buttons["progress-pr-timeline-open"].exists
+                    && !self.app.staticTexts["Loading progress data"].exists
+            }
+        )
+        tapBackButton(from: "Progress")
+
+        measurePrimaryQuickAction(
+            identifier: "quick-action-hydration",
+            routeIdentifier: "hydration-screen",
+            route: "hydration",
+            actionable: {
+                self.app.progressIndicators["Hydration progress"].exists
+            }
+        )
+        tapBackButton(from: "Hydration")
+
+        scrollTodayToTop()
+        tapElement(identifier: "quick-action-workout", maxSwipes: 8)
+        XCTAssertTrue(waitForWorkoutScreen(), "Expected the Workout quick action to open Start Workout")
+        let previewButton = tappableElement(identifier: "workout-recommended-preview")
+        XCTAssertTrue(previewButton.waitForExistence(timeout: 8))
+        let startedAt = Date()
+        previewButton.tap()
+        XCTAssertTrue(waitForPreviewScreen(), "Expected Workout Preview to open")
+        let hydrated = app.descendants(matching: .any)["workout-preview-hydrated-content"]
+        XCTAssertTrue(hydrated.waitForExistence(timeout: 5), "Expected Preview's actionable hydrated content")
+        let previewMilliseconds = Int(Date().timeIntervalSince(startedAt) * 1_000)
+        print("PRIMARY_QUICK_ACTION_UI_METRIC route=preview elapsed_ms=\(previewMilliseconds)")
+        tapBackButton(from: "Preview")
+        tapBackButton(from: "Workout")
+
+        assertPerformanceAcceptancePassed()
+    }
+
+    func testDataRichRootTabsRemainPopulated() throws {
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["startup-critical-ready"].waitForExistence(timeout: 5))
+        waitForDataRichFixtureInsertionToSettle()
+
+        tapTabAndAssertResponsive(at: 1, expectedTitle: "Workout")
+        tapTabAndAssertResponsive(at: 2, expectedTitle: "Splits")
+        tapTabAndAssertResponsive(at: 3, expectedTitle: "History")
+        tapTabAndAssertResponsive(at: 4, expectedTitle: "Settings")
+
+    }
+
     func testCoachOmitsDuplicateCheckIn() throws {
         tapElement(identifier: "today-coach-brief-open", maxSwipes: 4)
         XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Coach to open")
@@ -956,6 +1135,92 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
             print("Missing root screen marker \(identifier):\n\(app.debugDescription)")
         }
         XCTAssertTrue(destinationAppeared, "Expected \(expectedTitle) screen marker")
+        assertPopulatedRootTab(expectedTitle)
+    }
+
+    private func assertPopulatedRootTab(_ title: String) {
+        switch title {
+        case "Today":
+            XCTAssertTrue(
+                app.descendants(matching: .any)["today-suggested-split"].waitForExistence(timeout: 3),
+                "Expected Today to expose its actionable suggested split"
+            )
+        case "Workout":
+            XCTAssertTrue(
+                app.buttons["workout-recommended-preview"].waitForExistence(timeout: 3)
+                    || app.buttons["start-split-Push"].waitForExistence(timeout: 3),
+                "Expected Workout to expose a prepared Preview action"
+            )
+        case "Splits":
+            XCTAssertTrue(
+                app.descendants(matching: .any)["split-card-Push"].waitForExistence(timeout: 3),
+                "Expected Splits to expose a seeded Push card"
+            )
+        case "History":
+            XCTAssertTrue(
+                app.buttons.matching(
+                    NSPredicate(format: "identifier == %@", "history-session-row")
+                ).firstMatch.waitForExistence(timeout: 3),
+                "Expected History to expose at least one populated session row"
+            )
+        case "Settings":
+            XCTAssertTrue(
+                app.descendants(matching: .any)["settings-profile"].waitForExistence(timeout: 3)
+                    || app.descendants(matching: .any)["settings-coach"].waitForExistence(timeout: 3),
+                "Expected Settings to expose actionable profile or Coach content"
+            )
+        default:
+            XCTFail("Missing populated-root assertion for \(title)")
+        }
+    }
+
+    private func measurePrimaryQuickAction(
+        identifier: String,
+        routeIdentifier: String,
+        route: String,
+        actionable: @escaping () -> Bool
+    ) {
+        scrollTodayToTop()
+        var element = tappableElement(identifier: identifier)
+        var swipes = 0
+        while (!element.waitForExistence(timeout: 1) || !element.isHittable) && swipes < 8 {
+            app.swipeUp()
+            swipes += 1
+            element = tappableElement(identifier: identifier)
+        }
+        XCTAssertTrue(element.waitForExistence(timeout: 5), "Expected \(identifier) to exist")
+        let startedAt = Date()
+        element.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)[routeIdentifier].waitForExistence(timeout: 8),
+            "Expected \(routeIdentifier) after \(identifier)"
+        )
+        XCTAssertTrue(waitUntil(timeout: 3, condition: actionable), "Expected populated actionable content for \(route)")
+        let elapsedMilliseconds = Int(Date().timeIntervalSince(startedAt) * 1_000)
+        // XCUI polling and cross-process accessibility transport dominate this
+        // client-side number. The production NavigationInteraction timer,
+        // surfaced in the acceptance summary, remains the threshold authority.
+        print("PRIMARY_QUICK_ACTION_UI_METRIC route=\(route) elapsed_ms=\(elapsedMilliseconds)")
+    }
+
+    private func scrollTodayToTop() {
+        for _ in 0..<3 {
+            app.swipeDown()
+        }
+    }
+
+    private func waitForDataRichFixtureInsertionToSettle() {
+        // The UI fixture creates thousands of SwiftData objects during this
+        // launch; real large-history users do not reinsert their history on
+        // every cold start. Keep fixture construction outside the measured
+        // navigation sample while preserving the production route thresholds.
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+    }
+
+    private func prepareDataRichPerformanceRoute() {
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["startup-critical-ready"].waitForExistence(timeout: 5))
+        waitForDataRichFixtureInsertionToSettle()
     }
 
     private func waitForTabContent(_ expectedTitle: String, timeout: TimeInterval) -> Bool {

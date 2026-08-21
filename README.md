@@ -86,7 +86,7 @@ The main implementation boundaries are documented in [ARCHITECTURE.md](ARCHITECT
 
 The main lifting loop is implemented end to end and the app is in an active quality and acceptance phase. The current focus is physical-device validation across Light and Dark appearance, large Dynamic Type, VoiceOver, Reduce Motion, Reduce Transparency, Firebase restore, and the most performance-sensitive workout routes.
 
-The 17 August 2026 Sleep validation passed the Debug build, 13 focused Sleep tests, all 11 dedicated Sleep UI tests, and all 159 unit/reliability tests inside the canonical verifier. The focused route flow measured Today-to-Coach at 136 ms, Coach-to-Preview at 195 ms, and a warmed root transition at 248 ms, with two Preview warm-cache hits and zero mounted Preview refreshes. The canonical performance gate is not fully green because its cold run measured Workout 373 ms, History 304 ms, and Settings 396 ms against the unchanged 300 ms target; a serial retry still measured Workout 329 ms and Settings 330 ms. These figures are a dated engineering baseline, not a promise that every device will produce the same timing.
+The 21 August 2026 warm-route architecture pass built successfully and passed all 180 unit/reliability tests. The final boot-isolated iPhone 17 simulator verifier kept the unchanged 300 ms warm/root and 500 ms deep-route budgets: default Today-to-Coach measured 219 ms, Coach-to-Preview 283 ms, the root maximum 147 ms, and data-rich Sleep/Nutrition/Progress/Hydration/Preview paths measured 46/113/178/296/387 ms. These are engineering samples, not a promise that every device will produce identical timing; physical-device memory and first-frame validation remains outstanding.
 
 ## Run locally
 
