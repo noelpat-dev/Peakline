@@ -133,6 +133,8 @@ struct StartWorkoutContentView: View {
     @State private var dashboardRefreshTask: Task<Void, Never>?
     @State private var isWorkoutCompletionPresentationActive = false
     @State private var isDashboardVisible = false
+    @State private var showsSupportingDashboardItems = false
+    @State private var supportingDashboardRevealTask: Task<Void, Never>?
 
     private let openRoute: ((StartWorkoutRoute) -> Void)?
     private let modePlanner = WorkoutModePlanner()
@@ -287,16 +289,18 @@ struct StartWorkoutContentView: View {
                 }
             }
 
-            DashboardSection(title: "Start") {
-                ForEach(currentSplitCardSnapshots) { snapshot in
-                    splitStartCard(snapshot)
+            if showsSupportingDashboardItems {
+                DashboardSection(title: "Start") {
+                    ForEach(currentSplitCardSnapshots) { snapshot in
+                        splitStartCard(snapshot)
+                    }
+
+                    emptyWorkoutCard
                 }
 
-                emptyWorkoutCard
-            }
-
-            if let recentSnapshot = currentRecentSessionSnapshot {
-                recentSessionCard(recentSnapshot)
+                if let recentSnapshot = currentRecentSessionSnapshot {
+                    recentSessionCard(recentSnapshot)
+                }
             }
         }
         .navigationTitle("Workout")
@@ -352,6 +356,15 @@ struct StartWorkoutContentView: View {
         }
         .onAppear {
             isDashboardVisible = true
+            if !showsSupportingDashboardItems {
+                supportingDashboardRevealTask?.cancel()
+                supportingDashboardRevealTask = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(150))
+                    guard !Task.isCancelled, isDashboardVisible else { return }
+                    showsSupportingDashboardItems = true
+                    supportingDashboardRevealTask = nil
+                }
+            }
             sleepSettings = sleepSettingsStore.load()
             restoreWarmedDashboardIfNeeded()
             scheduleDashboardSnapshotRefresh(force: dashboardSnapshot == nil)
@@ -383,6 +396,8 @@ struct StartWorkoutContentView: View {
         }
         .onDisappear {
             isDashboardVisible = false
+            supportingDashboardRevealTask?.cancel()
+            supportingDashboardRevealTask = nil
             dashboardRefreshTask?.cancel()
         }
     }
