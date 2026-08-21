@@ -2,6 +2,7 @@ import SwiftUI
 
 struct StepperValueControl: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let label: String
     let valueText: String
@@ -10,6 +11,8 @@ struct StepperValueControl: View {
     let decrement: () -> Void
     let increment: () -> Void
     let edit: () -> Void
+
+    @State private var direction: ValueDirection = .neutral
 
     init(
         label: String,
@@ -37,7 +40,7 @@ struct StepperValueControl: View {
 
             HStack(spacing: 0) {
                 Button {
-                    AppHaptics.selection()
+                    direction = .decrement
                     decrement()
                 } label: {
                     Image(systemName: "minus")
@@ -50,7 +53,6 @@ struct StepperValueControl: View {
                 .accessibilityIdentifier("stepper-\(identifierBase)-decrement")
 
                 Button {
-                    AppHaptics.selection()
                     edit()
                 } label: {
                     HStack(spacing: 3) {
@@ -58,6 +60,17 @@ struct StepperValueControl: View {
                             .font(AppTypography.workoutNumber)
                             .lineLimit(1)
                             .minimumScaleFactor(0.78)
+                            .contentTransition(
+                                reduceMotion
+                                    ? .opacity
+                                    : .numericText(countsDown: direction == .decrement)
+                            )
+                            .animation(
+                                reduceMotion
+                                    ? AppMotion.reducedMotionAnimation(policy: .immediate)
+                                    : .easeInOut(duration: AppMotion.stepperRollDuration),
+                                value: valueText
+                            )
 
                         if let unitSuffix {
                             Text(unitSuffix)
@@ -75,7 +88,7 @@ struct StepperValueControl: View {
                 .accessibilityIdentifier("stepper-\(identifierBase)-edit")
 
                 Button {
-                    AppHaptics.selection()
+                    direction = .increment
                     increment()
                 } label: {
                     Image(systemName: "plus")
@@ -107,5 +120,11 @@ struct StepperValueControl: View {
         }
 
         return valueText
+    }
+
+    private enum ValueDirection {
+        case neutral
+        case increment
+        case decrement
     }
 }

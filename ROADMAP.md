@@ -13,6 +13,7 @@ The app should stay centered on lifting: fast logging, an editable ordered train
 - The Push, Pull, Legs, Upper, Lower active rotation is editable and shared across every recommendation surface.
 - Workout Preview supports Full, Quick, Recovery, and Heavy modes.
 - Live workout logging includes timer, pause and resume, set entry, rest timer, completion rating, celebration, and session summary.
+- The motion blueprint is implemented through shared `snappy`, `smooth`, and `expressive` roles, bounded dashboard/chart entrances, previous-to-current metrics, persisted set confirmation, rest urgency, directional steppers, committed deletion collapse, sheet entrances, and changed-card Today re-entry cues.
 - `TargetSuggestionService` aligns targets across Coach, Workout Preview, and Splits.
 - Readiness Score v2 is evidence-aware: missing inputs stay unknown, sparse results are provisional, signal influence is capped by coverage and reliability, eligible personal baselines are bounded, and provisional readiness cannot independently prescribe aggressive or recovery training.
 - Sleep now has a state-led no-data/populated/active hierarchy, focused Sleep Mode and morning flows, safe manual and nap editing, a date-derived Nap Timer, truthful optional HealthKit states, conservative provisional-readiness copy, bounded trends/history, and deterministic unit/UI fixtures without a SwiftData schema change.
@@ -23,6 +24,7 @@ The app should stay centered on lifting: fast logging, an editable ordered train
 - The premium-athletic style guide is implemented across the shared design system and major Today, Workout, Splits, History, Settings, Coach, Progress, Nutrition, Sleep, Preview, Logger, completion, and Summary surfaces in both semantic appearances.
 - Preview duration ranges are calibrated from valid recent working-set history, and Logger intercepts four-hour timer outliers before rating while retaining an explicit long-session path.
 - The 21 August warm-route architecture pass added coherent generations, prepared Nutrition/Progress/root first frames, explicit completion replay, and boot-isolated route coverage. The Debug build and all 180 unit/reliability tests pass; simulator samples are under the unchanged budgets, with physical-device memory and first-frame acceptance still outstanding.
+- The 22 August motion validation passed Debug and strict-concurrency builds, all 186 unit/reliability tests, focused Logger and History UI flows, and the canonical UI run at Today-to-Coach 178 ms, Coach-to-Preview 209 ms, warmed root 186 ms, and the dedicated root-tab sequence 290 ms.
 
 ## Current Near-Term Priority
 
@@ -35,7 +37,7 @@ That means:
 - keep account backup and restore reliable before schema changes
 - maintain readable UI across light and dark mode
 - keep performance-sensitive routes within the current acceptance thresholds
-- bring cold first-load Workout, History, and Settings tab transitions under the existing 300 ms gate without relaxing the threshold
+- preserve the existing 300 ms warm/root and 500 ms deep-route gates while completing unlocked-device motion and accessibility acceptance
 
 ## Next Practical Priorities
 

@@ -47,6 +47,7 @@ struct SleepDashboardView: View {
     @State private var didPresentMorningConfirmation = false
     @State private var healthKitImportPresentation: HealthKitSleepImportPresentation = .idle
     @State private var locallyResolvedSessionIDs: Set<UUID> = []
+    @State private var revealedSleepChartGeneration: String?
 
     private let repository = SleepSessionRepository()
     private let scoring = SleepScoringService()
@@ -273,21 +274,26 @@ struct SleepDashboardView: View {
                 refreshSleepAnalytics(force: true)
                 refreshReadinessScore(force: true)
             }
+            .sheetContentEntrance()
         }
         .sheet(isPresented: $showingSettings) {
             SleepSettingsView(settings: $settings)
+                .sheetContentEntrance()
         }
         .sheet(item: $activeStartSheet) { sheet in
-            switch sheet {
-            case .sleepMode:
-                SleepModeView(settings: $settings)
-            case .napEntry:
-                NapSessionEditorView()
-            case .napTimer:
-                NapTimerView()
-            case .manualEntry:
-                SleepSessionEditorView(mode: .manual)
+            Group {
+                switch sheet {
+                case .sleepMode:
+                    SleepModeView(settings: $settings)
+                case .napEntry:
+                    NapSessionEditorView()
+                case .napTimer:
+                    NapTimerView()
+                case .manualEntry:
+                    SleepSessionEditorView(mode: .manual)
+                }
             }
+            .sheetContentEntrance()
         }
         .alert("Discard active sleep?", isPresented: discardAlertBinding) {
             Button("Cancel", role: .cancel) {
@@ -816,11 +822,12 @@ struct SleepDashboardView: View {
                     }
 
                     ZStack(alignment: .bottom) {
-                        HStack(alignment: .bottom, spacing: 10) {
-                            ForEach(summaries.reversed()) { summary in
-                                SleepDurationBar(summary: summary, targetMinutes: settings.targetSleepMinutes)
-                            }
-                        }
+                        SleepWeekBarChart(
+                            summaries: summaries.reversed(),
+                            targetMinutes: settings.targetSleepMinutes,
+                            generation: sleepChartGeneration,
+                            revealedGeneration: $revealedSleepChartGeneration
+                        )
                         .frame(height: 150)
 
                         GeometryReader { proxy in
@@ -845,6 +852,13 @@ struct SleepDashboardView: View {
         let tracked = summaries.filter { $0.primarySession != nil }
         guard !tracked.isEmpty else { return 0 }
         return tracked.map(\.totalSleepMinutes).reduce(0, +) / tracked.count
+    }
+
+    private var sleepChartGeneration: String {
+        summaries.map {
+            "\($0.date.timeIntervalSince1970):\($0.totalSleepMinutes):\($0.primarySession?.id.uuidString ?? "none")"
+        }
+        .joined(separator: "|") + "|target:\(settings.targetSleepMinutes)"
     }
 
     private var napsSection: some View {
@@ -1264,10 +1278,11 @@ private struct NapSummaryCard: View {
 private struct SleepDurationBar: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var hasAppeared = false
 
     let summary: SleepSummary
     let targetMinutes: Int
+    let index: Int
+    let isRevealed: Bool
 
     var body: some View {
         VStack(spacing: 7) {
@@ -1280,8 +1295,12 @@ private struct SleepDurationBar: View {
                     Spacer(minLength: 0)
                     RoundedRectangle(cornerRadius: appTheme.metrics.radius8, style: .continuous)
                         .fill(barColor)
-                        .frame(height: summary.totalSleepMinutes > 0 ? (hasAppeared || reduceMotion ? height : 8) : 8)
-                        .animation(AppMotion.progressFill(reduceMotion: reduceMotion), value: hasAppeared)
+                        .frame(height: summary.totalSleepMinutes > 0 ? (isRevealed || reduceMotion ? height : 8) : 8)
+                        .animation(
+                            AppMotion.chartDrawIn(reduceMotion: reduceMotion)
+                                .delay(AppMotion.staggerDelay(index: index, reduceMotion: reduceMotion, step: 0.04)),
+                            value: isRevealed
+                        )
                 }
             }
 
@@ -1292,9 +1311,6 @@ private struct SleepDurationBar: View {
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
-        .onAppear {
-            hasAppeared = true
-        }
     }
 
     private var barColor: Color {
@@ -1317,6 +1333,54 @@ private struct SleepDurationBar: View {
 
         let targetCopy = summary.totalSleepMinutes < targetMinutes ? "below target" : "on target"
         return "\(day), \(SleepScoringService.durationText(minutes: summary.totalSleepMinutes)) sleep, \(targetCopy)."
+    }
+}
+
+private struct SleepWeekBarChart: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let summaries: ReversedCollection<[SleepSummary]>
+    let targetMinutes: Int
+    let generation: String
+    @Binding var revealedGeneration: String?
+
+    @State private var isRevealed = false
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 10) {
+            ForEach(Array(summaries.enumerated()), id: \.element.id) { index, summary in
+                SleepDurationBar(
+                    summary: summary,
+                    targetMinutes: targetMinutes,
+                    index: index,
+                    isRevealed: isRevealed
+                )
+            }
+        }
+        .onAppear {
+            revealIfNeeded()
+        }
+        .onChange(of: generation) { _, _ in
+            revealIfNeeded()
+        }
+    }
+
+    private func revealIfNeeded() {
+        guard revealedGeneration != generation else {
+            isRevealed = true
+            return
+        }
+
+        revealedGeneration = generation
+        guard !reduceMotion else {
+            isRevealed = true
+            return
+        }
+
+        isRevealed = false
+        withAnimation(AppMotion.chartDrawIn(reduceMotion: false)) {
+            isRevealed = true
+        }
     }
 }
 
@@ -1427,4 +1491,3 @@ private struct SleepCoachingInsightCard: View {
         }
     }
 }
-

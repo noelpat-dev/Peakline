@@ -107,7 +107,19 @@ The data-rich fixture inserts thousands of SwiftData objects during its launch, 
 
 Treat these aggregate values as the current healthy baseline rather than a hard promise for every machine; the enforced thresholds remain the source of truth.
 
-The persistent DEBUG summary includes startup phase durations, per-route and per-root-tab timings, `previewWarmCacheHits`, and mounted refresh counts because current Xcode releases may omit individual app console lines from `xcodebuild` output. The verifier does not remove the warm-cache requirement or weaken the 300/500 ms budgets.
+The 22 August 2026 motion validation then completed Debug and strict-concurrency builds, passed all 186 unit/reliability tests, and passed focused cached-History and Logger set-completion/rest-timer UI flows. After removing synchronous Today signature work from `onDisappear` and moving Coach/History reveal work behind their stable first frames, its canonical acceptance run reported:
+
+- `performance_acceptance=PASS`
+- Today-to-Coach: 178 ms
+- Coach-to-Preview: 209 ms
+- warmed root transition in the route flow: 186 ms
+- dedicated root-tab sequence: 290 ms
+- Preview warm-cache hits: 2
+- mounted Preview refreshes: 0
+
+During integration, pre-fix samples ranged from 553–607 ms for Today-to-Coach and 530–867 ms for root transitions; these failures identified lifecycle work that was then removed from the transition path. The final green samples retain the unchanged 300 ms warm/root and 500 ms deep-route budgets.
+
+The persistent DEBUG summary includes startup phase durations, per-route and per-root-tab timings, `previewWarmCacheHits`, and mounted refresh counts because current Xcode releases may omit individual app console lines from `xcodebuild` output. The verifier accepts either the original warm-cache trace line or the maximum positive count across root/route summaries; it does not remove the warm-cache requirement or weaken the 300/500 ms budgets.
 
 ## When To Run It
 

@@ -146,6 +146,8 @@ GymTracker/Views/
 
 The implemented presentation layer is owned centrally. `AppThemeProvider` resolves semantic Light and Dark palettes plus the selected accent; `AppTypography` maps hierarchy and workout-number roles onto Dynamic Type-backed system styles; and `FitnessScreen`, `FitnessCard`, `MetricTile`, `FitnessIconBadge`, shared button styles, and `AppMotion` provide the normal screen vocabulary. Content surfaces are solid semantic colours. Material remains native chrome or an isolated transient layer, with an opaque semantic fallback for Reduce Transparency. Major feature screens use at most one hero and reflow dense horizontal groups with `ViewThatFits` or accessibility-size stacking instead of clipping or aggressive scale reduction.
 
+`AppMotion` is the single motion boundary. Its `snappy` (`0.32/0.85`), `smooth` (`0.42/0.92`), and `expressive` (`0.55/0.75`) presets back role APIs, a 120 ms micro / 220–280 ms standard / 350–500 ms expressive ladder, and a 35 ms stagger capped at eight items. The explicit 150 ms stepper roll and 180 ms set-checkmark draw are bounded feature exceptions. Dashboard and chart reveal state is route-local and cancellable; Today re-entry compares output signatures without synchronous work in `onDisappear`; deletion animates only inside a synchronous save transaction and rolls back on failure. Reduce Motion removes spatial, rolling, drawing, stagger, scale, and peripheral celebration while preserving final values and opacity-only meaning.
+
 View guardrails:
 
 - Prefer shared components over local one-off card styling.

@@ -161,6 +161,7 @@ struct WorkoutLoggerView: View {
                     pendingFinishAfterModal = true
                 }
             )
+            .sheetContentEntrance()
         }
         .sheet(item: $substitutionRequest) { request in
             SubstitutionPickerSheet(
@@ -169,6 +170,7 @@ struct WorkoutLoggerView: View {
             ) { candidate in
                 applySubstitution(request: request, candidate: candidate)
             }
+            .sheetContentEntrance()
         }
         .confirmationDialog(
             "Check workout duration",
@@ -211,6 +213,7 @@ struct WorkoutLoggerView: View {
                 pendingOutlierDurationSeconds = nil
                 finishWorkout()
             }
+            .sheetContentEntrance()
             .presentationDetents([.medium])
         }
         .alert("Finish with skipped exercises?", isPresented: $showingSkippedExerciseConfirmation) {
@@ -385,8 +388,9 @@ struct WorkoutLoggerView: View {
 
         if restTimerState.endDate != nil {
             Section {
-                ActiveRestTimerBanner(state: $restTimerState)
+                RestTimerView(state: $restTimerState)
             }
+            .transition(AppMotion.sheetInnerContentTransition(reduceMotion: reduceMotion))
         }
 
         Section {
@@ -439,7 +443,10 @@ struct WorkoutLoggerView: View {
                 isCompletedWorkout: isEditingCompletedWorkout || session.completed,
                 canSubstitute: hasSubstitutionCandidates(for: currentExerciseLog),
                 requestSubstitution: { requestSubstitution(for: currentExerciseLog) },
-                reportPersistenceError: { completionErrorMessage = $0 }
+                reportPersistenceError: { completionErrorMessage = $0 },
+                onSetCompleted: { _ in
+                    startRestTimer(for: currentExerciseLog)
+                }
             )
             .id(currentExerciseLog.id)
 
@@ -489,7 +496,8 @@ struct WorkoutLoggerView: View {
                     isCompletedWorkout: isEditingCompletedWorkout || session.completed,
                     canSubstitute: hasSubstitutionCandidates(for: exerciseLog),
                     requestSubstitution: { requestSubstitution(for: exerciseLog) },
-                    reportPersistenceError: { completionErrorMessage = $0 }
+                    reportPersistenceError: { completionErrorMessage = $0 },
+                    onSetCompleted: nil
                 )
             }
         }
@@ -816,7 +824,6 @@ struct WorkoutLoggerView: View {
             }
 
             finalizePausedTime(at: session.endedAt ?? Date())
-            markEnteredSetsComplete()
             restTimerState = RestTimerState()
 
             let measuredSeconds = completionDurationOverrideSeconds
@@ -903,6 +910,11 @@ struct WorkoutLoggerView: View {
             return
         }
 
+        // Finish-time completion is a finalisation fallback for entered sets.
+        // It happens only after any duration guard has been accepted, so
+        // cancelling the outlier dialog cannot leave rows marked as logged.
+        markEnteredSetsComplete()
+
         do {
             try modelContext.save()
             WorkoutWarmStartInvalidation.shared.invalidate(reason: .workoutCompleted)
@@ -951,6 +963,29 @@ struct WorkoutLoggerView: View {
     private func markEnteredSetsComplete() {
         for set in session.exerciseLogs.flatMap(\.setLogs) where set.weight > 0 || set.reps > 0 || set.rpe != nil {
             set.completed = true
+        }
+    }
+
+    private func startRestTimer(for exerciseLog: ExerciseLog) {
+        guard !isEditingCompletedWorkout, !session.completed else { return }
+
+        let configuredRest = activeSplits
+            .first(where: { $0.id == session.splitId })?
+            .exercises
+            .first(where: { $0.exerciseId == exerciseLog.exerciseId })?
+            .restSeconds
+        let duration = max(30, min(configuredRest ?? RestTimerState.defaultDurationSeconds, 300))
+        let nextSet = exerciseLog.setLogs
+            .filter { !$0.completed }
+            .min { $0.setNumber < $1.setNumber }?
+            .setNumber
+
+        withAnimation(AppMotion.animation(for: .sheetPresent, reduceMotion: reduceMotion)) {
+            restTimerState.start(
+                durationSeconds: duration,
+                exerciseName: exerciseLog.exerciseNameSnapshot,
+                nextSetNumber: nextSet
+            )
         }
     }
 
@@ -1247,73 +1282,6 @@ private struct LiveWorkoutOrderRow: View {
         .padding(.vertical, 4)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("workout-logger-order-row-\(exerciseName)")
-    }
-}
-
-private struct ActiveRestTimerBanner: View {
-    @Environment(\.appTheme) private var appTheme
-    @Binding var state: RestTimerState
-
-    var body: some View {
-        if let endDate = state.endDate {
-            TimelineView(.periodic(from: .now, by: 1)) { timeline in
-                let remaining = max(0, Int(endDate.timeIntervalSince(timeline.date)))
-
-                HStack(spacing: 12) {
-                    Image(systemName: "timer")
-                        .font(AppTypography.badge)
-                        .foregroundStyle(appTheme.colors.textAccent)
-                        .frame(width: 34, height: 34)
-                        .background(appTheme.colors.accentSurface, in: Circle())
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(remainingText(remaining))
-                            .font(AppTypography.workoutNumber.monospacedDigit())
-                            .foregroundStyle(appTheme.colors.textPrimary)
-
-                        Text(nextSetText)
-                            .font(AppTypography.metadata)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.82)
-                    }
-
-                    Spacer()
-
-                    Button("+30s") {
-                        state.endDate = (state.endDate ?? Date()).addingTimeInterval(30)
-                    }
-                    .buttonStyle(.borderless)
-
-                    Button("Skip") {
-                        state = RestTimerState()
-                    }
-                    .buttonStyle(.borderless)
-                }
-                .padding(.vertical, 2)
-                .onChange(of: remaining) { _, newValue in
-                    if newValue == 0 {
-                        state = RestTimerState()
-                    }
-                }
-            }
-        }
-    }
-
-    private var nextSetText: String {
-        guard let exerciseName = state.exerciseName else {
-            return "Rest before the next set"
-        }
-
-        if let nextSetNumber = state.nextSetNumber {
-            return PeaklineText.joinedMetadata([exerciseName, "next set \(nextSetNumber)"])
-        }
-
-        return exerciseName
-    }
-
-    private func remainingText(_ seconds: Int) -> String {
-        "\(seconds / 60):\(String(format: "%02d", seconds % 60))"
     }
 }
 
@@ -1745,6 +1713,7 @@ private struct PreviousSetSnapshot {
 private struct ExerciseLoggerSection: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var exerciseLog: ExerciseLog
     var contextLabel: String? = nil
     let templateNote: String?
@@ -1753,6 +1722,7 @@ private struct ExerciseLoggerSection: View {
     let canSubstitute: Bool
     let requestSubstitution: () -> Void
     let reportPersistenceError: (String) -> Void
+    let onSetCompleted: ((SetLog) -> Void)?
 
     @State private var showingNotes = false
 
@@ -1870,8 +1840,11 @@ private struct ExerciseLoggerSection: View {
                 SetRowView(
                     setLog: setLog,
                     didMutate: persistValueMutation,
-                    deleteAction: { delete(setLog) }
+                    deleteAction: { delete(setLog) },
+                    reportPersistenceError: reportPersistenceError,
+                    onCompleted: onSetCompleted
                 )
+                    .transition(AppMotion.rowInsertRemoveTransition(reduceMotion: reduceMotion))
                     .destructiveSwipeAction {
                         delete(setLog)
                     }
@@ -1959,14 +1932,38 @@ private struct ExerciseLoggerSection: View {
     }
 
     private func delete(_ setLog: SetLog) {
-        exerciseLog.setLogs.removeAll { $0.id == setLog.id }
-        modelContext.delete(setLog)
+        let originalSets = orderedSets
+        var saveError: Error?
+        withAnimation(AppMotion.rowCollapse(reduceMotion: reduceMotion)) {
+            exerciseLog.setLogs.removeAll { $0.id == setLog.id }
+            modelContext.delete(setLog)
 
-        for (index, set) in orderedSets.filter({ $0.id != setLog.id }).enumerated() {
-            set.setNumber = index + 1
+            for (index, set) in orderedSets.filter({ $0.id != setLog.id }).enumerated() {
+                set.setNumber = index + 1
+            }
+
+            do {
+                try modelContext.save()
+            } catch {
+                saveError = error
+            }
         }
 
-        persistMutation()
+        if saveError == nil {
+            if isCompletedWorkout {
+                WorkoutWarmStartInvalidation.shared.invalidate(reason: .completedWorkoutSetEdited)
+            }
+        } else {
+            modelContext.rollback()
+            AppMotion.withoutAnimation {
+                exerciseLog.setLogs = originalSets
+                for (index, set) in originalSets.enumerated() {
+                    set.setNumber = index + 1
+                    set.exerciseLog = exerciseLog
+                }
+            }
+            reportPersistenceError("Peakline could not save this set change. Please try again.")
+        }
     }
 
     private func removeExerciseFromSession() {
@@ -2006,11 +2003,19 @@ private struct ExerciseLoggerSection: View {
 
 private struct SetRowView: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var setLog: SetLog
     let didMutate: () -> Void
     let deleteAction: () -> Void
+    let reportPersistenceError: (String) -> Void
+    let onCompleted: ((SetLog) -> Void)?
 
     @State private var activeSheet: SetRowSheet?
+    @State private var completionInFlight = false
+    @State private var completionFlashVisible = false
+    @State private var checkmarkProgress: CGFloat = 1
+    @State private var completionFlashTask: Task<Void, Never>?
 
     private var effort: EffortLevel? {
         EffortLevel(rpe: setLog.rpe)
@@ -2035,7 +2040,12 @@ private struct SetRowView: View {
                 }
 
                 if setLog.completed {
-                    SetStatusChip(title: "Logged", systemImage: "checkmark.circle.fill", color: appTheme.successColor)
+                    SetStatusChip(
+                        title: "Logged",
+                        systemImage: "checkmark.circle.fill",
+                        color: appTheme.successColor,
+                        checkmarkProgress: checkmarkProgress
+                    )
                 }
             }
 
@@ -2078,6 +2088,21 @@ private struct SetRowView: View {
                 }
                 .buttonStyle(.borderless)
 
+                if !setLog.completed {
+                    Button {
+                        completeSet()
+                    } label: {
+                        Label("Complete Set", systemImage: "checkmark.circle")
+                            .font(AppTypography.chip)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(appTheme.colors.accent)
+                    .disabled(!hasLoggedData || completionInFlight)
+                    .accessibilityIdentifier("workout-logger-complete-set-\(setLog.id.uuidString)")
+                }
+
                 Spacer()
 
                 Menu {
@@ -2116,6 +2141,14 @@ private struct SetRowView: View {
             }
         }
         .padding(.vertical, 8)
+        .background {
+            RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
+                .fill(completionFlashVisible ? appTheme.colors.accentSurface.opacity(0.72) : .clear)
+        }
+        .animation(
+            AppMotion.animation(for: .snappy, reduceMotion: reduceMotion, policy: .opacity),
+            value: completionFlashVisible
+        )
         .onAppear {
             syncCompletedState()
         }
@@ -2132,6 +2165,7 @@ private struct SetRowView: View {
                     keyboardType: .decimalPad,
                     save: { updateWeight(Double($0) ?? setLog.weight) }
                 )
+                .sheetContentEntrance()
             case .reps:
                 NumericEntrySheet(
                     title: "Edit Reps",
@@ -2139,6 +2173,7 @@ private struct SetRowView: View {
                     keyboardType: .numberPad,
                     save: { updateReps(Int($0) ?? setLog.reps) }
                 )
+                .sheetContentEntrance()
             case .effort:
                 EffortPickerSheet(selectedRPE: setLog.rpe) { rpe in
                     setLog.rpe = rpe
@@ -2146,16 +2181,71 @@ private struct SetRowView: View {
                     didMutate()
                     activeSheet = nil
                 }
+                .sheetContentEntrance()
             case .plates:
                 NavigationStack {
                     PlateCalculatorView(targetWeight: setLog.weight)
                 }
+                .sheetContentEntrance()
             }
+        }
+        .onDisappear {
+            completionFlashTask?.cancel()
+            completionFlashTask = nil
         }
     }
 
     private func format(_ weight: Double) -> String {
         weight.formatted(.number.precision(.fractionLength(weight.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1)))
+    }
+
+    private func completeSet() {
+        guard hasLoggedData, !setLog.completed, !completionInFlight else { return }
+
+        completionInFlight = true
+        let previousCompletionState = setLog.completed
+        setLog.completed = true
+
+        do {
+            try PerformanceTracer.trace(.motionSetCompletion) {
+                try modelContext.save()
+            }
+        } catch {
+            modelContext.rollback()
+            setLog.completed = previousCompletionState
+            completionInFlight = false
+            reportPersistenceError("Peakline could not save this set change. Please try again.")
+            return
+        }
+
+        if reduceMotion {
+            AppMotion.withoutAnimation {
+                checkmarkProgress = 1
+                completionFlashVisible = false
+            }
+        } else {
+            AppMotion.withoutAnimation {
+                checkmarkProgress = 0
+                completionFlashVisible = true
+            }
+            withAnimation(.easeOut(duration: AppMotion.setCheckmarkDuration)) {
+                checkmarkProgress = 1
+            }
+
+            completionFlashTask?.cancel()
+            completionFlashTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(180))
+                guard !Task.isCancelled else { return }
+                withAnimation(AppMotion.animation(for: .snappy, reduceMotion: false, policy: .opacity)) {
+                    completionFlashVisible = false
+                }
+                completionFlashTask = nil
+            }
+        }
+
+        AppHaptics.success()
+        onCompleted?(setLog)
+        completionInFlight = false
     }
 
     private func updateWeight(_ weight: Double) {
@@ -2342,15 +2432,50 @@ private struct SetStatusChip: View {
     let title: String
     let systemImage: String
     let color: Color
+    var checkmarkProgress: CGFloat? = nil
 
     var body: some View {
-        Label(title, systemImage: systemImage)
+        HStack(spacing: 4) {
+            if let checkmarkProgress {
+                ZStack {
+                    Image(systemName: systemImage)
+                        .opacity(0.22)
+
+                    CheckmarkStroke(progress: checkmarkProgress)
+                        .trim(from: 0, to: checkmarkProgress)
+                        .stroke(color, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+                }
+                .frame(width: 14, height: 14)
+                .accessibilityHidden(true)
+            } else {
+                Image(systemName: systemImage)
+                    .accessibilityHidden(true)
+            }
+
+            Text(title)
+        }
             .font(AppTypography.badge)
-            .labelStyle(.titleAndIcon)
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .foregroundStyle(color)
             .background(color.opacity(0.14), in: Capsule())
+    }
+}
+
+private struct CheckmarkStroke: Shape {
+    var progress: CGFloat
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.14, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.42, y: rect.maxY - rect.height * 0.18))
+        path.addLine(to: CGPoint(x: rect.maxX - rect.width * 0.12, y: rect.minY + rect.height * 0.16))
+        return path
     }
 }
 

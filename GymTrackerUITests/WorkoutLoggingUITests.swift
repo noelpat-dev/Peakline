@@ -42,6 +42,18 @@ final class WorkoutLoggingUITests: XCTestCase {
         tapButton(identifier: "stepper-weight-increment", times: 2)
         tapButton(identifier: "stepper-reps-increment", times: 6)
 
+        let completeSet = app.buttons
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-logger-complete-set-"))
+            .firstMatch
+        XCTAssertTrue(completeSet.waitForExistence(timeout: 5), "Expected the completed-set action")
+        completeSet.tap()
+        XCTAssertTrue(app.staticTexts["Logged"].waitForExistence(timeout: 5))
+        let restTimer = app.descendants(matching: .any)["workout-rest-timer-active"]
+        for _ in 0..<8 where !restTimer.exists {
+            app.swipeDown()
+        }
+        XCTAssertTrue(restTimer.waitForExistence(timeout: 5), "Expected rest timing to follow a persisted set completion")
+
         tapElement(identifier: "workout-logger-pause", maxSwipes: 6, swipeUp: false)
         tapElement(identifier: "workout-logger-resume", maxSwipes: 2, swipeUp: false)
 

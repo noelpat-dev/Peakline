@@ -1,5 +1,95 @@
 import SwiftUI
 
+@MainActor
+final class DashboardArrivalCoordinator: ObservableObject {
+    @Published private(set) var isPresented = false
+
+    private(set) var hasPlayed = false
+    private var task: Task<Void, Never>?
+
+    func start(itemCount: Int, reduceMotion: Bool) {
+        guard !hasPlayed else { return }
+
+        hasPlayed = true
+        task?.cancel()
+
+        guard !reduceMotion, itemCount > 0 else {
+            isPresented = true
+            task = nil
+            return
+        }
+
+        task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            isPresented = true
+            task = nil
+        }
+    }
+
+    func cancel() {
+        task?.cancel()
+        task = nil
+        if !isPresented {
+            isPresented = true
+        }
+    }
+
+    func isVisible(index _: Int) -> Bool {
+        isPresented
+    }
+}
+
+private struct DashboardArrivalModifier: ViewModifier {
+    let isVisible: Bool
+    let index: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(isVisible || reduceMotion ? 1 : 0)
+            .offset(y: reduceMotion || isVisible ? 0 : AppMotion.cardAppearOffset)
+            .animation(
+                AppMotion.staggeredAnimation(
+                    for: .cardAppear,
+                    index: index,
+                    reduceMotion: reduceMotion
+                ),
+                value: isVisible
+            )
+    }
+}
+
+private struct TodayReentryWashModifier: ViewModifier {
+    let isActive: Bool
+    @Environment(\.appTheme) private var appTheme
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                RoundedRectangle(cornerRadius: appTheme.metrics.standardCardRadius, style: .continuous)
+                    .fill(appTheme.colors.accentSurface)
+                    .opacity(isActive ? 0.72 : 0)
+                    .allowsHitTesting(false)
+            }
+            .animation(
+                .easeInOut(duration: AppMotion.todayReentryWashDuration),
+                value: isActive
+            )
+    }
+}
+
+extension View {
+    func dashboardArrival(isVisible: Bool, index: Int) -> some View {
+        modifier(DashboardArrivalModifier(isVisible: isVisible, index: index))
+    }
+
+    func todayReentryWash(isActive: Bool) -> some View {
+        modifier(TodayReentryWashModifier(isActive: isActive))
+    }
+}
+
 struct DashboardHeaderView: View {
     @Environment(\.appTheme) private var appTheme
 

@@ -88,6 +88,10 @@ The main lifting loop is implemented end to end and the app is in an active qual
 
 The 21 August 2026 warm-route architecture pass built successfully and passed all 180 unit/reliability tests. The final boot-isolated iPhone 17 simulator verifier kept the unchanged 300 ms warm/root and 500 ms deep-route budgets: default Today-to-Coach measured 219 ms, Coach-to-Preview 283 ms, the root maximum 147 ms, and data-rich Sleep/Nutrition/Progress/Hydration/Preview paths measured 46/113/178/296/387 ms. These are engineering samples, not a promise that every device will produce identical timing; physical-device memory and first-frame validation remains outstanding.
 
+Peakline now uses one role-based motion system built on `snappy`, `smooth`, and `expressive` presets. Dashboard arrivals, meaningful metric changes, set completion, rest urgency, directional steppers, committed deletion collapse, sheet content, charts, and Today re-entry cues share bounded motion and explicit Reduce Motion fallbacks; saves, logging, dismissal, tab changes, and native navigation remain immediate.
+
+The 22 August 2026 motion validation passed the Debug build, strict-concurrency build lane, all 186 unit/reliability tests, the focused Logger flow, and cached-History UI coverage. The final canonical UI run measured Today-to-Coach at 178 ms, Coach-to-Preview at 209 ms, a warmed root transition at 186 ms, and the dedicated root-tab sequence at 290 ms, with two Preview warm-cache hits and zero mounted Preview refreshes. These simulator figures are dated engineering samples rather than device guarantees.
+
 ## Run locally
 
 Requirements:

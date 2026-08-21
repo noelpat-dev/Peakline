@@ -69,6 +69,7 @@ struct NutritionDashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var readinessRefreshClock = ReadinessRefreshClock.shared
+    @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
 
     @Query
     private var foodItems: [FoodItem]
@@ -86,13 +87,16 @@ struct NutritionDashboardView: View {
     private let calculator = NutritionCalculatorService()
     private let nutritionGoalStore = NutritionGoalService()
     @State private var pendingDeleteLogEntryID: UUID?
+    @State private var deleteErrorText: String?
     @State private var dashboardSnapshot = NutritionDashboardSnapshot.empty
     @State private var lastDashboardSignature: String?
     @State private var selectedRoute: NutritionRoute?
     @State private var activeFoodLogSwipeID: UUID?
     @State private var didRequestInitialRefresh = false
     @State private var isPreparingInitialSnapshot = true
+    @StateObject private var dashboardArrival = DashboardArrivalCoordinator()
     @State private var dashboardRefreshTask: Task<Void, Never>?
+    @State private var isDashboardVisible = false
 
     init() {
         _foodItems = Query(Self.foodItemsDescriptor)
@@ -145,6 +149,7 @@ struct NutritionDashboardView: View {
             nutritionGoalSignature,
             healthKitSignature,
             String(selectedDate.timeIntervalSince1970),
+            "workoutRevision:\(workoutWarmStartInvalidation.revision)",
             readinessRefreshClock.token.signature
         ]
         return parts.joined(separator: "|")
@@ -270,6 +275,7 @@ struct NutritionDashboardView: View {
                     moveBackward: { moveSelectedDay(by: -1) },
                     moveForward: { moveSelectedDay(by: 1) }
                 )
+                .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 0), index: 0)
 
             NutritionHeroCard(
                 totals: snapshot.totals,
@@ -277,6 +283,7 @@ struct NutritionDashboardView: View {
                 isToday: isToday
             )
             .accessibilityIdentifier("nutrition-hero")
+            .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 1), index: 1)
 
             if isToday {
                 DashboardSection(title: "Coach Context") {
@@ -286,15 +293,18 @@ struct NutritionDashboardView: View {
                         title: "Nutrition in today's readiness"
                     )
                 }
+                .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 2), index: 2)
             } else {
                 DashboardSection(title: "Day Context") {
                     HistoricalNutritionContextCard(isTrainingDay: snapshot.isTrainingDay)
                 }
+                .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 2), index: 2)
             }
 
             DashboardSection(title: "Macros") {
                 MacroSummaryGrid(totals: snapshot.totals)
             }
+            .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 3), index: 3)
 
             if isToday {
                 DashboardSection(title: "Quick Actions") {
@@ -344,6 +354,7 @@ struct NutritionDashboardView: View {
                         .buttonStyle(PressableCardButtonStyle())
                     }
                 }
+                .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 4), index: 4)
             }
 
             if isToday && !snapshot.recentlyLoggedFoods.isEmpty {
@@ -363,6 +374,7 @@ struct NutritionDashboardView: View {
                     }
                     .scrollClipDisabled()
                 }
+                .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 5), index: 5)
             }
 
                 DashboardSection(title: isToday ? "Today" : "Meals") {
@@ -409,6 +421,7 @@ struct NutritionDashboardView: View {
                     }
                 }
                 }
+                .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 6), index: 6)
             }
         }
         .navigationTitle("Nutrition")
@@ -447,8 +460,18 @@ struct NutritionDashboardView: View {
         } message: {
             Text("This removes the logged entry from your daily totals. The saved food stays in your food database.")
         }
+        .alert("Couldn’t remove food log", isPresented: Binding(
+            get: { deleteErrorText != nil },
+            set: { if !$0 { deleteErrorText = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(deleteErrorText ?? "Could not remove the food log locally. Try again.")
+        }
         .onAppear {
+            isDashboardVisible = true
             readinessRefreshClock.start()
+            dashboardArrival.start(itemCount: 7, reduceMotion: reduceMotion)
             healthPreferences = HealthKitPreferenceStore().load()
             nutritionGoal = nutritionGoalStore.loadGoal()
             // Build the first snapshot on the appear turn so the pushed
@@ -458,19 +481,23 @@ struct NutritionDashboardView: View {
             dashboardRefreshTask?.cancel()
             dashboardRefreshTask = Task { @MainActor in
                 await Task.yield()
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, isDashboardVisible else { return }
                 refreshDashboardSnapshot(force: shouldForceRefresh)
+                dashboardRefreshTask = nil
             }
         }
         .onChange(of: dashboardSignature) { _, _ in
+            guard isDashboardVisible else { return }
             dashboardRefreshTask?.cancel()
             dashboardRefreshTask = Task { @MainActor in
                 await Task.yield()
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, isDashboardVisible else { return }
                 refreshDashboardSnapshot()
+                dashboardRefreshTask = nil
             }
         }
         .onChange(of: selectedDate) { _, newDate in
+            guard isDashboardVisible else { return }
             selectedDate = min(
                 Calendar.current.startOfDay(for: newDate),
                 Calendar.current.startOfDay(for: .now)
@@ -479,12 +506,16 @@ struct NutritionDashboardView: View {
             dashboardRefreshTask?.cancel()
             dashboardRefreshTask = Task { @MainActor in
                 await Task.yield()
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, isDashboardVisible else { return }
                 refreshDashboardSnapshot(force: true)
+                dashboardRefreshTask = nil
             }
         }
         .onDisappear {
+            isDashboardVisible = false
             dashboardRefreshTask?.cancel()
+            dashboardRefreshTask = nil
+            dashboardArrival.cancel()
         }
     }
 
@@ -538,12 +569,31 @@ struct NutritionDashboardView: View {
         guard let pendingDeleteLogEntryID else { return }
         let id = pendingDeleteLogEntryID
         let descriptor = FetchDescriptor<FoodLogEntry>(predicate: #Predicate { $0.id == id })
-        guard let entry = try? modelContext.fetch(descriptor).first else { return }
-        HealthKitSyncStateStore().removeRecord(for: id)
-        modelContext.delete(entry)
-        try? modelContext.save()
-        AppHaptics.warning()
-        self.pendingDeleteLogEntryID = nil
+        guard let entry = try? modelContext.fetch(descriptor).first else {
+            self.pendingDeleteLogEntryID = nil
+            return
+        }
+        var saveError: Error?
+        withAnimation(AppMotion.rowCollapse(reduceMotion: reduceMotion)) {
+            modelContext.delete(entry)
+            do {
+                try modelContext.save()
+            } catch {
+                saveError = error
+            }
+        }
+
+        if saveError == nil {
+            HealthKitSyncStateStore().removeRecord(for: id)
+            AppHaptics.warning()
+            self.pendingDeleteLogEntryID = nil
+            activeFoodLogSwipeID = nil
+        } else {
+            modelContext.rollback()
+            AppHaptics.error()
+            self.pendingDeleteLogEntryID = nil
+            deleteErrorText = "Could not remove the food log locally. Try again."
+        }
     }
 }
 
@@ -791,6 +841,7 @@ struct AddFoodHubView: View {
         }
         .sheet(isPresented: $showingManualEntry) {
             ManualFoodEntryView()
+                .sheetContentEntrance()
         }
     }
 
@@ -891,12 +942,14 @@ private enum AddFoodHubRoute: Hashable, Identifiable {
 struct FoodDatabaseView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var catalog: SavedFoodCatalogSnapshot
     @State private var searchText = ""
     @State private var showingManualEntry = false
     @State private var editingFood: SavedFoodSnapshot?
     @State private var pendingDelete: SavedFoodSnapshot?
+    @State private var deleteErrorText: String?
 
     init(route: SavedFoodPreparedRoute) {
         let prepared = SavedFoodWarmStartStore.shared.snapshot(for: route)
@@ -962,6 +1015,7 @@ struct FoodDatabaseView: View {
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("saved-food-row-\(food.name)")
                     .savedFoodsListRowStyle(rowInsets(bottom: isLastFood ? appTheme.metrics.screenBottomPadding : 12))
+                    .transition(AppMotion.rowInsertRemoveTransition(reduceMotion: reduceMotion))
                 }
             }
         }
@@ -971,9 +1025,11 @@ struct FoodDatabaseView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingManualEntry) {
             ManualFoodEntryView(onSave: applySavedFood)
+                .sheetContentEntrance()
         }
         .sheet(item: $editingFood) { food in
             ManualFoodEntryView(foodSnapshot: food, onSave: applySavedFood)
+                .sheetContentEntrance()
         }
         .alert("Delete food?", isPresented: deleteAlertBinding) {
             Button("Cancel", role: .cancel) {
@@ -984,6 +1040,14 @@ struct FoodDatabaseView: View {
             }
         } message: {
             Text("This removes the saved food. Existing log entries keep their snapshot macros.")
+        }
+        .alert("Couldn’t delete food", isPresented: Binding(
+            get: { deleteErrorText != nil },
+            set: { if !$0 { deleteErrorText = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(deleteErrorText ?? "Could not delete this saved food locally. Try again.")
         }
     }
 
@@ -1019,12 +1083,17 @@ struct FoodDatabaseView: View {
         modelContext.delete(food)
         do {
             try modelContext.save()
-            catalog = catalog.removing(id: foodID)
+            withAnimation(AppMotion.rowCollapse(reduceMotion: reduceMotion)) {
+                catalog = catalog.removing(id: foodID)
+            }
             SavedFoodWarmStartStore.shared.remove(id: foodID)
             AppHaptics.warning()
             self.pendingDelete = nil
         } catch {
+            modelContext.rollback()
             AppHaptics.error()
+            self.pendingDelete = nil
+            deleteErrorText = "Could not delete this saved food locally. Try again."
         }
     }
 
@@ -1717,6 +1786,7 @@ private struct MealSectionCard: View {
 
 private struct FoodLogRow: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let entry: NutritionFoodLogSnapshot
     let shouldShowHealthKitStatus: Bool
@@ -1740,6 +1810,7 @@ private struct FoodLogRow: View {
                 Button("Remove Log", action: requestDelete)
             }
         }
+        .transition(AppMotion.rowInsertRemoveTransition(reduceMotion: reduceMotion))
     }
 
     private var rowContent: some View {
