@@ -16,6 +16,9 @@ build/
 # Local notes and generated files
 *.swp
 tmp/
+output/
+*.xcresult
+.codex-ci-worktree/
 
 # Local service configuration
 GymTracker/GoogleService-Info.plist
