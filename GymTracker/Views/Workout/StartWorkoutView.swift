@@ -451,33 +451,23 @@ struct StartWorkoutContentView: View {
     private var workoutDashboard: some View {
         StartWorkoutLazyScreen {
             if let unfinishedSession = unfinishedSessions.first {
-                StartWorkoutLazyItem {
-                    activeWorkoutCard(unfinishedSession)
-                }
+                activeWorkoutCard(unfinishedSession)
             } else if let recommendedSplit = currentDashboardSnapshot.recommendedSplit {
-                StartWorkoutLazyItem {
-                    recommendedWorkoutCard(recommendedSplit)
-                }
+                recommendedWorkoutCard(recommendedSplit)
             }
 
             if let recommendation = adaptiveSleepRecommendation {
-                StartWorkoutLazyItem {
-                    DashboardSection(title: "Readiness") {
-                        workoutRecoveryBanner(recommendation)
-                    }
+                DashboardSection(title: "Readiness") {
+                    workoutRecoveryBanner(recommendation)
                 }
             } else if !currentOverallReadinessIsProvisional,
                       let hint = preWorkoutSleepHint(for: sleepSummary) {
-                StartWorkoutLazyItem {
-                    DashboardSection(title: "Readiness") {
-                        sleepReadinessCard(title: hint.title, suggestion: hint.suggestion)
-                    }
+                DashboardSection(title: "Readiness") {
+                    sleepReadinessCard(title: hint.title, suggestion: hint.suggestion)
                 }
             } else if let support = provisionalSleepSupport {
-                StartWorkoutLazyItem {
-                    DashboardSection(title: "Readiness") {
-                        sleepReadinessCard(title: support.title, suggestion: support.suggestion)
-                    }
+                DashboardSection(title: "Readiness") {
+                    sleepReadinessCard(title: support.title, suggestion: support.suggestion)
                 }
             }
 
