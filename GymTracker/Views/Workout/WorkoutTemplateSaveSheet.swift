@@ -40,7 +40,7 @@ struct WorkoutTemplateSaveSheet: View {
                             )
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(log.exerciseNameSnapshot)
-                                    .font(.subheadline.weight(.semibold))
+                                    .font(AppTypography.bodyEmphasis)
                                     .foregroundStyle(appTheme.colors.textPrimary)
                                 Text(
                                     PeaklineText.setRepSummary(
@@ -49,7 +49,7 @@ struct WorkoutTemplateSaveSheet: View {
                                         maximumReps: log.maxReps
                                     )
                                 )
-                                    .font(.caption)
+                                    .font(AppTypography.metadata)
                                     .foregroundStyle(appTheme.colors.textSecondary)
                             }
                         }

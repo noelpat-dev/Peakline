@@ -20,7 +20,7 @@ struct PlateCalculatorView: View {
         Form {
             Section {
                 Text("Metric only. Enter the total barbell weight in kilograms. During a live workout, open this calculator beside a set to prefill that set's load.")
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
 
                 Stepper("Target: \(format(targetWeight)) kg", value: $targetWeight, in: 20...400, step: 2.5)

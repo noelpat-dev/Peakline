@@ -229,7 +229,7 @@ struct QuickActionTile: View {
                         Spacer(minLength: 8)
 
                         Image(systemName: "chevron.right")
-                            .font(.caption.weight(.bold))
+                            .font(AppTypography.eyebrow)
                             .foregroundStyle(appTheme.colors.textTertiary)
                     }
 
@@ -325,7 +325,7 @@ struct CoachInsightCard: View {
 
                     Text(badge)
                         .font(AppTypography.chip)
-                        .foregroundStyle(appTheme.colors.accent)
+                        .foregroundStyle(appTheme.colors.textAccent)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
                         .background(appTheme.colors.accentSurface, in: Capsule())
@@ -401,7 +401,7 @@ struct SplitCoverageBarView: View {
 
                     Text("\(completedCount)/\(items.count)")
                         .font(AppTypography.workoutNumber)
-                        .foregroundStyle(appTheme.colors.accent)
+                        .foregroundStyle(appTheme.colors.textAccent)
                 }
 
                 HStack(spacing: 7) {
@@ -488,7 +488,7 @@ struct DashboardSection<Content: View>: View {
                             .contentShape(Rectangle())
                     }
                     .font(AppTypography.bodyEmphasis)
-                    .foregroundStyle(appTheme.colors.accent)
+                    .foregroundStyle(appTheme.colors.textAccent)
                 }
             }
 

@@ -17,7 +17,7 @@ struct RestTimerView: View {
                                 .font(.headline.monospacedDigit())
                             if let exerciseName = state.exerciseName {
                                 Text(nextSetText(exerciseName: exerciseName))
-                                    .font(.caption)
+                                    .font(AppTypography.metadata)
                                     .foregroundStyle(appTheme.colors.textSecondary)
                             }
                         }
@@ -28,11 +28,13 @@ struct RestTimerView: View {
                             state.endDate = (state.endDate ?? Date()).addingTimeInterval(30)
                         }
                         .buttonStyle(.borderless)
+                        .frame(minWidth: appTheme.metrics.minimumHitTarget, minHeight: appTheme.metrics.minimumHitTarget)
 
                         Button("Skip") {
                             state = RestTimerState()
                         }
                         .buttonStyle(.borderless)
+                        .frame(minWidth: appTheme.metrics.minimumHitTarget, minHeight: appTheme.metrics.minimumHitTarget)
                     }
                     .onChange(of: remaining) { _, newValue in
                         if newValue == 0 {

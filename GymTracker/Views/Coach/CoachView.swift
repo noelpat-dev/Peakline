@@ -692,7 +692,7 @@ struct CoachContentView: View {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "arrow.turn.down.right")
                             .font(AppTypography.metadataEmphasis)
-                            .foregroundStyle(appTheme.colors.accent)
+                            .foregroundStyle(appTheme.colors.textAccent)
                             .frame(width: 24)
 
                         VStack(alignment: .leading, spacing: 3) {
@@ -748,11 +748,11 @@ struct CoachContentView: View {
                     FitnessCard {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("No clear load target yet")
-                                .font(.headline)
+                                .font(AppTypography.sectionTitle)
                                 .foregroundStyle(appTheme.colors.textPrimary)
 
                             Text(dailyDecision.targetFallback)
-                                .font(.subheadline)
+                                .font(AppTypography.body)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -767,16 +767,16 @@ struct CoachContentView: View {
                         HStack(alignment: .top, spacing: 12) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Recommended")
-                                    .font(.caption.weight(.semibold))
+                                    .font(AppTypography.chip)
                                     .foregroundStyle(appTheme.colors.textTertiary)
                                     .textCase(.uppercase)
 
                                 Text("\(dailyDecision.recommendedMode.displayName) Mode")
-                                    .font(.title3.bold())
+                                    .font(AppTypography.cardTitle)
                                     .foregroundStyle(appTheme.colors.textPrimary)
 
                                 Text(dailyDecision.modeReason)
-                                    .font(.subheadline)
+                                    .font(AppTypography.body)
                                     .foregroundStyle(appTheme.colors.textSecondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -854,7 +854,7 @@ struct CoachContentView: View {
                         openCoachRoute(.weeklyReview)
                     } label: {
                         Label("Open weekly review", systemImage: "chart.bar.doc.horizontal")
-                            .font(.subheadline.weight(.semibold))
+                            .font(AppTypography.bodyEmphasis)
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(SecondaryFitnessButtonStyle())
@@ -880,7 +880,7 @@ struct CoachContentView: View {
                     openCoachRoute(.actionHistory)
                 } label: {
                     Label("Review action history", systemImage: "clock.arrow.circlepath")
-                        .font(.subheadline.weight(.semibold))
+                        .font(AppTypography.bodyEmphasis)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(SecondaryFitnessButtonStyle())
@@ -891,7 +891,7 @@ struct CoachContentView: View {
                 if intelligence.readiness.isProvisional {
                     FitnessCard {
                         Text("Sleep is one supportive signal. Training guidance waits until daily readiness has enough evidence.")
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.mutedText)
                     }
                 } else if let recommendation = sleepDashboardSummary.adaptiveRecommendation {
@@ -899,18 +899,18 @@ struct CoachContentView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Text(recommendation.title)
-                                    .font(.headline)
+                                    .font(AppTypography.sectionTitle)
                                 Spacer()
                                 CoachBadgeView(state: badgeState(for: recommendation.level))
                             }
 
                             Text(recommendation.message)
-                                .font(.subheadline)
+                                .font(AppTypography.body)
                                 .foregroundStyle(appTheme.mutedText)
 
                             if !recommendation.basedOn.isEmpty {
                                 Text("Based on: \(recommendation.basedOn.map(\.displayName).joined(separator: ", ")).")
-                                    .font(.caption)
+                                    .font(AppTypography.metadata)
                                     .foregroundStyle(appTheme.colors.textTertiary)
                             }
                         }
@@ -920,7 +920,7 @@ struct CoachContentView: View {
                 if displayedSleepCoachingInsights.isEmpty {
                     FitnessCard {
                         Text("Keep tracking sleep and workouts to unlock personalised sleep-performance coaching.")
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.mutedText)
                     }
                 } else {
@@ -929,13 +929,13 @@ struct CoachContentView: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack(alignment: .firstTextBaseline) {
                                     Text(insight.title)
-                                        .font(.headline)
+                                        .font(AppTypography.sectionTitle)
                                     Spacer()
                                     CoachBadgeView(state: badgeState(for: insight.severity))
                                 }
 
                                 Text(insight.message)
-                                    .font(.subheadline)
+                                    .font(AppTypography.body)
                                     .foregroundStyle(appTheme.mutedText)
                             }
                         }
@@ -949,7 +949,7 @@ struct CoachContentView: View {
                         HStack(spacing: 10) {
                             CoachBadgeView(state: .ready)
                             Text("No major recovery warnings right now.")
-                                .font(.subheadline)
+                                .font(AppTypography.body)
                                 .foregroundStyle(appTheme.mutedText)
                         }
                     }
@@ -959,13 +959,13 @@ struct CoachContentView: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack(alignment: .firstTextBaseline) {
                                     Text(warning.title)
-                                        .font(.headline)
+                                        .font(AppTypography.sectionTitle)
                                     Spacer()
                                     CoachBadgeView(state: warningBadgeState(for: warning.severity))
                                 }
 
                                 Text(warning.message)
-                                    .font(.subheadline)
+                                    .font(AppTypography.body)
                                     .foregroundStyle(appTheme.mutedText)
                             }
                         }
@@ -1018,7 +1018,7 @@ struct CoachContentView: View {
                 if recentPRs.isEmpty {
                     FitnessCard {
                         Text("PRs will appear here when a completed working set beats prior history.")
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.mutedText)
                     }
                 } else {
@@ -1027,9 +1027,9 @@ struct CoachContentView: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(pr.exerciseName)
-                                        .font(.headline)
+                                        .font(AppTypography.sectionTitle)
                                     Text(pr.improvementDescription)
-                                        .font(.subheadline)
+                                        .font(AppTypography.body)
                                         .foregroundStyle(appTheme.mutedText)
                                 }
                                 Spacer()
@@ -1879,7 +1879,7 @@ struct CoachContentView: View {
             if insights.isEmpty {
                 FitnessCard {
                     Text(empty)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.mutedText)
                 }
             } else {
@@ -1888,9 +1888,9 @@ struct CoachContentView: View {
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(insight.title)
-                                    .font(.headline)
+                                    .font(AppTypography.sectionTitle)
                                 Text(insight.message)
-                                    .font(.subheadline)
+                                    .font(AppTypography.body)
                                     .foregroundStyle(appTheme.mutedText)
                             }
                             Spacer()
@@ -2142,12 +2142,12 @@ private struct CoachWeeklyReviewRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
                 .foregroundStyle(appTheme.colors.textTertiary)
                 .textCase(.uppercase)
 
             Text(message)
-                .font(.subheadline)
+                .font(AppTypography.body)
                 .foregroundStyle(appTheme.colors.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -2167,11 +2167,11 @@ private struct CoachActionHistoryTimeline: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("No coach actions yet")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         Text("Applied or bypassed workout adjustments will appear here.")
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -2198,17 +2198,17 @@ private struct CoachActionHistoryTimeline: View {
 
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(historyTitle(for: entry))
-                                    .font(.subheadline.weight(.semibold))
+                                    .font(AppTypography.bodyEmphasis)
                                     .foregroundStyle(appTheme.colors.textPrimary)
                                     .fixedSize(horizontal: false, vertical: true)
 
                                 Text(entry.shortReason)
-                                    .font(.subheadline)
+                                    .font(AppTypography.body)
                                     .foregroundStyle(appTheme.colors.textSecondary)
                                     .fixedSize(horizontal: false, vertical: true)
 
                                 Text(entry.createdAt.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.caption)
+                                    .font(AppTypography.metadata)
                                     .foregroundStyle(appTheme.colors.textTertiary)
                             }
 

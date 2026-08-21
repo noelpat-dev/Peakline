@@ -10,13 +10,13 @@ struct ExerciseNotesEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.headline)
+                .font(AppTypography.sectionTitle)
                 .foregroundStyle(appTheme.colors.textPrimary)
 
             ZStack(alignment: .topLeading) {
                 if text.isEmpty {
                     Text(placeholder)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textTertiary)
                         .padding(.horizontal, 13)
                         .padding(.vertical, 14)
@@ -28,9 +28,9 @@ struct ExerciseNotesEditor: View {
                     .padding(8)
                     .foregroundStyle(appTheme.colors.textPrimary)
             }
-            .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius8, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: appTheme.metrics.radius8, style: .continuous)
                     .stroke(appTheme.colors.cardBorder, lineWidth: 1)
             }
 

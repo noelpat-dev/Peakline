@@ -88,7 +88,7 @@ struct NutritionComparisonView: View {
             rawEvidenceCard
 
             if let errorText {
-                ComparisonNoticeCard(message: errorText, systemImage: "exclamationmark.triangle", foregroundColor: appTheme.colors.danger)
+                NoticeCard(errorText, tone: .danger, systemImage: "exclamationmark.triangle")
             }
 
             Button {
@@ -124,11 +124,7 @@ struct NutritionComparisonView: View {
             subtitle: "Go back and try again.",
             systemImage: "exclamationmark.triangle"
         ) {
-            ComparisonNoticeCard(
-                message: "The selected food is no longer available.",
-                systemImage: "exclamationmark.triangle",
-                foregroundColor: appTheme.colors.warning
-            )
+            NoticeCard("The selected food is no longer available.", tone: .warning, systemImage: "exclamationmark.triangle")
         }
     }
 
@@ -137,7 +133,7 @@ struct NutritionComparisonView: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "slider.horizontal.3")
-                        .font(.headline.weight(.semibold))
+                        .font(AppTypography.compactCardTitle)
                         .foregroundStyle(overallTint)
                         .frame(width: 42, height: 42)
                         .background(overallTint.opacity(0.14), in: Circle())
@@ -145,19 +141,19 @@ struct NutritionComparisonView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
                             Text(comparison.overallStatus.displayName)
-                                .font(.headline)
+                                .font(AppTypography.sectionTitle)
                                 .foregroundStyle(appTheme.colors.textPrimary)
 
                             Text(matchCountLabel)
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(appTheme.colors.accent)
+                                .font(AppTypography.badge)
+                                .foregroundStyle(appTheme.colors.textAccent)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 5)
                                 .background(appTheme.colors.accentSurface, in: Capsule())
                         }
 
                         Text(overviewMessage)
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -185,15 +181,15 @@ struct NutritionComparisonView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         if localFood != nil {
                             Label("Saving will update the existing local food. Nothing changes until you confirm.", systemImage: "checkmark.seal")
-                                .font(.subheadline)
-                                .foregroundStyle(appTheme.colors.warning)
+                                .font(AppTypography.body)
+                                .foregroundStyle(appTheme.colors.textWarning)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
 
                         ForEach(comparison.warnings.prefix(8), id: \.self) { warning in
                             Label(warning, systemImage: "exclamationmark.triangle")
-                                .font(.subheadline)
-                                .foregroundStyle(appTheme.colors.warning)
+                                .font(AppTypography.body)
+                                .foregroundStyle(appTheme.colors.textWarning)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -217,7 +213,7 @@ struct NutritionComparisonView: View {
             FitnessCard {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Apply a source to the editable final values. This never saves automatically.")
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -321,9 +317,9 @@ struct NutritionComparisonView: View {
                                 Image(systemName: isRawTextExpanded ? "chevron.up" : "chevron.down")
                             }
                         }
-                        .font(.subheadline.weight(.semibold))
+                        .font(AppTypography.bodyEmphasis)
                         .buttonStyle(.plain)
-                        .foregroundStyle(appTheme.colors.accent)
+                        .foregroundStyle(appTheme.colors.textAccent)
 
                         if isRawTextExpanded {
                             Text(rawText)
@@ -331,7 +327,7 @@ struct NutritionComparisonView: View {
                                 .foregroundStyle(appTheme.colors.textPrimary)
                                 .padding(14)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous))
                                 .textSelection(.enabled)
                         }
                     }
@@ -546,12 +542,12 @@ private struct NutritionConflictRowView: View {
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(row.nutrient.displayName)
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         if let explanation = row.explanation {
                             Text(explanation)
-                                .font(.caption)
+                                .font(AppTypography.metadata)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -570,7 +566,7 @@ private struct NutritionConflictRowView: View {
 
                 HStack(spacing: 10) {
                     Text("Final")
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.chip)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .frame(width: 42, alignment: .leading)
 
@@ -579,22 +575,22 @@ private struct NutritionConflictRowView: View {
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .padding(.horizontal, 12)
                         .frame(minHeight: 46)
-                        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
                                 .stroke(finalText.isEmpty && row.status != .unresolved ? appTheme.colors.warning.opacity(0.45) : appTheme.colors.cardBorder, lineWidth: 1)
                         }
 
                     Text(row.unit)
-                        .font(.subheadline.weight(.semibold))
+                        .font(AppTypography.bodyEmphasis)
                         .foregroundStyle(appTheme.colors.textTertiary)
                         .frame(width: 34, alignment: .trailing)
                 }
 
                 ForEach(row.warnings, id: \.self) { warning in
                     Label(warning, systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundStyle(appTheme.colors.warning)
+                        .font(AppTypography.metadata)
+                        .foregroundStyle(appTheme.colors.textWarning)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -617,7 +613,7 @@ private struct CandidateValuePill: View {
         } label: {
             VStack(spacing: 3) {
                 Text(title)
-                    .font(.caption2.weight(.bold))
+                    .font(AppTypography.badge)
                     .foregroundStyle(appTheme.colors.textSecondary)
 
                 Text(valueText)
@@ -633,9 +629,9 @@ private struct CandidateValuePill: View {
                     .minimumScaleFactor(0.75)
             }
             .frame(maxWidth: .infinity, minHeight: 64)
-            .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
                     .stroke(candidate == nil ? appTheme.colors.cardBorder : appTheme.colors.accent.opacity(0.22), lineWidth: 1)
             }
         }
@@ -663,40 +659,26 @@ private struct ComparisonStatusBadge: View {
     let status: NutritionConflictStatus
 
     var body: some View {
-        Text(status.displayName)
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(tint)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(tint.opacity(0.14), in: Capsule())
+        StatusBadge(status.displayName, role: role)
     }
 
-    private var tint: Color {
+    private var role: StatusBadge.Role {
         switch status {
         case .match:
-            return appTheme.colors.success
+            return .success
         case .minorDifference, .missingFromOneSource, .onlyOneSourceAvailable:
-            return appTheme.colors.warning
+            return .warning
         case .majorDifference, .basisMismatch, .suspiciousValue, .unresolved:
-            return appTheme.colors.danger
+            return .danger
         }
     }
 }
 
 private struct NutritionSourceBadge: View {
-    @Environment(\.appTheme) private var appTheme
-
     let source: NutritionSourceType
 
     var body: some View {
-        Label(source.displayName, systemImage: source.systemImage)
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(appTheme.colors.accent)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(appTheme.colors.accentSurface, in: Capsule())
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
+        StatusBadge(source.displayName, systemImage: source.systemImage, role: .accent)
     }
 }
 
@@ -708,8 +690,8 @@ private struct NutritionSourceCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Image(systemName: source.source.systemImage)
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(appTheme.colors.accent)
+                .font(AppTypography.compactCardTitle)
+                .foregroundStyle(appTheme.colors.textAccent)
                 .frame(width: 34, height: 34)
                 .background(appTheme.colors.accentSurface, in: Circle())
 
@@ -720,17 +702,17 @@ private struct NutritionSourceCard: View {
                 .minimumScaleFactor(0.85)
 
             Text(source.productName ?? "Unnamed food")
-                .font(.caption)
+                .font(AppTypography.metadata)
                 .foregroundStyle(appTheme.colors.textSecondary)
                 .lineLimit(2)
 
             Text(source.basis.displayName)
-                .font(.caption2.weight(.semibold))
+                .font(AppTypography.badge)
                 .foregroundStyle(appTheme.colors.textTertiary)
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 132, alignment: .leading)
-        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius18, style: .continuous))
     }
 }
 
@@ -744,18 +726,18 @@ private struct ComparisonMetricCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
                 .foregroundStyle(appTheme.colors.textSecondary)
 
             Text(valueText)
-                .font(.title3.bold())
+                .font(AppTypography.cardTitle)
                 .foregroundStyle(value == nil ? appTheme.colors.warning : appTheme.colors.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
-        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius18, style: .continuous))
     }
 
     private var valueText: String {
@@ -776,7 +758,7 @@ private struct ComparisonTextField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
                 .foregroundStyle(appTheme.colors.textSecondary)
 
             HStack(spacing: 8) {
@@ -787,15 +769,15 @@ private struct ComparisonTextField: View {
 
                 if let suffix {
                     Text(suffix)
-                        .font(.subheadline.weight(.semibold))
+                        .font(AppTypography.bodyEmphasis)
                         .foregroundStyle(appTheme.colors.textTertiary)
                 }
             }
             .padding(.horizontal, 12)
             .frame(minHeight: 46)
-            .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous)
                     .stroke(placeholder == "Required" && text.isEmpty ? appTheme.colors.warning : appTheme.colors.cardBorder, lineWidth: 1)
             }
         }
@@ -811,29 +793,14 @@ private struct ComparisonStaticField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
                 .foregroundStyle(appTheme.colors.textSecondary)
             Text(value)
-                .font(.subheadline.weight(.semibold))
+                .font(AppTypography.bodyEmphasis)
                 .foregroundStyle(appTheme.colors.textPrimary)
                 .padding(.horizontal, 12)
                 .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
-                .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        }
-    }
-}
-
-private struct ComparisonNoticeCard: View {
-    let message: String
-    let systemImage: String
-    let foregroundColor: Color
-
-    var body: some View {
-        FitnessCard(padding: 16) {
-            Label(message, systemImage: systemImage)
-                .font(.subheadline)
-                .foregroundStyle(foregroundColor)
-                .fixedSize(horizontal: false, vertical: true)
+                .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous))
         }
     }
 }

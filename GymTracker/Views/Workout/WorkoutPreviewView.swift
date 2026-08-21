@@ -272,7 +272,7 @@ struct WorkoutPreviewView: View {
                 FitnessCard(style: .compact) {
                     HStack(alignment: .top, spacing: 12) {
                         Text(snapshot.coachSummaryText)
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.mutedText)
                             .fixedSize(horizontal: false, vertical: true)
 
@@ -299,7 +299,7 @@ struct WorkoutPreviewView: View {
                             selectedExerciseIds = snapshot.orderedExercises.map(\.id)
                         }
                     }
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppTypography.bodyEmphasis)
                     .tint(appTheme.actionColor)
                 }
 
@@ -463,7 +463,7 @@ struct WorkoutPreviewView: View {
                     .lineLimit(1)
 
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption.weight(.semibold))
+                    .font(AppTypography.chip)
                     .foregroundStyle(appTheme.colors.textTertiary)
             }
             .frame(maxWidth: .infinity, minHeight: appTheme.metrics.minimumHitTarget)
@@ -531,21 +531,21 @@ struct WorkoutPreviewView: View {
         FitnessCard(style: .compact) {
             VStack(alignment: .leading, spacing: 10) {
                 Label("Coach Actions", systemImage: "slider.horizontal.3")
-                    .font(.headline)
+                    .font(AppTypography.sectionTitle)
                     .foregroundStyle(appTheme.colors.textPrimary)
 
                 if let appliedWorkoutAdjustment {
                     HStack(spacing: 8) {
                         Label("\(appliedWorkoutAdjustment.title) applied", systemImage: "checkmark.seal.fill")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(appTheme.colors.success)
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(appTheme.colors.textSuccess)
 
                         Spacer(minLength: 8)
 
                         Button("Reset") {
                             resetCoachAdjustment()
                         }
-                        .font(.subheadline.weight(.semibold))
+                        .font(AppTypography.bodyEmphasis)
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("workout-preview-reset-original")
                     }
@@ -561,9 +561,9 @@ struct WorkoutPreviewView: View {
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(recommendation.title)
-                                    .font(.subheadline.weight(.semibold))
+                                    .font(AppTypography.bodyEmphasis)
                                 Text(recommendation.summary)
-                                    .font(.caption)
+                                    .font(AppTypography.metadata)
                                     .foregroundStyle(appTheme.colors.textSecondary)
                                     .lineLimit(2)
                             }
@@ -571,7 +571,7 @@ struct WorkoutPreviewView: View {
                             Spacer(minLength: 8)
 
                             Image(systemName: "chevron.right")
-                                .font(.caption.weight(.bold))
+                                .font(AppTypography.eyebrow)
                                 .foregroundStyle(appTheme.colors.textTertiary)
                         }
                         .contentShape(Rectangle())
@@ -664,16 +664,16 @@ struct WorkoutPreviewView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "arrow.uturn.backward.circle")
-                        .font(.headline)
-                        .foregroundStyle(appTheme.colors.accent)
+                        .font(AppTypography.sectionTitle)
+                        .foregroundStyle(appTheme.colors.textAccent)
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Original plan")
-                            .font(.subheadline.weight(.semibold))
+                            .font(AppTypography.bodyEmphasis)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         Text("\(selectedMode.displayName) mode without the coach adjustment.")
-                            .font(.caption)
+                            .font(AppTypography.metadata)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
                 }
@@ -698,7 +698,7 @@ struct WorkoutPreviewView: View {
             )
         } label: {
             Label(startButtonTitle, systemImage: "play.circle.fill")
-                .font(.headline)
+                .font(AppTypography.sectionTitle)
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(PrimaryFitnessButtonStyle())

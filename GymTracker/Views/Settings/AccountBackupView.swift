@@ -28,7 +28,7 @@ struct AccountBackupView: View {
             if let statusMessage {
                 FitnessCard {
                     Label(statusMessage, systemImage: "checkmark.circle.fill")
-                        .font(.subheadline.weight(.semibold))
+                        .font(AppTypography.bodyEmphasis)
                         .foregroundStyle(appTheme.successColor)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -37,7 +37,7 @@ struct AccountBackupView: View {
             if let errorMessage {
                 FitnessCard {
                     Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                        .font(.subheadline.weight(.semibold))
+                        .font(AppTypography.bodyEmphasis)
                         .foregroundStyle(appTheme.dangerColor)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -62,11 +62,11 @@ struct AccountBackupView: View {
         FitnessCard {
             VStack(alignment: .leading, spacing: 12) {
                 Label(readiness.title, systemImage: readiness.isReady ? "checkmark.shield.fill" : "person.crop.circle.badge.exclamationmark")
-                    .font(.headline)
+                    .font(AppTypography.sectionTitle)
                     .foregroundStyle(appTheme.colors.textPrimary)
 
                 Text(readiness.message)
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -97,18 +97,18 @@ struct AccountBackupView: View {
         FitnessCard {
             VStack(alignment: .leading, spacing: 12) {
                 Label("Encrypted Firebase Backup", systemImage: "externaldrive.badge.person.crop")
-                    .font(.headline)
+                    .font(AppTypography.sectionTitle)
                     .foregroundStyle(appTheme.colors.textPrimary)
 
                 Text(cloudBackupDescription)
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 SecureField("Backup passphrase", text: $backupPassphrase)
                     .textContentType(.password)
                     .padding(12)
-                    .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius8, style: .continuous))
                     .disabled(isWorking || !readiness.isReady)
 
                 HStack(spacing: 10) {

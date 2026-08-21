@@ -115,12 +115,12 @@ struct BarcodeScannerView: View {
                     isScanning = false
                 }
                 .frame(height: 360)
-                .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: appTheme.metrics.radius24, style: .continuous))
 
                 VStack {
                     Spacer()
 
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: appTheme.metrics.radius20, style: .continuous)
                         .stroke(appTheme.colors.accent, lineWidth: 3)
                         .frame(height: 150)
                         .padding(.horizontal, 34)
@@ -129,7 +129,7 @@ struct BarcodeScannerView: View {
                     Spacer()
 
                     Text("Hold the barcode inside the frame")
-                        .font(.subheadline.weight(.semibold))
+                        .font(AppTypography.bodyEmphasis)
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
@@ -182,11 +182,11 @@ struct BarcodeScannerView: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Camera permission")
-                        .font(.title3.bold())
+                        .font(AppTypography.cardTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     Text("Peakline uses the camera to scan food barcodes for nutrition tracking.")
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -209,10 +209,10 @@ struct BarcodeScannerView: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title)
-                        .font(.title3.bold())
+                        .font(AppTypography.cardTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
                     Text(message)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -419,7 +419,7 @@ struct BarcodeScannerView: View {
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .padding(.horizontal, 12)
                             .frame(minHeight: 52)
-                            .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous))
 
                         Button {
                             let barcode = manualBarcode
@@ -724,10 +724,10 @@ private struct NutritionScannerStatusCard: View {
                 NutritionScannerIcon(systemImage: systemImage)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title)
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
                     Text(message)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -749,10 +749,10 @@ private struct NutritionLoadingCard: View {
                     .tint(appTheme.colors.accent)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
                     Text(message)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                 }
             }
@@ -775,12 +775,12 @@ private struct ResultHeader: View {
             VStack(alignment: .leading, spacing: 7) {
                 HStack(spacing: 8) {
                     Text(title)
-                        .font(.title3.bold())
+                        .font(AppTypography.cardTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     Text(badge)
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(appTheme.colors.accent)
+                        .font(AppTypography.badge)
+                        .foregroundStyle(appTheme.colors.textAccent)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
                         .background(appTheme.colors.accentSurface, in: Capsule())
@@ -788,7 +788,7 @@ private struct ResultHeader: View {
                 }
 
                 Text(message)
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -804,10 +804,10 @@ private struct BarcodeFoodSummary: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(food.name)
-                .font(.headline)
+                .font(AppTypography.sectionTitle)
             if let brand = food.brand, !brand.isEmpty {
                 Text(brand)
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
             }
             MacroPreviewLine(
@@ -828,10 +828,10 @@ private struct ImportedDraftSummary: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(draft.name.isEmpty ? "Unnamed product" : draft.name)
-                .font(.headline)
+                .font(AppTypography.sectionTitle)
             if let brand = draft.brand, !brand.isEmpty {
                 Text(brand)
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
             }
             MacroPreviewLine(
@@ -869,12 +869,12 @@ private struct MacroPreviewLine: View {
                 .lineLimit(1)
 
             Text(title)
-                .font(.caption2.weight(.semibold))
+                .font(AppTypography.badge)
                 .foregroundStyle(appTheme.colors.textSecondary)
                 .textCase(.uppercase)
         }
         .frame(maxWidth: .infinity, minHeight: 48)
-        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous))
     }
 }
 
@@ -885,8 +885,8 @@ private struct NutritionScannerIcon: View {
 
     var body: some View {
         Image(systemName: systemImage)
-            .font(.headline.weight(.semibold))
-            .foregroundStyle(appTheme.colors.accent)
+            .font(AppTypography.compactCardTitle)
+            .foregroundStyle(appTheme.colors.textAccent)
             .frame(width: 42, height: 42)
             .background(appTheme.colors.accentSurface, in: Circle())
     }

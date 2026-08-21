@@ -31,13 +31,13 @@ struct SubstitutionPickerSheet: View {
 
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(candidate.exerciseName)
-                                            .font(.headline)
+                                            .font(AppTypography.sectionTitle)
                                             .foregroundStyle(appTheme.colors.textPrimary)
                                         Text(candidate.reason)
-                                            .font(.subheadline)
+                                            .font(AppTypography.body)
                                             .foregroundStyle(appTheme.colors.textSecondary)
                                         Text(PeaklineText.joinedMetadata([candidate.primaryMuscle, candidate.movementPattern, candidate.equipment].compactMap { $0 }))
-                                            .font(.caption)
+                                            .font(AppTypography.metadata)
                                             .foregroundStyle(appTheme.colors.textTertiary)
                                     }
                                 }

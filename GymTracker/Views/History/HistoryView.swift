@@ -458,7 +458,7 @@ struct HistoryView: View {
                     FitnessCard {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Split")
-                                .font(.headline)
+                                .font(AppTypography.sectionTitle)
 
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: 86), spacing: 8)], alignment: .leading, spacing: 8) {
                                 FilterChip("All", isSelected: filters.splitName == nil) {
@@ -476,7 +476,7 @@ struct HistoryView: View {
                     FitnessCard {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Exercise")
-                                .font(.headline)
+                                .font(AppTypography.sectionTitle)
 
                             HStack(spacing: 10) {
                                 Image(systemName: "magnifyingglass")
@@ -485,14 +485,14 @@ struct HistoryView: View {
                                     .textInputAutocapitalization(.words)
                             }
                             .padding(12)
-                            .background(appTheme.elevatedCardBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .background(appTheme.elevatedCardBackground, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous))
                         }
                     }
 
                     FitnessCard {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Rating")
-                                .font(.headline)
+                                .font(AppTypography.sectionTitle)
 
                             HStack(spacing: 8) {
                                 FilterChip("Any", isSelected: filters.minimumRating == nil) {
@@ -529,14 +529,14 @@ struct HistoryView: View {
             .navigationTitle("Filters")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .cancellationAction) {
                     Button("Clear") {
                         filters = HistoryFilters()
                         useDateRange = false
                     }
                     .disabled(!filters.isActive)
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
                         showingFilters = false
                     }
@@ -896,11 +896,11 @@ private struct HistorySessionRowCard: View {
                 HStack(alignment: .top, spacing: 8) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(row.splitName)
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .lineLimit(2)
                         Text(row.dateText)
-                            .font(.caption)
+                            .font(AppTypography.metadata)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
 
@@ -909,7 +909,7 @@ private struct HistorySessionRowCard: View {
                     if let ratingText = row.ratingText {
                         Label(ratingText, systemImage: "star.fill")
                             .font(AppTypography.metadataEmphasis)
-                            .foregroundStyle(appTheme.colors.accent)
+                            .foregroundStyle(appTheme.colors.textAccent)
                             .padding(.vertical, 5)
                             .frame(width: 108)
                             .background(appTheme.colors.accentSurface, in: Capsule())
@@ -923,14 +923,14 @@ private struct HistorySessionRowCard: View {
                 }
 
                 Label(row.topExerciseSummary, systemImage: "list.bullet.rectangle")
-                    .font(.caption)
+                    .font(AppTypography.metadata)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let notesPreview = row.notesPreview, !notesPreview.isEmpty {
                     Label(notesPreview, systemImage: "note.text")
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textTertiary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -938,7 +938,7 @@ private struct HistorySessionRowCard: View {
             }
 
             Image(systemName: "chevron.right")
-                .font(.caption.weight(.bold))
+                .font(AppTypography.eyebrow)
                 .foregroundStyle(appTheme.colors.textTertiary)
                 .frame(width: 18, height: 44, alignment: .center)
         }
@@ -1125,7 +1125,7 @@ private struct WorkoutCalendarView: View {
                 } label: {
                     Image(systemName: "location.fill")
                         .font(AppTypography.metadataEmphasis)
-                        .foregroundStyle(appTheme.colors.accent)
+                        .foregroundStyle(appTheme.colors.textAccent)
                         .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
                         .background(
                             appTheme.colors.accentSurface,
@@ -1178,7 +1178,7 @@ private struct WorkoutCalendarView: View {
     private func monthButton(systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.caption.weight(.bold))
+                .font(AppTypography.eyebrow)
                 .foregroundStyle(appTheme.colors.textPrimary)
                 .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
                 .background(
@@ -1660,8 +1660,8 @@ private struct WorkoutHistoryDetailView: View {
                 Section("Highlights") {
                     ForEach(sessionPRs.prefix(4)) { record in
                         Label(record.improvementDescription, systemImage: "trophy.fill")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(appTheme.colors.warning)
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(appTheme.colors.textWarning)
                     }
                 }
             }
@@ -1878,13 +1878,13 @@ private struct HistoryDetailHero: View {
 
             if let ratingText {
                 Label(ratingText, systemImage: "star.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.accent)
+                    .font(AppTypography.bodyEmphasis)
+                    .foregroundStyle(appTheme.colors.textAccent)
             }
 
             if let notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Label(notes, systemImage: "note.text")
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1933,12 +1933,12 @@ private struct ExerciseHistorySummary: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(exerciseLog.exerciseNameSnapshot)
-                    .font(.headline)
+                    .font(AppTypography.sectionTitle)
 
                 if let firstPR = prs.first {
                     Label(firstPR.improvementDescription, systemImage: "trophy.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.warning)
+                        .font(AppTypography.chip)
+                        .foregroundStyle(appTheme.colors.textWarning)
                 }
 
                 if sets.isEmpty {
@@ -1950,7 +1950,7 @@ private struct ExerciseHistorySummary: View {
                             Text("Set \(set.setNumber)")
                             Spacer()
                             Text(PeaklineText.loadReps(weight: formatWeight(set.weight), reps: set.reps))
-                                .font(.headline)
+                                .font(AppTypography.sectionTitle)
                             if let rpe = set.rpe {
                                 Text("RPE \(formatWeight(rpe))")
                                     .foregroundStyle(appTheme.colors.textSecondary)
@@ -1961,7 +1961,7 @@ private struct ExerciseHistorySummary: View {
 
                 if let notes = exerciseLog.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Label(notes, systemImage: "note.text")
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)

@@ -55,21 +55,21 @@ struct HealthKitSettingsView: View {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "heart.text.square.fill")
                         .font(.title3.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.accent)
+                        .foregroundStyle(appTheme.colors.textAccent)
                         .frame(width: 48, height: 48)
                         .background(appTheme.colors.accentSurface, in: Circle())
 
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
                             Text("Apple Health Sync")
-                                .font(.headline)
+                                .font(AppTypography.sectionTitle)
                                 .foregroundStyle(appTheme.colors.textPrimary)
 
                             HealthKitPermissionBadge(state: permissionState)
                         }
 
                         Text("Share confirmed nutrition logs with Apple Health and optionally use health context like body weight, steps, workouts, and active energy for training-aware insights.")
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -80,7 +80,7 @@ struct HealthKitSettingsView: View {
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous))
             }
         }
     }
@@ -131,13 +131,13 @@ struct HealthKitSettingsView: View {
 
                     if preferences.isHealthKitEnabled && !preferences.requestsAnyHealthData {
                         Text("Turn on at least one data type below before requesting Apple Health access.")
-                            .font(.caption)
-                            .foregroundStyle(appTheme.colors.warning)
+                            .font(AppTypography.metadata)
+                            .foregroundStyle(appTheme.colors.textWarning)
                     }
 
                     if let statusMessage {
                         Text(statusMessage)
-                            .font(.caption)
+                            .font(AppTypography.metadata)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -241,16 +241,16 @@ struct HealthKitSettingsView: View {
                     HStack(spacing: 12) {
                         Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
                             .font(.title3.weight(.semibold))
-                            .foregroundStyle(appTheme.colors.accent)
+                            .foregroundStyle(appTheme.colors.textAccent)
                             .frame(width: 42, height: 42)
                             .background(appTheme.colors.accentSurface, in: Circle())
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Sync recent food logs")
-                                .font(.headline)
+                                .font(AppTypography.sectionTitle)
                                 .foregroundStyle(appTheme.colors.textPrimary)
                             Text("Only eligible local logs are shared. Already-synced logs are skipped to avoid duplicates.")
-                                .font(.caption)
+                                .font(AppTypography.metadata)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -282,13 +282,13 @@ struct HealthKitSettingsView: View {
 
                     if let lastSummary {
                         Text(lastSummary.displayMessage)
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.chip)
                             .foregroundStyle(lastSummary.failed > 0 ? appTheme.colors.danger : appTheme.colors.success)
 
                         ForEach(lastSummary.warnings.prefix(2), id: \.self) { warning in
                             Text(warning)
                                 .font(.caption2)
-                                .foregroundStyle(appTheme.colors.warning)
+                                .foregroundStyle(appTheme.colors.textWarning)
                         }
                     }
                 }
@@ -304,17 +304,17 @@ struct HealthKitSettingsView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(spacing: 12) {
                             Image(systemName: "waveform.path.ecg")
-                                .font(.headline.weight(.semibold))
-                                .foregroundStyle(appTheme.colors.accent)
+                                .font(AppTypography.compactCardTitle)
+                                .foregroundStyle(appTheme.colors.textAccent)
                                 .frame(width: 42, height: 42)
                                 .background(appTheme.colors.accentSurface, in: Circle())
 
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Labeled context only")
-                                    .font(.headline)
+                                    .font(AppTypography.sectionTitle)
                                     .foregroundStyle(appTheme.colors.textPrimary)
                                 Text("Apple Health data can support insights, but local workouts and food logs stay primary.")
-                                    .font(.caption)
+                                    .font(AppTypography.metadata)
                                     .foregroundStyle(appTheme.colors.textSecondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -337,7 +337,7 @@ struct HealthKitSettingsView: View {
                             }
                         } else {
                             Text(isReadingContext ? "Reading Apple Health..." : "No Apple Health context is available for today yet.")
-                                .font(.caption)
+                                .font(AppTypography.metadata)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                         }
 
@@ -361,7 +361,7 @@ struct HealthKitSettingsView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     if syncRecords.isEmpty {
                         Text("No HealthKit sync attempts yet.")
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     } else {
                         ForEach(syncRecords.prefix(5)) { record in
@@ -461,57 +461,43 @@ struct HealthKitSettingsView: View {
 }
 
 struct HealthKitSyncStatusBadge: View {
-    @Environment(\.appTheme) private var appTheme
-
     let status: HealthKitSyncStatus
 
     var body: some View {
-        Text(status.displayName)
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(tint)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(tint.opacity(0.14), in: Capsule())
+        StatusBadge(status.displayName, role: role)
     }
 
-    private var tint: Color {
+    private var role: StatusBadge.Role {
         switch status {
         case .synced:
-            return appTheme.colors.success
+            return .success
         case .failed, .unavailable, .needsResync:
-            return appTheme.colors.danger
+            return .danger
         case .skipped:
-            return appTheme.colors.warning
+            return .warning
         case .notEnabled, .pending:
-            return appTheme.colors.textSecondary
+            return .neutral
         }
     }
 }
 
 private struct HealthKitPermissionBadge: View {
-    @Environment(\.appTheme) private var appTheme
-
     let state: HealthKitPermissionState
 
     var body: some View {
-        Text(state.displayName)
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(tint)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(tint.opacity(0.14), in: Capsule())
+        StatusBadge(state.displayName, role: role)
     }
 
-    private var tint: Color {
+    private var role: StatusBadge.Role {
         switch state {
         case .sharingAuthorized, .readOnlyRequested:
-            return appTheme.colors.success
+            return .success
         case .partiallyAuthorized:
-            return appTheme.colors.warning
+            return .warning
         case .sharingDenied, .unavailable:
-            return appTheme.colors.danger
+            return .danger
         case .notRequested:
-            return appTheme.colors.textSecondary
+            return .neutral
         }
     }
 }
@@ -527,13 +513,13 @@ private struct HealthKitSettingsMetricRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: systemImage)
-                .font(.headline.weight(.semibold))
+                .font(AppTypography.compactCardTitle)
                 .foregroundStyle(tint)
                 .frame(width: 38, height: 38)
                 .background(tint.opacity(0.14), in: Circle())
 
             Text(title)
-                .font(.subheadline.weight(.semibold))
+                .font(AppTypography.bodyEmphasis)
                 .foregroundStyle(appTheme.colors.textPrimary)
 
             Spacer()
@@ -559,17 +545,17 @@ private struct HealthKitToggleRow: View {
         Toggle(isOn: $isOn) {
             HStack(spacing: 12) {
                 Image(systemName: systemImage)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.accent)
+                    .font(AppTypography.bodyEmphasis)
+                    .foregroundStyle(appTheme.colors.textAccent)
                     .frame(width: 34, height: 34)
                     .background(appTheme.colors.accentSurface, in: Circle())
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.subheadline.weight(.semibold))
+                        .font(AppTypography.bodyEmphasis)
                         .foregroundStyle(appTheme.colors.textPrimary)
                     Text(subtitle)
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -601,7 +587,7 @@ private struct HealthKitContextMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
                 .foregroundStyle(appTheme.colors.textSecondary)
             Text(value)
                 .font(.headline.weight(.bold))
@@ -609,12 +595,12 @@ private struct HealthKitContextMetric: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
             Text("Apple Health")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(appTheme.colors.accent)
+                .font(AppTypography.badge)
+                .foregroundStyle(appTheme.colors.textAccent)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous))
     }
 }
 
@@ -627,12 +613,12 @@ private struct HealthKitSyncHistoryRow: View {
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(record.foodName)
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppTypography.bodyEmphasis)
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .lineLimit(1)
 
                 Text(detailText)
-                    .font(.caption)
+                    .font(AppTypography.metadata)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -643,7 +629,7 @@ private struct HealthKitSyncHistoryRow: View {
             HealthKitSyncStatusBadge(status: record.status)
         }
         .padding(12)
-        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous))
     }
 
     private var detailText: String {

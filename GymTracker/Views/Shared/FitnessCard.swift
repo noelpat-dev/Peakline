@@ -404,7 +404,7 @@ struct SecondaryFitnessButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(AppTypography.button)
-            .foregroundStyle(appTheme.colors.accent)
+            .foregroundStyle(appTheme.colors.textAccent)
             .padding(.horizontal, 16)
             .frame(minHeight: appTheme.metrics.buttonHeight)
             .frame(maxWidth: .infinity)
@@ -540,7 +540,7 @@ struct DashboardActionTile: View {
 
                 if showsChevron {
                     Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
+                        .font(AppTypography.eyebrow)
                         .foregroundStyle(appTheme.colors.textTertiary)
                 }
             }
@@ -569,7 +569,7 @@ struct DashboardActionTile: View {
 
             if showsChevron {
                 Image(systemName: isEnabled ? "chevron.right" : "lock.fill")
-                    .font(.caption.weight(.bold))
+                    .font(AppTypography.eyebrow)
                     .foregroundStyle(appTheme.colors.textTertiary)
             }
         }

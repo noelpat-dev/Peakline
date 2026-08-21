@@ -319,7 +319,7 @@ struct WorkoutLoggerView: View {
                         requestFinishWorkout()
                     } label: {
                         Label("Save Changes", systemImage: "checkmark.circle.fill")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(PrimaryFitnessButtonStyle())
@@ -423,7 +423,7 @@ struct WorkoutLoggerView: View {
                 }
             } label: {
                 Label("Workout Order", systemImage: "arrow.up.arrow.down")
-                    .font(.headline)
+                    .font(AppTypography.sectionTitle)
             }
             .tint(appTheme.actionColor)
         } footer: {
@@ -448,7 +448,7 @@ struct WorkoutLoggerView: View {
                     continueToNextExercise()
                 } label: {
                     Label(isLastExercise ? "Finish Workout" : "Continue", systemImage: isLastExercise ? "checkmark.circle.fill" : "arrow.right.circle.fill")
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                 }
                 .accessibilityIdentifier(isLastExercise ? "workout-logger-current-finish" : "workout-logger-continue")
             } footer: {
@@ -648,7 +648,11 @@ struct WorkoutLoggerView: View {
             if orderedExerciseLogs.count == 1 {
                 currentExerciseIndex = 0
             }
-            try? modelContext.save()
+            do {
+                try modelContext.save()
+            } catch {
+                completionErrorMessage = "Peakline could not add this exercise. Please try again."
+            }
         }
     }
 
@@ -1192,8 +1196,8 @@ private struct LiveWorkoutOrderRow: View {
                 )
 
                 Text(positionText)
-                    .font(AppTypography.rounded(size: 10, weight: .bold))
-                    .foregroundStyle(isCurrent ? .white : appTheme.actionColor)
+                    .font(AppTypography.badge)
+                    .foregroundStyle(isCurrent ? appTheme.colors.accentForeground : appTheme.colors.textAccent)
                     .frame(width: 16, height: 16)
                     .background(isCurrent ? appTheme.actionColor : appTheme.actionColor.opacity(0.14), in: Circle())
                     .offset(x: 4, y: -4)
@@ -1258,7 +1262,7 @@ private struct ActiveRestTimerBanner: View {
                 HStack(spacing: 12) {
                     Image(systemName: "timer")
                         .font(AppTypography.badge)
-                        .foregroundStyle(appTheme.colors.accent)
+                        .foregroundStyle(appTheme.colors.textAccent)
                         .frame(width: 34, height: 34)
                         .background(appTheme.colors.accentSurface, in: Circle())
 
@@ -1444,7 +1448,7 @@ private struct WorkoutRatingOverlay: View {
                 VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 7) {
                         Text("How did it go?")
-                            .font(AppTypography.rounded(size: 28, weight: .bold))
+                            .font(.system(.title, design: .rounded).weight(.bold))
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .minimumScaleFactor(0.82)
 
@@ -1500,7 +1504,7 @@ private struct WorkoutRatingOverlay: View {
         } label: {
             VStack(spacing: 8) {
                 Text(rating.face)
-                    .font(AppTypography.rounded(size: 34))
+                    .font(.system(.largeTitle))
 
                 Text(rating.title)
                     .font(AppTypography.metadataEmphasis)
@@ -1508,16 +1512,16 @@ private struct WorkoutRatingOverlay: View {
                     .minimumScaleFactor(0.75)
             }
             .frame(maxWidth: .infinity, minHeight: 68)
-            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: appTheme.metrics.radius20, style: .continuous))
             .foregroundStyle(appTheme.colors.textPrimary)
             .padding(.vertical, 12)
             .padding(.horizontal, 8)
             .background {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: appTheme.metrics.radius20, style: .continuous)
                     .fill(appTheme.colors.cardBackgroundElevated)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: appTheme.metrics.radius20, style: .continuous)
                     .stroke(
                         isSelected ? appTheme.colors.accent.opacity(0.58) : appTheme.colors.cardBorder.opacity(0.72),
                         lineWidth: isSelected ? 1.5 : 0.75
@@ -1767,7 +1771,7 @@ private struct ExerciseLoggerSection: View {
                         Image(systemName: "location.viewfinder")
                     }
                         .font(AppTypography.metadataEmphasis)
-                        .foregroundStyle(appTheme.colors.accent)
+                        .foregroundStyle(appTheme.colors.textAccent)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(appTheme.colors.accentSurface, in: Capsule())
@@ -1800,7 +1804,7 @@ private struct ExerciseLoggerSection: View {
                             requestSubstitution()
                         } label: {
                             Label("Substitute", systemImage: "arrow.triangle.2.circlepath")
-                                .font(.caption.weight(.semibold))
+                                .font(AppTypography.chip)
                         }
                         .labelStyle(.titleAndIcon)
                         .buttonStyle(.borderless)
@@ -1810,21 +1814,21 @@ private struct ExerciseLoggerSection: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(setProgressText)
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.chip)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     Text("Last time: \(previousPerformance?.summary ?? "No previous data")")
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textSecondary)
                     Text(coachCue)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.accent)
+                        .font(AppTypography.chip)
+                        .foregroundStyle(appTheme.colors.textAccent)
                         .lineLimit(2)
                 }
 
                 if let templateNote, !templateNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Label(templateNote, systemImage: "lightbulb")
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1839,13 +1843,13 @@ private struct ExerciseLoggerSection: View {
                     .padding(.top, 8)
                 } label: {
                     Label(noteLabel, systemImage: "note.text")
-                        .font(.subheadline.weight(.semibold))
+                        .font(AppTypography.bodyEmphasis)
                         .foregroundStyle(appTheme.actionColor)
                 }
 
                 HStack(spacing: 10) {
                     Text("Target sets")
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.chip)
                         .foregroundStyle(appTheme.colors.textSecondary)
 
                     Spacer()
@@ -2062,7 +2066,7 @@ private struct SetRowView: View {
                     activeSheet = .effort
                 } label: {
                     Text(effort.map { "Effort: \($0.title)" } ?? "Effort Optional")
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.chip)
                         .foregroundStyle(effort == nil ? appTheme.colors.textSecondary : appTheme.colors.textPrimary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
@@ -2262,9 +2266,9 @@ private struct EffortPickerSheet: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(effort.title)
-                                    .font(.headline)
+                                    .font(AppTypography.sectionTitle)
                                 Text(effort.detail)
-                                    .font(.caption)
+                                    .font(AppTypography.metadata)
                                     .foregroundStyle(appTheme.colors.textSecondary)
                             }
 
@@ -2276,7 +2280,7 @@ private struct EffortPickerSheet: View {
                             }
                         }
                         .padding(12)
-                        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius18, style: .continuous))
                     }
                     .buttonStyle(.plain)
                 }
@@ -2341,7 +2345,7 @@ private struct SetStatusChip: View {
 
     var body: some View {
         Label(title, systemImage: systemImage)
-            .font(.caption2.weight(.bold))
+            .font(AppTypography.badge)
             .labelStyle(.titleAndIcon)
             .padding(.horizontal, 8)
             .padding(.vertical, 5)

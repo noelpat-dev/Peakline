@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MetricTile: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let label: String
     let value: String
@@ -26,7 +27,7 @@ struct MetricTile: View {
                 if let systemImage {
                     Image(systemName: systemImage)
                         .font(AppTypography.metadataEmphasis)
-                        .foregroundStyle(appTheme.colors.accent)
+                        .foregroundStyle(appTheme.colors.textAccent)
                 }
 
                 Text(label)
@@ -38,8 +39,8 @@ struct MetricTile: View {
             Text(value)
                 .font(AppTypography.largeMetric)
                 .foregroundStyle(appTheme.colors.textPrimary)
-                .minimumScaleFactor(0.75)
-                .lineLimit(1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.75)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
 
             if let caption, !caption.isEmpty {
                 Text(caption)

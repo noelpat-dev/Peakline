@@ -151,6 +151,8 @@
 		0010000000000000000000B5 /* SplitsPageUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B5 /* SplitsPageUITests.swift */; };
 		0010000000000000000000B6 /* HistoryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B6 /* HistoryUITests.swift */; };
 		0010000000000000000000B7 /* SleepRecoveryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B7 /* SleepRecoveryUITests.swift */; };
+		0010000000000000000000E8 /* StatusBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000E8 /* StatusBadge.swift */; };
+		0010000000000000000000E9 /* NoticeCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000E9 /* NoticeCard.swift */; };
 		002000000000000000000075 /* SleepDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepDashboardView.swift; sourceTree = "<group>"; };
 		002000000000000000000076 /* NapTimerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NapTimerViews.swift; sourceTree = "<group>"; };
 		002000000000000000000077 /* SleepSessionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepSessionViews.swift; sourceTree = "<group>"; };
@@ -359,6 +361,8 @@
 		0020000000000000000000B5 /* SplitsPageUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitsPageUITests.swift; sourceTree = "<group>"; };
 		0020000000000000000000B6 /* HistoryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryUITests.swift; sourceTree = "<group>"; };
 		0020000000000000000000B7 /* SleepRecoveryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepRecoveryUITests.swift; sourceTree = "<group>"; };
+		0020000000000000000000E8 /* StatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBadge.swift; sourceTree = "<group>"; };
+		0020000000000000000000E9 /* NoticeCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoticeCard.swift; sourceTree = "<group>"; };
 		0020000000000000000000C0 /* AccountBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountBackupView.swift; sourceTree = "<group>"; };
 		0020000000000000000000D4 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		0020000000000000000000D5 /* PeaklineModelSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeaklineModelSchema.swift; sourceTree = "<group>"; };
@@ -638,6 +642,8 @@
 			isa = PBXGroup;
 			children = (
 				002000000000000000000018 /* AppTheme.swift */,
+				0020000000000000000000E8 /* StatusBadge.swift */,
+				0020000000000000000000E9 /* NoticeCard.swift */,
 				00200000000000000000001B /* FitnessCard.swift */,
 				00200000000000000000001C /* MetricTile.swift */,
 				00200000000000000000001D /* CoachBadgeView.swift */,
@@ -1035,6 +1041,8 @@
 				0010000000000000000000E5 /* SleepCoachingServices.swift in Sources */,
 				0010000000000000000000E6 /* SleepAnalyticsStores.swift in Sources */,
 				0010000000000000000000E7 /* SleepNotificationScheduler.swift in Sources */,
+				0010000000000000000000E8 /* StatusBadge.swift in Sources */,
+				0010000000000000000000E9 /* NoticeCard.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

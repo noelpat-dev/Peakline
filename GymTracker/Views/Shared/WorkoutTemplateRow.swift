@@ -20,11 +20,11 @@ struct WorkoutTemplateRow: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(template.name)
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .lineLimit(2)
                         Text(detailText)
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
 

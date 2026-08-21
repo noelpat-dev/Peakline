@@ -805,7 +805,7 @@ struct TodayView: View {
 
                     Image(systemName: "checkmark.seal.fill")
                         .font(AppTypography.cardTitle)
-                        .foregroundStyle(appTheme.colors.accent)
+                        .foregroundStyle(appTheme.colors.textAccent)
                 }
             } else {
                 HStack(spacing: 12) {
@@ -813,10 +813,10 @@ struct TodayView: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("No workouts logged yet")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                         Text("Start a split to build your first dashboard summary.")
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
                 }
@@ -1296,17 +1296,17 @@ private struct BackupHealthWarningCard: View {
         FitnessCard {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "externaldrive.badge.exclamationmark")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.warning)
+                    .font(AppTypography.compactCardTitle)
+                    .foregroundStyle(appTheme.colors.textWarning)
                     .frame(width: 38, height: 38)
                     .background(appTheme.colors.warning.opacity(0.16), in: Circle())
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Backup needs attention")
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
                     Text(message)
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1326,7 +1326,7 @@ private struct TodaySleepRecoveryCard: View {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "moon.stars.fill")
                     .font(AppTypography.cardTitle)
-                    .foregroundStyle(appTheme.colors.accent)
+                    .foregroundStyle(appTheme.colors.textAccent)
                     .frame(width: 46, height: 46)
                     .background(appTheme.colors.accentSurface, in: Circle())
 
@@ -1338,8 +1338,8 @@ private struct TodaySleepRecoveryCard: View {
 
                         if let source = summary.source {
                             Text(source.displayName)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(appTheme.colors.accent)
+                                .font(AppTypography.chip)
+                                .foregroundStyle(appTheme.colors.textAccent)
                                 .padding(.horizontal, 9)
                                 .padding(.vertical, 5)
                                 .background(appTheme.colors.accentSurface, in: Capsule())
@@ -1347,11 +1347,11 @@ private struct TodaySleepRecoveryCard: View {
                     }
 
                     Text(detailText)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
 
                     Text(recommendation)
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textTertiary)
                         .lineLimit(2)
                 }
@@ -1361,7 +1361,7 @@ private struct TodaySleepRecoveryCard: View {
                 if let score = summary.sleepScore {
                     Text("\(score)%")
                         .font(.headline.bold())
-                        .foregroundStyle(appTheme.colors.accent)
+                        .foregroundStyle(appTheme.colors.textAccent)
                 }
             }
         }
@@ -1530,13 +1530,13 @@ struct HydrationView: View {
                 FitnessCard {
                     HStack {
                         Label("Added \(HydrationService.formatAmount(confirmation.amountML))", systemImage: "checkmark.circle.fill")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(appTheme.colors.success)
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(appTheme.colors.textSuccess)
                         Spacer()
                         Button("Undo") {
                             delete(confirmation)
                         }
-                        .font(.subheadline.weight(.semibold))
+                        .font(AppTypography.bodyEmphasis)
                     }
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
@@ -1547,10 +1547,10 @@ struct HydrationView: View {
                     FitnessCard {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("No water logged yet")
-                                .font(.headline)
+                                .font(AppTypography.sectionTitle)
                                 .foregroundStyle(appTheme.colors.textPrimary)
                             Text("Use quick add to start tracking hydration.")
-                                .font(.subheadline)
+                                .font(AppTypography.body)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                         }
                     }
@@ -1635,7 +1635,7 @@ struct HydrationView: View {
 
                     Image(systemName: "drop.fill")
                         .font(AppTypography.largeMetric)
-                        .foregroundStyle(appTheme.colors.hydration)
+                        .foregroundStyle(appTheme.colors.textHydration)
                         .frame(width: 52, height: 52)
                         .background(appTheme.colors.hydration.opacity(0.14), in: Circle())
                 }
@@ -1649,18 +1649,18 @@ struct HydrationView: View {
 
                 HStack {
                     Text(progressText)
-                        .font(.subheadline.weight(.semibold))
+                        .font(AppTypography.bodyEmphasis)
                         .foregroundStyle(appTheme.colors.textSecondary)
                     Spacer()
                     Text(statusText)
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.chip)
                         .foregroundStyle(statusColor)
                 }
 
                 if let errorText {
                     Text(errorText)
                         .font(.footnote)
-                        .foregroundStyle(appTheme.colors.danger)
+                        .foregroundStyle(appTheme.colors.textDanger)
                 }
             }
         }

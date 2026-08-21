@@ -191,14 +191,14 @@ struct SleepDashboardView: View {
         FitnessScreen {
             if let healthKitImportError {
                 Text(healthKitImportError)
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             if let dashboardErrorMessage {
                 Text(dashboardErrorMessage)
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -207,7 +207,7 @@ struct SleepDashboardView: View {
 
             if let exportStatus = healthKitExportStatus.message {
                 Text(exportStatus)
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -446,7 +446,7 @@ struct SleepDashboardView: View {
                     .accessibilityIdentifier("sleep-last-night-duration")
 
                 Text("Peakline sleep estimate")
-                    .font(.caption.weight(.semibold))
+                    .font(AppTypography.chip)
                     .foregroundStyle(appTheme.colors.textTertiary)
                     .accessibilityIdentifier("sleep-populated-hero")
 
@@ -455,7 +455,7 @@ struct SleepDashboardView: View {
                         .accessibilityIdentifier("sleep-stage-breakdown")
                 } else if latestSummary.source == .appleHealth {
                     Text("Apple Health stage detail is unavailable for this record. Peakline preserves the sleep interval without inventing stage values.")
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("sleep-stage-breakdown-unavailable")
@@ -469,7 +469,7 @@ struct SleepDashboardView: View {
                 if latestSummary.napCreditMinutes > 0 {
                     Label("Nap added \(SleepScoringService.durationText(minutes: latestSummary.napCreditMinutes)) recovery credit", systemImage: "moonphase.first.quarter")
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.accent)
+                        .foregroundStyle(appTheme.colors.textAccent)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -496,7 +496,7 @@ struct SleepDashboardView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(readinessScore.isProvisional ? "Provisional readiness" : supportTitle)
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                         Spacer(minLength: 8)
                         Text("\(readinessScore.value)/100")
@@ -505,12 +505,12 @@ struct SleepDashboardView: View {
                     }
 
                     Text(readinessScore.isProvisional ? "Training guidance waits for more evidence." : supportMessage)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
 
                     Text(readinessScore.confidenceNote)
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.chip)
                         .foregroundStyle(readinessScore.isProvisional ? appTheme.colors.textSecondary : appTheme.colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("sleep-readiness-confidence")
@@ -522,7 +522,7 @@ struct SleepDashboardView: View {
 
     private var activeStatusNote: some View {
         Text("Charts and coaching will update after you confirm this session.")
-            .font(.caption)
+            .font(AppTypography.metadata)
             .foregroundStyle(appTheme.colors.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier("sleep-active-status-note")
@@ -541,7 +541,7 @@ struct SleepDashboardView: View {
                     showsChevron: true
                 ) {
                     Text(appleHealthActionLabel)
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.chip)
                         .foregroundStyle(appTheme.colors.textSecondary)
                 }
             }
@@ -718,13 +718,13 @@ struct SleepDashboardView: View {
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Sleep Mode Active")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .accessibilityIdentifier("sleep-active-hero")
 
                         TimelineView(.periodic(from: Date.now, by: 60)) { timeline in
                             Text(activeSleepDescription(for: session, at: timeline.date))
-                                .font(.subheadline)
+                                .font(AppTypography.body)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .accessibilityIdentifier("sleep-active-elapsed")
@@ -805,13 +805,13 @@ struct SleepDashboardView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
                         Text("Average \(SleepScoringService.durationText(minutes: averageSleepMinutes))")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         Spacer()
 
                         Text("Target \(SleepScoringService.durationText(minutes: settings.targetSleepMinutes))")
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.chip)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
 
@@ -909,7 +909,7 @@ struct SleepDashboardView: View {
                     }
 
                     Text(sleepDebtCopy)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -921,7 +921,7 @@ struct SleepDashboardView: View {
                     }
 
                     Text(dashboardSummary.consistencySummary.message)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1245,8 +1245,8 @@ private struct NapSummaryCard: View {
                 systemImage: "moonphase.first.quarter"
             ) {
                 Text(nap.source.displayName)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.accent)
+                    .font(AppTypography.chip)
+                    .foregroundStyle(appTheme.colors.textAccent)
             }
         }
     }
@@ -1278,7 +1278,7 @@ private struct SleepDurationBar: View {
 
                 VStack {
                     Spacer(minLength: 0)
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: appTheme.metrics.radius8, style: .continuous)
                         .fill(barColor)
                         .frame(height: summary.totalSleepMinutes > 0 ? (hasAppeared || reduceMotion ? height : 8) : 8)
                         .animation(AppMotion.progressFill(reduceMotion: reduceMotion), value: hasAppeared)
@@ -1286,7 +1286,7 @@ private struct SleepDurationBar: View {
             }
 
             Text(summary.date.formatted(.dateTime.weekday(.narrow)))
-                .font(.caption2.weight(.semibold))
+                .font(AppTypography.badge)
                 .foregroundStyle(appTheme.colors.textSecondary)
         }
         .frame(maxWidth: .infinity)
@@ -1337,13 +1337,13 @@ private struct SleepHistoryRow: View {
             ) {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("Session quality")
-                        .font(.caption2.weight(.semibold))
+                        .font(AppTypography.badge)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .multilineTextAlignment(.trailing)
 
                     Text("\(qualityScore)")
                         .font(.headline.bold())
-                        .foregroundStyle(appTheme.colors.accent)
+                        .foregroundStyle(appTheme.colors.textAccent)
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Session quality \(qualityScore) out of 100")
@@ -1378,7 +1378,7 @@ private struct SleepCoachingInsightCard: View {
                 tint: tint
                 ) {
                     Text(insight.confidence.displayName)
-                        .font(.caption2.weight(.semibold))
+                        .font(AppTypography.badge)
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)

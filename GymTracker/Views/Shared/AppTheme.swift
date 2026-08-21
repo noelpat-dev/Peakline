@@ -19,6 +19,11 @@ struct AppThemeColors {
     let warning: Color
     let hydration: Color
     let danger: Color
+    let textAccent: Color
+    let textSuccess: Color
+    let textWarning: Color
+    let textHydration: Color
+    let textDanger: Color
 }
 
 struct AppThemeMetrics {
@@ -203,8 +208,32 @@ enum AppTheme: String, CaseIterable, Identifiable {
             success: Color(hex: 0x30D158),
             warning: Color(hex: 0xFF9F0A),
             hydration: self == .black ? accent : Color(hex: 0x0A84FF),
-            danger: Color(hex: 0xFF453A)
+            danger: Color(hex: 0xFF453A),
+            textAccent: textAccentColor(for: accent),
+            textSuccess: Color(light: 0x1D7A33, dark: 0x3DDC64),
+            textWarning: Color(light: 0xA34E00, dark: 0xFFAB2E),
+            textHydration: self == .black
+                ? Color(light: 0x111114, dark: 0xF5F5F7)
+                : Color(light: 0x0060DF, dark: 0x409CFF),
+            textDanger: Color(light: 0xD70015, dark: 0xFF6961)
         )
+    }
+
+    private func textAccentColor(for accent: Color) -> Color {
+        switch self {
+        case .appleGreen:
+            return Color(light: 0x1D7A33, dark: 0x3DDC64)
+        case .red:
+            return Color(light: 0xD70015, dark: 0xFF6961)
+        case .purple:
+            return Color(light: 0x8E44AD, dark: 0xD18CF5)
+        case .orange:
+            return Color(light: 0xA34E00, dark: 0xFFAB2E)
+        case .blue:
+            return Color(light: 0x0060DF, dark: 0x409CFF)
+        case .black:
+            return Color(light: 0x111114, dark: 0xF5F5F7)
+        }
     }
 
     private var accentForeground: Color {

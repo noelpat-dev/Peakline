@@ -150,7 +150,7 @@ struct SessionSummaryView: View {
                     }
 
                     Text(summary.takeaway)
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -181,7 +181,7 @@ struct SessionSummaryView: View {
 
                     if let notes = session.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Label(notes, systemImage: "note.text")
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -193,19 +193,19 @@ struct SessionSummaryView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
                             Text(sessionPRs.isEmpty ? "Completed Work" : "New Bests")
-                                .font(.headline)
+                                .font(AppTypography.sectionTitle)
                             Spacer()
                             CoachBadgeView(state: sessionPRs.isEmpty ? .ready : .pr)
                         }
 
                         if sessionPRs.isEmpty {
                             Text("No PRs today, but you completed \(PeaklineText.count(summary.workingSetCount, singular: "working set")).")
-                                .font(.subheadline)
+                                .font(AppTypography.body)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                         } else {
                             ForEach(sessionPRs.prefix(5)) { pr in
                                 Label("\(pr.exerciseName) · \(pr.improvementDescription)", systemImage: "arrow.up.circle.fill")
-                                    .font(.subheadline)
+                                    .font(AppTypography.body)
                             }
                         }
                     }
@@ -456,7 +456,7 @@ private struct SessionSummaryExerciseRow: View {
                 )
 
                 Text(exercise.exerciseName)
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppTypography.bodyEmphasis)
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .lineLimit(1)
 
@@ -469,7 +469,7 @@ private struct SessionSummaryExerciseRow: View {
 
             if let notes = exercise.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Label(notes, systemImage: "note.text")
-                    .font(.caption)
+                    .font(AppTypography.metadata)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)

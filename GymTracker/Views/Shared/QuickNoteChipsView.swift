@@ -16,7 +16,7 @@ struct QuickNoteChipsView: View {
                         text = updatedText
                     } label: {
                         Text(note)
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.chip)
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 7)

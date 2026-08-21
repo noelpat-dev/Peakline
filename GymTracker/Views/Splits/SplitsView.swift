@@ -17,6 +17,7 @@ struct SplitsView: View {
     @State private var showingEditRotation = false
     @State private var showingOtherSplits = false
     @State private var pendingDeleteSplitID: UUID?
+    @State private var deleteErrorText: String?
     @State private var dashboardSnapshot = SplitsDashboardSnapshot.empty
     @State private var lastDashboardSignature: String?
     @State private var dashboardRefreshTask: Task<Void, Never>?
@@ -119,17 +120,17 @@ struct SplitsView: View {
                                 HStack(spacing: 14) {
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text("Other Splits")
-                                            .font(.headline)
+                                            .font(AppTypography.sectionTitle)
                                             .foregroundStyle(appTheme.colors.textPrimary)
                                         Text("\(snapshot.otherSplits.count) inactive or custom templates")
-                                            .font(.subheadline)
+                                            .font(AppTypography.body)
                                             .foregroundStyle(appTheme.colors.textSecondary)
                                     }
 
                                     Spacer(minLength: 12)
 
                                     Text(showingOtherSplits ? "Hide" : "Show")
-                                        .font(.subheadline.weight(.semibold))
+                                        .font(AppTypography.bodyEmphasis)
                                         .foregroundStyle(showingOtherSplits ? appTheme.colors.accent : appTheme.colors.textSecondary)
                                         .padding(.horizontal, 14)
                                         .padding(.vertical, 9)
@@ -139,7 +140,7 @@ struct SplitsView: View {
                                         )
 
                                     Image(systemName: "chevron.right")
-                                        .font(.caption.weight(.bold))
+                                        .font(AppTypography.eyebrow)
                                         .foregroundStyle(appTheme.colors.textTertiary)
                                         .rotationEffect(.degrees(showingOtherSplits ? 90 : 0))
                                 }
@@ -178,7 +179,7 @@ struct SplitsView: View {
                                                 }
                                             } label: {
                                                 Image(systemName: "ellipsis")
-                                                    .font(.headline.weight(.semibold))
+                                                    .font(AppTypography.compactCardTitle)
                                                     .foregroundStyle(appTheme.colors.textSecondary)
                                                     .frame(
                                                         width: appTheme.metrics.minimumHitTarget,
@@ -235,6 +236,18 @@ struct SplitsView: View {
                 Button("Cancel", role: .cancel) {
                     pendingDeleteSplitID = nil
                 }
+
+        .alert(
+            "Split deletion failed",
+            isPresented: Binding(
+                get: { deleteErrorText != nil },
+                set: { if !$0 { deleteErrorText = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(deleteErrorText ?? "")
+        }
                 Button("Delete", role: .destructive) {
                     deletePendingSplit()
                 }
@@ -392,10 +405,10 @@ struct SplitsView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(split.name)
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppTypography.bodyEmphasis)
                     .foregroundStyle(appTheme.colors.textPrimary)
                 Text(PeaklineText.count(split.exercises.count, singular: "exercise"))
-                    .font(.caption)
+                    .font(AppTypography.metadata)
                     .foregroundStyle(appTheme.colors.textSecondary)
             }
 
@@ -404,7 +417,7 @@ struct SplitsView: View {
             SplitStatusBadge(status: split.isActive ? .custom : .inactive)
 
             Image(systemName: "chevron.right")
-                .font(.caption.weight(.bold))
+                .font(AppTypography.eyebrow)
                 .foregroundStyle(appTheme.colors.textTertiary)
         }
         .padding(.horizontal, 18)
@@ -412,10 +425,14 @@ struct SplitsView: View {
     }
 
     private func delete(_ split: TrainingSplit) {
-        modelContext.delete(split)
-        try? modelContext.save()
-        try? rotationService.normalizePersistedRotation(in: modelContext)
-        try? modelContext.save()
+        do {
+            modelContext.delete(split)
+            try modelContext.save()
+            try rotationService.normalizePersistedRotation(in: modelContext)
+            try modelContext.save()
+        } catch {
+            deleteErrorText = "Peakline could not delete this split. Check the split still exists and try again."
+        }
     }
 
     private func deletePendingSplit() {
@@ -989,7 +1006,7 @@ private struct EditActiveRotationView: View {
                                         .foregroundStyle(appTheme.colors.textPrimary)
                                     Spacer()
                                     Image(systemName: "plus.circle.fill")
-                                        .foregroundStyle(appTheme.colors.accent)
+                                        .foregroundStyle(appTheme.colors.textAccent)
                                 }
                             }
                             .accessibilityLabel("Add \(split.name) to active rotation")
@@ -1186,7 +1203,7 @@ private struct SplitExerciseEditorRow: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(splitExercise.exerciseNameSnapshot)
-                    .font(.headline)
+                    .font(AppTypography.sectionTitle)
 
                 Stepper("Sets: \(splitExercise.targetSets)", value: $splitExercise.targetSets, in: 1...10)
                 Stepper("Min reps: \(splitExercise.minReps)", value: $splitExercise.minReps, in: 1...50)

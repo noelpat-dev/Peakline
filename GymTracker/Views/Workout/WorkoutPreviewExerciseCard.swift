@@ -148,7 +148,7 @@ struct WorkoutPreviewExerciseCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 8) {
                     Text(exercise.exerciseNameSnapshot)
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -183,7 +183,7 @@ struct WorkoutPreviewExerciseCard: View {
 
                 if let notes = exercise.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Label(notes, systemImage: "note.text")
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
@@ -212,7 +212,7 @@ struct WorkoutPreviewExerciseCard: View {
 
     private var reorderHandle: some View {
         Image(systemName: "line.3.horizontal")
-            .font(.headline.weight(.semibold))
+            .font(AppTypography.compactCardTitle)
             .foregroundStyle(isGestureDragging ? appTheme.colors.accent : appTheme.colors.textSecondary)
             .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
             .background(
@@ -303,7 +303,7 @@ struct WorkoutPreviewExerciseCard: View {
             }
         } label: {
             Image(systemName: "ellipsis")
-                .font(.headline.weight(.semibold))
+                .font(AppTypography.compactCardTitle)
                 .foregroundStyle(appTheme.colors.textSecondary)
                 .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
                 .background(appTheme.elevatedCardBackground, in: Circle())
@@ -319,14 +319,14 @@ struct WorkoutPreviewExerciseCard: View {
                     .foregroundStyle(appTheme.colors.textSecondary)
 
                 Image(systemName: "arrow.right")
-                    .font(.caption.weight(.bold))
+                    .font(AppTypography.eyebrow)
                     .foregroundStyle(appTheme.colors.textTertiary)
             }
 
             Text("Target: \(targetDescription)")
                 .foregroundStyle(appTheme.colors.textPrimary)
         }
-        .font(.subheadline.weight(.semibold))
+        .font(AppTypography.bodyEmphasis)
         .lineLimit(2)
         .fixedSize(horizontal: false, vertical: true)
     }

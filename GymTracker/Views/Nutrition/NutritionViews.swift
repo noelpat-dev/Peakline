@@ -631,14 +631,14 @@ private struct HistoricalNutritionContextCard: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(isTrainingDay ? "Training Day" : "Rest Day")
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
                     Text(
                         isTrainingDay
                             ? "A completed workout was logged on this date."
                             : "No completed workout was logged on this date."
                     )
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
                 }
 
@@ -1119,11 +1119,11 @@ struct ManualFoodEntryView: View {
                 }
 
                 if let validationWarning {
-                    NutritionNoticeCard(message: validationWarning, systemImage: "exclamationmark.triangle", tone: .warning)
+                    NoticeCard(validationWarning, tone: .warning, systemImage: "exclamationmark.triangle")
                 }
 
                 if let errorText {
-                    NutritionNoticeCard(message: errorText, systemImage: "exclamationmark.triangle", tone: .danger)
+                    NoticeCard(errorText, tone: .danger, systemImage: "exclamationmark.triangle")
                 }
 
                 Button {
@@ -1361,15 +1361,11 @@ struct LogFoodView: View {
             }
 
             if amountUnit == .serving && food.baseUnit != .serving && food.servingSize == nil {
-                NutritionNoticeCard(
-                    message: "Serving logs use 100 g unless this food has a serving size.",
-                    systemImage: "info.circle",
-                    tone: .neutral
-                )
+                NoticeCard("Serving logs use 100 g unless this food has a serving size.", tone: .neutral, systemImage: "info.circle")
             }
 
             if let errorText {
-                NutritionNoticeCard(message: errorText, systemImage: "exclamationmark.triangle", tone: .danger)
+                NoticeCard(errorText, tone: .danger, systemImage: "exclamationmark.triangle")
             }
 
             Button {
@@ -1495,7 +1491,7 @@ private struct NutritionHeroCard: View {
                                 .minimumScaleFactor(0.65)
 
                             Text("kcal")
-                                .font(.headline.weight(.semibold))
+                                .font(AppTypography.compactCardTitle)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                         }
                     }
@@ -1584,8 +1580,8 @@ private struct NutritionMetricCard: View {
             VStack(alignment: .leading, spacing: 9) {
                 HStack {
                     Image(systemName: systemImage)
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.accent)
+                        .font(AppTypography.compactCardTitle)
+                        .foregroundStyle(appTheme.colors.textAccent)
 
                     Spacer()
                 }
@@ -1598,7 +1594,7 @@ private struct NutritionMetricCard: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label)
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.chip)
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .lineLimit(1)
 
@@ -1641,7 +1637,7 @@ private struct MealSectionCard: View {
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(mealType.displayName)
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         Text(
@@ -1652,7 +1648,7 @@ private struct MealSectionCard: View {
                                 "F \(gramsText(totals.fat)) g"
                             ])
                         )
-                            .font(.caption)
+                            .font(AppTypography.metadata)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.75)
@@ -1662,7 +1658,7 @@ private struct MealSectionCard: View {
 
                     Text("\(kcalText(totals.calories)) kcal")
                         .font(.subheadline.weight(.bold))
-                        .foregroundStyle(appTheme.colors.accent)
+                        .foregroundStyle(appTheme.colors.textAccent)
                         .lineLimit(1)
                 }
 
@@ -1794,14 +1790,14 @@ private struct SavedFoodCard: View {
                 VStack(alignment: .leading, spacing: 7) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(food.name)
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .lineLimit(2)
                             .minimumScaleFactor(0.84)
 
                         if let brand = food.brand, !brand.isEmpty {
                             Text(brand)
-                                .font(.caption)
+                                .font(AppTypography.metadata)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .lineLimit(1)
                         }
@@ -1866,11 +1862,11 @@ private struct FoodDatabaseSummaryCard: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text("\(foodCount) saved food\(foodCount == 1 ? "" : "s")")
-                        .font(.title3.bold())
+                        .font(AppTypography.cardTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     Text("Local foods are the source of truth. Imported and scanned foods will be reviewed before saving in later phases.")
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1892,12 +1888,12 @@ private struct SelectedFoodSummaryCard: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(food.name)
-                            .font(.title3.bold())
+                            .font(AppTypography.cardTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .lineLimit(2)
 
                         Text(food.brand?.isEmpty == false ? food.brand ?? "" : "Saved local food")
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
 
@@ -1922,18 +1918,18 @@ private struct ManualFoodTrustCard: View {
         FitnessCard(padding: 16) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "lock.doc.fill")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.accent)
+                    .font(AppTypography.compactCardTitle)
+                    .foregroundStyle(appTheme.colors.textAccent)
                     .frame(width: 38, height: 38)
                     .background(appTheme.colors.accentSurface, in: Circle())
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(isEditing ? "Editing local data" : "Manual and verified")
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     Text("Saved values are reused for future logs. Existing food logs keep their original macro snapshots.")
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -2001,19 +1997,19 @@ private struct NutritionEmptyState: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title)
-                        .font(.title3.bold())
+                        .font(AppTypography.cardTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     Text(message)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if let actionTitle {
                     Label(actionTitle, systemImage: "arrow.right")
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.accent)
+                        .font(AppTypography.compactCardTitle)
+                        .foregroundStyle(appTheme.colors.textAccent)
                         .padding(.top, 2)
                 }
             }
@@ -2059,7 +2055,7 @@ private struct MealTypePicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Meal")
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
                 .foregroundStyle(appTheme.colors.textSecondary)
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -2096,44 +2092,31 @@ private struct NutritionMacroChip: View {
                 .minimumScaleFactor(0.8)
 
             Text(title)
-                .font(.caption2.weight(.semibold))
+                .font(AppTypography.badge)
                 .foregroundStyle(appTheme.colors.textSecondary)
                 .textCase(.uppercase)
         }
         .frame(maxWidth: .infinity, minHeight: 48)
-        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous))
     }
 }
 
 private struct FoodSourceBadge: View {
-    @Environment(\.appTheme) private var appTheme
-
     let source: FoodDataSource
 
     var body: some View {
-        Text(source.displayName)
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(appTheme.colors.accent)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(appTheme.colors.accentSurface, in: Capsule())
-            .lineLimit(1)
+        StatusBadge(source.displayName, role: .accent)
     }
 }
 
 private struct VerificationStatusBadge: View {
-    @Environment(\.appTheme) private var appTheme
-
     let status: FoodVerificationStatus
 
     var body: some View {
-        Text(status.displayName)
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(status == .userVerified ? appTheme.colors.success : appTheme.colors.textSecondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(status == .userVerified ? appTheme.colors.success.opacity(0.14) : appTheme.colors.cardBackgroundElevated, in: Capsule())
-            .lineLimit(1)
+        StatusBadge(
+            status.displayName,
+            role: status == .userVerified ? .success : .neutral
+        )
     }
 }
 
@@ -2142,40 +2125,6 @@ private struct NutritionFoodIcon: View {
 
     var body: some View {
         FitnessIconBadge(systemImage: systemImage, size: 42)
-    }
-}
-
-private enum NutritionNoticeTone {
-    case neutral
-    case warning
-    case danger
-}
-
-private struct NutritionNoticeCard: View {
-    @Environment(\.appTheme) private var appTheme
-
-    let message: String
-    let systemImage: String
-    let tone: NutritionNoticeTone
-
-    var body: some View {
-        FitnessCard(padding: 16) {
-            Label(message, systemImage: systemImage)
-                .font(.subheadline)
-                .foregroundStyle(foregroundColor)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private var foregroundColor: Color {
-        switch tone {
-        case .neutral:
-            return appTheme.colors.textSecondary
-        case .warning:
-            return appTheme.colors.warning
-        case .danger:
-            return appTheme.colors.danger
-        }
     }
 }
 
@@ -2191,7 +2140,7 @@ private struct NutritionTextField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
                 .foregroundStyle(appTheme.colors.textSecondary)
 
             HStack(spacing: 8) {
@@ -2202,15 +2151,15 @@ private struct NutritionTextField: View {
 
                 if let suffix {
                     Text(suffix)
-                        .font(.subheadline.weight(.semibold))
+                        .font(AppTypography.bodyEmphasis)
                         .foregroundStyle(appTheme.colors.textTertiary)
                 }
             }
             .padding(.horizontal, 12)
             .frame(minHeight: 46)
-            .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous)
                     .stroke(appTheme.colors.cardBorder, lineWidth: 1)
             }
         }

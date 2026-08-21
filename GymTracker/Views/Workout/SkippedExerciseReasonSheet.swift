@@ -15,7 +15,7 @@ struct SkippedExerciseReasonSheet: View {
             Form {
                 Section {
                     Text("You can tag why planned exercises were skipped. This appends a short note and keeps your workout history intact.")
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                 }
 

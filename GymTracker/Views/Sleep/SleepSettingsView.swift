@@ -22,7 +22,7 @@ struct SleepSettingsView: View {
                 SleepCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Default wind-down")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 82), spacing: 8)], spacing: 8) {
@@ -34,7 +34,7 @@ struct SleepSettingsView: View {
                         }
 
                         Text("Target sleep")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 82), spacing: 8)], spacing: 8) {
@@ -50,7 +50,7 @@ struct SleepSettingsView: View {
                 SleepCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Preferred Sleep Source")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         Menu {
@@ -80,7 +80,7 @@ struct SleepSettingsView: View {
                         .accessibilityIdentifier("sleep-settings-preferred-source")
 
                         Text("Automatic uses Apple Health when it is reliable, keeps Sleep Mode ratings and notes, and falls back gracefully when data is missing.")
-                            .font(.caption)
+                            .font(AppTypography.metadata)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -104,11 +104,11 @@ struct SleepSettingsView: View {
                 SleepCard {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(healthTitle)
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         Text(healthDescription)
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
 
@@ -124,7 +124,7 @@ struct SleepSettingsView: View {
 
                         if let healthStatus {
                             Text(healthStatus)
-                                .font(.caption)
+                                .font(AppTypography.metadata)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .accessibilityIdentifier("sleep-settings-health-status")
@@ -132,7 +132,7 @@ struct SleepSettingsView: View {
 
                         if let exportStatus = healthKitExportStatus.message {
                             Text(exportStatus)
-                                .font(.caption)
+                                .font(AppTypography.metadata)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .accessibilityLabel("Apple Health export status")
@@ -183,7 +183,7 @@ struct SleepSettingsView: View {
 
                     if let notificationStatus {
                         Text(notificationStatus)
-                            .font(.caption)
+                            .font(AppTypography.metadata)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -192,7 +192,7 @@ struct SleepSettingsView: View {
 
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Night Reminders")
-                            .font(.subheadline.weight(.semibold))
+                            .font(AppTypography.bodyEmphasis)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         SleepToggleRow(title: "Bedtime Reminder", subtitle: "Get a reminder to start Sleep Mode before your usual bedtime.", systemImage: "moon.zzz", isOn: $settings.notificationPreferences.bedtimeReminderEnabled)
@@ -207,7 +207,7 @@ struct SleepSettingsView: View {
 
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Morning Reminders")
-                            .font(.subheadline.weight(.semibold))
+                            .font(AppTypography.bodyEmphasis)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         SleepToggleRow(title: "Morning Confirmation", subtitle: "Review your wake time to update today's recovery score.", systemImage: "sun.max", isOn: $settings.notificationPreferences.morningConfirmationEnabled)
@@ -221,7 +221,7 @@ struct SleepSettingsView: View {
 
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Smart Coaching")
-                            .font(.subheadline.weight(.semibold))
+                            .font(AppTypography.bodyEmphasis)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         SleepToggleRow(title: "Training-Aware Sleep Reminders", subtitle: "Nudge sleep before likely training days.", systemImage: "figure.strengthtraining.traditional", isOn: $settings.notificationPreferences.trainingAwareRemindersEnabled)
@@ -232,7 +232,7 @@ struct SleepSettingsView: View {
 
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Quiet Days")
-                            .font(.subheadline.weight(.semibold))
+                            .font(AppTypography.bodyEmphasis)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         FlowLayout(spacing: 8) {
@@ -519,10 +519,10 @@ private struct SleepToggleRow: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
                     Text(subtitle)
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textSecondary)
                 }
             }

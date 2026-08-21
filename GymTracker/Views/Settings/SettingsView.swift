@@ -286,10 +286,10 @@ struct SettingsView: View {
 
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("Encrypted backup ready")
-                                        .font(.headline)
+                                        .font(AppTypography.sectionTitle)
                                         .foregroundStyle(appTheme.colors.textPrimary)
                                     Text("Peakline stores fast local data with SwiftData and protects a full-app backup in Firebase after you sign in.")
-                                        .font(.caption)
+                                        .font(AppTypography.metadata)
                                         .foregroundStyle(appTheme.colors.textSecondary)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
@@ -435,7 +435,7 @@ private struct SettingsCardRow: View {
     private var chevron: some View {
         if showsChevron {
             Image(systemName: "chevron.right")
-                .font(.caption.weight(.bold))
+                .font(AppTypography.eyebrow)
                 .foregroundStyle(appTheme.colors.textTertiary)
                 .frame(minWidth: appTheme.metrics.minimumHitTarget, minHeight: appTheme.metrics.minimumHitTarget)
                 .accessibilityHidden(true)
@@ -498,7 +498,7 @@ private struct SettingsInlineRow: View {
 
     private var chevron: some View {
         Image(systemName: "chevron.right")
-            .font(.caption.weight(.bold))
+            .font(AppTypography.eyebrow)
             .foregroundStyle(appTheme.colors.textTertiary)
             .frame(minWidth: appTheme.metrics.minimumHitTarget, minHeight: appTheme.metrics.minimumHitTarget)
             .accessibilityHidden(true)
@@ -607,10 +607,10 @@ private struct ThemeOptionRow: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(theme.displayName)
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
                     Text(themeDescription)
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textSecondary)
                 }
 
@@ -622,7 +622,7 @@ private struct ThemeOptionRow: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 12)
-            .background(isSelected ? theme.colors.accentSurface : Color.clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(isSelected ? theme.colors.accentSurface : Color.clear, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius12, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
@@ -660,9 +660,9 @@ private struct AppearanceOptionButton: View {
         Button(action: action) {
             VStack(spacing: 8) {
                 Image(systemName: systemImage)
-                    .font(.headline.weight(.semibold))
+                    .font(AppTypography.compactCardTitle)
                 Text(appearance.displayName)
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppTypography.bodyEmphasis)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
             }
@@ -671,10 +671,10 @@ private struct AppearanceOptionButton: View {
             .foregroundStyle(isSelected ? appTheme.colors.textPrimary : appTheme.colors.textSecondary)
             .background(
                 isSelected ? appTheme.colors.accentSurfaceStrong : appTheme.colors.cardBackgroundElevated,
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                in: RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
                     .stroke(isSelected ? appTheme.colors.accent.opacity(0.45) : appTheme.colors.cardBorder, lineWidth: 1)
             }
         }
@@ -781,10 +781,10 @@ private struct ProfileEditorView: View {
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Injury notes")
-                                .font(.headline)
+                                .font(AppTypography.sectionTitle)
                                 .foregroundStyle(appTheme.colors.textPrimary)
                             Text("Private reference notes. Workouts are not changed automatically.")
-                                .font(.subheadline)
+                                .font(AppTypography.body)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -795,12 +795,12 @@ private struct ProfileEditorView: View {
                     if !profile.exercisesToAvoid.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Saved exercises to avoid")
-                                .font(.caption.weight(.semibold))
+                                .font(AppTypography.chip)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .textCase(.uppercase)
 
                             Text("Stored for reference only.")
-                                .font(.caption)
+                                .font(AppTypography.metadata)
                                 .foregroundStyle(appTheme.colors.textTertiary)
 
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], alignment: .leading, spacing: 8) {
@@ -881,15 +881,15 @@ private struct ProfileSummaryCard: View {
 
                 VStack(alignment: .leading, spacing: appTheme.metrics.spacing4) {
                     Text("Profile overview")
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.chip)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .textCase(.uppercase)
                     Text(profile.goal.displayName)
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(profile.experienceLevel.displayName)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                 }
 
@@ -961,10 +961,10 @@ private struct ProfileSettingRow<Accessory: View>: View {
 
             VStack(alignment: .leading, spacing: appTheme.metrics.spacing4) {
                 Text(title)
-                    .font(.headline)
+                    .font(AppTypography.sectionTitle)
                     .foregroundStyle(appTheme.colors.textPrimary)
                 Text(subtitle)
-                    .font(.caption)
+                    .font(AppTypography.metadata)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -978,12 +978,12 @@ private struct ProfileIcon: View {
 
     var body: some View {
         Image(systemName: systemName)
-            .font(.headline.weight(.semibold))
-            .foregroundStyle(appTheme.colors.accent)
+            .font(AppTypography.compactCardTitle)
+            .foregroundStyle(appTheme.colors.textAccent)
             .frame(width: 36, height: 36)
-            .background(appTheme.colors.accentSurface, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .background(appTheme.colors.accentSurface, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius12, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: appTheme.metrics.radius12, style: .continuous)
                     .stroke(appTheme.colors.accent.opacity(0.2), lineWidth: 1)
             }
             .accessibilityHidden(true)
@@ -1004,12 +1004,12 @@ private struct ProfileValueChip: View {
 
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.caption2.weight(.bold))
+                    .font(AppTypography.badge)
                     .accessibilityHidden(true)
             }
         }
-        .font(.subheadline.weight(.semibold))
-        .foregroundStyle(appTheme.colors.accent)
+        .font(AppTypography.bodyEmphasis)
+        .foregroundStyle(appTheme.colors.textAccent)
         .padding(.horizontal, appTheme.metrics.spacing12)
         .frame(minHeight: appTheme.metrics.minimumHitTarget)
         .background(appTheme.colors.accentSurface, in: Capsule())
@@ -1054,7 +1054,7 @@ private struct ProfileStepperControl: View {
     private func stepButton(systemImage: String, isDisabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.caption.weight(.bold))
+                .font(AppTypography.eyebrow)
                 .foregroundStyle(isDisabled ? appTheme.colors.textTertiary : appTheme.colors.accent)
                 .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
                 .background(isDisabled ? appTheme.colors.cardBackground : appTheme.colors.accentSurface, in: Circle())
@@ -1108,16 +1108,16 @@ private struct ProfileBodyweightField: View {
                 .multilineTextAlignment(.trailing)
                 .keyboardType(.decimalPad)
                 .frame(minWidth: 72, maxWidth: 100, minHeight: appTheme.metrics.minimumHitTarget)
-                .foregroundStyle(appTheme.colors.accent)
+                .foregroundStyle(appTheme.colors.textAccent)
                 .accessibilityLabel("Bodyweight")
                 .accessibilityValue(value.map { "\($0.formatted(.number.precision(.fractionLength(0...1)))) \(unitText)" } ?? "Not set")
                 .accessibilityIdentifier("profile-bodyweight-field")
 
             Text(unitText)
-                .foregroundStyle(appTheme.colors.accent)
+                .foregroundStyle(appTheme.colors.textAccent)
                 .accessibilityHidden(true)
         }
-        .font(.subheadline.weight(.semibold))
+        .font(AppTypography.bodyEmphasis)
         .padding(.horizontal, appTheme.metrics.spacing12)
         .background(appTheme.colors.accentSurface, in: Capsule())
         .overlay {
@@ -1135,7 +1135,7 @@ private struct ProfileNotesEditor: View {
         ZStack(alignment: .topLeading) {
             if text.isEmpty {
                 Text("No injury notes added")
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textTertiary)
                     .padding(.horizontal, 13)
                     .padding(.vertical, 14)
@@ -1150,9 +1150,9 @@ private struct ProfileNotesEditor: View {
                 .accessibilityValue(text.isEmpty ? "Not set" : text)
                 .accessibilityIdentifier("profile-injury-notes")
         }
-        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius18, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: appTheme.metrics.radius18, style: .continuous)
                 .stroke(appTheme.colors.cardBorder, lineWidth: 1)
         }
     }

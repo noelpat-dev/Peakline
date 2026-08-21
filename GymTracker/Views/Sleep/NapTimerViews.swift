@@ -45,7 +45,7 @@ struct NapSessionEditorView: View {
                 SleepCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Quality")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                     SleepQualityPicker(selection: $quality)
@@ -56,19 +56,19 @@ struct NapSessionEditorView: View {
                 SleepCard {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Note")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                     TextField("Felt refreshed, still tired, post-workout nap", text: $note, axis: .vertical)
                             .lineLimit(3, reservesSpace: true)
                             .padding(12)
-                            .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous))
                     }
                 }
 
                 if let errorText {
                     Text(errorText)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .accessibilityIdentifier("sleep-nap-error")
                 }
@@ -134,7 +134,7 @@ struct NapTimerView: View {
                             .accessibilityIdentifier("sleep-nap-timer-value")
 
                         Text(stateTitle)
-                            .font(.subheadline.weight(.semibold))
+                            .font(AppTypography.bodyEmphasis)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
                     .frame(maxWidth: .infinity)
@@ -144,7 +144,7 @@ struct NapTimerView: View {
                 SleepCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Timer length")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         Menu {

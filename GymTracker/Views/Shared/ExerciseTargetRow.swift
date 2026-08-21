@@ -105,7 +105,7 @@ private struct ExerciseTargetMetricTile: View {
             HStack(spacing: 6) {
                 Image(systemName: systemImage)
                     .font(AppTypography.badge)
-                    .foregroundStyle(appTheme.colors.accent)
+                    .foregroundStyle(appTheme.colors.textAccent)
 
                 Text(label)
                     .font(AppTypography.metadataEmphasis)

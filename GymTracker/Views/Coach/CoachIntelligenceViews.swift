@@ -18,7 +18,7 @@ struct CoachBriefCard: View {
                 VStack(alignment: .trailing, spacing: 8) {
                     readinessBadge
                     Text(readiness.isProvisional ? "Provisional" : readiness.confidence.displayName)
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.chip)
                         .foregroundStyle(appTheme.colors.textTertiary)
                         .accessibilityIdentifier("readiness-provisional-status")
 
@@ -34,12 +34,12 @@ struct CoachBriefCard: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(readiness.recommendation.title)
-                    .font(.headline)
+                    .font(AppTypography.sectionTitle)
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(readiness.recommendation.summary)
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .lineLimit(3)
@@ -175,11 +175,11 @@ struct TrainingCallAuditCard: View {
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text(title)
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         Text("\(snapshot.headline) - \(snapshot.confidence.displayName)")
-                            .font(.subheadline.weight(.semibold))
+                            .font(AppTypography.bodyEmphasis)
                             .foregroundStyle(accent)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -327,7 +327,7 @@ struct ReadinessDetailHeaderCard: View {
                 .foregroundStyle(readinessColor(for: readiness.category, theme: appTheme))
 
             Text(readiness.recommendation.summary)
-                .font(.subheadline)
+                .font(AppTypography.body)
                 .foregroundStyle(appTheme.colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -343,11 +343,11 @@ struct ReadinessRecommendationCard: View {
         FitnessCard {
             VStack(alignment: .leading, spacing: 12) {
                 Label(readiness.recommendation.title, systemImage: "sparkles")
-                    .font(.headline)
+                    .font(AppTypography.sectionTitle)
                     .foregroundStyle(appTheme.colors.textPrimary)
 
                 Text(readiness.recommendation.summary)
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -355,7 +355,7 @@ struct ReadinessRecommendationCard: View {
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(readiness.recommendation.reasonBullets, id: \.self) { reason in
                             Label(reason, systemImage: "checkmark.circle")
-                                .font(.caption)
+                                .font(AppTypography.metadata)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -365,13 +365,13 @@ struct ReadinessRecommendationCard: View {
                 if !readiness.recommendation.suggestedActions.isEmpty {
                     VStack(alignment: .leading, spacing: 7) {
                         Text("Suggested actions")
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.chip)
                             .foregroundStyle(appTheme.colors.textTertiary)
                             .textCase(.uppercase)
 
                         ForEach(readiness.recommendation.suggestedActions, id: \.self) { action in
                             Text(action)
-                                .font(.subheadline.weight(.semibold))
+                                .font(AppTypography.bodyEmphasis)
                                 .foregroundStyle(appTheme.colors.textPrimary)
                         }
                     }
@@ -399,34 +399,34 @@ struct ReadinessFactorCard: View {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(factor.kind.displayName)
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.chip)
                             .foregroundStyle(appTheme.colors.textTertiary)
                             .textCase(.uppercase)
 
                         if let score = factor.score {
                             Text("\(score)")
-                                .font(.caption.weight(.bold))
+                                .font(AppTypography.eyebrow)
                                 .foregroundStyle(impactColor)
 
                             Text(contributionText)
-                                .font(.caption.weight(.semibold))
+                                .font(AppTypography.chip)
                                 .foregroundStyle(impactColor)
                                 .accessibilityIdentifier("readiness-factor-\(factor.kind.rawValue)-contribution")
                         } else {
                             Text("Not included")
-                                .font(.caption.weight(.semibold))
+                                .font(AppTypography.chip)
                                 .foregroundStyle(appTheme.colors.textTertiary)
                                 .accessibilityIdentifier("readiness-factor-\(factor.kind.rawValue)-availability")
                         }
                     }
 
                     Text(factor.title)
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
 
                     Text(factor.detail)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -466,11 +466,11 @@ struct ReadinessContextCard: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title)
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     Text(focusFactor?.detail ?? readiness.recoveryNote)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -479,7 +479,7 @@ struct ReadinessContextCard: View {
                             ? "Daily readiness \(readiness.value) - Provisional"
                             : "Daily readiness \(readiness.value) - \(readiness.category.displayName)"
                     )
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.chip)
                         .foregroundStyle(readinessColor(for: readiness.category, theme: appTheme))
                 }
 
@@ -511,17 +511,17 @@ struct WeeklyInsightPreviewCard: View {
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Weekly insight")
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.chip)
                             .foregroundStyle(appTheme.colors.textTertiary)
                             .textCase(.uppercase)
 
                         Text(primaryInsight.title)
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .fixedSize(horizontal: false, vertical: true)
 
                         Text(primaryInsight.summary)
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -530,7 +530,7 @@ struct WeeklyInsightPreviewCard: View {
                     Spacer(minLength: 8)
 
                     Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
+                        .font(AppTypography.eyebrow)
                         .foregroundStyle(appTheme.colors.textTertiary)
                         .padding(.top, 3)
                 }
@@ -566,12 +566,12 @@ struct WeeklyCoachSummaryCard: View {
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Weekly Summary")
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.chip)
                             .foregroundStyle(appTheme.colors.textTertiary)
                             .textCase(.uppercase)
 
                         Text(summary.recommendedFocus)
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -579,7 +579,7 @@ struct WeeklyCoachSummaryCard: View {
                     Spacer(minLength: 8)
 
                     Text(summary.recoveryTrend.displayName)
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.chip)
                         .foregroundStyle(trendColor(summary.recoveryTrend))
                         .padding(.horizontal, 9)
                         .padding(.vertical, 5)
@@ -604,13 +604,13 @@ struct WeeklyCoachSummaryCard: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Label(summary.topPositiveFactor, systemImage: "plus.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(appTheme.colors.success)
+                        .font(AppTypography.metadata)
+                        .foregroundStyle(appTheme.colors.textSuccess)
                         .fixedSize(horizontal: false, vertical: true)
 
                     Label(summary.topLimitingFactor, systemImage: "minus.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(appTheme.colors.warning)
+                        .font(AppTypography.metadata)
+                        .foregroundStyle(appTheme.colors.textWarning)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -660,17 +660,17 @@ struct CoachInsightRow: View {
                     VStack(alignment: .leading, spacing: 5) {
                         HStack(spacing: 8) {
                             Text(insight.category.displayName)
-                                .font(.caption.weight(.semibold))
+                                .font(AppTypography.chip)
                                 .foregroundStyle(appTheme.colors.textTertiary)
                                 .textCase(.uppercase)
 
                             Text(insight.confidence.displayName)
-                                .font(.caption2.weight(.semibold))
+                                .font(AppTypography.badge)
                                 .foregroundStyle(appTheme.colors.textTertiary)
                         }
 
                         Text(insight.title)
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -679,7 +679,7 @@ struct CoachInsightRow: View {
                 }
 
                 Text(insight.summary)
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -687,7 +687,7 @@ struct CoachInsightRow: View {
                     VStack(alignment: .leading, spacing: 5) {
                         ForEach(insight.supportingFactors.prefix(3), id: \.self) { factor in
                             Label(factor, systemImage: "smallcircle.filled.circle")
-                                .font(.caption)
+                                .font(AppTypography.metadata)
                                 .foregroundStyle(appTheme.colors.textTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -695,7 +695,7 @@ struct CoachInsightRow: View {
                 }
 
                 Text(insight.recommendedAction)
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppTypography.bodyEmphasis)
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -736,11 +736,11 @@ struct FatigueRiskCard: View {
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text(risk.title)
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         Text("\(risk.level.displayName) fatigue signal - \(risk.confidence.displayName.lowercased())")
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.chip)
                             .foregroundStyle(levelColor)
                     }
 
@@ -748,21 +748,21 @@ struct FatigueRiskCard: View {
                 }
 
                 Text(risk.summary)
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(risk.factors.prefix(3), id: \.self) { factor in
                         Label(factor, systemImage: "checkmark.circle")
-                            .font(.caption)
+                            .font(AppTypography.metadata)
                             .foregroundStyle(appTheme.colors.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
                 Text(risk.recommendedAction)
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppTypography.bodyEmphasis)
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -796,7 +796,7 @@ struct MuscleFatigueMapCard: View {
         FitnessCard {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Coaching guidance only. Use this to plan warm-ups and volume, not as an injury signal.")
-                    .font(.caption)
+                    .font(AppTypography.metadata)
                     .foregroundStyle(appTheme.colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -809,13 +809,13 @@ struct MuscleFatigueMapCard: View {
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.muscleGroup.displayName)
-                                    .font(.caption.weight(.semibold))
+                                    .font(AppTypography.chip)
                                     .foregroundStyle(appTheme.colors.textPrimary)
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.8)
 
                                 Text(item.state.displayName)
-                                    .font(.caption2.weight(.semibold))
+                                    .font(AppTypography.badge)
                                     .foregroundStyle(color(for: item.state))
                             }
 
@@ -866,16 +866,16 @@ struct LiftProgressInsightsCard: View {
 
                         VStack(alignment: .leading, spacing: 5) {
                             Text(insight.exerciseName)
-                                .font(.headline)
+                                .font(AppTypography.sectionTitle)
                                 .foregroundStyle(appTheme.colors.textPrimary)
 
                             Text(insight.summary)
-                                .font(.subheadline)
+                                .font(AppTypography.body)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
 
                             Text(insight.recommendation)
-                                .font(.caption.weight(.semibold))
+                                .font(AppTypography.chip)
                                 .foregroundStyle(appTheme.colors.textPrimary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -921,17 +921,17 @@ struct CoachHabitContributorsCard: View {
                 ForEach(habitTrends, id: \.title) { trend in
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: icon(for: trend.direction))
-                            .font(.caption.weight(.bold))
+                            .font(AppTypography.eyebrow)
                             .foregroundStyle(color(for: trend.direction))
                             .frame(width: 20)
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text(trend.title)
-                                .font(.subheadline.weight(.semibold))
+                                .font(AppTypography.bodyEmphasis)
                                 .foregroundStyle(appTheme.colors.textPrimary)
 
                             Text(trend.summary)
-                                .font(.caption)
+                                .font(AppTypography.metadata)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -1041,7 +1041,7 @@ struct DailyCheckInSheet: View {
                     if let errorText {
                         Text(errorText)
                             .font(AppTypography.metadata)
-                            .foregroundStyle(appTheme.colors.danger)
+                            .foregroundStyle(appTheme.colors.textDanger)
                     }
 
                     Button {
@@ -1093,7 +1093,7 @@ struct DailyCheckInSheet: View {
                     dismiss()
                 }
                 .font(AppTypography.bodyEmphasis)
-                .foregroundStyle(appTheme.colors.accent)
+                .foregroundStyle(appTheme.colors.textAccent)
                 .frame(minWidth: 44, minHeight: 44)
                 .accessibilityIdentifier("check-in-done")
             }
@@ -1148,7 +1148,7 @@ struct DailyCheckInSheet: View {
                     .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .padding(12)
-                    .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous))
             }
         }
     }
@@ -1338,12 +1338,12 @@ private struct ReadinessMiniFactorRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: factor.kind.systemImage)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
                 .foregroundStyle(color(for: factor.impact, theme: appTheme))
                 .frame(width: 18)
 
             Text(factor.title)
-                .font(.caption)
+                .font(AppTypography.metadata)
                 .foregroundStyle(appTheme.colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

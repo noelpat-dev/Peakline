@@ -63,7 +63,7 @@ struct SleepMorningConfirmationView: View {
                 SleepCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Estimated sleep")
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.chip)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .textCase(.uppercase)
 
@@ -81,14 +81,14 @@ struct SleepMorningConfirmationView: View {
                 SleepCard {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("How rested do you feel?")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         SleepQualityPicker(selection: $qualityRating)
                             .accessibilityIdentifier("sleep-morning-quality")
 
                         Text("Optional context")
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.chip)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .textCase(.uppercase)
 
@@ -98,7 +98,7 @@ struct SleepMorningConfirmationView: View {
 
                 if let errorMessage {
                     Text(errorMessage)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .accessibilityIdentifier("sleep-morning-error")
                 }
@@ -270,13 +270,13 @@ struct SleepSessionEditorView: View {
                         TextField("Notes", text: $notes, axis: .vertical)
                             .lineLimit(3, reservesSpace: true)
                             .padding(12)
-                            .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous))
                     }
                 }
 
                 if let errorMessage {
                     Text(errorMessage)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .accessibilityIdentifier("sleep-editor-error")
                 }
@@ -421,7 +421,7 @@ struct SleepSessionDetailView: View {
                             .accessibilityIdentifier("sleep-detail-stage-breakdown")
                     } else if session.source == .appleHealth {
                         Text("Apple Health stage detail is unavailable for this record. Peakline preserves the sleep interval without inventing stage values.")
-                            .font(.caption)
+                            .font(AppTypography.metadata)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .accessibilityIdentifier("sleep-detail-stage-breakdown-unavailable")
@@ -433,12 +433,12 @@ struct SleepSessionDetailView: View {
                 SleepCard {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Context")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                         FlowLayout(spacing: 8) {
                             ForEach(session.tags) { tag in
                                 Text(tag.displayName)
-                                    .font(.caption.weight(.semibold))
+                                    .font(AppTypography.chip)
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 7)
                                     .background(appTheme.colors.cardBackgroundElevated, in: Capsule())
@@ -451,13 +451,13 @@ struct SleepSessionDetailView: View {
             SleepCard {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Session quality: \(qualityScore)")
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     Text(readinessIsProvisional
                         ? "Sleep score is recorded; readiness guidance waits for more evidence."
                         : "Estimated training support: \(SleepCoachingService().historyImpact(for: qualityScore))")
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -466,7 +466,7 @@ struct SleepSessionDetailView: View {
             SleepCard {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Session Details")
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     HStack(spacing: 10) {
@@ -486,7 +486,7 @@ struct SleepSessionDetailView: View {
 
             if session.source == .appleHealth {
                 Text("Apple Health imported sleep is read-only in Peakline for now.")
-                    .font(.caption)
+                    .font(AppTypography.metadata)
                     .foregroundStyle(appTheme.colors.textSecondary)
             }
 
@@ -502,7 +502,7 @@ struct SleepSessionDetailView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.plain)
-            .font(.headline.weight(.semibold))
+            .font(AppTypography.compactCardTitle)
             .foregroundStyle(appTheme.colors.textSecondary)
             .padding(.horizontal, 16)
             .frame(minHeight: appTheme.metrics.buttonHeight)
@@ -517,7 +517,7 @@ struct SleepSessionDetailView: View {
 
             if let errorMessage {
                 Text(errorMessage)
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("sleep-detail-error")

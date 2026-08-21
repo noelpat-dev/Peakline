@@ -46,7 +46,7 @@ struct SplitCardView: View {
 
                     if actionTitle == nil {
                         Image(systemName: "chevron.right")
-                            .font(.caption.weight(.bold))
+                            .font(AppTypography.eyebrow)
                             .foregroundStyle(appTheme.colors.textTertiary)
                             .accessibilityHidden(true)
                     }

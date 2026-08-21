@@ -136,20 +136,20 @@ struct ProgressContentView: View {
 
                                         VStack(alignment: .leading, spacing: 4) {
                                             Text(exercise.name)
-                                                .font(.headline)
+                                                .font(AppTypography.sectionTitle)
                                                 .foregroundStyle(appTheme.colors.textPrimary)
                                                 .lineLimit(2)
                                                 .minimumScaleFactor(0.85)
                                                 .fixedSize(horizontal: false, vertical: true)
                                             Text(exercise.primaryMuscleGroup.displayName)
-                                                .font(.subheadline)
+                                                .font(AppTypography.body)
                                                 .foregroundStyle(appTheme.colors.textSecondary)
                                         }
 
                                         Spacer()
 
                                         Image(systemName: "chevron.right")
-                                            .font(.caption.weight(.bold))
+                                            .font(AppTypography.eyebrow)
                                             .foregroundStyle(appTheme.colors.textTertiary)
                                     }
                                 }
@@ -422,10 +422,10 @@ struct ProgressContentView: View {
         FitnessCard(style: .compact) {
             HStack(spacing: 10) {
                 Image(systemName: "hourglass")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.accent)
+                    .font(AppTypography.bodyEmphasis)
+                    .foregroundStyle(appTheme.colors.textAccent)
                 Text("Loading progress data")
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppTypography.bodyEmphasis)
                     .foregroundStyle(appTheme.colors.textSecondary)
             }
         }
@@ -703,13 +703,13 @@ private struct ExerciseProgressDetailView: View {
                             FitnessCard(padding: 16) {
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(entry.session.date.formatted(date: .abbreviated, time: .omitted))
-                                        .font(.headline)
+                                        .font(AppTypography.sectionTitle)
                                     Text(entry.setsText)
-                                        .font(.subheadline)
+                                        .font(AppTypography.body)
                                         .foregroundStyle(appTheme.colors.textSecondary)
                                         .lineLimit(2)
                                     Text("Best-set volume \(entry.bestSetVolumeText) · est. 1RM \(entry.estimatedOneRepMaxText)")
-                                        .font(.caption)
+                                        .font(AppTypography.metadata)
                                         .foregroundStyle(appTheme.colors.textSecondary)
                                 }
                             }
@@ -731,10 +731,10 @@ private struct ExerciseProgressDetailView: View {
         FitnessCard(style: .compact) {
             HStack(spacing: 10) {
                 Image(systemName: "hourglass")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.accent)
+                    .font(AppTypography.bodyEmphasis)
+                    .foregroundStyle(appTheme.colors.textAccent)
                 Text("Loading exercise data")
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppTypography.bodyEmphasis)
                     .foregroundStyle(appTheme.colors.textSecondary)
             }
         }
@@ -789,16 +789,16 @@ private struct ExerciseProgressChartsIndexView: View {
 
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(exercise.name)
-                                        .font(.headline)
+                                        .font(AppTypography.sectionTitle)
                                     Text(exercise.primaryMuscleGroup.displayName)
-                                        .font(.subheadline)
+                                        .font(AppTypography.body)
                                         .foregroundStyle(appTheme.colors.textSecondary)
                                 }
 
                                 Spacer()
 
                                 Image(systemName: "chevron.right")
-                                    .font(.caption.weight(.bold))
+                                    .font(AppTypography.eyebrow)
                                     .foregroundStyle(appTheme.colors.textTertiary)
                             }
                         }
@@ -822,13 +822,13 @@ private struct ExerciseTrendChart: View {
                 x: .value("Date", entry.session.date),
                 y: .value("Estimated 1RM", entry.estimatedOneRepMax)
             )
-            .foregroundStyle(appTheme.colors.accent)
+            .foregroundStyle(appTheme.colors.textAccent)
 
             PointMark(
                 x: .value("Date", entry.session.date),
                 y: .value("Estimated 1RM", entry.estimatedOneRepMax)
             )
-            .foregroundStyle(appTheme.colors.accent)
+            .foregroundStyle(appTheme.colors.textAccent)
         }
         .chartYAxisLabel("Est. 1RM kg")
         .chartXAxis {

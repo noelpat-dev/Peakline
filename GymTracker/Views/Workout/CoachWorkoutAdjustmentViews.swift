@@ -102,7 +102,7 @@ struct WorkoutAdjustmentPreviewSheet: View {
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         Text(preview.summary)
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.mutedText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -116,11 +116,11 @@ struct WorkoutAdjustmentPreviewSheet: View {
     private var confidencePill: some View {
         HStack(spacing: 6) {
             Image(systemName: "gauge")
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
             Text(preview.confidence.displayName)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
         }
-        .foregroundStyle(appTheme.colors.accent)
+        .foregroundStyle(appTheme.colors.textAccent)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(appTheme.colors.accentSurface, in: Capsule())
@@ -151,12 +151,12 @@ struct WorkoutAdjustmentPreviewSheet: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Signals")
-                        .font(.subheadline.weight(.semibold))
+                        .font(AppTypography.bodyEmphasis)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     ForEach(preview.contributingSignals, id: \.self) { signal in
                         Label(signal, systemImage: "circle.fill")
-                            .font(.caption)
+                            .font(AppTypography.metadata)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -179,7 +179,7 @@ struct WorkoutAdjustmentPreviewSheet: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .center) {
                     Text("Exercise Preview")
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     Spacer(minLength: 8)
@@ -188,7 +188,7 @@ struct WorkoutAdjustmentPreviewSheet: View {
                         draft = adjustmentService.resetAllAdjustments(in: draft)
                     } label: {
                         Label("Reset All", systemImage: "arrow.counterclockwise")
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.chip)
                     }
                     .buttonStyle(.borderless)
                     .accessibilityIdentifier("coach-adjustment-reset-all")
@@ -218,11 +218,11 @@ struct WorkoutAdjustmentPreviewSheet: View {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(adjustment.wrappedValue.name)
-                        .font(.subheadline.weight(.semibold))
+                        .font(AppTypography.bodyEmphasis)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     Text(adjustment.wrappedValue.reason)
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -243,19 +243,19 @@ struct WorkoutAdjustmentPreviewSheet: View {
             Stepper(value: adjustment.editedSets, in: 1...max(8, adjustment.wrappedValue.beforeSets + 2)) {
                 HStack {
                     Text("Target sets")
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.chip)
                         .foregroundStyle(appTheme.colors.textSecondary)
 
                     Spacer()
 
                     Text("\(adjustment.wrappedValue.beforeSets) -> \(adjustment.wrappedValue.editedSets)")
-                        .font(.caption.weight(.bold))
+                        .font(AppTypography.eyebrow)
                         .foregroundStyle(adjustment.wrappedValue.changedFromOriginal ? appTheme.colors.accent : appTheme.colors.textTertiary)
                 }
             }
 
             TextField("Coach note", text: adjustment.editedNotes, axis: .vertical)
-                .font(.caption)
+                .font(AppTypography.metadata)
                 .lineLimit(2...4)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("coach-adjustment-note-\(adjustment.wrappedValue.id.uuidString)")
@@ -266,11 +266,11 @@ struct WorkoutAdjustmentPreviewSheet: View {
     private func labeledText(title: String, text: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.subheadline.weight(.semibold))
+                .font(AppTypography.bodyEmphasis)
                 .foregroundStyle(appTheme.colors.textPrimary)
 
             Text(text)
-                .font(.subheadline)
+                .font(AppTypography.body)
                 .foregroundStyle(appTheme.colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -279,12 +279,12 @@ struct WorkoutAdjustmentPreviewSheet: View {
     private func bulletGroup(title: String, items: [String], systemImage: String, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.subheadline.weight(.semibold))
+                .font(AppTypography.bodyEmphasis)
                 .foregroundStyle(appTheme.colors.textPrimary)
 
             ForEach(items, id: \.self) { item in
                 Label(item, systemImage: systemImage)
-                    .font(.caption)
+                    .font(AppTypography.metadata)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .tint(tint)
                     .fixedSize(horizontal: false, vertical: true)
@@ -305,10 +305,10 @@ struct CoachWorkoutChangeExplanationCard: View {
                     FitnessIconBadge(systemImage: "questionmark.circle", size: 40)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Why This Changed")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                         Text("\(explanation.originalTotalSets) to \(explanation.adjustedTotalSets) sets with \(explanation.exercisesChanged.count) exercise\(explanation.exercisesChanged.count == 1 ? "" : "s") changed.")
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -345,11 +345,11 @@ struct CoachWorkoutChangeExplanationCard: View {
     private func compactLine(_ title: String, _ value: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
                 .foregroundStyle(appTheme.colors.textTertiary)
                 .frame(width: 74, alignment: .leading)
             Text(value)
-                .font(.caption)
+                .font(AppTypography.metadata)
                 .foregroundStyle(appTheme.colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -403,7 +403,7 @@ struct ManualDeloadPlannerSheet: View {
                                         .foregroundStyle(appTheme.colors.textPrimary)
 
                                     Text("Optional lighter-work guidance based on current fatigue signals. It does not schedule anything.")
-                                        .font(.subheadline)
+                                        .font(AppTypography.body)
                                         .foregroundStyle(appTheme.mutedText)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
@@ -436,17 +436,17 @@ struct ManualDeloadPlannerSheet: View {
                     FitnessCard {
                         VStack(alignment: .leading, spacing: 10) {
                             Text(fatigueRisk.title)
-                                .font(.headline)
+                                .font(AppTypography.sectionTitle)
                                 .foregroundStyle(appTheme.colors.textPrimary)
 
                             Text(fatigueRisk.summary)
-                                .font(.subheadline)
+                                .font(AppTypography.body)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
 
                             ForEach(fatigueRisk.factors.prefix(3), id: \.self) { factor in
                                 Label(factor, systemImage: "circle.fill")
-                                    .font(.caption)
+                                    .font(AppTypography.metadata)
                                     .foregroundStyle(appTheme.colors.textSecondary)
                             }
                         }
@@ -490,11 +490,11 @@ struct ManualDeloadPlannerSheet: View {
                     FitnessIconBadge(systemImage: "calendar.badge.clock", size: 40)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Review Calendar Impact")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .accessibilityIdentifier("manual-deload-calendar-review")
                         Text("\(preview.startsAt.formatted(date: .abbreviated, time: .omitted)) - \(preview.endsAt.formatted(date: .abbreviated, time: .omitted))")
-                            .font(.caption)
+                            .font(AppTypography.metadata)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
                 }
@@ -505,18 +505,18 @@ struct ManualDeloadPlannerSheet: View {
                 }
 
                 Text(preview.volumeSummary)
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(preview.focusExplanation)
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if !preview.affectedSplitNames.isEmpty {
                     Text("Likely splits: \(preview.affectedSplitNames.joined(separator: ", ")).")
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -547,7 +547,7 @@ struct ManualDeloadPlannerSheet: View {
     private var durationPicker: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Duration")
-                .font(.subheadline.weight(.semibold))
+                .font(AppTypography.bodyEmphasis)
                 .foregroundStyle(appTheme.colors.textPrimary)
 
             Picker("Duration", selection: $duration) {
@@ -562,7 +562,7 @@ struct ManualDeloadPlannerSheet: View {
     private var volumePicker: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Volume")
-                .font(.subheadline.weight(.semibold))
+                .font(AppTypography.bodyEmphasis)
                 .foregroundStyle(appTheme.colors.textPrimary)
 
             Picker("Volume", selection: $volumeReduction) {
@@ -577,7 +577,7 @@ struct ManualDeloadPlannerSheet: View {
     private var focusPicker: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Focus")
-                .font(.subheadline.weight(.semibold))
+                .font(AppTypography.bodyEmphasis)
                 .foregroundStyle(appTheme.colors.textPrimary)
 
             Picker("Focus", selection: $focus) {
@@ -755,20 +755,20 @@ struct CoachActionHistoryDetailView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.chip)
                         .foregroundStyle(appTheme.colors.textTertiary)
                     Text(value)
-                        .font(.subheadline.weight(.semibold))
+                        .font(AppTypography.bodyEmphasis)
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .lineLimit(1)
                 }
                 Spacer()
                 Image(systemName: "chevron.down")
-                    .font(.caption.weight(.bold))
+                    .font(AppTypography.eyebrow)
                     .foregroundStyle(appTheme.colors.textTertiary)
             }
             .padding(12)
-            .background(appTheme.elevatedCardBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(appTheme.elevatedCardBackground, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius8, style: .continuous))
         }
     }
 
@@ -779,19 +779,19 @@ struct CoachActionHistoryDetailView: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text("\(entry.action.displayName) \(entry.outcome.displayName.lowercased())")
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
                     Text(entry.createdAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textSecondary)
                     Text("\(entry.beforeTotalSets) to \(entry.afterTotalSets) sets")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.accent)
+                        .font(AppTypography.chip)
+                        .foregroundStyle(appTheme.colors.textAccent)
                 }
 
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
+                    .font(AppTypography.eyebrow)
                     .foregroundStyle(appTheme.colors.textTertiary)
             }
         }
@@ -834,7 +834,7 @@ private struct CoachActionHistoryDetailSheet: View {
                                 .foregroundStyle(appTheme.colors.textPrimary)
 
                             Text(entry.shortReason)
-                                .font(.subheadline)
+                                .font(AppTypography.body)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -857,15 +857,15 @@ private struct CoachActionHistoryDetailSheet: View {
                     FitnessCard {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Coach Reason")
-                                .font(.headline)
+                                .font(AppTypography.sectionTitle)
                             Text(entry.diagnosticSummary ?? entry.shortReason)
-                                .font(.subheadline)
+                                .font(AppTypography.body)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
 
                             ForEach(entry.contributingSignals, id: \.self) { signal in
                                 Label(signal, systemImage: "circle.fill")
-                                    .font(.caption)
+                                    .font(AppTypography.metadata)
                                     .foregroundStyle(appTheme.colors.textSecondary)
                             }
                         }
@@ -874,10 +874,10 @@ private struct CoachActionHistoryDetailSheet: View {
                     FitnessCard {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Feedback")
-                                .font(.headline)
+                                .font(AppTypography.sectionTitle)
 
                             Text(feedbackService.feedbackSummary(feedback))
-                                .font(.subheadline)
+                                .font(AppTypography.body)
                                 .foregroundStyle(appTheme.colors.textSecondary)
 
                             feedbackTagGrid
@@ -939,13 +939,13 @@ private struct CoachActionHistoryDetailSheet: View {
                     }
                 } label: {
                     Text(tag.displayName)
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.chip)
                         .foregroundStyle(selectedTags.contains(tag) ? appTheme.colors.backgroundPrimary : appTheme.colors.textPrimary)
                         .lineLimit(2)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity, minHeight: 34)
                         .padding(.horizontal, 8)
-                        .background(selectedTags.contains(tag) ? appTheme.colors.accent : appTheme.elevatedCardBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .background(selectedTags.contains(tag) ? appTheme.colors.accent : appTheme.elevatedCardBackground, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius8, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("coach-feedback-\(tag.rawValue)")
@@ -956,11 +956,11 @@ private struct CoachActionHistoryDetailSheet: View {
     private func detailLine(_ title: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
                 .foregroundStyle(appTheme.colors.textTertiary)
             Spacer()
             Text(value)
-                .font(.caption)
+                .font(AppTypography.metadata)
                 .foregroundStyle(appTheme.colors.textSecondary)
                 .multilineTextAlignment(.trailing)
         }
@@ -981,10 +981,10 @@ struct SavedDeloadBlocksList: View {
                     FitnessIconBadge(systemImage: "arrow.down.forward.circle", size: 42)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("No saved deload block")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                         Text("When fatigue is elevated, saving a deload block keeps the plan visible without changing future workouts.")
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -1012,18 +1012,18 @@ struct SavedDeloadBlocksList: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(block.plan.title)
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         Text("\(block.volumeReduction.displayName) volume - \(block.focus.displayName)")
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
 
                     Spacer(minLength: 8)
 
                     Text(block.state.displayName)
-                        .font(.caption.weight(.bold))
+                        .font(AppTypography.eyebrow)
                         .foregroundStyle(tint(for: block.state))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
@@ -1031,11 +1031,11 @@ struct SavedDeloadBlocksList: View {
                 }
 
                 Text("\(block.startsAt.formatted(date: .abbreviated, time: .omitted)) - \(block.endsAt.formatted(date: .abbreviated, time: .omitted))")
-                    .font(.caption)
+                    .font(AppTypography.metadata)
                     .foregroundStyle(appTheme.colors.textTertiary)
 
                 Text(block.reason)
-                    .font(.caption)
+                    .font(AppTypography.metadata)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -1104,10 +1104,10 @@ struct CoachDiagnosticsCard: View {
                     FitnessIconBadge(systemImage: "stethoscope", size: 40)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Coach Diagnostics")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
                         Text(diagnostics.confidence.displayName)
-                            .font(.caption)
+                            .font(AppTypography.metadata)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
                 }
@@ -1118,12 +1118,12 @@ struct CoachDiagnosticsCard: View {
     private func diagnosticGroup(_ title: String, items: [String]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
                 .foregroundStyle(appTheme.colors.textTertiary)
 
             ForEach(items.prefix(5), id: \.self) { item in
                 Text(item)
-                    .font(.caption)
+                    .font(AppTypography.metadata)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1133,10 +1133,10 @@ struct CoachDiagnosticsCard: View {
     private func labeledText(_ title: String, _ text: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
                 .foregroundStyle(appTheme.colors.textTertiary)
             Text(text)
-                .font(.caption)
+                .font(AppTypography.metadata)
                 .foregroundStyle(appTheme.colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1242,7 +1242,7 @@ struct CoachPreferencesView: View {
     ) -> some View where Option.AllCases: RandomAccessCollection, Option: Identifiable {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
                 .foregroundStyle(appTheme.colors.textTertiary)
 
             Picker(title, selection: selection) {
@@ -1283,16 +1283,16 @@ struct CoachPreferencesView: View {
                 FitnessIconBadge(systemImage: "square.stack.3d.up", size: 40)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(split.name)
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
                     Text("\(snapshot.primaryGoal.displayName) · \(snapshot.expectedFatigue.displayName) fatigue · \(snapshot.preferredAdjustmentStyle.displayName)")
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
+                    .font(AppTypography.eyebrow)
                     .foregroundStyle(appTheme.colors.textTertiary)
             }
         }
@@ -1386,7 +1386,7 @@ struct CoachSplitMetadataEditorView: View {
     ) -> some View where Option.AllCases: RandomAccessCollection {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
                 .foregroundStyle(appTheme.colors.textTertiary)
 
             Picker(title, selection: selection) {

@@ -151,15 +151,15 @@ struct FoodImportReviewView: View {
             }
 
             if let warningText {
-                ReviewNoticeCard(message: warningText, systemImage: "exclamationmark.triangle", foregroundColor: appTheme.colors.warning)
+                NoticeCard(warningText, tone: .warning, systemImage: "exclamationmark.triangle")
             }
 
             if let duplicateBarcodeText {
-                ReviewNoticeCard(message: duplicateBarcodeText, systemImage: "barcode.viewfinder", foregroundColor: appTheme.colors.danger)
+                NoticeCard(duplicateBarcodeText, tone: .danger, systemImage: "barcode.viewfinder")
             }
 
             if let errorText {
-                ReviewNoticeCard(message: errorText, systemImage: "exclamationmark.triangle", foregroundColor: appTheme.colors.danger)
+                NoticeCard(errorText, tone: .danger, systemImage: "exclamationmark.triangle")
             }
 
             Button {
@@ -197,11 +197,7 @@ struct FoodImportReviewView: View {
             subtitle: "Go back and try again.",
             systemImage: "exclamationmark.triangle"
         ) {
-            ReviewNoticeCard(
-                message: "The selected food is no longer available.",
-                systemImage: "exclamationmark.triangle",
-                foregroundColor: appTheme.colors.warning
-            )
+            NoticeCard("The selected food is no longer available.", tone: .warning, systemImage: "exclamationmark.triangle")
         }
     }
 
@@ -242,27 +238,27 @@ struct FoodImportReviewView: View {
         FitnessCard {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: sourceSystemImage)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.accent)
+                    .font(AppTypography.compactCardTitle)
+                    .foregroundStyle(appTheme.colors.textAccent)
                     .frame(width: 42, height: 42)
                     .background(appTheme.colors.accentSurface, in: Circle())
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
                         Text(sourceTitle)
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         Text(sourceBadge)
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(appTheme.colors.accent)
+                            .font(AppTypography.badge)
+                            .foregroundStyle(appTheme.colors.textAccent)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 5)
                             .background(appTheme.colors.accentSurface, in: Capsule())
                     }
 
                     Text(sourceMessage)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -276,15 +272,15 @@ struct FoodImportReviewView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: "sparkle.magnifyingglass")
-                            .font(.headline.weight(.semibold))
-                            .foregroundStyle(appTheme.colors.accent)
+                            .font(AppTypography.compactCardTitle)
+                            .foregroundStyle(appTheme.colors.textAccent)
                             .frame(width: 42, height: 42)
                             .background(appTheme.colors.accentSurface, in: Circle())
 
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(spacing: 8) {
                                 Text(parseResult.values.isEmpty ? "No auto-fill yet" : "Auto-fill suggestions")
-                                    .font(.headline)
+                                    .font(AppTypography.sectionTitle)
                                     .foregroundStyle(appTheme.colors.textPrimary)
 
                                 confidenceBadge(parseResult.overallConfidence)
@@ -293,7 +289,7 @@ struct FoodImportReviewView: View {
                             Text(parseResult.values.isEmpty
                                 ? "We found text, but could not confidently detect nutrition values. Fill the fields manually or retake the photo."
                                 : "\(parseResult.values.count) values detected from the label. All fields remain editable.")
-                                .font(.subheadline)
+                                .font(AppTypography.body)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -301,15 +297,15 @@ struct FoodImportReviewView: View {
 
                     HStack(spacing: 8) {
                         Text(parseResult.selectedBasis.displayName)
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(appTheme.colors.accent)
+                            .font(AppTypography.badge)
+                            .foregroundStyle(appTheme.colors.textAccent)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 5)
                             .background(appTheme.colors.accentSurface, in: Capsule())
 
                         if let servingSize = parseResult.servingSize {
                             Text("Serving \(Self.fieldText(servingSize.amount))\(servingSize.unit.shortName)")
-                                .font(.caption2.weight(.bold))
+                                .font(AppTypography.badge)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 5)
@@ -351,8 +347,8 @@ struct FoodImportReviewView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(parseResult.warnings.prefix(6)) { warning in
                             Label(warning.message, systemImage: "exclamationmark.triangle")
-                                .font(.subheadline)
-                                .foregroundStyle(appTheme.colors.warning)
+                                .font(AppTypography.body)
+                                .foregroundStyle(appTheme.colors.textWarning)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -363,7 +359,7 @@ struct FoodImportReviewView: View {
 
     private func confidenceBadge(_ confidence: NutritionParseConfidence) -> some View {
         Text(confidence.displayName)
-            .font(.caption2.weight(.bold))
+            .font(AppTypography.badge)
             .foregroundStyle(confidenceTint(confidence))
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
@@ -387,27 +383,27 @@ struct FoodImportReviewView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: "text.viewfinder")
-                            .font(.headline.weight(.semibold))
-                            .foregroundStyle(appTheme.colors.accent)
+                            .font(AppTypography.compactCardTitle)
+                            .foregroundStyle(appTheme.colors.textAccent)
                             .frame(width: 42, height: 42)
                             .background(appTheme.colors.accentSurface, in: Circle())
 
                         VStack(alignment: .leading, spacing: 5) {
                             HStack(spacing: 8) {
                                 Text(draft.nutritionParseResult == nil ? "OCR helper" : "Raw OCR text")
-                                    .font(.headline)
+                                    .font(AppTypography.sectionTitle)
                                     .foregroundStyle(appTheme.colors.textPrimary)
 
                                 Text(draft.nutritionParseResult == nil ? "Needs review" : "Transparent")
-                                    .font(.caption2.weight(.bold))
-                                    .foregroundStyle(appTheme.colors.warning)
+                                    .font(AppTypography.badge)
+                                    .foregroundStyle(appTheme.colors.textWarning)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 5)
                                     .background(appTheme.colors.warning.opacity(0.14), in: Capsule())
                             }
 
                             Text("OCR may misread numbers. Enter the per 100 g or per 100 mL values from the detected label text.")
-                                .font(.subheadline)
+                                .font(AppTypography.body)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -418,9 +414,9 @@ struct FoodImportReviewView: View {
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .padding(14)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous)
                                 .stroke(appTheme.colors.cardBorder, lineWidth: 1)
                         }
                         .lineLimit(isDetectedTextExpanded ? nil : 10)
@@ -430,7 +426,7 @@ struct FoodImportReviewView: View {
                         detectedTextActionRow
                         detectedTextActionColumn
                     }
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppTypography.bodyEmphasis)
                 }
             }
         }
@@ -469,7 +465,7 @@ struct FoodImportReviewView: View {
             Label(isDetectedTextExpanded ? "Show Less" : "Show More", systemImage: isDetectedTextExpanded ? "chevron.up" : "chevron.down")
         }
         .buttonStyle(.plain)
-        .foregroundStyle(appTheme.colors.accent)
+        .foregroundStyle(appTheme.colors.textAccent)
     }
 
     private var copyDetectedTextButton: some View {
@@ -480,7 +476,7 @@ struct FoodImportReviewView: View {
             Label(didCopyDetectedText ? "Copied" : "Copy Text", systemImage: didCopyDetectedText ? "checkmark" : "doc.on.doc")
         }
         .buttonStyle(.plain)
-        .foregroundStyle(appTheme.colors.accent)
+        .foregroundStyle(appTheme.colors.textAccent)
         .accessibilityLabel("Copy detected label text")
     }
 
@@ -492,7 +488,7 @@ struct FoodImportReviewView: View {
             Label("Retake", systemImage: "camera")
         }
         .buttonStyle(.plain)
-        .foregroundStyle(appTheme.colors.accent)
+        .foregroundStyle(appTheme.colors.textAccent)
         .accessibilityLabel("Retake label photo")
     }
 
@@ -565,7 +561,7 @@ struct FoodImportReviewView: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: saveCheckSystemImage)
-                        .font(.headline.weight(.semibold))
+                        .font(AppTypography.compactCardTitle)
                         .foregroundStyle(saveCheckTint)
                         .frame(width: 42, height: 42)
                         .background(saveCheckTint.opacity(0.14), in: Circle())
@@ -573,11 +569,11 @@ struct FoodImportReviewView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
                             Text(saveCheckTitle)
-                                .font(.headline)
+                                .font(AppTypography.sectionTitle)
                                 .foregroundStyle(appTheme.colors.textPrimary)
 
                             Text(saveCheckBadge)
-                                .font(.caption2.weight(.bold))
+                                .font(AppTypography.badge)
                                 .foregroundStyle(saveCheckTint)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 5)
@@ -585,7 +581,7 @@ struct FoodImportReviewView: View {
                         }
 
                         Text(saveCheckMessage)
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -624,7 +620,7 @@ struct FoodImportReviewView: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: systemImage)
                 .font(AppTypography.metadataEmphasis)
-                .foregroundStyle(appTheme.colors.accent)
+                .foregroundStyle(appTheme.colors.textAccent)
                 .frame(width: 24)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -973,18 +969,18 @@ private struct ParsedNutrientMetric: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Text(title)
-                    .font(.caption.weight(.semibold))
+                    .font(AppTypography.chip)
                     .foregroundStyle(appTheme.colors.textSecondary)
 
                 Spacer(minLength: 4)
 
                 Text(value?.confidence.displayName ?? "Missing")
-                    .font(.caption2.weight(.bold))
+                    .font(AppTypography.badge)
                     .foregroundStyle(confidenceTint)
             }
 
             Text(valueText)
-                .font(.title3.bold())
+                .font(AppTypography.cardTitle)
                 .foregroundStyle(appTheme.colors.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -996,9 +992,9 @@ private struct ParsedNutrientMetric: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 96, alignment: .leading)
-        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius18, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: appTheme.metrics.radius18, style: .continuous)
                 .stroke(value == nil ? appTheme.colors.warning.opacity(0.35) : appTheme.colors.cardBorder, lineWidth: 1)
         }
     }
@@ -1037,12 +1033,12 @@ private struct ParsedNutrientPill: View {
                 .minimumScaleFactor(0.8)
 
             Text(value.nutrient.displayName)
-                .font(.caption2.weight(.semibold))
+                .font(AppTypography.badge)
                 .foregroundStyle(appTheme.colors.textSecondary)
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, minHeight: 48)
-        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous))
     }
 
     private var amountText: String {
@@ -1063,7 +1059,7 @@ private struct ReviewTextField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
                 .foregroundStyle(appTheme.colors.textSecondary)
 
             HStack(spacing: 8) {
@@ -1075,32 +1071,18 @@ private struct ReviewTextField: View {
 
                 if let suffix {
                     Text(suffix)
-                        .font(.subheadline.weight(.semibold))
+                        .font(AppTypography.bodyEmphasis)
                         .foregroundStyle(appTheme.colors.textTertiary)
                 }
             }
             .padding(.horizontal, 12)
             .frame(minHeight: 46)
-            .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous)
                     .stroke(placeholder == "Missing" && text.isEmpty ? appTheme.colors.warning : appTheme.colors.cardBorder, lineWidth: 1)
             }
         }
     }
 }
 
-private struct ReviewNoticeCard: View {
-    let message: String
-    let systemImage: String
-    let foregroundColor: Color
-
-    var body: some View {
-        FitnessCard(padding: 16) {
-            Label(message, systemImage: systemImage)
-                .font(.subheadline)
-                .foregroundStyle(foregroundColor)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-}

@@ -49,10 +49,10 @@ struct PRTimelineView: View {
                 FitnessCard(style: .compact) {
                     HStack(spacing: 10) {
                         Image(systemName: "hourglass")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(appTheme.colors.accent)
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(appTheme.colors.textAccent)
                         Text("Loading PR timeline")
-                            .font(.subheadline.weight(.semibold))
+                            .font(AppTypography.bodyEmphasis)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
                 }
@@ -76,7 +76,7 @@ struct PRTimelineView: View {
             if records.isEmpty && !isLoading {
                 FitnessCard {
                     Text("No PRs found yet. Log a few completed working sets and improvements will appear here.")
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                 }
             } else {
@@ -93,20 +93,20 @@ struct PRTimelineView: View {
 
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(record.exerciseName)
-                                        .font(.headline)
+                                        .font(AppTypography.sectionTitle)
                                     Text(record.improvementDescription)
-                                        .font(.subheadline.weight(.semibold))
+                                        .font(AppTypography.bodyEmphasis)
                                     Text(
                                         PeaklineText.joinedMetadata([
                                             record.prType.displayName,
                                             record.date.formatted(date: .abbreviated, time: .omitted)
                                         ])
                                     )
-                                        .font(.caption)
+                                        .font(AppTypography.metadata)
                                         .foregroundStyle(appTheme.colors.textSecondary)
                                     if let previous = record.previousDisplayValue {
                                         Text("Previous: \(previous) → New: \(record.displayValue)")
-                                            .font(.caption)
+                                            .font(AppTypography.metadata)
                                             .foregroundStyle(appTheme.colors.textSecondary)
                                     }
                                 }

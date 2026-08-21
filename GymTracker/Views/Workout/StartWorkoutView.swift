@@ -1041,7 +1041,7 @@ struct StartWorkoutContentView: View {
                 }
 
                 Text(snapshot.highlightText)
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.mutedText)
 
                 Button {

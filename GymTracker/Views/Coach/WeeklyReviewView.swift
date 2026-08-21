@@ -45,9 +45,9 @@ struct WeeklyReviewView: View {
                 FitnessCard {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(review.nextDecision.title)
-                            .font(.title3.bold())
+                            .font(AppTypography.cardTitle)
                         Text(review.nextDecision.reason)
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                         HStack(spacing: 10) {
                             MetricTile(label: "Workouts", value: "\(review.completedWorkouts)", caption: "This week", systemImage: "figure.strengthtraining.traditional")
@@ -59,11 +59,11 @@ struct WeeklyReviewView: View {
                 FitnessCard {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Split Balance")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                         Text(review.splitConsistency.countDescription())
-                            .font(.subheadline.weight(.semibold))
+                            .font(AppTypography.bodyEmphasis)
                         Text(review.splitConsistency.balanceDescription)
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
                 }
@@ -74,10 +74,10 @@ struct WeeklyReviewView: View {
                 FitnessCard(style: .compact) {
                     HStack(spacing: 10) {
                         Image(systemName: "hourglass")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(appTheme.colors.accent)
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(appTheme.colors.textAccent)
                         Text("Preparing weekly review")
-                            .font(.subheadline.weight(.semibold))
+                            .font(AppTypography.bodyEmphasis)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
                 }
@@ -165,12 +165,12 @@ struct WeeklyReviewView: View {
     private func insightSection(_ title: String, insights: [CoachInsight], empty: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.headline)
+                .font(AppTypography.sectionTitle)
 
             if insights.isEmpty {
                 FitnessCard {
                     Text(empty)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                 }
             } else {
@@ -178,9 +178,9 @@ struct WeeklyReviewView: View {
                     FitnessCard {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(insight.title)
-                                .font(.headline)
+                                .font(AppTypography.sectionTitle)
                             Text(insight.message)
-                                .font(.subheadline)
+                                .font(AppTypography.body)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                         }
                     }

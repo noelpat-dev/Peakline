@@ -21,9 +21,9 @@ struct WorkoutTemplateLibraryView: View {
                 FitnessCard {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("No templates yet")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                         Text("Save a good completed workout as a template from Session Summary or History.")
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
                 }
@@ -50,7 +50,7 @@ struct WorkoutTemplateLibraryView: View {
             if let errorText {
                 FitnessCard {
                     Label(errorText, systemImage: "exclamationmark.triangle")
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.dangerColor)
                 }
             }

@@ -18,7 +18,7 @@ struct SplitExerciseRow: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(exercise.exerciseNameSnapshot)
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .lineLimit(2)
 
@@ -36,17 +36,17 @@ struct SplitExerciseRow: View {
                         maximumReps: exercise.maxReps
                     )
                 )
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppTypography.bodyEmphasis)
                     .foregroundStyle(appTheme.colors.textSecondary)
 
                 Text(detailText)
-                    .font(.caption)
+                    .font(AppTypography.metadata)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .lineLimit(2)
 
                 if let notes = exercise.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Label(notes, systemImage: "note.text")
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)

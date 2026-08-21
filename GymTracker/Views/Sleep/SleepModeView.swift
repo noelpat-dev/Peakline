@@ -56,7 +56,7 @@ struct SleepModeView: View {
 
                         if let errorMessage {
                             Text(errorMessage)
-                                .font(.caption)
+                                .font(AppTypography.metadata)
                                 .foregroundStyle(appTheme.colors.textPrimary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -91,7 +91,7 @@ struct SleepModeView: View {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Wind-down")
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.chip)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .textCase(.uppercase)
 
@@ -113,7 +113,7 @@ struct SleepModeView: View {
                         )
 
                         Text(selectedMinutes == 0 ? "Tracking now" : "Tracking later")
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.chip)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
                 }
@@ -134,7 +134,7 @@ struct SleepModeView: View {
 
                     HStack(alignment: .firstTextBaseline) {
                         Text("Estimated start")
-                            .font(.subheadline.weight(.semibold))
+                            .font(AppTypography.bodyEmphasis)
                             .foregroundStyle(appTheme.colors.textSecondary)
 
                         Spacer(minLength: 8)
@@ -156,24 +156,24 @@ struct SleepModeView: View {
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .firstTextBaseline) {
                         Text("Wind-down length")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         Spacer(minLength: 8)
 
                         Text("You can adjust the start in the morning")
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.chip)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Wind-down length")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         Text("You can adjust the start in the morning")
-                            .font(.caption.weight(.semibold))
+                            .font(AppTypography.chip)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -204,7 +204,7 @@ struct SleepModeView: View {
             Button("Start now") {
                 start(minutes: 0)
             }
-            .font(.subheadline.weight(.semibold))
+            .font(AppTypography.bodyEmphasis)
             .foregroundStyle(appTheme.colors.textSecondary)
             .frame(minHeight: appTheme.metrics.minimumHitTarget)
             .accessibilityIdentifier("sleep-mode-start-now")
@@ -308,7 +308,7 @@ private struct SleepModeActionButton: View {
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
-                .font(.headline.weight(.semibold))
+                .font(AppTypography.compactCardTitle)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(foreground)

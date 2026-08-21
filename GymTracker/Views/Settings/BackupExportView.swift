@@ -28,11 +28,11 @@ struct BackupExportView: View {
             FitnessCard {
                 VStack(alignment: .leading, spacing: 10) {
                     Label("Local only", systemImage: "lock.fill")
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     Text("Exports are written to a temporary local file so you can save or share them yourself. Peakline does not upload this data anywhere.")
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -61,11 +61,11 @@ struct BackupExportView: View {
                 FitnessCard {
                     VStack(alignment: .leading, spacing: 12) {
                         Label(exportStatus ?? "Export ready", systemImage: "checkmark.circle.fill")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.successColor)
 
                         Text(exportedFile.lastPathComponent)
-                            .font(.subheadline.weight(.semibold))
+                            .font(AppTypography.bodyEmphasis)
                             .foregroundStyle(appTheme.colors.textPrimary)
                             .lineLimit(2)
 
@@ -81,7 +81,7 @@ struct BackupExportView: View {
             if let exportError {
                 FitnessCard {
                     Label(exportError, systemImage: "exclamationmark.triangle.fill")
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.dangerColor)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -100,11 +100,11 @@ struct BackupExportView: View {
         FitnessCard {
             VStack(alignment: .leading, spacing: 12) {
                 Label(title, systemImage: systemImage)
-                    .font(.headline)
+                    .font(AppTypography.sectionTitle)
                     .foregroundStyle(appTheme.colors.textPrimary)
 
                 Text(subtitle)
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 

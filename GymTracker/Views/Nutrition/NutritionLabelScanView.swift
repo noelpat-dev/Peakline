@@ -86,26 +86,26 @@ struct NutritionLabelScanView: View {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "doc.text.viewfinder")
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.accent)
+                    .foregroundStyle(appTheme.colors.textAccent)
                     .frame(width: 48, height: 48)
                     .background(appTheme.colors.accentSurface, in: Circle())
 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         Text("Label OCR")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         Text("Review required")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(appTheme.colors.accent)
+                            .font(AppTypography.badge)
+                            .foregroundStyle(appTheme.colors.textAccent)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 5)
                             .background(appTheme.colors.accentSurface, in: Capsule())
                     }
 
                     Text("Take a clear photo or choose a nutrition screenshot. Peakline reads the table on-device and keeps the final save under your control.")
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -187,11 +187,11 @@ struct NutritionLabelScanView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Reading label...")
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     Text("Extracting text on-device")
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                 }
             }
@@ -204,18 +204,18 @@ struct NutritionLabelScanView: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "text.viewfinder")
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.accent)
+                        .font(AppTypography.compactCardTitle)
+                        .foregroundStyle(appTheme.colors.textAccent)
                         .frame(width: 42, height: 42)
                         .background(appTheme.colors.accentSurface, in: Circle())
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text(parseResult.values.isEmpty ? "Text detected" : "Nutrition detected")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         Text(resultSummaryText(result: result, parseResult: parseResult))
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -223,14 +223,14 @@ struct NutritionLabelScanView: View {
 
                 HStack(spacing: 8) {
                     Text(parseResult.selectedBasis.displayName)
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(appTheme.colors.accent)
+                        .font(AppTypography.badge)
+                        .foregroundStyle(appTheme.colors.textAccent)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
                         .background(appTheme.colors.accentSurface, in: Capsule())
 
                     Text(parseResult.overallConfidence.displayName)
-                        .font(.caption2.weight(.bold))
+                        .font(AppTypography.badge)
                         .foregroundStyle(confidenceTint(parseResult.overallConfidence))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
@@ -339,18 +339,18 @@ struct NutritionLabelScanView: View {
         FitnessCard {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: systemImage)
-                    .font(.headline.weight(.semibold))
+                    .font(AppTypography.compactCardTitle)
                     .foregroundStyle(tint)
                     .frame(width: 42, height: 42)
                     .background(tint.opacity(0.14), in: Circle())
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title)
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     Text(message)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -361,13 +361,13 @@ struct NutritionLabelScanView: View {
     private func labelTip(_ text: String, systemImage: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: systemImage)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(appTheme.colors.accent)
+                .font(AppTypography.chip)
+                .foregroundStyle(appTheme.colors.textAccent)
                 .frame(width: 26, height: 26)
                 .background(appTheme.colors.accentSurface, in: Circle())
 
             Text(text)
-                .font(.subheadline)
+                .font(AppTypography.body)
                 .foregroundStyle(appTheme.colors.textSecondary)
         }
     }

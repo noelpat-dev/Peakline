@@ -276,26 +276,26 @@ struct NutritionInsightsDashboardView: View {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: todaySummary.isTrainingDay ? "figure.strengthtraining.traditional" : "moon.fill")
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.accent)
+                    .foregroundStyle(appTheme.colors.textAccent)
                     .frame(width: 48, height: 48)
                     .background(appTheme.colors.accentSurface, in: Circle())
 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         Text(todaySummary.isTrainingDay ? "Training day" : "Rest day")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         Text(todaySummary.isTrainingDay ? "\(todaySummary.workoutCount) workout\(todaySummary.workoutCount == 1 ? "" : "s")" : "No workout logged")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(appTheme.colors.accent)
+                            .font(AppTypography.badge)
+                            .foregroundStyle(appTheme.colors.textAccent)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 5)
                             .background(appTheme.colors.accentSurface, in: Capsule())
                     }
 
                     Text(headerMessage)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -309,19 +309,19 @@ struct NutritionInsightsDashboardView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .center, spacing: 12) {
                         Image(systemName: "clock.badge.checkmark")
-                            .font(.headline.weight(.semibold))
-                            .foregroundStyle(appTheme.colors.accent)
+                            .font(AppTypography.compactCardTitle)
+                            .foregroundStyle(appTheme.colors.textAccent)
                             .frame(width: 42, height: 42)
                             .background(appTheme.colors.accentSurface, in: Circle())
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text(trainingContext.latestWorkoutName ?? (todaySummary.isTrainingDay ? "Workout logged today" : "No workout today"))
-                                .font(.headline)
+                                .font(AppTypography.sectionTitle)
                                 .foregroundStyle(appTheme.colors.textPrimary)
                                 .lineLimit(2)
 
                             Text(trainingContextMessage)
-                                .font(.subheadline)
+                                .font(AppTypography.body)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -344,17 +344,17 @@ struct NutritionInsightsDashboardView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(alignment: .top, spacing: 12) {
                             Image(systemName: "heart.text.square.fill")
-                                .font(.headline.weight(.semibold))
-                                .foregroundStyle(appTheme.colors.accent)
+                                .font(AppTypography.compactCardTitle)
+                                .foregroundStyle(appTheme.colors.textAccent)
                                 .frame(width: 42, height: 42)
                                 .background(appTheme.colors.accentSurface, in: Circle())
 
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Supporting context")
-                                    .font(.headline)
+                                    .font(AppTypography.sectionTitle)
                                     .foregroundStyle(appTheme.colors.textPrimary)
                                 Text("Apple Health values are labeled context only. Local GymTracker workouts and nutrition stay primary.")
-                                    .font(.subheadline)
+                                    .font(AppTypography.body)
                                     .foregroundStyle(appTheme.colors.textSecondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -514,7 +514,7 @@ struct NutritionTargetsView: View {
             FitnessCard {
                 VStack(alignment: .leading, spacing: 14) {
                     Toggle("Enable targets", isOn: $isEnabled)
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     Picker("Target mode", selection: $mode) {
@@ -551,7 +551,7 @@ struct NutritionTargetsView: View {
 
             FitnessCard(padding: 16) {
                 Label("Targets are not dietary advice. They are manual numbers used to explain your logged data.", systemImage: "info.circle")
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -559,8 +559,8 @@ struct NutritionTargetsView: View {
             if let errorText {
                 FitnessCard(padding: 16) {
                     Label(errorText, systemImage: "exclamationmark.triangle")
-                        .font(.subheadline)
-                        .foregroundStyle(appTheme.colors.danger)
+                        .font(AppTypography.body)
+                        .foregroundStyle(appTheme.colors.textDanger)
                 }
             }
 
@@ -690,7 +690,7 @@ struct WeeklyNutritionTrendsView: View {
             if let trainingAverage = weeklySummary.trainingDayAverageCalories, let restAverage = weeklySummary.restDayAverageCalories {
                 FitnessCard {
                     Label("Training days average \(phase7Kcal(trainingAverage)) kcal vs \(phase7Kcal(restAverage)) kcal on rest days.", systemImage: "chart.xyaxis.line")
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -758,26 +758,26 @@ struct NutritionHomeSummaryCard: View {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "fork.knife.circle.fill")
                         .font(.title3.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.accent)
+                        .foregroundStyle(appTheme.colors.textAccent)
                         .frame(width: 44, height: 44)
                         .background(appTheme.colors.accentSurface, in: Circle())
 
                     VStack(alignment: .leading, spacing: 5) {
                         HStack(spacing: 8) {
                             Text("Nutrition Today")
-                                .font(.headline)
+                                .font(AppTypography.sectionTitle)
                                 .foregroundStyle(appTheme.colors.textPrimary)
 
                             Text(snapshot.today.isTrainingDay ? "Training" : "Rest")
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(appTheme.colors.accent)
+                                .font(AppTypography.badge)
+                                .foregroundStyle(appTheme.colors.textAccent)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 5)
                                 .background(appTheme.colors.accentSurface, in: Capsule())
                         }
 
                         Text(snapshot.topInsight?.title ?? "Log food to unlock training-aware insights")
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .lineLimit(2)
                     }
@@ -785,7 +785,7 @@ struct NutritionHomeSummaryCard: View {
                     Spacer(minLength: 8)
 
                     Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
+                        .font(AppTypography.eyebrow)
                         .foregroundStyle(appTheme.colors.textTertiary)
                 }
 
@@ -809,12 +809,12 @@ struct NutritionHomeSummaryCard: View {
                 .minimumScaleFactor(0.75)
 
             Text(title)
-                .font(.caption2.weight(.semibold))
+                .font(AppTypography.badge)
                 .foregroundStyle(appTheme.colors.textSecondary)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous))
     }
 }
 
@@ -861,19 +861,19 @@ private struct MacroTargetProgressCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Image(systemName: systemImage)
-                    .foregroundStyle(appTheme.colors.accent)
+                    .foregroundStyle(appTheme.colors.textAccent)
                 Spacer()
                 Text(statusText)
-                    .font(.caption2.weight(.bold))
+                    .font(AppTypography.badge)
                     .foregroundStyle(statusTint)
             }
 
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
                 .foregroundStyle(appTheme.colors.textSecondary)
 
             Text(valueText)
-                .font(.title3.bold())
+                .font(AppTypography.cardTitle)
                 .foregroundStyle(appTheme.colors.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -884,9 +884,9 @@ private struct MacroTargetProgressCard: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 132, alignment: .leading)
-        .background(appTheme.colors.cardBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(appTheme.colors.cardBackground, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius20, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: appTheme.metrics.radius20, style: .continuous)
                 .stroke(appTheme.colors.cardBorder, lineWidth: 1)
         }
     }
@@ -921,7 +921,7 @@ private struct InsightCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: insight.category.systemImage)
-                        .font(.headline.weight(.semibold))
+                        .font(AppTypography.compactCardTitle)
                         .foregroundStyle(tint)
                         .frame(width: 40, height: 40)
                         .background(tint.opacity(0.14), in: Circle())
@@ -929,11 +929,11 @@ private struct InsightCard: View {
                     VStack(alignment: .leading, spacing: 5) {
                         HStack(spacing: 8) {
                             Text(insight.title)
-                                .font(.headline)
+                                .font(AppTypography.sectionTitle)
                                 .foregroundStyle(appTheme.colors.textPrimary)
 
                             Text(insight.category.displayName)
-                                .font(.caption2.weight(.bold))
+                                .font(AppTypography.badge)
                                 .foregroundStyle(tint)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 5)
@@ -941,7 +941,7 @@ private struct InsightCard: View {
                         }
 
                         Text(insight.message)
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -949,7 +949,7 @@ private struct InsightCard: View {
 
                 if let supportingValue = insight.supportingValue {
                     Text(supportingValue)
-                        .font(.caption.weight(.bold))
+                        .font(AppTypography.eyebrow)
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
@@ -958,8 +958,8 @@ private struct InsightCard: View {
 
                 if let action = insight.action {
                     Label(action.title, systemImage: action.systemImage)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.accent)
+                        .font(AppTypography.bodyEmphasis)
+                        .foregroundStyle(appTheme.colors.textAccent)
                         .padding(.top, 2)
                 }
             }
@@ -992,11 +992,11 @@ private struct WeeklyTrendPreview: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Food logs are present for \(summary.loggedDays) of the last \(summary.dailySummaries.count) days.")
-                            .font(.headline)
+                            .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         Text("Protein target hit on \(summary.proteinTargetHitDays) days. \(summary.trainingDays) training day\(summary.trainingDays == 1 ? "" : "s") logged.")
-                            .font(.subheadline)
+                            .font(AppTypography.body)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -1025,7 +1025,7 @@ private struct WeeklyTrendPreview: View {
                 .frame(maxHeight: 58, alignment: .bottom)
 
             Text(day.date.formatted(.dateTime.weekday(.narrow)))
-                .font(.caption2.weight(.bold))
+                .font(AppTypography.badge)
                 .foregroundStyle(day.isTrainingDay ? appTheme.colors.accent : appTheme.colors.textSecondary)
         }
         .frame(maxWidth: .infinity, minHeight: 82, alignment: .bottom)
@@ -1043,13 +1043,13 @@ private struct NutritionContextMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(value)
-                .font(.title3.bold())
+                .font(AppTypography.cardTitle)
                 .foregroundStyle(appTheme.colors.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
 
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
                 .foregroundStyle(appTheme.colors.textSecondary)
 
             Text(caption)
@@ -1058,7 +1058,7 @@ private struct NutritionContextMetric: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 86, alignment: .leading)
-        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous))
     }
 }
 
@@ -1091,25 +1091,25 @@ private struct NutritionInsightsEmptyCard: View {
             VStack(alignment: .leading, spacing: 14) {
                 Image(systemName: systemImage)
                     .font(.title2.weight(.semibold))
-                    .foregroundStyle(appTheme.colors.accent)
+                    .foregroundStyle(appTheme.colors.textAccent)
                     .frame(width: 48, height: 48)
                     .background(appTheme.colors.accentSurface, in: Circle())
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title)
-                        .font(.title3.bold())
+                        .font(AppTypography.cardTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
                     Text(message)
-                        .font(.subheadline)
+                        .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if let actionTitle {
                     Label(actionTitle, systemImage: "arrow.right")
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(appTheme.colors.accent)
+                        .font(AppTypography.compactCardTitle)
+                        .foregroundStyle(appTheme.colors.textAccent)
                 }
             }
         }
@@ -1127,7 +1127,7 @@ private struct TargetTextField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
                 .foregroundStyle(appTheme.colors.textSecondary)
 
             HStack(spacing: 8) {
@@ -1137,14 +1137,14 @@ private struct TargetTextField: View {
                     .accessibilityIdentifier("nutrition-target-\(title.lowercased().replacingOccurrences(of: " ", with: "-"))")
 
                 Text(suffix)
-                    .font(.subheadline.weight(.semibold))
+                    .font(AppTypography.bodyEmphasis)
                     .foregroundStyle(appTheme.colors.textTertiary)
             }
             .padding(.horizontal, 12)
             .frame(minHeight: 46)
-            .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous)
                     .stroke(appTheme.colors.cardBorder, lineWidth: 1)
             }
         }

@@ -157,12 +157,12 @@ struct SleepRow<Trailing: View>: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.headline)
+                    .font(AppTypography.sectionTitle)
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(subtitle)
-                    .font(.caption)
+                    .font(AppTypography.metadata)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -173,7 +173,7 @@ struct SleepRow<Trailing: View>: View {
 
             if showsChevron {
                 Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
+                    .font(AppTypography.eyebrow)
                     .foregroundStyle(appTheme.colors.textTertiary)
             }
         }
@@ -193,7 +193,7 @@ struct SleepQuietAction: View {
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
-                .font(.subheadline.weight(.semibold))
+                .font(AppTypography.bodyEmphasis)
                 .foregroundStyle(appTheme.colors.textSecondary)
                 .frame(maxWidth: .infinity, minHeight: appTheme.metrics.minimumHitTarget)
                 .background(appTheme.colors.cardBackgroundElevated, in: Capsule())
@@ -303,11 +303,11 @@ struct SleepMetric: View {
             HStack(spacing: 6) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.chip)
                 }
 
                 Text(title)
-                    .font(.caption.weight(.semibold))
+                    .font(AppTypography.chip)
                     .textCase(.uppercase)
             }
             .foregroundStyle(tint ?? appTheme.colors.textSecondary)
@@ -341,7 +341,7 @@ struct SleepStageBreakdownView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Apple Health stages")
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.chip)
                 .foregroundStyle(appTheme.colors.textSecondary)
                 .textCase(.uppercase)
 
@@ -396,7 +396,7 @@ struct SleepQualityPicker: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Sleep quality")
-                        .font(.caption.weight(.semibold))
+                        .font(AppTypography.chip)
                         .foregroundStyle(appTheme.colors.textSecondary)
                     Text(selection.map(Self.label) ?? "Not rated")
                         .font(.body.weight(.semibold))

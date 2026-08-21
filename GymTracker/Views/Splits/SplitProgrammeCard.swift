@@ -45,7 +45,7 @@ struct SplitProgrammeCard: View {
                     Button(action: onEditRotation) {
                         Image(systemName: "slider.horizontal.3")
                             .font(.subheadline.weight(.bold))
-                            .foregroundStyle(appTheme.colors.accent)
+                            .foregroundStyle(appTheme.colors.textAccent)
                             .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
                             .background(
                                 appTheme.colors.accentSurface,

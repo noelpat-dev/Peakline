@@ -102,22 +102,22 @@ private struct ExerciseLibraryRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(exercise.name)
-                        .font(.headline)
+                        .font(AppTypography.sectionTitle)
 
                     if exercise.isArchived {
                         Text("Archived")
-                            .font(.caption)
+                            .font(AppTypography.metadata)
                             .foregroundStyle(appTheme.colors.textSecondary)
                     }
                 }
 
                 Text("\(exercise.primaryMuscleGroup.displayName) - \(exercise.equipment.displayName) - \(exercise.movementPattern.displayName)")
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
 
                 if let metadata {
                     Text("Coach: \(metadata.role.displayName) - \(metadata.priority.displayName) priority")
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textTertiary)
                 }
             }
@@ -455,7 +455,7 @@ private struct BulkCoachMetadataEditorView: View {
                                     .font(.title3.weight(.bold))
                                     .foregroundStyle(appTheme.colors.textPrimary)
                                 Text("Review coach metadata updates before applying them locally.")
-                                    .font(.subheadline)
+                                    .font(AppTypography.body)
                                     .foregroundStyle(appTheme.colors.textSecondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -587,7 +587,7 @@ private struct BulkCoachMetadataEditorView: View {
             }
         case .accessories, .isolation, .priorityLifts, .warmUps:
             Text("Matches exercises using existing coach metadata first, then conservative library metadata.")
-                .font(.caption)
+                .font(AppTypography.metadata)
                 .foregroundStyle(appTheme.colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -621,11 +621,11 @@ private struct BulkCoachMetadataEditorView: View {
         FitnessCard {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Review Summary")
-                    .font(.headline)
+                    .font(AppTypography.sectionTitle)
                     .foregroundStyle(appTheme.colors.textPrimary)
 
                 Text(review.summary)
-                    .font(.subheadline)
+                    .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -636,13 +636,13 @@ private struct BulkCoachMetadataEditorView: View {
 
                 if review.skippedExistingCount > 0 {
                     Text("\(review.skippedExistingCount) existing metadata records will be skipped.")
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textTertiary)
                 }
 
                 if !review.matchedExerciseNames.isEmpty {
                     Text(review.matchedExerciseNames.prefix(6).joined(separator: ", "))
-                        .font(.caption)
+                        .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }

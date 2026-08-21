@@ -44,32 +44,21 @@ enum SplitStatus: Hashable {
 }
 
 struct SplitStatusBadge: View {
-    @Environment(\.appTheme) private var appTheme
-
     let status: SplitStatus
 
     var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: status.systemImage)
-                .font(.caption2.weight(.bold))
-            Text(status.title)
-                .font(.caption.weight(.semibold))
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
-        .foregroundStyle(color)
-        .background(color.opacity(0.14), in: Capsule())
-        .accessibilityElement(children: .combine)
+        StatusBadge(status.title, systemImage: status.systemImage, role: role)
+            .accessibilityElement(children: .combine)
     }
 
-    private var color: Color {
+    private var role: StatusBadge.Role {
         switch status {
         case .ready, .progressOpportunity:
-            return appTheme.colors.accent
+            return .accent
         case .recentlyTrained, .inactive, .custom:
-            return appTheme.colors.textSecondary
+            return .neutral
         case .prioritise:
-            return appTheme.colors.warning
+            return .warning
         }
     }
 }
