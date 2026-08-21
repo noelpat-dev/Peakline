@@ -145,12 +145,15 @@
 		0010000000000000000000A5 /* WarmStartSnapshotStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000A5 /* WarmStartSnapshotStoreTests.swift */; };
 		0010000000000000000000A6 /* BackupRestoreReliabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000A6 /* BackupRestoreReliabilityTests.swift */; };
 		0010000000000000000000A7 /* FullAppBackupReliabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000A7 /* FullAppBackupReliabilityTests.swift */; };
+		0010000000000000000000A8 /* SleepRepositoryRollbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000A8 /* SleepRepositoryRollbackTests.swift */; };
+		0010000000000000000000A9 /* HealthKitSleepDeduplicationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000A9 /* HealthKitSleepDeduplicationTests.swift */; };
 		0010000000000000000000B1 /* CoachWorkoutPreviewUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B1 /* CoachWorkoutPreviewUITests.swift */; };
 		0010000000000000000000B2 /* WorkoutLoggingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B2 /* WorkoutLoggingUITests.swift */; };
 		0010000000000000000000B3 /* NutritionScannerNavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B3 /* NutritionScannerNavigationUITests.swift */; };
 		0010000000000000000000B4 /* AppLifecycleSwipeAwayUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B4 /* AppLifecycleSwipeAwayUITests.swift */; };
 		0010000000000000000000B5 /* SplitsPageUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B5 /* SplitsPageUITests.swift */; };
 		0010000000000000000000B6 /* HistoryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B6 /* HistoryUITests.swift */; };
+		0010000000000000000000B7 /* SleepRecoveryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B7 /* SleepRecoveryUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -302,6 +305,8 @@
 		0020000000000000000000A1 /* CoachIntelligenceServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachIntelligenceServiceTests.swift; sourceTree = "<group>"; };
 		0020000000000000000000A2 /* WorkoutReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutReliabilityTests.swift; sourceTree = "<group>"; };
 		0020000000000000000000A3 /* SleepRecoveryReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepRecoveryReliabilityTests.swift; sourceTree = "<group>"; };
+		0020000000000000000000A8 /* SleepRepositoryRollbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepRepositoryRollbackTests.swift; sourceTree = "<group>"; };
+		0020000000000000000000A9 /* HealthKitSleepDeduplicationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitSleepDeduplicationTests.swift; sourceTree = "<group>"; };
 		0020000000000000000000A4 /* NutritionExportReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionExportReliabilityTests.swift; sourceTree = "<group>"; };
 		0020000000000000000000A5 /* WarmStartSnapshotStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WarmStartSnapshotStoreTests.swift; sourceTree = "<group>"; };
 		0020000000000000000000A6 /* BackupRestoreReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRestoreReliabilityTests.swift; sourceTree = "<group>"; };
@@ -313,6 +318,7 @@
 		0020000000000000000000B4 /* AppLifecycleSwipeAwayUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLifecycleSwipeAwayUITests.swift; sourceTree = "<group>"; };
 		0020000000000000000000B5 /* SplitsPageUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitsPageUITests.swift; sourceTree = "<group>"; };
 		0020000000000000000000B6 /* HistoryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryUITests.swift; sourceTree = "<group>"; };
+		0020000000000000000000B7 /* SleepRecoveryUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepRecoveryUITests.swift; sourceTree = "<group>"; };
 		0020000000000000000000C0 /* AccountBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountBackupView.swift; sourceTree = "<group>"; };
 		0020000000000000000000D4 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		0020000000000000000000D5 /* PeaklineModelSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeaklineModelSchema.swift; sourceTree = "<group>"; };
@@ -636,6 +642,8 @@
 				0020000000000000000000A1 /* CoachIntelligenceServiceTests.swift */,
 				0020000000000000000000A2 /* WorkoutReliabilityTests.swift */,
 				0020000000000000000000A3 /* SleepRecoveryReliabilityTests.swift */,
+				0020000000000000000000A8 /* SleepRepositoryRollbackTests.swift */,
+				0020000000000000000000A9 /* HealthKitSleepDeduplicationTests.swift */,
 				0020000000000000000000A4 /* NutritionExportReliabilityTests.swift */,
 				0020000000000000000000A5 /* WarmStartSnapshotStoreTests.swift */,
 				0020000000000000000000A6 /* BackupRestoreReliabilityTests.swift */,
@@ -653,6 +661,7 @@
 				0020000000000000000000B4 /* AppLifecycleSwipeAwayUITests.swift */,
 				0020000000000000000000B5 /* SplitsPageUITests.swift */,
 				0020000000000000000000B6 /* HistoryUITests.swift */,
+				0020000000000000000000B7 /* SleepRecoveryUITests.swift */,
 			);
 			path = GymTrackerUITests;
 			sourceTree = "<group>";
@@ -956,6 +965,8 @@
 				0010000000000000000000A1 /* CoachIntelligenceServiceTests.swift in Sources */,
 				0010000000000000000000A2 /* WorkoutReliabilityTests.swift in Sources */,
 				0010000000000000000000A3 /* SleepRecoveryReliabilityTests.swift in Sources */,
+				0010000000000000000000A8 /* SleepRepositoryRollbackTests.swift in Sources */,
+				0010000000000000000000A9 /* HealthKitSleepDeduplicationTests.swift in Sources */,
 				0010000000000000000000A4 /* NutritionExportReliabilityTests.swift in Sources */,
 				0010000000000000000000A5 /* WarmStartSnapshotStoreTests.swift in Sources */,
 				0010000000000000000000A6 /* BackupRestoreReliabilityTests.swift in Sources */,
@@ -973,6 +984,7 @@
 				0010000000000000000000B4 /* AppLifecycleSwipeAwayUITests.swift in Sources */,
 				0010000000000000000000B5 /* SplitsPageUITests.swift in Sources */,
 				0010000000000000000000B6 /* HistoryUITests.swift in Sources */,
+				0010000000000000000000B7 /* SleepRecoveryUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
