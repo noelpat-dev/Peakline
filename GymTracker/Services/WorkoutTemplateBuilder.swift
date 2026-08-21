@@ -53,9 +53,3 @@ struct WorkoutTemplateBuilder {
     }
 }
 
-private extension String {
-    var nilIfEmpty: String? {
-        isEmpty ? nil : self
-    }
-}
-

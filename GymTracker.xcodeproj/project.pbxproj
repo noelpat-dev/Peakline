@@ -114,14 +114,11 @@
 		00100000000000000000006B /* HealthKitSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000006C /* HealthKitSettingsView.swift */; };
 		00100000000000000000006C /* NutritionDataIntegrityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000006E /* NutritionDataIntegrityService.swift */; };
 		00100000000000000000006D /* SleepModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000006F /* SleepModels.swift */; };
-		00100000000000000000006E /* SleepServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000070 /* SleepServices.swift */; };
 		00100000000000000000006F /* HealthKitSleepService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000071 /* HealthKitSleepService.swift */; };
-		001000000000000000000070 /* SleepViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000072 /* SleepViews.swift */; };
 		001000000000000000000091 /* ReadinessModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000091 /* ReadinessModels.swift */; };
 		001000000000000000000092 /* CoachIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000092 /* CoachIntelligenceService.swift */; };
 		0010000000000000000000E0 /* ReadinessScoringService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000E0 /* ReadinessScoringService.swift */; };
 		001000000000000000000093 /* CoachIntelligenceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000093 /* CoachIntelligenceViews.swift */; };
-		001000000000000000000094 /* CoachWorkoutAdjustmentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000094 /* CoachWorkoutAdjustmentModels.swift */; };
 		001000000000000000000095 /* CoachWorkoutAdjustmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000095 /* CoachWorkoutAdjustmentService.swift */; };
 		001000000000000000000096 /* CoachWorkoutAdjustmentViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000096 /* CoachWorkoutAdjustmentViews.swift */; };
 		001000000000000000000097 /* PerformanceTracer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000097 /* PerformanceTracer.swift */; };
@@ -154,6 +151,52 @@
 		0010000000000000000000B5 /* SplitsPageUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B5 /* SplitsPageUITests.swift */; };
 		0010000000000000000000B6 /* HistoryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B6 /* HistoryUITests.swift */; };
 		0010000000000000000000B7 /* SleepRecoveryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B7 /* SleepRecoveryUITests.swift */; };
+		002000000000000000000075 /* SleepDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepDashboardView.swift; sourceTree = "<group>"; };
+		002000000000000000000076 /* NapTimerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NapTimerViews.swift; sourceTree = "<group>"; };
+		002000000000000000000077 /* SleepSessionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepSessionViews.swift; sourceTree = "<group>"; };
+		002000000000000000000078 /* SleepSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepSettingsView.swift; sourceTree = "<group>"; };
+		002000000000000000000079 /* SleepModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepModeView.swift; sourceTree = "<group>"; };
+		00200000000000000000007A /* SleepSharedComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepSharedComponents.swift; sourceTree = "<group>"; };
+		00200000000000000000007B /* StartupCoordination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartupCoordination.swift; sourceTree = "<group>"; };
+		00200000000000000000007C /* PeaklineSplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeaklineSplashView.swift; sourceTree = "<group>"; };
+		00200000000000000000007D /* AccountGateViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountGateViews.swift; sourceTree = "<group>"; };
+		00200000000000000000007E /* CoachAdjustmentEnums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachAdjustmentEnums.swift; sourceTree = "<group>"; };
+		00200000000000000000007F /* CoachAdjustmentValueTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachAdjustmentValueTypes.swift; sourceTree = "<group>"; };
+		002000000000000000000080 /* CoachPreferenceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachPreferenceModels.swift; sourceTree = "<group>"; };
+		002000000000000000000081 /* CoachHistoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachHistoryModels.swift; sourceTree = "<group>"; };
+		002000000000000000000082 /* HydrationSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HydrationSupport.swift; sourceTree = "<group>"; };
+		002000000000000000000083 /* TrainingDecisionServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrainingDecisionServices.swift; sourceTree = "<group>"; };
+		002000000000000000000084 /* HistoryDisplaySnapshotBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryDisplaySnapshotBuilder.swift; sourceTree = "<group>"; };
+		0020000000000000000000E1 /* SleepPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sleep/SleepPersistence.swift; sourceTree = "<group>"; };
+		0020000000000000000000E2 /* NapTimerStateMachine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sleep/NapTimerStateMachine.swift; sourceTree = "<group>"; };
+		0020000000000000000000E3 /* SleepScoringServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sleep/SleepScoringServices.swift; sourceTree = "<group>"; };
+		0020000000000000000000E4 /* SleepCorrelationServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sleep/SleepCorrelationServices.swift; sourceTree = "<group>"; };
+		0020000000000000000000E5 /* SleepCoachingServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sleep/SleepCoachingServices.swift; sourceTree = "<group>"; };
+		0020000000000000000000E6 /* SleepAnalyticsStores.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sleep/SleepAnalyticsStores.swift; sourceTree = "<group>"; };
+		0020000000000000000000E7 /* SleepNotificationScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sleep/SleepNotificationScheduler.swift; sourceTree = "<group>"; };
+		001000000000000000000073 /* SleepDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000075 /* SleepDashboardView.swift */; };
+		001000000000000000000074 /* NapTimerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000076 /* NapTimerViews.swift */; };
+		001000000000000000000075 /* SleepSessionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000077 /* SleepSessionViews.swift */; };
+		001000000000000000000076 /* SleepSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000078 /* SleepSettingsView.swift */; };
+		001000000000000000000077 /* SleepModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000079 /* SleepModeView.swift */; };
+		001000000000000000000078 /* SleepSharedComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000007A /* SleepSharedComponents.swift */; };
+		001000000000000000000079 /* StartupCoordination.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000007B /* StartupCoordination.swift */; };
+		00100000000000000000007A /* PeaklineSplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000007C /* PeaklineSplashView.swift */; };
+		00100000000000000000007B /* AccountGateViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000007D /* AccountGateViews.swift */; };
+		00100000000000000000007C /* CoachAdjustmentEnums.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000007E /* CoachAdjustmentEnums.swift */; };
+		00100000000000000000007D /* CoachAdjustmentValueTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00200000000000000000007F /* CoachAdjustmentValueTypes.swift */; };
+		00100000000000000000007E /* CoachPreferenceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000080 /* CoachPreferenceModels.swift */; };
+		00100000000000000000007F /* CoachHistoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000081 /* CoachHistoryModels.swift */; };
+		001000000000000000000080 /* HydrationSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000082 /* HydrationSupport.swift */; };
+		001000000000000000000081 /* TrainingDecisionServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000083 /* TrainingDecisionServices.swift */; };
+		001000000000000000000082 /* HistoryDisplaySnapshotBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002000000000000000000084 /* HistoryDisplaySnapshotBuilder.swift */; };
+		0010000000000000000000E1 /* SleepPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000E1 /* SleepPersistence.swift */; };
+		0010000000000000000000E2 /* NapTimerStateMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000E2 /* NapTimerStateMachine.swift */; };
+		0010000000000000000000E3 /* SleepScoringServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000E3 /* SleepScoringServices.swift */; };
+		0010000000000000000000E4 /* SleepCorrelationServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000E4 /* SleepCorrelationServices.swift */; };
+		0010000000000000000000E5 /* SleepCoachingServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000E5 /* SleepCoachingServices.swift */; };
+		0010000000000000000000E6 /* SleepAnalyticsStores.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000E6 /* SleepAnalyticsStores.swift */; };
+		0010000000000000000000E7 /* SleepNotificationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000E7 /* SleepNotificationScheduler.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -283,14 +326,11 @@
 		00200000000000000000006D /* GymTracker.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GymTracker.entitlements; sourceTree = "<group>"; };
 		00200000000000000000006E /* NutritionDataIntegrityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionDataIntegrityService.swift; sourceTree = "<group>"; };
 		00200000000000000000006F /* SleepModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepModels.swift; sourceTree = "<group>"; };
-		002000000000000000000070 /* SleepServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepServices.swift; sourceTree = "<group>"; };
 		002000000000000000000071 /* HealthKitSleepService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKit/HealthKitSleepService.swift; sourceTree = "<group>"; };
-		002000000000000000000072 /* SleepViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepViews.swift; sourceTree = "<group>"; };
 		002000000000000000000091 /* ReadinessModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadinessModels.swift; sourceTree = "<group>"; };
 		002000000000000000000092 /* CoachIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachIntelligenceService.swift; sourceTree = "<group>"; };
 		0020000000000000000000E0 /* ReadinessScoringService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadinessScoringService.swift; sourceTree = "<group>"; };
 		002000000000000000000093 /* CoachIntelligenceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachIntelligenceViews.swift; sourceTree = "<group>"; };
-		002000000000000000000094 /* CoachWorkoutAdjustmentModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkoutAdjustmentModels.swift; sourceTree = "<group>"; };
 		002000000000000000000095 /* CoachWorkoutAdjustmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkoutAdjustmentService.swift; sourceTree = "<group>"; };
 		002000000000000000000096 /* CoachWorkoutAdjustmentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkoutAdjustmentViews.swift; sourceTree = "<group>"; };
 		002000000000000000000097 /* PerformanceTracer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceTracer.swift; sourceTree = "<group>"; };
@@ -385,6 +425,9 @@
 				0020000000000000000000D5 /* PeaklineModelSchema.swift */,
 				002000000000000000000002 /* RootTabView.swift */,
 				002000000000000000000098 /* AppStartupView.swift */,
+				00200000000000000000007B /* StartupCoordination.swift */,
+				00200000000000000000007C /* PeaklineSplashView.swift */,
+				00200000000000000000007D /* AccountGateViews.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -410,7 +453,10 @@
 				00200000000000000000006A /* HealthKitBridgeModels.swift */,
 				00200000000000000000006F /* SleepModels.swift */,
 				002000000000000000000091 /* ReadinessModels.swift */,
-				002000000000000000000094 /* CoachWorkoutAdjustmentModels.swift */,
+				00200000000000000000007E /* CoachAdjustmentEnums.swift */,
+				00200000000000000000007F /* CoachAdjustmentValueTypes.swift */,
+				002000000000000000000080 /* CoachPreferenceModels.swift */,
+				002000000000000000000081 /* CoachHistoryModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -486,6 +532,7 @@
 			children = (
 				002000000000000000000012 /* CoachView.swift */,
 				002000000000000000000053 /* WeeklyReviewView.swift */,
+				002000000000000000000093 /* CoachIntelligenceViews.swift */,
 			);
 			path = Coach;
 			sourceTree = "<group>";
@@ -542,6 +589,16 @@
 				00200000000000000000004B /* TrainingAnalyticsService.swift */,
 				00200000000000000000004C /* WeeklyReviewBuilder.swift */,
 				002000000000000000000056 /* NutritionCalculatorService.swift */,
+				002000000000000000000082 /* HydrationSupport.swift */,
+				002000000000000000000083 /* TrainingDecisionServices.swift */,
+				002000000000000000000084 /* HistoryDisplaySnapshotBuilder.swift */,
+				0020000000000000000000E1 /* SleepPersistence.swift */,
+				0020000000000000000000E2 /* NapTimerStateMachine.swift */,
+				0020000000000000000000E3 /* SleepScoringServices.swift */,
+				0020000000000000000000E4 /* SleepCorrelationServices.swift */,
+				0020000000000000000000E5 /* SleepCoachingServices.swift */,
+				0020000000000000000000E6 /* SleepAnalyticsStores.swift */,
+				0020000000000000000000E7 /* SleepNotificationScheduler.swift */,
 				002000000000000000000059 /* OpenFoodFactsService.swift */,
 				00200000000000000000005A /* BarcodeFoodLookupService.swift */,
 				00200000000000000000005E /* NutritionLabelOCRService.swift */,
@@ -550,7 +607,6 @@
 				002000000000000000000068 /* NutritionInsightsService.swift */,
 				00200000000000000000006B /* HealthKitBridgeService.swift */,
 				00200000000000000000006E /* NutritionDataIntegrityService.swift */,
-				002000000000000000000070 /* SleepServices.swift */,
 				002000000000000000000071 /* HealthKitSleepService.swift */,
 				0020000000000000000000E0 /* ReadinessScoringService.swift */,
 				002000000000000000000092 /* CoachIntelligenceService.swift */,
@@ -601,7 +657,6 @@
 				002000000000000000000042 /* ExerciseNotesEditor.swift */,
 				002000000000000000000051 /* WorkoutTemplateRow.swift */,
 				002000000000000000000054 /* TodayDashboardComponents.swift */,
-				002000000000000000000093 /* CoachIntelligenceViews.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -631,7 +686,12 @@
 		004000000000000000000017 /* Sleep */ = {
 			isa = PBXGroup;
 			children = (
-				002000000000000000000072 /* SleepViews.swift */,
+				002000000000000000000075 /* SleepDashboardView.swift */,
+				002000000000000000000076 /* NapTimerViews.swift */,
+				002000000000000000000077 /* SleepSessionViews.swift */,
+				002000000000000000000078 /* SleepSettingsView.swift */,
+				002000000000000000000079 /* SleepModeView.swift */,
+				00200000000000000000007A /* SleepSharedComponents.swift */,
 			);
 			path = Sleep;
 			sourceTree = "<group>";
@@ -943,18 +1003,38 @@
 				00100000000000000000006B /* HealthKitSettingsView.swift in Sources */,
 				00100000000000000000006C /* NutritionDataIntegrityService.swift in Sources */,
 				00100000000000000000006D /* SleepModels.swift in Sources */,
-				00100000000000000000006E /* SleepServices.swift in Sources */,
 				00100000000000000000006F /* HealthKitSleepService.swift in Sources */,
-				001000000000000000000070 /* SleepViews.swift in Sources */,
 				001000000000000000000091 /* ReadinessModels.swift in Sources */,
 				0010000000000000000000E0 /* ReadinessScoringService.swift in Sources */,
 				001000000000000000000092 /* CoachIntelligenceService.swift in Sources */,
 				001000000000000000000093 /* CoachIntelligenceViews.swift in Sources */,
-				001000000000000000000094 /* CoachWorkoutAdjustmentModels.swift in Sources */,
 				001000000000000000000095 /* CoachWorkoutAdjustmentService.swift in Sources */,
 				001000000000000000000096 /* CoachWorkoutAdjustmentViews.swift in Sources */,
 				001000000000000000000097 /* PerformanceTracer.swift in Sources */,
 				00100000000000000000009F /* WarmStartSnapshotStore.swift in Sources */,
+				001000000000000000000073 /* SleepDashboardView.swift in Sources */,
+				001000000000000000000074 /* NapTimerViews.swift in Sources */,
+				001000000000000000000075 /* SleepSessionViews.swift in Sources */,
+				001000000000000000000076 /* SleepSettingsView.swift in Sources */,
+				001000000000000000000077 /* SleepModeView.swift in Sources */,
+				001000000000000000000078 /* SleepSharedComponents.swift in Sources */,
+				001000000000000000000079 /* StartupCoordination.swift in Sources */,
+				00100000000000000000007A /* PeaklineSplashView.swift in Sources */,
+				00100000000000000000007B /* AccountGateViews.swift in Sources */,
+				00100000000000000000007C /* CoachAdjustmentEnums.swift in Sources */,
+				00100000000000000000007D /* CoachAdjustmentValueTypes.swift in Sources */,
+				00100000000000000000007E /* CoachPreferenceModels.swift in Sources */,
+				00100000000000000000007F /* CoachHistoryModels.swift in Sources */,
+				001000000000000000000080 /* HydrationSupport.swift in Sources */,
+				001000000000000000000081 /* TrainingDecisionServices.swift in Sources */,
+				001000000000000000000082 /* HistoryDisplaySnapshotBuilder.swift in Sources */,
+				0010000000000000000000E1 /* SleepPersistence.swift in Sources */,
+				0010000000000000000000E2 /* NapTimerStateMachine.swift in Sources */,
+				0010000000000000000000E3 /* SleepScoringServices.swift in Sources */,
+				0010000000000000000000E4 /* SleepCorrelationServices.swift in Sources */,
+				0010000000000000000000E5 /* SleepCoachingServices.swift in Sources */,
+				0010000000000000000000E6 /* SleepAnalyticsStores.swift in Sources */,
+				0010000000000000000000E7 /* SleepNotificationScheduler.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

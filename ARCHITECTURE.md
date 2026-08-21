@@ -32,8 +32,13 @@ Shared views and theme tokens keep the UI consistent.
 GymTracker/App/
   GymTrackerApp.swift
   AppStartupView.swift
+  StartupCoordination.swift
+  PeaklineSplashView.swift
+  AccountGateViews.swift
   RootTabView.swift
 ```
+
+`AppStartupView` owns only the launch-phase routing view; its supporting machinery lives beside it: `StartupCoordination` holds the presentation state machine, startup coordinator, migration service, projections, snapshot builder, and readiness stores; `PeaklineSplashView` owns the splash and animated wordmark; `AccountGateViews` owns sign-in and restore prompts.
 
 `GymTrackerApp` creates the SwiftData model container, configures Firebase when `GoogleService-Info.plist` is present, and installs the app theme provider. A wordmark-only `LaunchScreen.storyboard` and matching SwiftUI `PeaklineSplashView` provide one continuous branded launch surface. The in-app wordmark uses a one-shot Core Animation letter sequence on semantic theme colors, leaving SwiftUI free to prepare data without per-frame view invalidation.
 
@@ -58,7 +63,7 @@ GymTracker/Models/
 ```
 
 - Workout core: `WorkoutSession`, `ExerciseLog`, `SetLog`, `Exercise`, `TrainingSplit`, `UserProfile`, `BodyweightLog`, shared enums. `TrainingSplit.activeRotationIndex` is optional for migration safety; `isActive` controls programme membership.
-- Coach and readiness: recommendation models, coach workout adjustment models, readiness models.
+- Coach and readiness: recommendation models, coach workout adjustment models (`CoachAdjustmentEnums`, `CoachAdjustmentValueTypes`, `CoachPreferenceModels`, `CoachHistoryModels`), readiness models.
 - Nutrition: food log/item models, import drafts, OCR/parse/comparison/insight models. `NutritionGoal.dailyFibreTarget` is optional for legacy preference and backup compatibility.
 - Sleep and recovery: sleep, nap, recovery, and coaching-support models.
 - HealthKit bridge: local models used to track sync state and review requirements.
@@ -77,11 +82,11 @@ GymTracker/Services/
 ```
 
 - Workout planning and logging: `WorkoutModePlanner`, `WorkoutTemplateBuilder`, `WorkoutTemplateStore`, `WorkoutReuseBuilder`, `WorkoutSessionDateService`, `WorkoutSessionReopenService`, `SkippedExerciseReasonService`, `RestTimerManager`, `PlateCalculator`.
-- Coaching and analytics: `TrainingRotationService`, `CoachRecommendationEngine`, `CoachIntelligenceService`, `ReadinessScoringService`, `ReadinessRefreshClock`, `CoachWorkoutAdjustmentService`, `WeeklyReviewBuilder`, `TargetSuggestionService`, `TrainingAnalyticsService`, `SessionSummaryBuilder`. `TrainingRotationService` owns ordering, index normalisation, legacy bootstrap, and the shared successor rule.
+- Coaching and analytics: `TrainingRotationService`, `TrainingDecisionService`, and `TrainingCallSnapshotBuilder` live in `TrainingDecisionServices.swift`; `CoachRecommendationEngine`, `CoachIntelligenceService`, `ReadinessScoringService`, `ReadinessRefreshClock`, `CoachWorkoutAdjustmentService`, `WeeklyReviewBuilder`, `TargetSuggestionService`, `TrainingAnalyticsService`, `SessionSummaryBuilder`. `TrainingRotationService` owns ordering, index normalisation, legacy bootstrap, and the shared successor rule.
 - History, exports, and backup: value-based History display snapshot building, `LocalBackupExportService`, `WorkoutCSVExporter`, `FullAppBackupService`, `BackupCoordinator`, `FirebaseFullAppBackupStore`, `FirebaseAccountService`, export models.
 - Exercise helpers: `ExerciseIconMapper`, `ExerciseSubstitutionService`, note templates.
 - Nutrition: exact-day SwiftData queries, calculator, barcode lookup, Open Food Facts, OCR, parser, comparison, insights, and data-integrity services. Historical days are browse-only and use `Calendar` day intervals for daylight-saving safety.
-- Sleep and HealthKit: sleep scoring/recovery services plus HealthKit bridge services.
+- Sleep and HealthKit: sleep persistence, nap-timer state machine, scoring, correlation, coaching, analytics stores, and notifications live in `Services/Sleep/` (`SleepPersistence`, `NapTimerStateMachine`, `SleepScoringServices`, `SleepCorrelationServices`, `SleepCoachingServices`, `SleepAnalyticsStores`, `SleepNotificationScheduler`); `HealthKit/` holds the bridge services. Hydration summary/status logic lives in `HydrationSupport.swift`.
 - Seed data: `SeedDataService` owns default exercise, split, and UI-test fixture setup.
 
 Service guardrails:
@@ -130,9 +135,9 @@ GymTracker/Views/
 - `Splits/`: editable active-rotation programme card, stable ID detail routes, cached target calculations, exercise rows, status badges, and split editing.
 - `History/`: minimal workout-day calendar markers, filters, selected-day summary, workout detail, and editing.
 - `Progress/`: exercise progress, PR timeline, charts, and summaries.
-- `Coach/`: coach dashboard and weekly review.
+- `Coach/`: coach dashboard, weekly review, and coach intelligence cards (`CoachIntelligenceViews`).
 - `Nutrition/`: exact-day dashboard with read-only historical browsing, add-food flow for today, barcode/OCR import, comparison, insights, and review UI.
-- `Sleep/`: sleep, naps, recovery, and related coaching surfaces.
+- `Sleep/`: sleep, naps, recovery, and related coaching surfaces, split per screen (`SleepDashboardView`, `NapTimerViews`, `SleepSessionViews`, `SleepSettingsView`, `SleepModeView`) with cross-screen components in `SleepSharedComponents`.
 - `Settings/`: compact Profile, Workout Tools, Appearance, library, HealthKit, backup/export, progress, and coach. The Plate Calculator is exposed as a metric workout tool and its live-set prefill relationship is explained in both entry points.
 - `Shared/`: theme, motion, cards, buttons, metrics, icons, rows, chips, headers, and reusable controls.
 
