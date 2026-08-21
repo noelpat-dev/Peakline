@@ -108,9 +108,28 @@ final class CoachRouteSnapshotStore {
     }
 
     func update(intelligence: CoachIntelligenceSnapshot, signature: String, source: String) {
-        guard let snapshot else { return }
         update(
-            snapshot: snapshot.replacingIntelligence(intelligence),
+            intelligence: intelligence,
+            fallback: nil,
+            signature: signature,
+            source: source
+        )
+    }
+
+    /// Refreshes the stored route snapshot's intelligence. When the store was
+    /// invalidated (its render snapshot is nil), `fallback` supplies the
+    /// structural pieces — weekly review, derived metrics, sleep analytics —
+    /// so the route keeps a complete, freshly-intelligent seed instead of
+    /// leaving destinations to fall back to a launch-time value.
+    func update(
+        intelligence: CoachIntelligenceSnapshot,
+        fallback: CoachRouteRenderSnapshot?,
+        signature: String,
+        source: String
+    ) {
+        guard let base = snapshot ?? fallback else { return }
+        update(
+            snapshot: base.replacingIntelligence(intelligence),
             signature: signature,
             source: source
         )

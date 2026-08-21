@@ -49,6 +49,7 @@ struct RootTabView: View {
     @State private var fullAppBackupTask: Task<Void, Never>?
     @State private var lastPreviewWarmSourceSignature: String?
     @State private var lastOverallReadinessSourceSignature: String?
+    @State private var warmSleepRefreshTask: Task<Void, Never>?
     // Keep this coordination flag outside SwiftUI's observation graph. A tab
     // selection must cancel/suppress warm work without invalidating the root
     // view and reevaluating every root query signature on the measured path.
@@ -82,7 +83,10 @@ struct RootTabView: View {
         var descriptor = FetchDescriptor<SleepSession>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
-        descriptor.fetchLimit = 60
+        // Match SleepDashboardView's analytics signature window so a root
+        // warm refresh produces the exact signature the dashboard compares
+        // against on push.
+        descriptor.fetchLimit = 90
         return descriptor
     }
 
@@ -117,7 +121,8 @@ struct RootTabView: View {
         var descriptor = FetchDescriptor<NapSession>(
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
         )
-        descriptor.fetchLimit = 60
+        // Matches the sleep dashboard's nap window for warm-signature parity.
+        descriptor.fetchLimit = 90
         return descriptor
     }
 
@@ -185,6 +190,7 @@ struct RootTabView: View {
             }
             refreshCachedSleepNotificationInputs(reason: "user_defaults_changed")
             refreshOverallReadinessIfNeeded(reason: "user_defaults_changed")
+            scheduleWarmSleepAnalyticsRefresh(reason: "user_defaults_changed")
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard startupRevealComplete else { return }
@@ -201,6 +207,7 @@ struct RootTabView: View {
             case .active:
                 PerformanceTracer.mark(.appLifecycle, "active refresh notification input cache")
                 refreshCachedSleepNotificationInputs(reason: "scene_active")
+                scheduleWarmSleepAnalyticsRefresh(reason: "scene_active")
             @unknown default:
                 PerformanceTracer.mark(.appLifecycle, "unknown scenePhase no-op")
             }
@@ -224,6 +231,7 @@ struct RootTabView: View {
             )
             schedulePreviewWarmRefresh(for: newSignature)
             refreshOverallReadinessIfNeeded(reason: "workout_source_changed")
+            scheduleWarmSleepAnalyticsRefresh(reason: "workout_source_changed")
         }
         .onChange(of: coachModifierSourceSignature) { _, _ in
             guard startupRevealComplete else { return }
@@ -236,19 +244,23 @@ struct RootTabView: View {
             // route refreshes its own bounded live queries when next opened.
             CoachRouteSnapshotStore.shared.invalidate(source: "root_modifier_change")
             refreshOverallReadinessIfNeeded(reason: "coach_inputs_changed")
+            scheduleWarmSleepAnalyticsRefresh(reason: "coach_inputs_changed")
         }
         .onChange(of: workoutWarmStartInvalidation.revision) { _, _ in
             guard startupRevealComplete else { return }
             refreshOverallReadinessIfNeeded(reason: "workout_revision_changed")
+            scheduleWarmSleepAnalyticsRefresh(reason: "workout_revision_changed")
         }
         .onChange(of: readinessRefreshClock.token) { _, _ in
             guard startupRevealComplete else { return }
             refreshOverallReadinessIfNeeded(reason: "readiness_boundary_changed")
+            scheduleWarmSleepAnalyticsRefresh(reason: "readiness_boundary_changed")
         }
         .onChange(of: startupRevealComplete) { _, isComplete in
             guard isComplete else { return }
             startDeferredServicesIfNeeded()
             refreshOverallReadinessIfNeeded(reason: "startup_reveal_complete")
+            scheduleWarmSleepAnalyticsRefresh(reason: "startup_reveal_complete")
             presentSleepDeepLinkIfReady(sleepDeepLinkRouter.pendingRequest)
         }
         .onAppear {
@@ -481,10 +493,117 @@ struct RootTabView: View {
         }
     }
 
+    /// Keeps the sleep analytics/readiness warm caches and the Progress
+    /// summary seed aligned with live inputs while the app runs. Route
+    /// destinations read these pre-computed values on push, so their first
+    /// frame is fully populated instead of stale or loading. Debounced and
+    /// gated so it never contends with a tab transition or completion flow.
+    private func scheduleWarmSleepAnalyticsRefresh(reason: String) {
+        guard startupRevealComplete else {
+            PerformanceTracer.mark(.appLifecycle, "warm_sleep_refresh deferred_until_reveal reason=\(reason)")
+            return
+        }
+        guard !isWorkoutCompletionPresentationActive else { return }
+        guard !rootTabTransitionGate.isActive else {
+            rootTabTransitionGate.warmSleepRefreshPending = true
+            PerformanceTracer.mark(.appLifecycle, "warm_sleep_refresh deferred_for_tab_transition reason=\(reason)")
+            return
+        }
+        warmSleepRefreshTask?.cancel()
+        let requestedRevision = workoutWarmStartInvalidation.revision
+        warmSleepRefreshTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled,
+                  startupRevealComplete,
+                  !isWorkoutCompletionPresentationActive,
+                  requestedRevision == workoutWarmStartInvalidation.revision else { return }
+
+            // A tab transition can begin during the debounce window. Yield the
+            // turn to it and replay after the native switch settles instead of
+            // contending with its measured frame.
+            guard !rootTabTransitionGate.isActive else {
+                rootTabTransitionGate.warmSleepRefreshPending = true
+                return
+            }
+
+            refreshWarmSleepAnalytics(reason: reason)
+
+            // Progress snapshots traverse workout relationships. Give recent
+            // interaction extra quiet time before that main-actor pass.
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled,
+                  !rootTabTransitionGate.isActive,
+                  !isWorkoutCompletionPresentationActive else {
+                rootTabTransitionGate.warmSleepRefreshPending = true
+                return
+            }
+            await refreshWarmProgressSummaries(reason: reason)
+        }
+    }
+
+    private func refreshWarmSleepAnalytics(reason: String) {
+        // The nap order matches SleepDashboardView's own query (startDate
+        // descending) so the cached signature equals what the dashboard
+        // recomputes on push and the warm snapshot is accepted without a
+        // visible correction pass.
+        let orderedNaps = naps.sorted { $0.startDate > $1.startDate }
+        PerformanceTracer.mark(.appLifecycle, "warm_sleep_refresh begin reason=\(reason)")
+        _ = SleepAnalyticsSnapshotStore.shared.snapshot(
+            sessions: sleepSessions,
+            naps: orderedNaps,
+            workouts: workouts,
+            settings: sleepSettingsStore.load(),
+            workoutRevision: workoutWarmStartInvalidation.revision
+        )
+        _ = SleepWorkoutReadinessSnapshotStore.shared.snapshot(
+            sessions: sleepSessions,
+            naps: Array(orderedNaps.prefix(30)),
+            workouts: Array(workouts.prefix(12)),
+            settings: sleepSettingsStore.load(),
+            sessionLimit: 45,
+            workoutLimit: 12,
+            workoutRevision: workoutWarmStartInvalidation.revision
+        )
+        PerformanceTracer.mark(.appLifecycle, "warm_sleep_refresh end reason=\(reason)")
+    }
+
+    private func refreshWarmProgressSummaries(reason: String) async {
+        let recentSessions = Array(workouts.prefix(40))
+        let activeSplitNames = TrainingRotationService()
+            .orderedActiveSplits(previewSplits)
+            .map(\.name)
+        let snapshots: [WorkoutAnalyticsSession]
+        do {
+            snapshots = try WorkoutAnalyticsSnapshotBuilder.snapshots(from: recentSessions, in: modelContext)
+        } catch {
+            PerformanceTracer.mark(.appLifecycle, "warm_progress_refresh failed reason=\(reason) error=\(error.localizedDescription)")
+            return
+        }
+        let result = await Task.detached(priority: .utility) {
+            let analytics = TrainingAnalyticsService()
+            let records = analytics.prTimeline(from: snapshots)
+            return (
+                analytics.weeklySummary(from: snapshots, prRecords: records),
+                analytics.splitConsistency(from: snapshots, activeSplitNames: activeSplitNames)
+            )
+        }.value
+        guard !Task.isCancelled else { return }
+        ProgressWarmStartStore.shared.update(
+            weeklySummary: result.0,
+            splitConsistency: result.1
+        )
+        PerformanceTracer.mark(.appLifecycle, "warm_progress_refresh end reason=\(reason)")
+    }
+
     private func rootTabSelectionStarted() {
         rootTabTransitionGate.isActive = true
         rootTabTransitionGate.previewWarmRefreshTask?.cancel()
         rootTabTransitionGate.previewWarmRefreshTask = nil
+        if warmSleepRefreshTask != nil {
+            warmSleepRefreshTask?.cancel()
+            warmSleepRefreshTask = nil
+            rootTabTransitionGate.warmSleepRefreshPending = true
+        }
         PerformanceTracer.mark(.workoutPreviewWarmCache, "root_refresh_cancelled_for_tab_transition")
     }
 
@@ -493,6 +612,10 @@ struct RootTabView: View {
         if rootTabTransitionGate.overallReadinessRefreshPending {
             rootTabTransitionGate.overallReadinessRefreshPending = false
             refreshOverallReadinessIfNeeded(reason: "tab_transition_settled")
+        }
+        if rootTabTransitionGate.warmSleepRefreshPending {
+            rootTabTransitionGate.warmSleepRefreshPending = false
+            scheduleWarmSleepAnalyticsRefresh(reason: "tab_transition_settled")
         }
         schedulePreviewWarmRefresh(for: previewWarmSourceSignature)
     }
@@ -508,8 +631,12 @@ struct RootTabView: View {
             } else {
                 NavigationStack {
                     SleepDashboardView(
-                        initialSnapshot: startupSnapshot.sleepAnalyticsSnapshot,
-                        initialReadinessScore: startupSnapshot.coachSnapshot.readiness
+                        initialSnapshot: WarmRouteSnapshots.sleepAnalytics(
+                            fallback: startupSnapshot.sleepAnalyticsSnapshot
+                        ),
+                        initialReadinessScore: WarmRouteSnapshots.overallReadiness(
+                            fallback: startupSnapshot.coachSnapshot.readiness
+                        )
                     )
                 }
             }
@@ -518,8 +645,12 @@ struct RootTabView: View {
         case .sleepDashboard, .recoverySummary:
             NavigationStack {
                 SleepDashboardView(
-                    initialSnapshot: startupSnapshot.sleepAnalyticsSnapshot,
-                    initialReadinessScore: startupSnapshot.coachSnapshot.readiness
+                    initialSnapshot: WarmRouteSnapshots.sleepAnalytics(
+                        fallback: startupSnapshot.sleepAnalyticsSnapshot
+                    ),
+                    initialReadinessScore: WarmRouteSnapshots.overallReadiness(
+                        fallback: startupSnapshot.coachSnapshot.readiness
+                    )
                 )
             }
         }
@@ -714,6 +845,7 @@ private final class RootTabTransitionGate {
     var isActive = false
     var previewWarmRefreshTask: Task<Void, Never>?
     var overallReadinessRefreshPending = false
+    var warmSleepRefreshPending = false
 }
 
 private enum SleepNotificationRefreshSource: String, Sendable {

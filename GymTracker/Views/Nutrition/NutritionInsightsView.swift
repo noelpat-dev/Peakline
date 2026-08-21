@@ -200,11 +200,11 @@ struct NutritionInsightsDashboardView: View {
         .onAppear {
             goal = goalService.loadGoal()
             healthPreferences = healthPreferenceStore.load()
+            // Build the first snapshot on the appear turn so the pushed
+            // frame is fully populated instead of a "Preparing" placeholder.
             let shouldForceRefresh = !didRequestInitialSnapshot
             didRequestInitialSnapshot = true
-            DispatchQueue.main.async {
-                refreshInsightsSnapshot(force: shouldForceRefresh)
-            }
+            refreshInsightsSnapshot(force: shouldForceRefresh)
             refreshAppleHealthContext()
         }
         .onDisappear {

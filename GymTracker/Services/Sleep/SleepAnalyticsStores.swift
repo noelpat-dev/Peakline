@@ -232,6 +232,15 @@ final class SleepAnalyticsSnapshotStore {
 
     private init() {}
 
+    /// The most recent analytics snapshot this store computed, together with
+    /// the input signature it was built from. Route destinations read this
+    /// before navigating so a warm first frame matches live inputs instead of
+    /// serving a launch-time value that has since gone stale.
+    var cachedAnalytics: (snapshot: SleepAnalyticsSnapshot, signature: SleepAnalyticsInputSignature)? {
+        guard let cachedSnapshot, let cachedSignature else { return nil }
+        return (cachedSnapshot, cachedSignature)
+    }
+
     func snapshot(
         sessions: [SleepSession],
         naps: [NapSession] = [],

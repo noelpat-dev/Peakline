@@ -38,6 +38,12 @@ struct ProgressContentView: View {
         _observedExercises = Query(Self.exercisesDescriptor)
         _observedCompletedSessions = Query(Self.completedSessionsDescriptor)
         _observedActiveSplits = Query(Self.activeSplitsDescriptor)
+        // Startup and the root's deferred refresh keep these summaries warm so
+        // the first frame shows real weekly data instead of loading cards.
+        let warmWeeklySummary = ProgressWarmStartStore.shared.weeklySummary
+        let warmSplitConsistency = ProgressWarmStartStore.shared.splitConsistency
+        _weeklySummary = State(initialValue: warmWeeklySummary)
+        _splitConsistency = State(initialValue: warmSplitConsistency)
     }
 
     private static var exercisesDescriptor: FetchDescriptor<Exercise> {
@@ -224,11 +230,13 @@ struct ProgressContentView: View {
     }
 
     private func scheduleProgressRefresh(force: Bool = false) {
+        // The exercise copy is a scalar-only array swap; run it on the appear
+        // turn so the charts and exercise list never render loading cards.
+        refreshExercises(force: force)
         progressRefreshTask?.cancel()
         progressRefreshTask = Task { @MainActor in
             await Task.yield()
             guard !Task.isCancelled, isProgressVisible else { return }
-            refreshExercises(force: force)
             refreshSummary(force: force)
         }
     }
@@ -494,6 +502,10 @@ struct ProgressContentView: View {
                 splitConsistency = result.1
                 lastSummarySignature = signature
             }
+            ProgressWarmStartStore.shared.update(
+                weeklySummary: result.0,
+                splitConsistency: result.1
+            )
         }
     }
 

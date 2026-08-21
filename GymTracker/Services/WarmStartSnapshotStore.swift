@@ -86,6 +86,29 @@ final class WorkoutDashboardWarmStartStore {
     }
 }
 
+/// Value-backed Progress route seed. Startup and the root's deferred refresh
+/// keep these summaries current so the Progress tab renders real weekly data
+/// on its first frame instead of loading placeholders.
+@MainActor
+final class ProgressWarmStartStore {
+    static let shared = ProgressWarmStartStore()
+
+    private(set) var weeklySummary: WeeklyTrainingSummary?
+    private(set) var splitConsistency: SplitConsistencySummary?
+
+    private init() {}
+
+    func update(weeklySummary: WeeklyTrainingSummary, splitConsistency: SplitConsistencySummary) {
+        self.weeklySummary = weeklySummary
+        self.splitConsistency = splitConsistency
+    }
+
+    func resetForTesting() {
+        weeklySummary = nil
+        splitConsistency = nil
+    }
+}
+
 struct SavedFoodSnapshot: Identifiable, Hashable, Sendable {
     let id: UUID
     let barcode: String?

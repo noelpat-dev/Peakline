@@ -726,8 +726,12 @@ struct TodayView: View {
                 NutritionDashboardView()
             case .sleep:
                 SleepDashboardView(
-                    initialSnapshot: initialStartupSnapshot?.sleepAnalyticsSnapshot,
-                    initialReadinessScore: initialStartupSnapshot?.coachSnapshot.readiness
+                    initialSnapshot: WarmRouteSnapshots.sleepAnalytics(
+                        fallback: initialStartupSnapshot?.sleepAnalyticsSnapshot
+                    ),
+                    initialReadinessScore: WarmRouteSnapshots.overallReadiness(
+                        fallback: initialStartupSnapshot?.coachSnapshot.readiness
+                    )
                 )
             case .hydration:
                 HydrationView()
@@ -962,7 +966,16 @@ struct TodayView: View {
             )
             return
         }
-        CoachRouteSnapshotStore.shared.update(intelligence: coachSnapshot, signature: signature, source: "today")
+        // A root modifier change can invalidate the route store between
+        // refreshes. Rebuilding from this fresh intelligence (with startup
+        // pieces as structural fallback) keeps the Readiness quick action's
+        // first frame populated instead of reverting to a launch-time value.
+        CoachRouteSnapshotStore.shared.update(
+            intelligence: coachSnapshot,
+            fallback: initialStartupSnapshot?.coachRouteSnapshot,
+            signature: signature,
+            source: "today"
+        )
         PerformanceTracer.mark(
             .coachSnapshot,
             "route_snapshot_store after_update source=today scenePhase=\(String(describing: scenePhase)) main=\(Thread.isMainThread)"
@@ -1421,7 +1434,7 @@ struct HydrationView: View {
     @State private var sleepSettings = SleepSettingsStore().load()
     @State private var hydrationTargetML = HydrationSettingsStore().dailyTargetML()
     @State private var nutritionGoal = NutritionGoalService().loadGoal()
-    @State private var readinessScore = CoachIntelligenceService.emptySnapshot().readiness
+    @State private var readinessScore = WarmRouteSnapshots.overallReadiness(fallback: nil)
     @State private var lastReadinessSignature: String?
     @State private var activeHydrationSwipeID: UUID?
 

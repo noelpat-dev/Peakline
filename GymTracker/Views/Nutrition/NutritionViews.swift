@@ -44,7 +44,6 @@ struct NutritionDashboardView: View {
     @State private var selectedRoute: NutritionRoute?
     @State private var activeFoodLogSwipeID: UUID?
     @State private var didRequestInitialRefresh = false
-    @State private var deferredDashboardRefreshWorkItem: DispatchWorkItem?
     @State private var isPreparingInitialSnapshot = true
 
     init() {
@@ -467,17 +466,11 @@ struct NutritionDashboardView: View {
             healthPreferences = HealthKitPreferenceStore().load()
             hydrationTargetML = hydrationSettingsStore.dailyTargetML()
             nutritionGoal = nutritionGoalStore.loadGoal()
+            // Build the first snapshot on the appear turn so the pushed
+            // frame is fully populated instead of a "Preparing" placeholder.
             let shouldForceRefresh = !didRequestInitialRefresh
             didRequestInitialRefresh = true
-            deferredDashboardRefreshWorkItem?.cancel()
-            let workItem = DispatchWorkItem {
-                refreshDashboardSnapshot(force: shouldForceRefresh)
-            }
-            deferredDashboardRefreshWorkItem = workItem
-            DispatchQueue.main.async(execute: workItem)
-        }
-        .onDisappear {
-            deferredDashboardRefreshWorkItem?.cancel()
+            refreshDashboardSnapshot(force: shouldForceRefresh)
         }
         .onChange(of: dashboardSignature) { _, _ in
             refreshDashboardSnapshot()

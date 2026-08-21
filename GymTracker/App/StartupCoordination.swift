@@ -187,10 +187,15 @@ final class OverallReadinessSnapshotStore: ObservableObject {
     static let shared = OverallReadinessSnapshotStore()
 
     @Published private(set) var snapshot = OverallReadinessPresentationSnapshot.empty
+    /// The newest readiness score this store published. Kept outside the
+    /// Equatable presentation snapshot because route destinations need the
+    /// full score to seed a first frame before their own refresh runs.
+    private(set) var latestReadiness: ReadinessScore?
 
     private init() {}
 
     func update(readiness: ReadinessScore, sourceSignature: String) {
+        latestReadiness = readiness
         guard snapshot.sourceSignature != sourceSignature
                 || snapshot.isProvisional != readiness.isProvisional else { return }
 
@@ -200,6 +205,25 @@ final class OverallReadinessSnapshotStore: ObservableObject {
             revision: snapshot.revision &+ 1,
             generatedAt: readiness.generatedAt
         )
+    }
+}
+
+/// Resolves the freshest pre-computed route seed for destinations that would
+/// otherwise render a launch-time value. Warm stores are kept current by the
+/// root while the app runs, so a navigation push starts from data that
+/// already matches live inputs.
+@MainActor
+enum WarmRouteSnapshots {
+    static func sleepAnalytics(
+        fallback: SleepAnalyticsSnapshot?
+    ) -> SleepAnalyticsSnapshot? {
+        SleepAnalyticsSnapshotStore.shared.cachedAnalytics?.snapshot ?? fallback
+    }
+
+    static func overallReadiness(fallback: ReadinessScore?) -> ReadinessScore {
+        OverallReadinessSnapshotStore.shared.latestReadiness
+            ?? fallback
+            ?? CoachIntelligenceService.emptySnapshot().readiness
     }
 }
 
@@ -537,6 +561,10 @@ final class AppStartupCoordinator: ObservableObject {
                 readiness: snapshot.coachSnapshot.readiness,
                 sourceSignature: snapshot.sourceSignature
             )
+            ProgressWarmStartStore.shared.update(
+                weeklySummary: derived.progressWeeklySummary,
+                splitConsistency: derived.progressSplitConsistency
+            )
 
             phase = .ready(snapshot)
             PerformanceTracer.mark(
@@ -829,6 +857,8 @@ struct StartupDerivedValues: Sendable {
     let trainingCall: TrainingCallSnapshot
     let coachDerivedMetrics: CoachDerivedMetrics
     let weeklyReview: WeeklyReview
+    let progressWeeklySummary: WeeklyTrainingSummary
+    let progressSplitConsistency: SplitConsistencySummary
 }
 
 @MainActor
@@ -877,13 +907,27 @@ enum StartupSnapshotBuilder {
                 )
             )
         }
+        let progressValuesTask = Task.detached(priority: .userInitiated) {
+            let analytics = TrainingAnalyticsService()
+            let records = analytics.prTimeline(from: workoutSnapshots)
+            return (
+                analytics.weeklySummary(from: workoutSnapshots, prRecords: records),
+                analytics.splitConsistency(
+                    from: workoutSnapshots,
+                    activeSplitNames: splitSnapshots.map(\.name)
+                )
+            )
+        }
         let trainingCall = await trainingCallTask.value
         let coachRouteValues = await coachRouteValuesTask.value
+        let progressValues = await progressValuesTask.value
 
         return StartupDerivedValues(
             trainingCall: trainingCall,
             coachDerivedMetrics: coachRouteValues.0,
-            weeklyReview: coachRouteValues.1
+            weeklyReview: coachRouteValues.1,
+            progressWeeklySummary: progressValues.0,
+            progressSplitConsistency: progressValues.1
         )
     }
 
