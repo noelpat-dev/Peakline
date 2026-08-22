@@ -770,7 +770,12 @@ struct TodayView: View {
         Group {
             switch route {
             case .workout:
-                StartWorkoutContentView { route in
+                StartWorkoutContentView(
+                    initialReadinessSnapshot: initialStartupSnapshot?.workoutSleepReadinessSnapshot,
+                    initialReadinessSignature: initialStartupSnapshot?.sleepReadinessInputSignature,
+                    initialFirstFrameSnapshot: initialStartupSnapshot?.workoutFirstFrameSnapshot,
+                    initialOverallReadinessIsProvisional: currentCoachSnapshot.readiness.isProvisional
+                ) { route in
                     guard startWorkoutRoute != route else { return }
                     NavigationInteraction.perform(
                         key: "today.workout.\(route.analyticsName)",

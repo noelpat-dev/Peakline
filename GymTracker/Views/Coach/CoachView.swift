@@ -731,35 +731,39 @@ struct CoachContentView: View {
         ) {
             FitnessInformationalActionCard(style: .hero) {
                 VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .top, spacing: 14) {
-                        ExerciseIconTile(
-                            iconKey: ExerciseIconMapper.splitIconKey(for: dailyDecision.recommendedSplitName ?? ""),
-                            title: nil,
-                            size: 50,
-                            style: .compact
-                        )
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .center, spacing: 12) {
+                            ExerciseIconTile(
+                                iconKey: ExerciseIconMapper.splitIconKey(for: dailyDecision.recommendedSplitName ?? ""),
+                                title: nil,
+                                size: 50,
+                                style: .compact
+                            )
 
-                        VStack(alignment: .leading, spacing: 6) {
                             Text("Today's Call")
                                 .font(AppTypography.eyebrow)
                                 .foregroundStyle(appTheme.colors.textTertiary)
                                 .textCase(.uppercase)
 
-                            Text(dailyDecision.headline)
-                                .font(AppTypography.heroTitle)
-                                .foregroundStyle(appTheme.colors.textPrimary)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .accessibilityIdentifier("coach-todays-call")
+                            Spacer(minLength: 8)
+
+                            VStack(alignment: .trailing, spacing: 5) {
+                                CoachBadgeView(state: dailyDecision.badgeState)
+                                if dailyDecision.confidenceLabel.caseInsensitiveCompare(
+                                    dailyDecision.badgeState.label
+                                ) != .orderedSame {
+                                    Text(dailyDecision.confidenceLabel)
+                                        .font(AppTypography.metadataEmphasis)
+                                        .foregroundStyle(appTheme.colors.textTertiary)
+                                }
+                            }
                         }
 
-                        Spacer(minLength: 10)
-
-                        VStack(alignment: .trailing, spacing: 8) {
-                            CoachBadgeView(state: dailyDecision.badgeState)
-                            Text(dailyDecision.confidenceLabel)
-                                .font(AppTypography.metadataEmphasis)
-                                .foregroundStyle(appTheme.colors.textTertiary)
-                        }
+                        Text(dailyDecision.headline)
+                            .font(AppTypography.heroTitle)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("coach-todays-call")
                     }
 
                     Text(dailyDecision.shortReason)
@@ -802,13 +806,14 @@ struct CoachContentView: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("coach-hero-card")
 
-            if previewRoute == nil, supportingDashboardMounted {
+            if previewRoute == nil {
                 DashboardSection(title: "Why this?") {
-                TrainingCallAuditCard(snapshot: dailyDecision.trainingCall)
+                    TrainingCallAuditCard(snapshot: dailyDecision.trainingCall)
                 }
                 .accessibilityIdentifier("coach-why-this-section")
-                .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 0), index: 0)
+            }
 
+            if previewRoute == nil, supportingDashboardMounted {
             DashboardSection(title: "Main Target") {
                 if let primaryTarget = dailyDecision.primaryTarget {
                     FitnessCard {
@@ -2198,11 +2203,11 @@ private extension CoachDailyDecision {
         return CoachDailyDecision(
             recommendedSplitName: recommendedSplitName,
             recommendedMode: .full,
-            headline: recommendedSplitName.map { "\($0) — Readiness pending" } ?? "Readiness is still settling",
+            headline: recommendedSplitName ?? "Readiness pending",
             targetLine: nil,
             shortReason: safeTrainingCall.reason,
             confidenceLabel: "Provisional",
-            badgeState: .baseline,
+            badgeState: .provisional,
             canOpenPreview: recommendedSplitName != nil,
             primaryActionTitle: "Open Full Preview",
             nextStep: recommendedSplitName.map {

@@ -1,6 +1,7 @@
 import SwiftUI
 
 enum CoachBadgeState: String, CaseIterable, Sendable {
+    case provisional
     case baseline
     case addReps
     case repeatTarget
@@ -36,6 +37,8 @@ enum CoachBadgeState: String, CaseIterable, Sendable {
 
     var label: String {
         switch self {
+        case .provisional:
+            return "Provisional"
         case .baseline:
             return "Baseline"
         case .addReps:
@@ -63,6 +66,8 @@ enum CoachBadgeState: String, CaseIterable, Sendable {
 
     var systemImage: String {
         switch self {
+        case .provisional:
+            return "hourglass"
         case .baseline:
             return "scope"
         case .addReps:
@@ -119,7 +124,7 @@ struct CoachBadgeView: View {
 
     private var badgeColor: Color {
         switch state {
-        case .baseline, .repeatTarget:
+        case .provisional, .baseline, .repeatTarget:
             return .secondary
         case .addReps, .increaseLoad, .ready, .pr:
             return appTheme.successColor
@@ -130,7 +135,7 @@ struct CoachBadgeView: View {
 
     private var foregroundColor: Color {
         switch state {
-        case .baseline, .repeatTarget:
+        case .provisional, .baseline, .repeatTarget:
             return .secondary
         case .addReps, .increaseLoad, .ready, .pr:
             return appTheme.successColor

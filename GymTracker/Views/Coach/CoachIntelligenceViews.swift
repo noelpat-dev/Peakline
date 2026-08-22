@@ -11,24 +11,23 @@ struct CoachBriefCard: View {
 
     var body: some View {
         FitnessInformationalActionCard {
-            HStack(alignment: .top, spacing: 14) {
+            HStack(alignment: .center, spacing: 14) {
                 readinessScoreBlock
 
                 Spacer(minLength: 10)
 
-                VStack(alignment: .trailing, spacing: 8) {
+                VStack(alignment: .trailing, spacing: 5) {
                     readinessBadge
-                    Text(readiness.isProvisional ? "Provisional" : readiness.confidence.displayName)
-                        .font(AppTypography.chip)
-                        .foregroundStyle(appTheme.colors.textTertiary)
-                        .accessibilityIdentifier("readiness-provisional-status")
-
                     if readiness.isProvisional {
                         Text(readiness.coverageSummary)
                             .font(.caption2.weight(.medium))
                             .foregroundStyle(appTheme.colors.textTertiary)
                             .multilineTextAlignment(.trailing)
                             .accessibilityIdentifier("readiness-signal-coverage")
+                    } else {
+                        Text(readiness.confidence.displayName)
+                            .font(AppTypography.chip)
+                            .foregroundStyle(appTheme.colors.textTertiary)
                     }
                 }
             }
@@ -96,7 +95,8 @@ struct CoachBriefCard: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(scoreColor.opacity(0.14), in: Capsule())
-            .accessibilityLabel(readiness.isProvisional ? "Provisional readiness" : "Readiness category \(readiness.category.displayName)")
+            .accessibilityLabel(readiness.isProvisional ? "Provisional" : "Readiness category \(readiness.category.displayName)")
+            .accessibilityIdentifier("readiness-provisional-status")
     }
 
     private var viewBriefButton: some View {

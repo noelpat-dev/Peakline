@@ -758,6 +758,7 @@ private struct HistoryScrollRowButtonStyle: ButtonStyle {
 private struct HistoryOverviewCard: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let snapshot: HistoryOverviewSnapshot
     @Binding var revealedAttendanceGeneration: String?
@@ -823,27 +824,49 @@ private struct HistoryOverviewCard: View {
                 .accessibilityLabel("Monthly gym attendance")
                 .accessibilityValue(attendanceAccessibilityValue)
 
-                AttendanceRingView(
-                    value: snapshot.progress,
-                    label: "Attendance",
-                    caption: snapshot.monthlyTarget.map { "of \($0)" } ?? "Set goal",
-                    generation: attendanceGeneration,
-                    revealedGeneration: $revealedAttendanceGeneration
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
+                Group {
+                    if dynamicTypeSize.isAccessibilitySize {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(alignment: .center, spacing: 18) {
+                                attendanceRing
+                                HistoryOverviewSupportingMetric(
+                                    label: "This month",
+                                    value: snapshot.currentDurationText
+                                )
+                            }
 
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .bottom, spacing: 14) {
-                        HistoryOverviewSupportingMetric(label: "This month", value: snapshot.currentDurationText)
-                        HistoryOverviewSupportingMetric(label: "Previous visits", value: "\(snapshot.previousVisitCount)")
-                        HistoryOverviewSupportingMetric(label: "Previous duration", value: snapshot.previousDurationText)
-                    }
+                            HStack(alignment: .bottom, spacing: 14) {
+                                HistoryOverviewSupportingMetric(
+                                    label: "Previous visits",
+                                    value: "\(snapshot.previousVisitCount)"
+                                )
+                                HistoryOverviewSupportingMetric(
+                                    label: "Previous duration",
+                                    value: snapshot.previousDurationText
+                                )
+                            }
+                        }
+                    } else {
+                        HStack(alignment: .center, spacing: 18) {
+                            attendanceRing
 
-                    VStack(alignment: .leading, spacing: 12) {
-                        HistoryOverviewSupportingMetric(label: "This month", value: snapshot.currentDurationText)
-                        HStack(alignment: .bottom, spacing: 14) {
-                            HistoryOverviewSupportingMetric(label: "Previous visits", value: "\(snapshot.previousVisitCount)")
-                            HistoryOverviewSupportingMetric(label: "Previous duration", value: snapshot.previousDurationText)
+                            VStack(alignment: .leading, spacing: 12) {
+                                HistoryOverviewSupportingMetric(
+                                    label: "This month",
+                                    value: snapshot.currentDurationText
+                                )
+
+                                HStack(alignment: .bottom, spacing: 14) {
+                                    HistoryOverviewSupportingMetric(
+                                        label: "Previous visits",
+                                        value: "\(snapshot.previousVisitCount)"
+                                    )
+                                    HistoryOverviewSupportingMetric(
+                                        label: "Previous duration",
+                                        value: snapshot.previousDurationText
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -874,6 +897,16 @@ private struct HistoryOverviewCard: View {
             return "\(visits), of \(monthlyTarget) target visits, \(Int((snapshot.progress * 100).rounded())) percent"
         }
         return visits
+    }
+
+    private var attendanceRing: some View {
+        AttendanceRingView(
+            value: snapshot.progress,
+            label: "Attendance",
+            caption: snapshot.monthlyTarget.map { "of \($0)" } ?? "Set goal",
+            generation: attendanceGeneration,
+            revealedGeneration: $revealedAttendanceGeneration
+        )
     }
 }
 

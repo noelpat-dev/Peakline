@@ -7,6 +7,7 @@ Current file: `PERFORMANCE_ACCEPTANCE_GOAL.md`
 Peakline now has a repeatable performance and navigation regression check. Use it whenever work touches the interactive paths that were recently stabilized:
 
 - Today to Coach
+- Today to Workout using the prepared first-frame payload
 - Workout to Coach
 - Workout to Preview
 - Preview mode change
@@ -87,6 +88,7 @@ The UI acceptance flow covers:
 - one-back dismissal from Coach
 - one-back dismissal from Preview
 - Coach and Weekly Review content surviving inactive/background lifecycle transitions
+- Coach hero and its prepared first explanation appearing together without an empty lower viewport
 - repeated native root-tab selection while preserving each tab's navigation state
 
 ## Current Baseline
@@ -120,6 +122,8 @@ The 22 August 2026 motion validation then completed Debug and strict-concurrency
 During integration, pre-fix samples ranged from 553–607 ms for Today-to-Coach and 530–867 ms for root transitions; these failures identified lifecycle work that was then removed from the transition path. The final green samples retain the unchanged 300 ms warm/root and 500 ms deep-route budgets.
 
 The persistent DEBUG summary includes startup phase durations, per-route and per-root-tab timings, `previewWarmCacheHits`, and mounted refresh counts because current Xcode releases may omit individual app console lines from `xcodebuild` output. The verifier accepts either the original warm-cache trace line or the maximum positive count across root/route summaries; it does not remove the warm-cache requirement or weaken the 300/500 ms budgets.
+
+The 22 August 2026 physical-device layout follow-up passed the canonical verifier after Today-to-Workout began reusing its prepared first-frame payload, Coach mounted its first prepared explanation with the hero, and History stopped measuring duplicate attendance-layout alternatives. The final boot-isolated sample reported Today-to-Coach at 206 ms, Coach-to-Preview at 234 ms, and a 189 ms root-tab maximum (History 189 ms), with two Preview warm-cache hits, zero mounted Preview refreshes, and all 190 unit/reliability tests passing. Earlier same-session root samples at 319–361 ms demonstrated simulator variance and motivated the single-layout History optimization; the 300/500 ms thresholds remain unchanged.
 
 ## When To Run It
 

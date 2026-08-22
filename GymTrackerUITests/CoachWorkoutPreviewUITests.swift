@@ -306,6 +306,10 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
         tapButton(containing: "Coach", maxSwipes: 5)
         XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Start Workout -> Coach to open")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["coach-why-this-section"].waitForExistence(timeout: 1),
+            "Expected the first supporting Coach card to mount with the prepared hero"
+        )
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 2), "Expected app window to remain responsive")
 
         tapBackButton()
@@ -983,6 +987,16 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
         tapElement(identifier: "today-coach-brief-open", maxSwipes: 4)
         XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Coach to open")
+        let coachHeadline = app.descendants(matching: .any)["coach-todays-call"]
+        XCTAssertTrue(coachHeadline.waitForExistence(timeout: 2))
+        XCTAssertFalse(
+            coachHeadline.label.localizedCaseInsensitiveContains("readiness pending"),
+            "Expected the split name to remain the Coach headline while Provisional carries readiness status"
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["coach-why-this-section"].waitForExistence(timeout: 1),
+            "Expected prepared Coach context without a blank supporting-content gap"
+        )
 
         let missingTraining = assertReachable(
             app.descendants(matching: .any)["readiness-factor-training"],
