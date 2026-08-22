@@ -32,13 +32,16 @@ struct RestTimerView: View {
                 }
             }
 
-            HStack(spacing: 10) {
-                ForEach([60, 90, 120, 180], id: \.self) { duration in
-                    Button(remainingText(duration)) {
-                        start(durationSeconds: duration)
+            if !showsActiveTimer || state.endDate == nil {
+                HStack(spacing: 10) {
+                    ForEach([60, 90, 120, 180], id: \.self) { duration in
+                        Button(remainingText(duration)) {
+                            start(durationSeconds: duration)
+                        }
+                        .buttonStyle(SecondaryFitnessButtonStyle())
                     }
-                    .buttonStyle(SecondaryFitnessButtonStyle())
                 }
+                .accessibilityIdentifier("workout-rest-timer-presets")
             }
         }
         .tint(appTheme.colors.accent)

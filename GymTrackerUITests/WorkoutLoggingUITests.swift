@@ -53,6 +53,13 @@ final class WorkoutLoggingUITests: XCTestCase {
             app.swipeDown()
         }
         XCTAssertTrue(restTimer.waitForExistence(timeout: 5), "Expected rest timing to follow a persisted set completion")
+        for duration in ["1:00", "1:30", "2:00", "3:00"] {
+            XCTAssertEqual(
+                app.buttons.matching(NSPredicate(format: "label == %@", duration)).count,
+                1,
+                "Expected one \(duration) manual timer preset while an active timer is visible"
+            )
+        }
 
         tapElement(identifier: "workout-logger-pause", maxSwipes: 6, swipeUp: false)
         tapElement(identifier: "workout-logger-resume", maxSwipes: 2, swipeUp: false)
