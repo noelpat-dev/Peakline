@@ -657,22 +657,42 @@ private struct PeaklineGroupedContentModifier: ViewModifier {
 }
 
 struct FilterChip: View {
+    enum Style {
+        case standard
+        case prominent
+    }
+
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let title: String
     let systemImage: String?
     let isSelected: Bool
+    let style: Style
     let action: () -> Void
 
-    init(_ title: String, systemImage: String? = nil, isSelected: Bool, action: @escaping () -> Void) {
+    init(
+        _ title: String,
+        systemImage: String? = nil,
+        isSelected: Bool,
+        style: Style = .standard,
+        action: @escaping () -> Void
+    ) {
         self.title = title
         self.systemImage = systemImage
         self.isSelected = isSelected
+        self.style = style
         self.action = action
     }
 
     var body: some View {
+        let shape = RoundedRectangle(
+            cornerRadius: style == .prominent
+                ? appTheme.metrics.radius12
+                : appTheme.metrics.minimumHitTarget / 2,
+            style: .continuous
+        )
+
         Button {
             AppHaptics.selection()
             action()
@@ -688,14 +708,24 @@ struct FilterChip: View {
             .padding(.horizontal, appTheme.metrics.chipHorizontalPadding)
             .padding(.vertical, appTheme.metrics.chipVerticalPadding)
             .frame(minHeight: appTheme.metrics.minimumHitTarget)
-            .foregroundStyle(isSelected ? appTheme.colors.accent : appTheme.colors.textSecondary)
-            .background(isSelected ? appTheme.colors.accentSurface : appTheme.cardBackground, in: Capsule())
+            .foregroundStyle(selectedForeground)
+            .background(selectedBackground, in: shape)
             .overlay {
-                Capsule()
+                shape
                     .stroke(isSelected ? appTheme.colors.accent.opacity(0.38) : appTheme.cardBorder.opacity(0.72), lineWidth: 0.75)
             }
             .peaklineSelectionMotion(isSelected: isSelected, reduceMotion: reduceMotion, scale: 1.01)
         }
         .buttonStyle(.plain)
+    }
+
+    private var selectedForeground: Color {
+        guard isSelected else { return appTheme.colors.textSecondary }
+        return style == .prominent ? appTheme.colors.accentForeground : appTheme.colors.accent
+    }
+
+    private var selectedBackground: Color {
+        guard isSelected else { return appTheme.cardBackground }
+        return style == .prominent ? appTheme.colors.accent : appTheme.colors.accentSurface
     }
 }

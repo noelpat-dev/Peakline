@@ -484,31 +484,31 @@ struct HistoryView: View {
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                FilterChip("All", systemImage: "line.3.horizontal.decrease.circle", isSelected: !filters.isActive) {
+                FilterChip("All", systemImage: "line.3.horizontal.decrease.circle", isSelected: !filters.isActive, style: .prominent) {
                     filters = HistoryFilters()
                     useDateRange = false
                 }
 
                 ForEach(splitOptions.prefix(4), id: \.self) { splitName in
-                    FilterChip(splitName, isSelected: filters.splitName == splitName) {
+                    FilterChip(splitName, isSelected: filters.splitName == splitName, style: .prominent) {
                         filters.splitName = filters.splitName == splitName ? nil : splitName
                     }
                 }
 
-                FilterChip(ratingChipTitle, systemImage: "star", isSelected: filters.minimumRating != nil) {
+                FilterChip(ratingChipTitle, systemImage: "star", isSelected: filters.minimumRating != nil, style: .prominent) {
                     showingFilters = true
                 }
 
-                FilterChip(exerciseChipTitle, systemImage: "magnifyingglass", isSelected: !filters.exerciseNameQuery.isEmpty) {
+                FilterChip(exerciseChipTitle, systemImage: "magnifyingglass", isSelected: !filters.exerciseNameQuery.isEmpty, style: .prominent) {
                     showingFilters = true
                 }
 
-                FilterChip("Date", systemImage: "calendar", isSelected: useDateRange) {
+                FilterChip("Date", systemImage: "calendar", isSelected: useDateRange, style: .prominent) {
                     showingFilters = true
                 }
 
                 if filters.isActive {
-                    FilterChip("Clear", systemImage: "xmark", isSelected: false) {
+                    FilterChip("Clear", systemImage: "xmark", isSelected: false, style: .prominent) {
                         filters = HistoryFilters()
                         useDateRange = false
                     }
@@ -777,12 +777,6 @@ private struct HistoryMonthNavigationRow: View {
         displayedMonth.formatted(.dateTime.month(.wide).year())
     }
 
-    private var shouldShowTodayButton: Bool {
-        let today = Date()
-        return !calendar.isDate(selectedDate, inSameDayAs: today)
-            || !calendar.isDate(displayedMonth, equalTo: today, toGranularity: .month)
-    }
-
     var body: some View {
         HStack(spacing: appTheme.metrics.spacing8) {
             monthButton(systemImage: "chevron.left") {
@@ -795,28 +789,6 @@ private struct HistoryMonthNavigationRow: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
                 .frame(maxWidth: .infinity)
-
-            if shouldShowTodayButton {
-                Button(action: resetToToday) {
-                    Image(systemName: "location.fill")
-                        .font(AppTypography.metadataEmphasis)
-                        .foregroundStyle(appTheme.colors.textAccent)
-                        .frame(
-                            width: appTheme.metrics.minimumHitTarget,
-                            height: appTheme.metrics.minimumHitTarget
-                        )
-                        .background(
-                            appTheme.colors.accentSurface,
-                            in: RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
-                        )
-                        .overlay {
-                            RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
-                                .stroke(appTheme.colors.accent.opacity(0.26), lineWidth: 1)
-                        }
-                }
-                .buttonStyle(PressableCardButtonStyle())
-                .accessibilityLabel("Show today")
-            }
 
             monthButton(systemImage: "chevron.right") {
                 moveMonth(by: 1)
@@ -854,15 +826,6 @@ private struct HistoryMonthNavigationRow: View {
         withAnimation(AppMotion.modeChange(reduceMotion: reduceMotion)) {
             displayedMonth = nextMonth
             selectedDate = preferredSelectedDate(in: nextMonth)
-        }
-    }
-
-    private func resetToToday() {
-        let today = Date()
-        AppHaptics.selection()
-        withAnimation(AppMotion.chipSelect(reduceMotion: reduceMotion)) {
-            displayedMonth = today
-            selectedDate = calendar.startOfDay(for: today)
         }
     }
 
@@ -1249,7 +1212,7 @@ private struct WorkoutCalendarView: View {
     @Binding var selectedDate: Date
     let daySummaries: [HistoryCalendarDaySummary]
 
-    @State private var isMonthExpanded = true
+    @State private var isMonthExpanded = false
 
     private let calendar = Calendar.current
     private let columns = Array(repeating: GridItem(.flexible(minimum: 30), spacing: 4), count: 7)
