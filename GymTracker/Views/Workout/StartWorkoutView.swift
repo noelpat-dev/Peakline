@@ -739,7 +739,7 @@ struct StartWorkoutContentView: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Active Workout")
-                            .font(AppTypography.metadataEmphasis)
+                            .font(AppTypography.eyebrow)
                             .foregroundStyle(appTheme.mutedText)
                             .textCase(.uppercase)
                         Text(session.splitNameSnapshot)
@@ -811,11 +811,11 @@ struct StartWorkoutContentView: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Recommended Today")
-                            .font(AppTypography.metadataEmphasis)
+                            .font(AppTypography.eyebrow)
                             .foregroundStyle(appTheme.mutedText)
                             .textCase(.uppercase)
                         Text(split.name)
-                            .font(AppTypography.screenTitle)
+                            .font(AppTypography.heroTitle)
                     }
 
                     Spacer()
@@ -823,7 +823,7 @@ struct StartWorkoutContentView: View {
                 }
 
                 Text(currentDashboardSnapshot.trainingCall.reason)
-                    .font(AppTypography.body)
+                    .font(AppTypography.bodyEmphasis)
                     .foregroundStyle(appTheme.mutedText)
 
                 Label(
