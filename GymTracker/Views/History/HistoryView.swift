@@ -1273,16 +1273,26 @@ private struct WorkoutCalendarView: View {
 
     private var selectedWeekDays: [HistoryCalendarDayViewModel?] {
         let selectedStart = calendar.startOfDay(for: selectedDate)
-        let weekday = calendar.component(.weekday, from: selectedStart)
-        let daysFromMonday = (weekday + 5) % 7
-        guard let monday = calendar.date(byAdding: .day, value: -daysFromMonday, to: selectedStart) else {
-            return []
-        }
-
-        return (0..<7).compactMap { offset -> HistoryCalendarDayViewModel? in
-            guard let date = calendar.date(byAdding: .day, value: offset, to: monday) else { return nil }
+        return (-3...3).map { offset -> HistoryCalendarDayViewModel? in
+            guard let date = calendar.date(byAdding: .day, value: offset, to: selectedStart) else { return nil }
             let day = calendar.startOfDay(for: date)
             return HistoryCalendarDayViewModel(date: day, summary: daySummaryByDate[day])
+        }
+    }
+
+    private var visibleWeekdayLabels: [(short: String, full: String)] {
+        if isMonthExpanded {
+            return Array(zip(weekdays, weekdayAccessibilityLabels)).map {
+                (short: $0.0, full: $0.1)
+            }
+        }
+
+        return selectedWeekDays.compactMap { day in
+            guard let date = day?.date else { return nil }
+            return (
+                short: date.formatted(.dateTime.weekday(.narrow)),
+                full: date.formatted(.dateTime.weekday(.wide))
+            )
         }
     }
 
@@ -1294,12 +1304,12 @@ private struct WorkoutCalendarView: View {
 
             VStack(spacing: appTheme.metrics.spacing8) {
                 LazyVGrid(columns: columns, spacing: 0) {
-                    ForEach(Array(weekdays.enumerated()), id: \.offset) { index, weekday in
-                        Text(weekday)
+                    ForEach(Array(visibleWeekdayLabels.enumerated()), id: \.offset) { _, weekday in
+                        Text(weekday.short)
                             .font(AppTypography.badge)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .frame(maxWidth: .infinity, minHeight: 18)
-                            .accessibilityLabel(weekdayAccessibilityLabels[index])
+                            .accessibilityLabel(weekday.full)
                     }
                 }
 
