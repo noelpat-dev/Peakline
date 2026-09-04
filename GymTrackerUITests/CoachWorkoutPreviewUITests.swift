@@ -589,7 +589,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testWorkoutPreviewFullModeDoesNotScrollHorizontally() throws {
-        openWorkoutPreview()
+        openWorkoutPreview(splitName: "Legs")
 
         let content = app.descendants(matching: .any)["workout-preview-hydrated-content"]
         XCTAssertTrue(content.waitForExistence(timeout: 5), "Expected hydrated Full-mode Preview content")
@@ -1082,11 +1082,11 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         assertPerformanceAcceptancePassed()
     }
 
-    private func openWorkoutPreview() {
+    private func openWorkoutPreview(splitName: String = "Push") {
         tapTab(at: 1, expectedTitle: "Workout")
-        let pushSplit = app.buttons["start-split-Push"]
-        XCTAssertTrue(pushSplit.waitForExistence(timeout: 10))
-        pushSplit.tap()
+        let splitButton = app.buttons["start-split-\(splitName)"]
+        XCTAssertTrue(splitButton.waitForExistence(timeout: 10))
+        splitButton.tap()
         XCTAssertTrue(app.navigationBars["Preview"].waitForExistence(timeout: 10))
     }
 

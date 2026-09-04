@@ -256,7 +256,8 @@ struct WorkoutPreviewView: View {
                 "~\(snapshot.estimatedDuration.lowerBound)–\(snapshot.estimatedDuration.upperBound) min"
             ]),
             systemImage: "figure.strengthtraining.traditional",
-            contentLayout: .eager
+            contentLayout: .eager,
+            locksHorizontalScrolling: true
         ) {
             DashboardSection(title: "Mode") {
                 FitnessCard {
