@@ -1425,8 +1425,21 @@ private struct CalendarDayCell: View {
             ZStack {
                 dayToken
 
-                dayText
-                    .padding(.horizontal, appTheme.metrics.spacing2)
+                VStack(spacing: appTheme.metrics.spacing2) {
+                    dayText
+
+                    if isLogged {
+                        Circle()
+                            .fill(isSelected ? appTheme.colors.accentForeground : appTheme.colors.accent)
+                            .frame(width: appTheme.metrics.spacing4, height: appTheme.metrics.spacing4)
+                            .accessibilityHidden(true)
+                    } else {
+                        Color.clear
+                            .frame(height: appTheme.metrics.spacing4)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .padding(.horizontal, appTheme.metrics.spacing2)
             }
             .frame(width: tokenSize, height: tokenSize)
             .frame(
@@ -1441,7 +1454,7 @@ private struct CalendarDayCell: View {
 
     private var dayText: some View {
         Text(dayNumber)
-            .font(.system(.body, design: .rounded).weight(isSelected || isLogged ? .bold : .semibold))
+            .font(.system(.body, design: .rounded).weight(isSelected ? .bold : .semibold))
             .monospacedDigit()
             .foregroundStyle(dayForeground)
             .lineLimit(1)
@@ -1466,7 +1479,6 @@ private struct CalendarDayCell: View {
 
     private var backgroundColor: Color {
         if isSelected { return appTheme.colors.accent }
-        if isLogged { return appTheme.colors.accentSurface }
         if isToday { return appTheme.elevatedCardBackground }
         return .clear
     }
@@ -1474,12 +1486,11 @@ private struct CalendarDayCell: View {
     private var strokeColor: Color {
         if isSelected { return appTheme.colors.accentHighlight.opacity(0.86) }
         if isToday { return appTheme.colors.accent.opacity(0.55) }
-        if isLogged { return appTheme.colors.accent.opacity(0.18) }
         return .clear
     }
 
     private var strokeWidth: CGFloat {
-        isSelected || isToday || isLogged ? 1 : 0
+        isSelected || isToday ? 1 : 0
     }
 
     private var accessibilityLabel: String {
