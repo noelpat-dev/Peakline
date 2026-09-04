@@ -345,29 +345,11 @@ struct QuickActionTile: View {
     }
 
     private var iconColor: Color {
-        switch action.style {
-        case .hydration:
-            return appTheme.colors.hydration
-        case .primary, .progress:
-            return appTheme.colors.accent
-        case .neutral:
-            return appTheme.colors.textPrimary
-        case .calm:
-            return appTheme.colors.textSecondary
-        }
+        appTheme.colors.accent
     }
 
     private var iconBackground: Color {
-        switch action.style {
-        case .hydration:
-            return appTheme.colors.hydration.opacity(0.14)
-        case .primary, .progress:
-            return appTheme.colors.accentSurface
-        case .neutral:
-            return appTheme.colors.cardBackgroundElevated
-        case .calm:
-            return appTheme.colors.textSecondary.opacity(0.13)
-        }
+        appTheme.colors.accentSurface
     }
 
     private var tileBorder: Color {
