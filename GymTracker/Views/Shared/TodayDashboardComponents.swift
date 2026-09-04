@@ -536,3 +536,398 @@ struct DashboardEmptyStateCard: View {
         }
     }
 }
+
+// MARK: - Today redesign components
+
+/// The primary Today decision card. Inputs are prepared values so the card can
+/// render without reaching through to SwiftData or rebuilding a live snapshot.
+struct TodayReadinessHero: View {
+    @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .largeTitle) private var scoreSize: CGFloat = 48
+
+    let scoreText: String
+    let status: String
+    let summary: String
+    let coverage: String
+    let isProvisional: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            action()
+        } label: {
+            FitnessCard(style: .hero, padding: appTheme.metrics.spacing16) {
+                VStack(alignment: .leading, spacing: appTheme.metrics.spacing8) {
+                    HStack(alignment: .firstTextBaseline, spacing: appTheme.metrics.spacing8) {
+                        Text("Readiness")
+                            .font(AppTypography.eyebrow)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .textCase(.uppercase)
+
+                        Spacer(minLength: appTheme.metrics.spacing8)
+
+                        if isProvisional {
+                            Text("Provisional")
+                                .font(AppTypography.metadataEmphasis)
+                                .foregroundStyle(appTheme.colors.textSecondary)
+                                .padding(.horizontal, appTheme.metrics.spacing10)
+                                .padding(.vertical, appTheme.metrics.spacing6)
+                                .background(
+                                    appTheme.colors.cardBackgroundElevated,
+                                    in: Capsule()
+                                )
+                                .overlay {
+                                    Capsule()
+                                        .stroke(appTheme.colors.cardBorder.opacity(0.72), lineWidth: 0.75)
+                                }
+                                .accessibilityIdentifier("readiness-provisional-status")
+                        }
+                    }
+
+                    HStack(alignment: .firstTextBaseline, spacing: appTheme.metrics.spacing6) {
+                        Text(scoreText)
+                            .font(AppTypography.rounded(size: scoreSize, weight: .heavy).monospacedDigit())
+                            .foregroundStyle(scoreColor)
+                            .lineLimit(1)
+                            .accessibilityIdentifier("today-readiness-score-value")
+
+                        Text("/100")
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(appTheme.colors.textTertiary)
+                    }
+
+                    Text(status)
+                        .font(AppTypography.cardTitle)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if !summary.isEmpty {
+                        Text(summary)
+                            .font(AppTypography.body)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Divider()
+                        .overlay(appTheme.colors.cardBorder.opacity(0.62))
+
+                    HStack(alignment: .center, spacing: appTheme.metrics.spacing10) {
+                        Image(systemName: "chart.bar.fill")
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .accessibilityHidden(true)
+
+                        Text(coverage)
+                            .font(AppTypography.body)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("readiness-signal-coverage")
+
+                        Spacer(minLength: appTheme.metrics.spacing8)
+
+                        Image(systemName: "chevron.right")
+                            .font(AppTypography.metadataEmphasis)
+                            .foregroundStyle(appTheme.colors.textTertiary)
+                            .accessibilityHidden(true)
+                    }
+                }
+            }
+        }
+        .buttonStyle(PressableCardButtonStyle())
+        .accessibilityHint("Opens your readiness details")
+        .accessibilityIdentifier("today-readiness-hero")
+    }
+
+    private var scoreColor: Color {
+        scoreText == "—" ? appTheme.colors.textSecondary : appTheme.colors.textSuccess
+    }
+}
+
+/// A compact, tappable Today tile for a prepared metric or next action.
+struct TodayMetricCard: View {
+    @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    let title: String
+    let systemImage: String
+    let value: String
+    let detail: String
+    let footer: String?
+    let isMetric: Bool
+    let highlightValue: Bool
+    let action: () -> Void
+
+    init(
+        title: String,
+        systemImage: String,
+        value: String,
+        detail: String,
+        footer: String? = nil,
+        isMetric: Bool = false,
+        highlightValue: Bool = false,
+        action: @escaping () -> Void
+    ) {
+        self.title = title
+        self.systemImage = systemImage
+        self.value = value
+        self.detail = detail
+        self.footer = footer
+        self.isMetric = isMetric
+        self.highlightValue = highlightValue
+        self.action = action
+    }
+
+    var body: some View {
+        Button {
+            action()
+        } label: {
+            FitnessCard(style: .compact, padding: appTheme.metrics.spacing14) {
+                VStack(alignment: .leading, spacing: appTheme.metrics.spacing6) {
+                    HStack(alignment: .center, spacing: appTheme.metrics.spacing8) {
+                        Image(systemName: systemImage)
+                            .font(AppTypography.rounded(size: appTheme.metrics.spacing20, weight: .semibold))
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .frame(width: appTheme.metrics.spacing22, height: appTheme.metrics.spacing22, alignment: .leading)
+                            .accessibilityHidden(true)
+
+                        Spacer(minLength: appTheme.metrics.spacing8)
+
+                        Text(title)
+                            .font(AppTypography.eyebrow)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .textCase(.uppercase)
+                            .multilineTextAlignment(.trailing)
+                            .lineLimit(2)
+                    }
+
+                    Text(value)
+                        .font(valueFont)
+                        .foregroundStyle(valueColor)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if !detail.isEmpty {
+                        HStack(spacing: appTheme.metrics.spacing8) {
+                            Text(detail)
+                                .font(AppTypography.body)
+                                .foregroundStyle(appTheme.colors.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if footer == nil {
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right")
+                                    .font(AppTypography.metadataEmphasis)
+                                    .foregroundStyle(appTheme.colors.textTertiary)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                    }
+
+                    if let footer, !footer.isEmpty {
+                        Divider()
+                            .overlay(appTheme.colors.cardBorder.opacity(0.58))
+
+                        HStack(alignment: .center, spacing: appTheme.metrics.spacing8) {
+                            Text(footer)
+                                .font(AppTypography.metadata)
+                                .foregroundStyle(appTheme.colors.textSecondary)
+                                .lineLimit(nil)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Spacer(minLength: appTheme.metrics.spacing4)
+
+                            Image(systemName: "chevron.right")
+                                .font(AppTypography.metadataEmphasis)
+                                .foregroundStyle(appTheme.colors.textTertiary)
+                                .accessibilityHidden(true)
+                        }
+                    }
+                }
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: dynamicTypeSize.isAccessibilitySize
+                        ? appTheme.metrics.metricTileMinHeight + appTheme.metrics.spacing16
+                        : appTheme.metrics.metricTileMinHeight,
+                    alignment: .topLeading
+                )
+            }
+        }
+        .buttonStyle(PressableCardButtonStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(detail)
+    }
+
+    private var valueFont: Font {
+        isMetric
+            ? AppTypography.largeMetric
+            : AppTypography.compactCardTitle
+    }
+
+    private var valueColor: Color {
+        highlightValue ? appTheme.colors.textSuccess : appTheme.colors.textPrimary
+    }
+}
+
+/// A compact seven day activity summary. The label intentionally describes
+/// completed days rather than implying a streak or another derived measure.
+struct TodayWeeklyActivityCard: View {
+    @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    let completedDays: [Bool]
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            action()
+        } label: {
+            FitnessCard(style: .compact) {
+                ViewThatFits(in: .horizontal) {
+                    horizontalContent
+                    verticalContent
+                }
+            }
+        }
+        .buttonStyle(PressableCardButtonStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Weekly activity")
+        .accessibilityValue("\(completedCount) of \(dayCount) days completed")
+        .accessibilityHint("Opens your activity history")
+        .accessibilityIdentifier("today-weekly-activity")
+    }
+
+    private var horizontalContent: some View {
+        HStack(alignment: .center, spacing: appTheme.metrics.spacing12) {
+            Image(systemName: "calendar")
+                .font(AppTypography.rounded(size: appTheme.metrics.spacing22, weight: .semibold))
+                .foregroundStyle(appTheme.colors.textSecondary)
+                .frame(width: appTheme.metrics.spacing28, height: appTheme.metrics.spacing28)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: appTheme.metrics.spacing4) {
+                Text("Weekly activity")
+                    .font(AppTypography.eyebrow)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .textCase(.uppercase)
+
+                HStack(alignment: .firstTextBaseline, spacing: appTheme.metrics.spacing6) {
+                    Text("\(completedCount)/\(dayCount)")
+                        .font(AppTypography.workoutLargeNumber)
+                        .foregroundStyle(appTheme.colors.textSuccess)
+
+                    Text("days")
+                        .font(AppTypography.body)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                }
+            }
+
+            Spacer(minLength: appTheme.metrics.spacing8)
+
+            dayDots
+
+            Image(systemName: "chevron.right")
+                .font(AppTypography.metadataEmphasis)
+                .foregroundStyle(appTheme.colors.textTertiary)
+                .accessibilityHidden(true)
+        }
+        .frame(maxWidth: .infinity, minHeight: appTheme.metrics.compactRowMinHeight, alignment: .leading)
+    }
+
+    private var verticalContent: some View {
+        VStack(alignment: .leading, spacing: appTheme.metrics.spacing12) {
+            HStack(alignment: .center, spacing: appTheme.metrics.spacing12) {
+                Image(systemName: "calendar")
+                    .font(AppTypography.rounded(size: appTheme.metrics.spacing22, weight: .semibold))
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .frame(width: appTheme.metrics.spacing28, height: appTheme.metrics.spacing28)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: appTheme.metrics.spacing4) {
+                    Text("Weekly activity")
+                        .font(AppTypography.eyebrow)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .textCase(.uppercase)
+
+                    Text("\(completedCount) of \(dayCount) days completed")
+                        .font(AppTypography.bodyEmphasis)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                }
+
+                Spacer(minLength: appTheme.metrics.spacing8)
+
+                Image(systemName: "chevron.right")
+                    .font(AppTypography.metadataEmphasis)
+                    .foregroundStyle(appTheme.colors.textTertiary)
+                    .accessibilityHidden(true)
+            }
+
+            dayDots
+        }
+    }
+
+    private var dayDots: some View {
+        HStack(spacing: appTheme.metrics.spacing6) {
+            ForEach(Array(completedDays.enumerated()), id: \.offset) { _, isComplete in
+                Circle()
+                    .fill(isComplete ? appTheme.colors.textSuccess : appTheme.colors.cardBackgroundElevated)
+                    .frame(
+                        width: dynamicTypeSize.isAccessibilitySize
+                            ? appTheme.metrics.spacing14
+                            : appTheme.metrics.spacing12,
+                        height: dynamicTypeSize.isAccessibilitySize
+                            ? appTheme.metrics.spacing14
+                            : appTheme.metrics.spacing12
+                    )
+                    .overlay {
+                        Circle()
+                            .stroke(
+                                isComplete
+                                    ? appTheme.colors.textSuccess.opacity(0.16)
+                                    : appTheme.colors.cardBorder,
+                                lineWidth: 0.75
+                            )
+                    }
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    private var completedCount: Int {
+        completedDays.filter { $0 }.count
+    }
+
+    private var dayCount: Int {
+        completedDays.count
+    }
+}
+
+/// The monochrome entry point for the existing suggested session preview.
+struct TodayPlanButton: View {
+    @Environment(\.appTheme) private var appTheme
+
+    var title: String = "Review Today’s Plan"
+    var isEnabled: Bool = true
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            action()
+        } label: {
+            HStack(spacing: appTheme.metrics.spacing8) {
+                Spacer(minLength: appTheme.metrics.spacing8)
+
+                Label(title, systemImage: "list.bullet")
+
+                Spacer(minLength: appTheme.metrics.spacing8)
+
+                Image(systemName: "chevron.right")
+                    .font(AppTypography.metadataEmphasis)
+                    .accessibilityHidden(true)
+            }
+        }
+        .buttonStyle(NeutralFitnessButtonStyle())
+        .disabled(!isEnabled)
+        .accessibilityIdentifier("today-review-plan")
+    }
+}

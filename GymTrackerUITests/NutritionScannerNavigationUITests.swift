@@ -34,8 +34,7 @@ final class NutritionScannerNavigationUITests: XCTestCase {
 
     func testQuickActionNutritionCanOpenScannerSurfaces() throws {
         XCTAssertTrue(
-            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
-                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
             "Expected Today to be ready after launch"
         )
 
@@ -57,12 +56,11 @@ final class NutritionScannerNavigationUITests: XCTestCase {
 
     func testTodayNutritionCardCanReachFoodLoggingEntryPoint() throws {
         XCTAssertTrue(
-            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
-                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
             "Expected Today to be ready after launch"
         )
 
-        tapElement(identifier: "today-nutrition-summary", maxSwipes: 5)
+        openNutritionFromQuickAction()
         XCTAssertTrue(app.navigationBars["Nutrition"].waitForExistence(timeout: 5))
 
         tapButton(containing: "Add Food", maxSwipes: 3)
@@ -74,8 +72,7 @@ final class NutritionScannerNavigationUITests: XCTestCase {
 
     func testNutritionPreviousDayIsReadOnlyAndNavigatesWithArrows() throws {
         XCTAssertTrue(
-            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
-                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
             "Expected Today to be ready after launch"
         )
         openNutritionFromQuickAction()
@@ -96,8 +93,7 @@ final class NutritionScannerNavigationUITests: XCTestCase {
 
     func testNutritionTargetsExposeFibreAndDismissKeyboardInteractively() throws {
         XCTAssertTrue(
-            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
-                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
             "Expected Today to be ready after launch"
         )
         openNutritionFromQuickAction()
@@ -167,8 +163,7 @@ final class NutritionScannerNavigationUITests: XCTestCase {
 
     private func openSavedFoods() {
         XCTAssertTrue(
-            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
-                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
             "Expected Today to be ready after launch"
         )
 
@@ -182,12 +177,13 @@ final class NutritionScannerNavigationUITests: XCTestCase {
     }
 
     private func openNutritionFromQuickAction() {
-        tapElement(identifier: "quick-action-nutrition", maxSwipes: 5)
-        if app.navigationBars["Nutrition"].waitForExistence(timeout: 8) {
-            return
+        tapElement(identifier: "today-profile-menu", maxSwipes: 2)
+        let nutritionAction = app.buttons["Nutrition"]
+        if nutritionAction.waitForExistence(timeout: 3) {
+            nutritionAction.tap()
+        } else {
+            tapButton(containing: "Nutrition", maxSwipes: 2)
         }
-
-        tapElement(identifier: "quick-action-nutrition", maxSwipes: 2)
         XCTAssertTrue(app.navigationBars["Nutrition"].waitForExistence(timeout: 8), "Expected Nutrition after tapping the quick action")
     }
 

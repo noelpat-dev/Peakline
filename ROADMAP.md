@@ -37,17 +37,17 @@ That means:
 - keep account backup and restore reliable before schema changes
 - maintain readable UI across light and dark mode
 - keep performance-sensitive routes within the current acceptance thresholds
-- preserve the existing 300 ms warm/root and 500 ms deep-route gates while completing unlocked-device motion and accessibility acceptance
+- preserve the existing 300 ms warm/root and 500 ms deep-route gates while completing focused motion and accessibility acceptance on Noel's iPhone
 
 ## Next Practical Priorities
 
-- Run focused physical-device visual QA across the redesigned core surfaces in Light and Dark, including Sleep no-data/populated/active states, Sleep settings/editors/timer/morning/detail, large Dynamic Type, VoiceOver, Reduce Motion, Reduce Transparency, monthly History goal editing, completed duration correction, the four-hour finish guard, realistic Preview estimates, compact Profile rows, Workout Tools/Appearance, the first Preview drag, motivational Continue transitions, and the PR-only completion.
+- Run focused physical-device visual QA on Noel's iPhone across the redesigned core surfaces in Light and Dark, including Sleep no-data/populated/active states, Sleep settings/editors/timer/morning/detail, large Dynamic Type, VoiceOver, Reduce Motion, Reduce Transparency, monthly History goal editing, completed duration correction, the four-hour finish guard, realistic Preview estimates, compact Profile rows, Workout Tools/Appearance, the first Preview drag, motivational Continue transitions, and the PR-only completion.
 - Preserve the `Scripts/verify_performance_acceptance.sh` workflow for any changes that touch Today, Workout, Coach, Preview, or root lifecycle behavior.
 - Keep notification refresh, route warm-starts, and SwiftData async safety intact.
 - Confirm exact PNG icon coverage for seeded exercises and add mappings where source assets already exist.
 - Keep nutrition scanner and import paths stable: barcode, OCR, review, save, and return-to-log.
 - Add or preserve focused reliability tests around workout logging, nutrition import and export, full-app backup, sleep recovery, HealthKit boundaries, and navigation.
-- Complete physical-device Firebase validation: create account, save backup, delete app, reinstall, sign in, restore, and verify data returns.
+- Complete Firebase validation on Noel's iPhone: create account, save backup, delete app, reinstall, sign in, restore, and verify data returns.
 - Keep backup and export healthy before risky persistence changes.
 - Expand Nutrition next with backdated logging, copying meals/days, reusable meals and recipes, then goal-adherence trends.
 

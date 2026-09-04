@@ -1,7 +1,7 @@
 # Peakline
 
 [![iOS CI](https://github.com/noelpat-dev/Peakline/actions/workflows/ios-ci.yml/badge.svg?branch=main)](https://github.com/noelpat-dev/Peakline/actions/workflows/ios-ci.yml)
-![Platform](https://img.shields.io/badge/platform-iOS%2017%2B-111827)
+![Validation targets](https://img.shields.io/badge/validation-iPhone%2017%20simulator%20%2B%20Noel%27s%20iPhone-111827)
 ![Built with](https://img.shields.io/badge/built%20with-SwiftUI%20%2B%20SwiftData-F05138)
 
 Peakline is a local-first iOS lifting coach I am building to make the training loop clearer and more useful:
@@ -56,7 +56,7 @@ The product is designed for the gym rather than for a social feed. It keeps the 
 
 | Area | Choice |
 | --- | --- |
-| Platform | iOS 17+ |
+| Validation targets | iPhone 17 simulator and Noel's iPhone only |
 | UI | SwiftUI |
 | Persistence | SwiftData |
 | Charts | Swift Charts |
@@ -84,7 +84,7 @@ The main implementation boundaries are documented in [ARCHITECTURE.md](ARCHITECT
 
 ## Current status
 
-The main lifting loop is implemented end to end and the app is in an active quality and acceptance phase. The current focus is physical-device validation across Light and Dark appearance, large Dynamic Type, VoiceOver, Reduce Motion, Reduce Transparency, Firebase restore, and the most performance-sensitive workout routes.
+The main lifting loop is implemented end to end and the app is in an active quality and acceptance phase. The current focus is validation on the iPhone 17 simulator and Noel's iPhone across Light and Dark appearance, large Dynamic Type, VoiceOver, Reduce Motion, Reduce Transparency, Firebase restore, and the most performance-sensitive workout routes.
 
 The 21 August 2026 warm-route architecture pass built successfully and passed all 180 unit/reliability tests. The final boot-isolated iPhone 17 simulator verifier kept the unchanged 300 ms warm/root and 500 ms deep-route budgets: default Today-to-Coach measured 219 ms, Coach-to-Preview 283 ms, the root maximum 147 ms, and data-rich Sleep/Nutrition/Progress/Hydration/Preview paths measured 46/113/178/296/387 ms. These are engineering samples, not a promise that every device will produce identical timing; physical-device memory and first-frame validation remains outstanding.
 
@@ -97,7 +97,7 @@ The 22 August 2026 motion validation passed the Debug build, strict-concurrency 
 Requirements:
 
 - macOS with Xcode installed.
-- An iOS 17+ simulator or a signed physical iPhone.
+- The iPhone 17 simulator for focused simulator validation and Noel's signed iPhone for physical-device validation.
 - A Firebase `GoogleService-Info.plist` only if account backup is being exercised. It is intentionally ignored by Git.
 
 Open the project:
@@ -106,7 +106,7 @@ Open the project:
 open GymTracker.xcodeproj
 ```
 
-Then select the `GymTracker` scheme and an iPhone simulator or connected iPhone.
+Then select the `GymTracker` scheme and either the iPhone 17 simulator or Noel's connected iPhone.
 
 Command-line build:
 
@@ -144,4 +144,4 @@ The public tree is intentionally limited to the product source, tests, CI, canon
 
 Peakline is intentionally more than a collection of screens. The repository shows how I approach a growing SwiftUI product: establish clear ownership boundaries, keep persistence local and recoverable, measure hot paths, make uncertainty visible, and keep the experience usable under real gym conditions.
 
-The next meaningful milestone is a complete unlocked-device acceptance pass, followed by continued reliability work around encrypted restore, nutrition imports, and safe SwiftData evolution.
+The next meaningful milestone is a complete Noel's iPhone acceptance pass, followed by continued reliability work around encrypted restore, nutrition imports, and safe SwiftData evolution.

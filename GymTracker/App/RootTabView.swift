@@ -39,6 +39,7 @@ struct RootTabView: View {
     @State private var sleepSettings = SleepSettingsStore().load()
     @State private var sleepDestination: SleepNotificationDestination?
     @State private var tabSelectionStateBeforeSleepDeepLink: RootTab?
+    @State private var isSettingsPresented = false
     @State private var didStartRootTabPrewarm = false
     @State private var didStartDeferredServices = false
     @State private var sleepNotificationRefreshTask: Task<Void, Never>?
@@ -155,12 +156,16 @@ struct RootTabView: View {
             startupSnapshot: startupSnapshot,
             selectionState: tabSelectionState,
             onTabSelectionStarted: rootTabSelectionStarted,
-            onTabSelectionSettled: rootTabSelectionSettled
+            onTabSelectionSettled: rootTabSelectionSettled,
+            onSettingsRequested: { isSettingsPresented = true }
         )
         .tint(appTheme.colors.accent)
         .sheet(item: $sleepDestination) { destination in
             sleepDestinationView(destination)
                 .onDisappear { restoreTabAfterSleepDeepLinkDismissal() }
+        }
+        .sheet(isPresented: $isSettingsPresented) {
+            SettingsView(initialProfileSnapshot: startupSnapshot.settingsProfileSnapshot)
         }
         .onChange(of: sleepDeepLinkRouter.pendingRequest) { _, request in
             presentSleepDeepLinkIfReady(request)
@@ -1117,7 +1122,6 @@ private enum RootTab: String, Hashable {
     case workout
     case splits
     case history
-    case settings
 
     static var launchArgumentSelection: RootTab {
 #if DEBUG
@@ -1148,6 +1152,7 @@ private struct RootTabContainer: View {
     @Bindable var selectionState: RootTabSelectionState
     let onTabSelectionStarted: () -> Void
     let onTabSelectionSettled: () -> Void
+    let onSettingsRequested: () -> Void
 
     // Timing state must not participate in SwiftUI observation. Updating two
     // `@State` scalars here rebuilt every tab value on the selection-critical
@@ -1157,12 +1162,17 @@ private struct RootTabContainer: View {
     var body: some View {
         TabView(selection: selectedTabBinding) {
             RootTabContentHost(key: "today|\(startupSnapshot.sourceSignature)") {
-                TodayView(startupSnapshot: startupSnapshot)
+                TodayView(
+                    startupSnapshot: startupSnapshot,
+                    openHistory: { selectedTabBinding.wrappedValue = .history },
+                    openSettings: onSettingsRequested
+                )
             }
                 .equatable()
                 .onAppear { scheduleStableFrame(for: .today) }
                 .tabItem {
-                    Label("Today", systemImage: "calendar")
+                    Label("Today", systemImage: "house")
+                        .environment(\.symbolVariants, .none)
                 }
                 .tag(RootTab.today)
                 .accessibilityIdentifier("tab-today")
@@ -1178,7 +1188,8 @@ private struct RootTabContainer: View {
                 .equatable()
                 .onAppear { scheduleStableFrame(for: .workout) }
                 .tabItem {
-                    Label("Workout", systemImage: "figure.strengthtraining.traditional")
+                    Label("Workout", systemImage: "dumbbell")
+                        .environment(\.symbolVariants, .none)
                 }
                 .tag(RootTab.workout)
                 .accessibilityIdentifier("tab-workout")
@@ -1192,6 +1203,7 @@ private struct RootTabContainer: View {
                 .onAppear { scheduleStableFrame(for: .splits) }
                 .tabItem {
                     Label("Splits", systemImage: "list.bullet.rectangle")
+                        .environment(\.symbolVariants, .none)
                 }
                 .tag(RootTab.splits)
                 .accessibilityIdentifier("tab-splits")
@@ -1203,22 +1215,11 @@ private struct RootTabContainer: View {
                 .onAppear { scheduleStableFrame(for: .history) }
                 .tabItem {
                     Label("History", systemImage: "clock.arrow.circlepath")
+                        .environment(\.symbolVariants, .none)
                 }
                 .tag(RootTab.history)
                 .accessibilityIdentifier("tab-history")
 
-            RootTabContentHost(key: "settings|\(startupSnapshot.sourceSignature)") {
-                DeferredSettingsTabHost(
-                    initialProfileSnapshot: startupSnapshot.settingsProfileSnapshot
-                )
-            }
-                .equatable()
-                .onAppear { scheduleStableFrame(for: .settings) }
-                .tabItem {
-                    Label("Settings", systemImage: "gearshape")
-                }
-                .tag(RootTab.settings)
-                .accessibilityIdentifier("tab-settings")
         }
     }
 
@@ -1358,54 +1359,6 @@ private struct DeferredWorkoutTabHost: View {
                 isLiveMounted = true
             }
         }
-    }
-}
-
-private struct DeferredSettingsTabHost: View {
-    let initialProfileSnapshot: SettingsProfileSnapshot?
-
-    @State private var isLiveMounted = false
-    @State private var isVisible = false
-
-    var body: some View {
-        Group {
-            if isLiveMounted {
-                SettingsView(initialProfileSnapshot: initialProfileSnapshot)
-            } else {
-                NavigationStack {
-                    FitnessScreen {
-                        FitnessCard(style: .compact) {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(initialProfileSnapshot?.goalTitle ?? "Profile")
-                                    .font(AppTypography.cardTitle)
-                                Text(
-                                    initialProfileSnapshot.map {
-                                        "\($0.experienceTitle) · \($0.trainingDaysPerWeek) days/week"
-                                    } ?? "Add your goal and training details."
-                                )
-                                .font(AppTypography.body)
-                                .foregroundStyle(.secondary)
-                            }
-                        }
-                        .accessibilityIdentifier("settings-profile")
-                    }
-                    .navigationTitle("Settings")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .accessibilityIdentifier("settings-screen")
-                }
-            }
-        }
-        .onAppear {
-            isVisible = true
-            guard !isLiveMounted else { return }
-            DispatchQueue.main.async {
-                DispatchQueue.main.async {
-                    guard isVisible else { return }
-                    isLiveMounted = true
-                }
-            }
-        }
-        .onDisappear { isVisible = false }
     }
 }
 

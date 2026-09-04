@@ -16,7 +16,7 @@ Peakline now has a repeatable performance and navigation regression check. Use i
 - root notification refresh
 - scene phase and background handling
 - readiness-gated startup presentation and reveal
-- root-tab switching between Today, Workout, Splits, History, and Settings
+- root-tab switching between Today, Workout, Splits, and History; Settings sheet presentation from Today's profile menu
 
 ## Canonical Command
 

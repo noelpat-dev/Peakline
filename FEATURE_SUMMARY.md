@@ -118,11 +118,11 @@ The main value loop is:
 
 ## Remaining Practical Expansion
 
-- Complete the remaining unlocked physical-device acceptance matrix across Light, Dark, large Dynamic Type, VoiceOver, Reduce Motion, and Reduce Transparency.
+- Complete the remaining focused physical-device acceptance matrix on Noel's iPhone across Light, Dark, large Dynamic Type, VoiceOver, Reduce Motion, and Reduce Transparency.
 - Expand exact exercise icon coverage where source assets already exist.
 - Keep scanner, OCR, and nutrition import flows stable and reviewable.
 - Keep Firebase backup, local export, and migration safety strong before risky schema changes.
-- Validate the physical-device delete/reinstall/sign-in/restore path after Firebase project setup.
+- Validate the delete/reinstall/sign-in/restore path on Noel's iPhone after Firebase project setup.
 - Add richer analytics only when current history and progress surfaces remain fast.
 - Consider deeper HealthKit, Apple Watch, or AI only after the local-first and backup behavior remains excellent.
 

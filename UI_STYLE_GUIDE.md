@@ -8,7 +8,7 @@ Taste baseline: 9 August 2026
 
 Implementation baseline: shared system and major app surfaces migrated on 9 August 2026
 
-Platform baseline: iOS 17+, with native adaptation on newer iOS releases
+Validation baseline: iPhone 17 simulator and Noel's iPhone only
 
 This guide is the active visual and interaction reference for Peakline. The shared theme and major Today, Workout, Splits, History, Settings, Coach, Progress, Nutrition, Sleep, Preview, Logger, completion, and Summary surfaces now use this baseline. New work and any remaining deep-screen polish must preserve it. The guide supersedes earlier design explorations, including older glass-heavy directions; the implemented system and this file are the active visual contract.
 
@@ -125,7 +125,7 @@ Treat material as hierarchy, not ornament:
 - **Transient layer:** standard material is allowed for a focused overlay, floating control, or isolated hero badge when seeing context behind it is useful.
 - **Decision popup:** use one backdrop scrim over the unchanged page and an opaque semantic foreground card. Keep headings, guidance, and controls at full opacity from the first visible frame; never stack page fading with the scrim or stagger the foreground through a low-opacity state that resembles disabled content.
 
-Do not imitate a newer system material on older iOS releases. Prefer native components and availability-aware enhancement so iOS 17 remains coherent and newer releases adapt naturally.
+Use native system materials and existing SDK availability checks. Validate on the iPhone 17 simulator and Noel's iPhone only.
 
 - Use `GlassIconBadge` only as an isolated hero or transient emblem, not as the default icon treatment for every row.
 - With Reduce Transparency, replace translucent custom surfaces with an opaque semantic surface and retain a visible border.
@@ -302,7 +302,7 @@ Accessibility is part of the visual standard, not a later QA pass.
 - **Reduce Transparency:** replace custom translucent surfaces with opaque semantic backgrounds and retain separation.
 - **Increase Contrast:** ensure controls, borders, and selected states remain distinguishable without depending on subtle opacity alone.
 - **Gestures:** core actions need a visible or accessibility alternative; a swipe or drag cannot be the only way to complete an essential task.
-- **Small screens:** smoke test the smallest supported iPhone for clipped rows, crowded controls, horizontal scrolling, and hidden actions.
+- **Target devices:** use the iPhone 17 simulator for focused smoke checks and Noel's iPhone for physical-device checks of clipped rows, crowded controls, horizontal scrolling, and hidden actions.
 
 ## Feature Patterns
 
