@@ -1416,6 +1416,10 @@ private struct CalendarDayCell: View {
         summary != nil
     }
 
+    private var isFilledSelection: Bool {
+        isSelected && !isToday
+    }
+
     private var tokenSize: CGFloat {
         appTheme.metrics.minimumHitTarget
     }
@@ -1430,7 +1434,7 @@ private struct CalendarDayCell: View {
 
                     if isLogged {
                         Circle()
-                            .fill(isSelected ? appTheme.colors.accentForeground : appTheme.colors.accent)
+                            .fill(isFilledSelection ? appTheme.colors.accentForeground : appTheme.colors.accent)
                             .frame(width: appTheme.metrics.spacing4, height: appTheme.metrics.spacing4)
                             .accessibilityHidden(true)
                     } else {
@@ -1454,7 +1458,7 @@ private struct CalendarDayCell: View {
 
     private var dayText: some View {
         Text(dayNumber)
-            .font(.system(.body, design: .rounded).weight(isSelected ? .bold : .semibold))
+            .font(.system(.body, design: .rounded).weight(isFilledSelection ? .bold : .semibold))
             .monospacedDigit()
             .foregroundStyle(dayForeground)
             .lineLimit(1)
@@ -1472,25 +1476,22 @@ private struct CalendarDayCell: View {
     }
 
     private var dayForeground: Color {
-        if isSelected { return appTheme.colors.accentForeground }
-        if isToday { return appTheme.colors.accent }
+        if isFilledSelection { return appTheme.colors.accentForeground }
         return appTheme.colors.textPrimary
     }
 
     private var backgroundColor: Color {
-        if isSelected { return appTheme.colors.accent }
-        if isToday { return appTheme.elevatedCardBackground }
+        if isFilledSelection { return appTheme.colors.accent }
         return .clear
     }
 
     private var strokeColor: Color {
-        if isSelected { return appTheme.colors.accentHighlight.opacity(0.86) }
-        if isToday { return appTheme.colors.accent.opacity(0.55) }
+        if isFilledSelection { return appTheme.colors.accentHighlight.opacity(0.86) }
         return .clear
     }
 
     private var strokeWidth: CGFloat {
-        isSelected || isToday ? 1 : 0
+        isFilledSelection ? 1 : 0
     }
 
     private var accessibilityLabel: String {
