@@ -364,65 +364,6 @@ struct QuickActionTile: View {
     }
 }
 
-struct CoachInsightCard: View {
-    @Environment(\.appTheme) private var appTheme
-
-    let title: String
-    let recommendation: String
-    let reason: String
-    let badge: String
-    let buttonTitle: String
-    let isButtonEnabled: Bool
-    let action: () -> Void
-
-    var body: some View {
-        FitnessCard {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .top, spacing: 12) {
-                    FitnessIconBadge(systemImage: "sparkles", size: 42)
-
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(title)
-                            .font(AppTypography.metadataEmphasis)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .textCase(.uppercase)
-
-                        Text(recommendation)
-                            .font(AppTypography.cardTitle)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer(minLength: 8)
-
-                    Text(badge)
-                        .font(AppTypography.chip)
-                        .foregroundStyle(appTheme.colors.textAccent)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(appTheme.colors.accentSurface, in: Capsule())
-                        .lineLimit(1)
-                }
-
-                Text(reason)
-                    .font(AppTypography.body)
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Button {
-                    AppHaptics.selection()
-                    action()
-                } label: {
-                    Label(buttonTitle, systemImage: "target")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(SecondaryFitnessButtonStyle())
-                .disabled(!isButtonEnabled)
-            }
-        }
-    }
-}
-
 struct WeekMetricTile: View {
     let label: String
     let value: String

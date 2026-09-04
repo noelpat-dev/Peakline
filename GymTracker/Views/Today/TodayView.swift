@@ -385,12 +385,6 @@ struct TodayView: View {
         let weekSessionSnapshots = makeWeeklySessionSnapshots(from: sessionSnapshots)
         let workingSets = weekSessionSnapshots.reduce(0) { $0 + $1.workingSetCount }
         let volume = weekSessionSnapshots.reduce(0) { $0 + $1.workingSetVolume }
-        let latestWorkoutSummaryText = sessionSnapshots.first.map {
-            PeaklineText.joinedMetadata([
-                PeaklineText.count($0.exerciseCount, singular: "exercise"),
-                PeaklineText.count($0.workingSetCount, singular: "working set")
-            ])
-        } ?? ""
         let coverageNames = makeSplitCoverageNames(from: activeSplits)
         let trainedNames = Set(weekSessionSnapshots.map(\.baseSplitName))
         let coverageItems = coverageNames.map { name in
@@ -406,7 +400,6 @@ struct TodayView: View {
             suggestedSplit: suggested,
             recentProgrammeCycleNames: recentCycleNames,
             weeklySessions: weekSessionSnapshots.map(\.session),
-            latestWorkoutSummaryText: latestWorkoutSummaryText,
             workoutsThisWeek: weekSessionSnapshots.count,
             workingSetsThisWeek: workingSets,
             volumeThisWeekText: makeVolumeText(volume),
@@ -501,19 +494,6 @@ struct TodayView: View {
                     .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 5), index: 5)
                     .todayReentryWash(isActive: reentryWashCards.contains(.nutrition))
 
-                    DashboardSection(title: "Coach Insight") {
-                        CoachInsightCard(
-                            title: "Coach Insight",
-                            recommendation: coachRecommendationTitle,
-                            reason: trainingCall.reason,
-                            badge: trainingCall.action.displayName,
-                            buttonTitle: coachButtonTitle,
-                            isButtonEnabled: trainingDecision.recommendedSplitName != nil,
-                            action: previewRecommendedSplit
-                        )
-                    }
-                    .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 6), index: 6)
-
                     DashboardSection(title: "This Week") {
                         LazyVGrid(columns: weekColumns, spacing: 12) {
                             WeekMetricTile(
@@ -548,12 +528,7 @@ struct TodayView: View {
                             items: splitCoverageItems
                         )
                     }
-                    .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 7), index: 7)
-
-                    DashboardSection(title: "Last Workout") {
-                        lastWorkoutInsight
-                    }
-                    .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 8), index: 8)
+                    .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 6), index: 6)
                 }
                 .padding(appTheme.metrics.screenPadding)
                 .padding(.bottom, appTheme.metrics.screenBottomPadding)
@@ -594,7 +569,7 @@ struct TodayView: View {
                 wasAwayForReentry = false
                 reentryComparisonPending = isReentry
                 isDashboardVisible = true
-                dashboardArrival.start(itemCount: 9, reduceMotion: reduceMotion)
+                dashboardArrival.start(itemCount: 7, reduceMotion: reduceMotion)
                 readinessRefreshClock.start()
                 sleepSettings = sleepSettingsStore.load()
                 hydrationTargetML = hydrationSettingsStore.dailyTargetML()
@@ -861,58 +836,6 @@ struct TodayView: View {
         self.pendingRouteNavigation = nil
     }
 
-    private var lastWorkoutInsight: some View {
-        FitnessCard {
-            if let last = completedSessions.first {
-                HStack(alignment: .center, spacing: 14) {
-                    ExerciseIconView(
-                        iconKey: ExerciseIconMapper.splitIconKey(for: last.splitNameSnapshot),
-                        size: 46,
-                        showBackground: true,
-                        isDecorative: true
-                    )
-
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(last.splitNameSnapshot)
-                            .font(AppTypography.cardTitle)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
-
-                        Text(last.date.formatted(date: .abbreviated, time: .omitted))
-                            .font(AppTypography.body)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-
-                        Text(currentTodaySnapshot.latestWorkoutSummaryText)
-                            .font(AppTypography.metadataEmphasis)
-                            .foregroundStyle(appTheme.colors.textTertiary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
-
-                    Spacer(minLength: 8)
-
-                    Image(systemName: "checkmark.seal.fill")
-                        .font(AppTypography.cardTitle)
-                        .foregroundStyle(appTheme.colors.textAccent)
-                }
-            } else {
-                HStack(spacing: 12) {
-                    FitnessIconBadge(systemImage: "calendar.badge.plus", size: 42)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("No workouts logged yet")
-                            .font(AppTypography.sectionTitle)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                        Text("Start a split to build your first dashboard summary.")
-                            .font(AppTypography.body)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                    }
-                }
-            }
-        }
-    }
-
     private var todayDateText: String {
         let weekday = Date.now.formatted(.dateTime.weekday(.wide))
         let date = Date.now.formatted(.dateTime.day().month(.wide))
@@ -964,15 +887,6 @@ struct TodayView: View {
     private var rotationChipText: String {
         guard !recentProgrammeCycleNames.isEmpty else { return "First Round" }
         return recentProgrammeCycleNames.count == programmeOrderedSplits.count ? "Next Rotation" : "In Rotation"
-    }
-
-    private var coachRecommendationTitle: String {
-        "Next: \(trainingCall.recommendedSplitName ?? "Any split") · \(trainingCall.recommendedMode.displayName)"
-    }
-
-    private var coachButtonTitle: String {
-        guard let splitName = trainingCall.recommendedSplitName else { return "See Recommendation" }
-        return "Preview \(splitName)"
     }
 
     private var sleepSummary: SleepSummary {
@@ -1348,15 +1262,6 @@ struct TodayView: View {
         openPreview(WorkoutPreviewSplit(suggestedSplit), mode: trainingCall.recommendedMode)
     }
 
-    private func previewRecommendedSplit() {
-        guard
-            let splitName = trainingCall.recommendedSplitName,
-            let split = activeSplits.first(where: { $0.name == splitName })
-        else { return }
-
-        openPreview(WorkoutPreviewSplit(split), mode: trainingCall.recommendedMode)
-    }
-
     private func openPreview(_ split: WorkoutPreviewSplit, mode: WorkoutMode = .full) {
         PerformanceTracer.mark(.previewRouteTap, "source=today split=\(split.name) mode=\(mode.rawValue)")
         PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "navigation request source=today split=\(split.id.uuidString) active=\(previewRoute?.split.id.uuidString ?? "none")")
@@ -1444,7 +1349,6 @@ private struct TodayDashboardSnapshot {
     let suggestedSplit: TrainingSplit?
     let recentProgrammeCycleNames: [String]
     let weeklySessions: [WorkoutSession]
-    let latestWorkoutSummaryText: String
     let workoutsThisWeek: Int
     let workingSetsThisWeek: Int
     let volumeThisWeekText: String
@@ -1473,7 +1377,6 @@ private struct TodayDashboardSnapshot {
         suggestedSplit: nil,
         recentProgrammeCycleNames: [],
         weeklySessions: [],
-        latestWorkoutSummaryText: "",
         workoutsThisWeek: 0,
         workingSetsThisWeek: 0,
         volumeThisWeekText: "0",
