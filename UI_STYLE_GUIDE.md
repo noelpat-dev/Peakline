@@ -77,6 +77,7 @@ Hierarchy rules:
 - Use spacing, alignment, typography, and dividers before adding another container.
 - Do not stack cards inside cards. A bordered tile may sit inside a hero only when it represents a distinct metric or control and does not create a third content-card shell.
 - Keep dashboard headers naturally left-aligned. Do not reserve trailing space for decorative profile or account glyphs.
+- Compact period or month controls may centre the current period between symmetric previous/next controls; this does not change the left alignment of dashboard headers.
 - Keep the main action near its decision context. Do not strand the only CTA above or far below the information it depends on.
 - Prefer a short, scannable vertical story over a dense mosaic of equal-weight widgets.
 
@@ -98,6 +99,8 @@ The code token remains the numeric source of truth. Do not reproduce these value
 ### Colour and Theme
 
 Use semantic values from `AppTheme`; never hardcode a colour that already has a theme role.
+
+`Black` is a semantic `AppTheme` choice, not a hardcoded black-and-white treatment. Use the shared theme roles—especially `accent`, `accentForeground`, `accentHighlight`, `accentSurface`, and semantic text colours—for accents, attendance rings, workout dots, selected or filter chips, and text in every appearance.
 
 - Backgrounds: primary screen, secondary surface, card, and elevated card.
 - Text: primary, secondary, and tertiary.
@@ -149,6 +152,8 @@ Use the system font through `AppTypography` and built-in text styles. Rounded, b
 | Body and reason | `body` or `bodyEmphasis` |
 | Metadata and helper copy | `metadata` or `metadataEmphasis` |
 | Live workout number | `workoutNumber` or `workoutLargeNumber` |
+
+Use the shared `AppTypography` semantic roles across tabs rather than local font declarations. Recommendation heroes use one precise hierarchy: an uppercase context label in `eyebrow`, the recommended split name in `heroTitle`, supporting context or the reason in `body` or `bodyEmphasis`, and compact mode, confidence, or other metadata in `metadataEmphasis`. Today and Workout follow this hierarchy. Do not use `metadataEmphasis` as the eyebrow or `screenTitle` as the hero title. Keep one native inline navigation title, centred by the system, and do not repeat it as a custom content heading.
 
 Copy rules:
 
@@ -311,7 +316,7 @@ These patterns define composition and behaviour. Architecture and performance de
 - **Session Summary:** lead with completed work, duration, rating, genuine improvements, and one practical next suggestion.
 - **Splits:** show the active programme, readable adaptive day chips, explicit Edit Rotation, training-day cards, last-trained state, target rows, and progression badges. Keep per-exercise template notes out of Split Edit; preserve workout-level and logger/history note surfaces.
 - **Coach:** lead with the real snapshot-backed Today's Call, its short reason or status, its prepared first explanation, and an immediately usable Preview action. Keep the split name as the hero headline; carry provisional readiness in one `Provisional` badge rather than repeating the label or appending status to the H1. When readiness evidence is sparse, keep the numeric estimate, show “X of 5 signals included”, state that missing signals do not lower the score, and render unavailable factors as `Not included`; included factors show their signed point contribution. Do not let a provisional category colour or message imply a Push or Recovery prescription. Deeper supporting analytics may follow; avoid a wall of equal-weight insight cards or false precision.
-- **History:** lead with the current month's filter-independent gym attendance, goal progress, duration, and previous-month comparison. Keep the attendance ring beside its supporting metrics at normal widths and stack the same group adaptively when space is constrained; do not reserve an otherwise empty full-width row for the ring. Keep the weekly-goal action close to that hero and use a clear Set Goal state when no profile exists. Keep the calendar as compact orientation rather than the dominant dashboard. Workout days use one consistent 44 × 44 token without split abbreviations. Put selected-day detail below the calendar and lead detail with a hero that explains what happened.
+- **History:** use one native inline title, then a compact month-navigation row. Lead with the current month's filter-independent attendance hero: month title and count, attendance ring, goal action, duration, and previous-month comparison. Keep the ring beside its supporting metrics at normal widths and stack the same group only when constrained; use a clear Set Goal state when no profile exists. Keep the calendar as compact orientation rather than the dominant dashboard: start with a selected week centred on the selected day, allow full-month expansion, and keep each day at the shared 44 × 44 pt minimum hit target. Use compact weekday labels and a small accent workout dot; a selected unlogged current day remains unfilled, while a logged selected day may use accent fill and a contrasting dot. Put a compact selected-day summary below the calendar; it is supporting detail, not a second hero. Keep filters as compact horizontally scrolling semantic chips, with detailed choices in the filter sheet and Clear shown only when active. Render recent sessions as concise, fully tappable rows with split/date, exercise/set/duration metadata, optional rating, and a chevron. Use `AppTheme` semantic colours for attendance, selection, dots, text, surfaces, and borders.
 - **Settings:** keep Profile compact and adaptive with `ViewThatFits`, and expose only truthful preferences. Use the user-facing names Workout Tools and Appearance; do not restore Gym Utilities or label Appearance as Themes.
 - **Nutrition and Hydration:** use compact reviewable summaries, honest permission or unavailable states, and clear editing boundaries. Nutrition provides previous/next day controls, a native date picker, optional fibre progress, and visibly read-only past days.
 - **Sleep:** design explicitly for no-data, populated, and active-session states. No-data shows one compact explanation and an immediately reachable Start Sleep Mode action, with Add Sleep and Log Nap secondary. Populated leads with last-night duration and restrained source/quality/confidence context, then one conservative readiness support section, a bounded seven-night trend, and flat recent rows; hide empty trends and stages, and never turn provisional readiness into a Push or Recovery prescription. Active Sleep Mode makes elapsed or estimated sleep and Confirm Wake Time dominant. Use adaptive stacks and native menu/checkmark selection for long source labels, keep quality optional, and confirm every running-timer, discard, and delete path.
