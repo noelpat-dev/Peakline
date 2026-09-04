@@ -272,6 +272,11 @@ struct HistoryView: View {
     var body: some View {
         NavigationStack {
             HistoryLazyScreen {
+                HistoryMonthNavigationRow(
+                    displayedMonth: $displayedMonth,
+                    selectedDate: $selectedCalendarDate
+                )
+
                 HistoryOverviewCard(
                     snapshot: currentDisplaySnapshot.overview,
                     revealedAttendanceGeneration: $revealedAttendanceGeneration,
@@ -298,6 +303,10 @@ struct HistoryView: View {
                         systemImage: displaySnapshotReady ? "clock" : "hourglass"
                     )
                 } else {
+                    Text("Recent Workouts")
+                        .font(AppTypography.sectionTitle)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+
                     ForEach(sessionRows) { row in
                         Button {
                             PerformanceTracer.mark(.motionHistoryRowOpen, "session=\(row.id.uuidString)")
@@ -475,31 +484,31 @@ struct HistoryView: View {
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                FilterChip("All", systemImage: "line.3.horizontal.decrease.circle", isSelected: !filters.isActive) {
+                FilterChip("All", systemImage: "line.3.horizontal.decrease.circle", isSelected: !filters.isActive, style: .prominent) {
                     filters = HistoryFilters()
                     useDateRange = false
                 }
 
                 ForEach(splitOptions.prefix(4), id: \.self) { splitName in
-                    FilterChip(splitName, isSelected: filters.splitName == splitName) {
+                    FilterChip(splitName, isSelected: filters.splitName == splitName, style: .prominent) {
                         filters.splitName = filters.splitName == splitName ? nil : splitName
                     }
                 }
 
-                FilterChip(ratingChipTitle, systemImage: "star", isSelected: filters.minimumRating != nil) {
+                FilterChip(ratingChipTitle, systemImage: "star", isSelected: filters.minimumRating != nil, style: .prominent) {
                     showingFilters = true
                 }
 
-                FilterChip(exerciseChipTitle, systemImage: "magnifyingglass", isSelected: !filters.exerciseNameQuery.isEmpty) {
+                FilterChip(exerciseChipTitle, systemImage: "magnifyingglass", isSelected: !filters.exerciseNameQuery.isEmpty, style: .prominent) {
                     showingFilters = true
                 }
 
-                FilterChip("Date", systemImage: "calendar", isSelected: useDateRange) {
+                FilterChip("Date", systemImage: "calendar", isSelected: useDateRange, style: .prominent) {
                     showingFilters = true
                 }
 
                 if filters.isActive {
-                    FilterChip("Clear", systemImage: "xmark", isSelected: false) {
+                    FilterChip("Clear", systemImage: "xmark", isSelected: false, style: .prominent) {
                         filters = HistoryFilters()
                         useDateRange = false
                     }
@@ -735,7 +744,7 @@ private struct HistoryScrollRowSurface<Content: View>: View {
             style: .continuous
         )
         content
-            .padding(appTheme.metrics.compactCardPadding)
+            .padding(appTheme.metrics.spacing12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(appTheme.cardBackground, in: shape)
             .overlay {
@@ -752,6 +761,90 @@ private struct HistoryScrollRowButtonStyle: ButtonStyle {
         configuration.label
             .opacity(configuration.isPressed ? 0.90 : 1)
             .animation(AppMotion.buttonPress(reduceMotion: reduceMotion), value: configuration.isPressed)
+    }
+}
+
+private struct HistoryMonthNavigationRow: View {
+    @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    @Binding var displayedMonth: Date
+    @Binding var selectedDate: Date
+
+    private let calendar = Calendar.current
+
+    private var monthTitle: String {
+        displayedMonth.formatted(.dateTime.month(.wide).year())
+    }
+
+    var body: some View {
+        HStack(spacing: appTheme.metrics.spacing8) {
+            monthButton(systemImage: "chevron.left") {
+                moveMonth(by: -1)
+            }
+
+            Text(monthTitle)
+                .font(AppTypography.compactCardTitle)
+                .foregroundStyle(appTheme.colors.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+                .frame(maxWidth: .infinity)
+
+            monthButton(systemImage: "chevron.right") {
+                moveMonth(by: 1)
+            }
+        }
+        .accessibilityIdentifier("history-month-navigation")
+    }
+
+    private func monthButton(systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(AppTypography.eyebrow)
+                .foregroundStyle(appTheme.colors.textPrimary)
+                .frame(
+                    width: appTheme.metrics.minimumHitTarget,
+                    height: appTheme.metrics.minimumHitTarget
+                )
+                .background(
+                    appTheme.elevatedCardBackground,
+                    in: RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
+                        .stroke(appTheme.colors.cardBorder.opacity(0.56), lineWidth: 1)
+                }
+        }
+        .buttonStyle(PressableCardButtonStyle())
+        .accessibilityLabel(systemImage == "chevron.left" ? "Previous month" : "Next month")
+    }
+
+    private func moveMonth(by value: Int) {
+        guard let nextMonth = calendar.date(byAdding: .month, value: value, to: displayedMonth) else { return }
+
+        AppHaptics.selection()
+        withAnimation(AppMotion.modeChange(reduceMotion: reduceMotion)) {
+            displayedMonth = nextMonth
+            selectedDate = preferredSelectedDate(in: nextMonth)
+        }
+    }
+
+    private func preferredSelectedDate(in month: Date) -> Date {
+        let today = Date()
+        if calendar.isDate(month, equalTo: today, toGranularity: .month) {
+            return calendar.startOfDay(for: today)
+        }
+
+        guard
+            let monthInterval = calendar.dateInterval(of: .month, for: month),
+            let dayRange = calendar.range(of: .day, in: .month, for: month)
+        else {
+            return calendar.startOfDay(for: month)
+        }
+
+        let requestedDay = min(max(1, calendar.component(.day, from: selectedDate)), dayRange.count)
+        let adjustedDate = calendar.date(byAdding: .day, value: requestedDay - 1, to: monthInterval.start) ?? monthInterval.start
+        return calendar.startOfDay(for: adjustedDate)
     }
 }
 
@@ -777,104 +870,22 @@ private struct HistoryOverviewCard: View {
 
     var body: some View {
         FitnessCard(style: .hero) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 12) {
-                    FitnessIconBadge(systemImage: "calendar.badge.checkmark", size: 38)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("\(snapshot.monthTitle) attendance")
-                            .font(AppTypography.cardTitle)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                        Text("Gym days are counted once, even when a day contains more than one workout.")
-                            .font(AppTypography.body)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: appTheme.metrics.spacing14) {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: appTheme.metrics.spacing12) {
+                        attendanceSummary
+                        attendanceRing
                     }
-
-                    Spacer(minLength: 0)
-
-                    Button(snapshot.monthlyTarget == nil ? "Set Goal" : "Edit Goal", action: editGoal)
-                        .font(AppTypography.metadataEmphasis)
-                        .buttonStyle(.borderless)
-                        .frame(minHeight: 44)
-                        .accessibilityIdentifier("history-edit-training-goal")
-                }
-
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    AnimatedMetricNumber(
-                        value: displayedVisitCount ?? Double(snapshot.currentVisitCount)
-                    )
-                        .font(AppTypography.heroMetric)
-                        .foregroundStyle(appTheme.colors.textPrimary)
-                        .animation(
-                            reduceMotion ? .easeOut(duration: 0.01) : AppMotion.expressive,
-                            value: displayedVisitCount
-                        )
-                    if let monthlyTarget = snapshot.monthlyTarget {
-                        Text("of \(monthlyTarget) gym visits")
-                            .font(AppTypography.bodyEmphasis)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                    } else {
-                        Text(snapshot.currentVisitCount == 1 ? "gym visit" : "gym visits")
-                            .font(AppTypography.bodyEmphasis)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                    }
-                }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Monthly gym attendance")
-                .accessibilityValue(attendanceAccessibilityValue)
-
-                Group {
-                    if dynamicTypeSize.isAccessibilitySize {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(alignment: .center, spacing: 18) {
-                                attendanceRing
-                                HistoryOverviewSupportingMetric(
-                                    label: "This month",
-                                    value: snapshot.currentDurationText
-                                )
-                            }
-
-                            HStack(alignment: .bottom, spacing: 14) {
-                                HistoryOverviewSupportingMetric(
-                                    label: "Previous visits",
-                                    value: "\(snapshot.previousVisitCount)"
-                                )
-                                HistoryOverviewSupportingMetric(
-                                    label: "Previous duration",
-                                    value: snapshot.previousDurationText
-                                )
-                            }
-                        }
-                    } else {
-                        HStack(alignment: .center, spacing: 18) {
-                            attendanceRing
-
-                            VStack(alignment: .leading, spacing: 12) {
-                                HistoryOverviewSupportingMetric(
-                                    label: "This month",
-                                    value: snapshot.currentDurationText
-                                )
-
-                                HStack(alignment: .bottom, spacing: 14) {
-                                    HistoryOverviewSupportingMetric(
-                                        label: "Previous visits",
-                                        value: "\(snapshot.previousVisitCount)"
-                                    )
-                                    HistoryOverviewSupportingMetric(
-                                        label: "Previous duration",
-                                        value: snapshot.previousDurationText
-                                    )
-                                }
-                            }
-                        }
+                } else {
+                    HStack(alignment: .top, spacing: appTheme.metrics.spacing16) {
+                        attendanceSummary
+                        Spacer(minLength: 0)
+                        attendanceRing
                     }
                 }
 
-                Text(snapshot.goalSourceText ?? "Set a weekly training goal to track monthly progress.")
-                    .font(AppTypography.metadata)
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                attendanceSupportingMetrics
+                goalFooter
             }
         }
         .accessibilityIdentifier("history-overview-card")
@@ -899,6 +910,125 @@ private struct HistoryOverviewCard: View {
         return visits
     }
 
+    private var attendanceSummary: some View {
+        VStack(alignment: .leading, spacing: appTheme.metrics.spacing8) {
+            Text("\(snapshot.monthTitle) attendance")
+                .font(AppTypography.cardTitle)
+                .foregroundStyle(appTheme.colors.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("Gym days are counted once, even when a day contains more than one workout.")
+                .font(AppTypography.body)
+                .foregroundStyle(appTheme.colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(alignment: .firstTextBaseline, spacing: appTheme.metrics.spacing8) {
+                AnimatedMetricNumber(
+                    value: displayedVisitCount ?? Double(snapshot.currentVisitCount)
+                )
+                    .font(AppTypography.heroMetric)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .animation(
+                        reduceMotion ? .easeOut(duration: 0.01) : AppMotion.expressive,
+                        value: displayedVisitCount
+                    )
+
+                if let monthlyTarget = snapshot.monthlyTarget {
+                    Text("of \(monthlyTarget) gym visits")
+                        .font(AppTypography.bodyEmphasis)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                } else {
+                    Text(snapshot.currentVisitCount == 1 ? "gym visit" : "gym visits")
+                        .font(AppTypography.bodyEmphasis)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Monthly gym attendance")
+            .accessibilityValue(attendanceAccessibilityValue)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var attendanceSupportingMetrics: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: appTheme.metrics.spacing10) {
+                HistoryOverviewSupportingMetric(
+                    label: "This month",
+                    value: snapshot.currentDurationText
+                )
+                Divider().overlay(appTheme.colors.cardBorder)
+                HistoryOverviewSupportingMetric(
+                    label: "Previous visits",
+                    value: "\(snapshot.previousVisitCount)"
+                )
+                Divider().overlay(appTheme.colors.cardBorder)
+                HistoryOverviewSupportingMetric(
+                    label: "Previous duration",
+                    value: snapshot.previousDurationText
+                )
+            }
+        } else {
+            HStack(alignment: .top, spacing: 0) {
+                HistoryOverviewSupportingMetric(
+                    label: "This month",
+                    value: snapshot.currentDurationText
+                )
+
+                Divider()
+                    .frame(height: appTheme.metrics.spacing24 + appTheme.metrics.spacing16)
+                    .overlay(appTheme.colors.cardBorder)
+                    .padding(.horizontal, appTheme.metrics.spacing10)
+
+                HistoryOverviewSupportingMetric(
+                    label: "Previous visits",
+                    value: "\(snapshot.previousVisitCount)"
+                )
+
+                Divider()
+                    .frame(height: appTheme.metrics.spacing24 + appTheme.metrics.spacing16)
+                    .overlay(appTheme.colors.cardBorder)
+                    .padding(.horizontal, appTheme.metrics.spacing10)
+
+                HistoryOverviewSupportingMetric(
+                    label: "Previous duration",
+                    value: snapshot.previousDurationText
+                )
+            }
+        }
+    }
+
+    private var goalFooter: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: appTheme.metrics.spacing10) {
+                goalSourceText
+                Spacer(minLength: 0)
+                goalButton
+            }
+
+            VStack(alignment: .leading, spacing: appTheme.metrics.spacing4) {
+                goalSourceText
+                goalButton
+            }
+        }
+    }
+
+    private var goalSourceText: some View {
+        Text(snapshot.goalSourceText ?? "Set a weekly training goal to track monthly progress.")
+            .font(AppTypography.metadata)
+            .foregroundStyle(appTheme.colors.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var goalButton: some View {
+        Button(snapshot.monthlyTarget == nil ? "Set Goal" : "Edit Goal", action: editGoal)
+            .font(AppTypography.metadataEmphasis)
+            .buttonStyle(.borderless)
+            .frame(minHeight: appTheme.metrics.minimumHitTarget)
+            .accessibilityIdentifier("history-edit-training-goal")
+    }
+
     private var attendanceRing: some View {
         AttendanceRingView(
             value: snapshot.progress,
@@ -919,15 +1049,16 @@ private struct HistoryOverviewSupportingMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(value)
-                .font(AppTypography.largeMetric)
+                .font(AppTypography.sectionTitle)
                 .foregroundStyle(appTheme.colors.textPrimary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.64)
+                .minimumScaleFactor(0.78)
 
             Text(label)
                 .font(AppTypography.metadata)
                 .foregroundStyle(appTheme.colors.textSecondary)
-                .lineLimit(1)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
@@ -1019,22 +1150,22 @@ private struct HistorySessionRowCard: View {
     let row: HistorySessionRowSnapshot
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .center, spacing: appTheme.metrics.spacing10) {
             ExerciseIconView(
                 iconKey: ExerciseIconMapper.splitIconKey(for: row.splitName),
-                size: 42,
+                size: appTheme.metrics.rowIconSize,
                 tint: appTheme.colors.accent,
                 showBackground: true,
                 isDecorative: true
             )
 
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: appTheme.metrics.spacing4) {
                 HStack(alignment: .top, spacing: 8) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(row.splitName)
                             .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
-                            .lineLimit(2)
+                            .lineLimit(1)
                         Text(row.dateText)
                             .font(AppTypography.metadata)
                             .foregroundStyle(appTheme.colors.textSecondary)
@@ -1046,62 +1177,30 @@ private struct HistorySessionRowCard: View {
                         Label(ratingText, systemImage: "star.fill")
                             .font(AppTypography.metadataEmphasis)
                             .foregroundStyle(appTheme.colors.textAccent)
-                            .padding(.vertical, 5)
-                            .frame(width: 108)
+                            .lineLimit(1)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
                             .background(appTheme.colors.accentSurface, in: Capsule())
                     }
                 }
 
-                HStack(spacing: 8) {
-                    HistoryRowMetric(value: row.exerciseCountText, label: "exercises")
-                    HistoryRowMetric(value: row.setCountText, label: "sets")
-                    HistoryRowMetric(value: row.durationText, label: "duration")
-                }
-
-                Label(row.topExerciseSummary, systemImage: "list.bullet.rectangle")
-                    .font(AppTypography.metadata)
+                Text(PeaklineText.joinedMetadata([
+                    "\(row.exerciseCountText) exercises",
+                    "\(row.setCountText) sets",
+                    row.durationText
+                ]))
+                    .font(AppTypography.metadataEmphasis)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
-
-                if let notesPreview = row.notesPreview, !notesPreview.isEmpty {
-                    Label(notesPreview, systemImage: "note.text")
-                        .font(AppTypography.metadata)
-                        .foregroundStyle(appTheme.colors.textTertiary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
 
             Image(systemName: "chevron.right")
                 .font(AppTypography.eyebrow)
                 .foregroundStyle(appTheme.colors.textTertiary)
-                .frame(width: 18, height: 44, alignment: .center)
+                .frame(width: 18, height: appTheme.metrics.minimumHitTarget, alignment: .center)
         }
         .accessibilityElement(children: .combine)
-    }
-}
-
-private struct HistoryRowMetric: View {
-    @Environment(\.appTheme) private var appTheme
-
-    let value: String
-    let label: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(value)
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(appTheme.colors.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-            Text(label)
-                .font(AppTypography.metadata)
-                .foregroundStyle(appTheme.colors.textSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -1150,12 +1249,6 @@ private struct WorkoutCalendarView: View {
         daySummaryByDate[calendar.startOfDay(for: selectedDate)]
     }
 
-    private var shouldShowTodayButton: Bool {
-        let today = Date()
-        return !calendar.isDate(selectedDate, inSameDayAs: today)
-            || !calendar.isDate(displayedMonth, equalTo: today, toGranularity: .month)
-    }
-
     private var monthDays: [HistoryCalendarDayViewModel?] {
         guard
             let monthInterval = calendar.dateInterval(of: .month, for: displayedMonth),
@@ -1180,16 +1273,26 @@ private struct WorkoutCalendarView: View {
 
     private var selectedWeekDays: [HistoryCalendarDayViewModel?] {
         let selectedStart = calendar.startOfDay(for: selectedDate)
-        let weekday = calendar.component(.weekday, from: selectedStart)
-        let daysFromMonday = (weekday + 5) % 7
-        guard let monday = calendar.date(byAdding: .day, value: -daysFromMonday, to: selectedStart) else {
-            return []
-        }
-
-        return (0..<7).compactMap { offset -> HistoryCalendarDayViewModel? in
-            guard let date = calendar.date(byAdding: .day, value: offset, to: monday) else { return nil }
+        return (-3...3).map { offset -> HistoryCalendarDayViewModel? in
+            guard let date = calendar.date(byAdding: .day, value: offset, to: selectedStart) else { return nil }
             let day = calendar.startOfDay(for: date)
             return HistoryCalendarDayViewModel(date: day, summary: daySummaryByDate[day])
+        }
+    }
+
+    private var visibleWeekdayLabels: [(short: String, full: String)] {
+        if isMonthExpanded {
+            return Array(zip(weekdays, weekdayAccessibilityLabels)).map {
+                (short: $0.0, full: $0.1)
+            }
+        }
+
+        return selectedWeekDays.compactMap { day in
+            guard let date = day?.date else { return nil }
+            return (
+                short: date.formatted(.dateTime.weekday(.narrow)),
+                full: date.formatted(.dateTime.weekday(.wide))
+            )
         }
     }
 
@@ -1199,29 +1302,35 @@ private struct WorkoutCalendarView: View {
         VStack(alignment: .leading, spacing: appTheme.metrics.spacing12) {
             calendarHeader
 
-            LazyVGrid(columns: columns, spacing: appTheme.metrics.spacing6) {
-                ForEach(Array(weekdays.enumerated()), id: \.offset) { index, weekday in
-                    Text(weekday)
-                        .font(AppTypography.badge)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                        .frame(maxWidth: .infinity, minHeight: 18)
-                        .accessibilityLabel(weekdayAccessibilityLabels[index])
+            VStack(spacing: appTheme.metrics.spacing8) {
+                LazyVGrid(columns: columns, spacing: 0) {
+                    ForEach(Array(visibleWeekdayLabels.enumerated()), id: \.offset) { _, weekday in
+                        Text(weekday.short)
+                            .font(AppTypography.badge)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .frame(maxWidth: .infinity, minHeight: 18)
+                            .accessibilityLabel(weekday.full)
+                    }
                 }
 
-                ForEach(Array(visibleDays.enumerated()), id: \.offset) { _, date in
-                    if let date {
-                        CalendarDayCell(
-                            date: date.date,
-                            summary: date.summary,
-                            isSelected: calendar.isDate(date.date, inSameDayAs: selectedDate),
-                            isToday: calendar.isDateInToday(date.date)
-                        ) {
-                            select(date.date)
+                LazyVGrid(columns: columns, spacing: appTheme.metrics.spacing8) {
+                    ForEach(Array(visibleDays.enumerated()), id: \.offset) { _, date in
+                        if let date {
+                            CalendarDayCell(
+                                date: date.date,
+                                summary: date.summary,
+                                isSelected: calendar.isDate(date.date, inSameDayAs: selectedDate),
+                                isToday: calendar.isDateInToday(date.date)
+                            ) {
+                                select(date.date)
+                            }
+                        } else {
+                            Color.clear
+                                .frame(
+                                    minHeight: appTheme.metrics.minimumHitTarget + appTheme.metrics.spacing8
+                                )
+                                .accessibilityHidden(true)
                         }
-                    } else {
-                        Color.clear
-                            .frame(minHeight: appTheme.metrics.minimumHitTarget + appTheme.metrics.spacing4)
-                            .accessibilityHidden(true)
                     }
                 }
             }
@@ -1236,10 +1345,6 @@ private struct WorkoutCalendarView: View {
 
     private var calendarHeader: some View {
         HStack(spacing: appTheme.metrics.spacing10) {
-            monthButton(systemImage: "chevron.left") {
-                moveMonth(by: -1)
-            }
-
             VStack(alignment: .leading, spacing: 2) {
                 Text(monthTitle)
                     .font(AppTypography.compactCardTitle)
@@ -1254,27 +1359,6 @@ private struct WorkoutCalendarView: View {
                     .minimumScaleFactor(0.78)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-
-            if shouldShowTodayButton {
-                Button {
-                    resetToToday()
-                } label: {
-                    Image(systemName: "location.fill")
-                        .font(AppTypography.metadataEmphasis)
-                        .foregroundStyle(appTheme.colors.textAccent)
-                        .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
-                        .background(
-                            appTheme.colors.accentSurface,
-                            in: RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
-                        )
-                        .overlay {
-                            RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
-                                .stroke(appTheme.colors.accent.opacity(0.26), lineWidth: 1)
-                        }
-                }
-                .buttonStyle(PressableCardButtonStyle())
-                .accessibilityLabel("Show today")
-            }
 
             Button {
                 withAnimation(AppMotion.modeChange(reduceMotion: reduceMotion)) {
@@ -1300,34 +1384,11 @@ private struct WorkoutCalendarView: View {
             .buttonStyle(PressableCardButtonStyle())
             .accessibilityLabel(isMonthExpanded ? "Show selected week" : "Show full month")
             .accessibilityIdentifier("history-calendar-view-toggle")
-
-            monthButton(systemImage: "chevron.right") {
-                moveMonth(by: 1)
-            }
         }
     }
 
     private var weekdayAccessibilityLabels: [String] {
         ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    }
-
-    private func monthButton(systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(AppTypography.eyebrow)
-                .foregroundStyle(appTheme.colors.textPrimary)
-                .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
-                .background(
-                    appTheme.elevatedCardBackground,
-                    in: RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
-                        .stroke(appTheme.colors.cardBorder.opacity(0.56), lineWidth: 1)
-                }
-        }
-        .buttonStyle(PressableCardButtonStyle())
-        .accessibilityLabel(systemImage == "chevron.left" ? "Previous month" : "Next month")
     }
 
     private func select(_ date: Date) {
@@ -1337,42 +1398,6 @@ private struct WorkoutCalendarView: View {
         }
     }
 
-    private func moveMonth(by value: Int) {
-        guard let nextMonth = calendar.date(byAdding: .month, value: value, to: displayedMonth) else { return }
-
-        AppHaptics.selection()
-        withAnimation(AppMotion.modeChange(reduceMotion: reduceMotion)) {
-            displayedMonth = nextMonth
-            selectedDate = preferredSelectedDate(in: nextMonth)
-        }
-    }
-
-    private func resetToToday() {
-        let today = Date()
-        AppHaptics.selection()
-        withAnimation(AppMotion.chipSelect(reduceMotion: reduceMotion)) {
-            displayedMonth = today
-            selectedDate = calendar.startOfDay(for: today)
-        }
-    }
-
-    private func preferredSelectedDate(in month: Date) -> Date {
-        let today = Date()
-        if calendar.isDate(month, equalTo: today, toGranularity: .month) {
-            return calendar.startOfDay(for: today)
-        }
-
-        guard
-            let monthInterval = calendar.dateInterval(of: .month, for: month),
-            let dayRange = calendar.range(of: .day, in: .month, for: month)
-        else {
-            return calendar.startOfDay(for: month)
-        }
-
-        let requestedDay = min(max(1, calendar.component(.day, from: selectedDate)), dayRange.count)
-        let adjustedDate = calendar.date(byAdding: .day, value: requestedDay - 1, to: monthInterval.start) ?? monthInterval.start
-        return calendar.startOfDay(for: adjustedDate)
-    }
 }
 
 private struct HistoryCalendarDayViewModel: Identifiable, Hashable {
@@ -1401,6 +1426,10 @@ private struct CalendarDayCell: View {
         summary != nil
     }
 
+    private var isFilledSelection: Bool {
+        isSelected && !isToday
+    }
+
     private var tokenSize: CGFloat {
         appTheme.metrics.minimumHitTarget
     }
@@ -1410,8 +1439,21 @@ private struct CalendarDayCell: View {
             ZStack {
                 dayToken
 
-                dayText
-                    .padding(.horizontal, appTheme.metrics.spacing2)
+                VStack(spacing: appTheme.metrics.spacing2) {
+                    dayText
+
+                    if isLogged {
+                        Circle()
+                            .fill(isFilledSelection ? appTheme.colors.accentForeground : appTheme.colors.accent)
+                            .frame(width: appTheme.metrics.spacing4, height: appTheme.metrics.spacing4)
+                            .accessibilityHidden(true)
+                    } else {
+                        Color.clear
+                            .frame(height: appTheme.metrics.spacing4)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .padding(.horizontal, appTheme.metrics.spacing2)
             }
             .frame(width: tokenSize, height: tokenSize)
             .frame(
@@ -1426,7 +1468,7 @@ private struct CalendarDayCell: View {
 
     private var dayText: some View {
         Text(dayNumber)
-            .font(.system(.body, design: .rounded).weight(isSelected || isLogged ? .bold : .semibold))
+            .font(.system(.body, design: .rounded).weight(isFilledSelection ? .bold : .semibold))
             .monospacedDigit()
             .foregroundStyle(dayForeground)
             .lineLimit(1)
@@ -1444,27 +1486,22 @@ private struct CalendarDayCell: View {
     }
 
     private var dayForeground: Color {
-        if isSelected { return appTheme.colors.accentForeground }
-        if isToday { return appTheme.colors.accent }
+        if isFilledSelection { return appTheme.colors.accentForeground }
         return appTheme.colors.textPrimary
     }
 
     private var backgroundColor: Color {
-        if isSelected { return appTheme.colors.accent }
-        if isLogged { return appTheme.colors.accentSurface }
-        if isToday { return appTheme.elevatedCardBackground }
+        if isFilledSelection { return appTheme.colors.accent }
         return .clear
     }
 
     private var strokeColor: Color {
-        if isSelected { return appTheme.colors.accentHighlight.opacity(0.86) }
-        if isToday { return appTheme.colors.accent.opacity(0.55) }
-        if isLogged { return appTheme.colors.accent.opacity(0.18) }
+        if isFilledSelection { return appTheme.colors.accentHighlight.opacity(0.86) }
         return .clear
     }
 
     private var strokeWidth: CGFloat {
-        isSelected || isToday || isLogged ? 1 : 0
+        isFilledSelection ? 1 : 0
     }
 
     private var accessibilityLabel: String {
