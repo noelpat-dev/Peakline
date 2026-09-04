@@ -81,6 +81,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.dismiss) private var dismiss
     @AppStorage("appTheme") private var storedTheme = AppTheme.black.rawValue
     @AppStorage("appAppearance") private var storedAppearance = AppAppearance.system.rawValue
     @State private var profile: UserProfile?
@@ -306,6 +307,14 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("settings-screen")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .accessibilityIdentifier("settings-dismiss")
+                }
+            }
             .navigationDestination(isPresented: $showingProfileEditor) {
                 if let profile {
                     ProfileEditorView(profile: profile)

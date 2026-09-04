@@ -363,21 +363,16 @@ final class SleepRecoveryUITests: XCTestCase {
     @discardableResult
     private func waitForToday(timeout: TimeInterval = 12) -> Bool {
         let todayScreen = app.descendants(matching: .any)["today-screen"]
-        let todayNavigationBar = app.navigationBars["Today"]
         let deadline = Date().addingTimeInterval(timeout)
 
         repeat {
             if todayScreen.exists && todayScreen.isHittable {
                 return true
             }
-            if todayNavigationBar.exists && todayNavigationBar.isHittable {
-                return true
-            }
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         } while Date() < deadline
 
-        return (todayScreen.exists && todayScreen.isHittable)
-            || (todayNavigationBar.exists && todayNavigationBar.isHittable)
+        return todayScreen.exists && todayScreen.isHittable
     }
 
     @discardableResult

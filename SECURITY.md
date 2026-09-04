@@ -12,4 +12,4 @@ Please do not publish credentials, personal backup data, or an exploit demonstra
 - Backup metadata, encrypted payloads, decompression, record counts, and Firestore chunks have explicit size and count limits.
 - The Firebase configuration file and signing material are ignored and must never be committed.
 - UI-test launch arguments and fixture seeding are compiled only into Debug builds.
-- The current codebase has no known committed credential or confirmed cross-user access path; live Firebase and physical-device validation remain release checks.
+- The current codebase has no known committed credential or confirmed cross-user access path; live Firebase and Noel's iPhone validation remain release checks.

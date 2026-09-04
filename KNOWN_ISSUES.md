@@ -32,7 +32,7 @@ Current file: `KNOWN_ISSUES.md`
 - Email/Password Authentication and Cloud Firestore must be enabled in Firebase, with rules that restrict `users/{uid}` documents to that authenticated user.
 - Forgetting the backup passphrase makes the encrypted remote backup unrecoverable after reinstall.
 - Spark quotas can pause backup for the month if exceeded.
-- Physical-device validation is still required for sign in, create data, save backup, delete app, reinstall, sign in again, restore, and confirm data returns.
+- Physical-device validation on Noel's iPhone is still required for sign in, create data, save backup, delete app, reinstall, sign in again, restore, and confirm data returns.
 - HealthKit should remain optional and degrade gracefully when unavailable, denied, or revoked.
 - Edited synced nutrition logs may need review rather than automatic overwrite or duplicate sync.
 
@@ -49,7 +49,7 @@ Current file: `KNOWN_ISSUES.md`
 
 ## UI And Design System
 
-- The app-wide premium-athletic migration has simulator evidence across all five root tabs in Dark, representative Today/History/Settings surfaces in forced Light, and maximum accessibility text on Today and Settings. The redesigned populated Sleep dashboard was visually inspected on iPhone 17 and the dedicated Sleep suite exercised maximum accessibility text, contrast, Reduce Motion, and Reduce Transparency, but the Mac UI controller was locked and no smaller simulator was installed. Repeat Sleep's no-data, active, settings, editors, timer, morning, and detail matrix manually on an unlocked smallest-supported physical iPhone in Light and Dark with VoiceOver.
+- The app-wide premium-athletic migration has simulator evidence across all five root tabs in Dark, representative Today/History/Settings surfaces in forced Light, and maximum accessibility text on Today and Settings. The redesigned populated Sleep dashboard was visually inspected on iPhone 17 and the dedicated Sleep suite exercised maximum accessibility text, contrast, Reduce Motion, and Reduce Transparency, but the Mac UI controller was locked and no smaller simulator was installed. Repeat Sleep's no-data, active, settings, editors, timer, morning, and detail matrix manually on Noel's unlocked physical iPhone in Light and Dark with VoiceOver.
 - Preserve the single-title rule: a screen should not render both a native navigation title and a duplicate `FitnessScreenHeader` title.
 - Keep row ellipsis actions anchored to the originating row. Do not reintroduce screen-level action dialogs for exercise or split row menus.
 - Keep visible measurement copy on the shared notation (`60 kg × 8`, `350 mL`, `100 g`) and use plural-aware count helpers.
@@ -57,7 +57,7 @@ Current file: `KNOWN_ISSUES.md`
 - Destructive actions should remain semantic danger or system red, not the accent color.
 - Nutrition and hydration delete swipe patterns share one direct-offset implementation. Do not reintroduce `@GestureState` plus a second settled offset, which produces a visible double flick when the gesture state resets.
 - Native editor `Form` and `List` surfaces should use the shared grouped content background so they do not drift from the selected theme.
-- Manually verify the five-day programme chips, one-border split icons, compact History calendar, responsive Settings rows, and historical Nutrition controls on a smaller physical iPhone with Dynamic Type, VoiceOver, Reduce Transparency, and both appearance modes.
+- Manually verify the five-day programme chips, one-border split icons, compact History calendar, responsive Settings rows, and historical Nutrition controls on Noel's physical iPhone with Dynamic Type, VoiceOver, Reduce Transparency, and both appearance modes.
 - Manually verify the genuine-PR completion in Light, Dark, large Dynamic Type, and VoiceOver. Reduce Motion must show a static gold trophy with PR copy and no moving sparks, rings, or trophy pop; Done must remain immediately tappable in every mode.
 
 ## Performance And Charts
@@ -70,7 +70,7 @@ Current file: `KNOWN_ISSUES.md`
 - Keep Preview source-data and cache publication outside the entire mounted route, not merely active scroll intervals. Retain one eager border-only detailed order and dedicated-handle drag ownership; row-wide drag gestures, duplicated orders, or lazy variable-height detailed rows can reintroduce scroll-indicator jitter. The order currently mounts from the pinned snapshot about 50 ms after the actionable top frame, and frame publication follows at about 100 ms; do not move frame setup back to the first drag, because that makes the lifted row a no-op.
 - Coach must retain its last complete route snapshot while inactive or backgrounded. Its first actionable hero and prepared “Why this?” card use the value-backed recommended Preview split with no warm-frame SwiftData query; deeper supporting sections and live observation attach afterward. Do not defer every supporting card or the route shows an avoidable blank lower viewport. Do not clear the destination for app-switcher privacy; Peakline's prepared health summary contains no credential or passphrase fields.
 - Today-to-Workout must pass the startup `WorkoutStartFirstFrameSnapshot` into the pushed workout content. Falling back to a live-query-built first viewport recreates the visible delay reported on physical hardware.
-- Root-tab selection must remain observation-isolated from timing bookkeeping and `RootTabView`'s SwiftData-backed warm signatures. Keep the native switch free of whole-screen animation; prepared Workout, Splits, History, and Settings values must be visible before live queries attach.
+- Root-tab selection must remain observation-isolated from timing bookkeeping and `RootTabView`'s SwiftData-backed warm signatures. Keep the native switch free of whole-screen animation; prepared Workout, Splits, and History values must be visible before live queries attach, and keep Settings in the native sheet opened from Today's profile menu.
 - Keep Today re-entry comparison out of `onDisappear`; accepted presentation signatures are maintained while Today is visible so navigation and tab selection do no synchronous snapshot work.
 - Keep charts lazy-loaded.
 - Exercise charts still need at least two completed sessions for a useful trend; one-session states should explain that clearly.
@@ -107,4 +107,4 @@ Scripts/verify_performance_acceptance.sh
 
 For documentation-only tasks, `git diff --check` is sufficient unless app or project files were accidentally changed.
 
-Physical-device QA remains outstanding because no unlocked iPhone was available for this motion pass. Recheck all five root surfaces, Today changed/unchanged re-entry washes, Logger checkmark/rest urgency/stepper direction, deletion failure retention, sheet entrances, History/Progress/Sleep charts, genuine-PR and ordinary completion, Light/Dark, maximum practical Dynamic Type, VoiceOver, Reduce Motion, and Reduce Transparency on an unlocked smallest-supported device. The iPhone 17 simulator supplied Dark/forced-Light screenshots, maximum-text and Reduce Motion smoke checks, plus accessibility-tree evidence; haptics and exact animation smoothness still require hardware.
+Physical-device QA remains outstanding because no unlocked iPhone was available for this motion pass. Recheck all four root surfaces and the Settings sheet from Today's profile menu, Today changed/unchanged re-entry washes, Logger checkmark/rest urgency/stepper direction, deletion failure retention, sheet entrances, History/Progress/Sleep charts, genuine-PR and ordinary completion, Light/Dark, maximum practical Dynamic Type, VoiceOver, Reduce Motion, and Reduce Transparency on Noel's unlocked iPhone. The iPhone 17 simulator supplied Dark/forced-Light screenshots, maximum-text and Reduce Motion smoke checks, plus accessibility-tree evidence; haptics and exact animation smoothness still require hardware.

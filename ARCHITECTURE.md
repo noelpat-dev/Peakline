@@ -17,7 +17,7 @@ Shared views and theme tokens keep the UI consistent.
 
 ## Stack
 
-- Platform: iOS 17+.
+- Validation targets: iPhone 17 simulator and Noel's iPhone only.
 - UI: SwiftUI.
 - Persistence: SwiftData.
 - Charts: Swift Charts.
@@ -44,15 +44,16 @@ GymTracker/App/
 
 `AppStartupView` owns the correctness-critical launch pipeline: inspect the local store, resolve account/restore state before seeding, seed missing defaults, run versioned local repairs, build bounded value snapshots for shared training, recovery, Nutrition, and Progress state, build all four Preview modes for every active split, publish one canonical generation to the warm stores, and only then reveal the root tabs. Startup bounds active splits, exercises, workouts, Sleep/naps, saved foods, and first-frame rows. Existing local content never waits for Firebase; an empty signed-in store performs a metadata-only backup check and downloads encrypted chunks only after Restore is selected. Five seconds is the animation ceiling, never a minimum wait: readiness starts the 280 ms opacity-led reveal immediately. If preparation exceeds the ceiling, the wordmark settles and truthful stage progress appears. Account, restore, and error gates interrupt the splash immediately; later retry work uses a static progress state instead of replaying the cold animation.
 
-`RootTabView` owns the primary tabs and starts non-critical backup and notification work only after critical readiness:
+`RootTabView` owns the four primary tabs and starts non-critical backup and notification work only after critical readiness:
 
 - Today.
 - Workout.
 - Splits.
 - History.
-- Settings.
 
-Every root tab has a stable accessibility identifier. `RootTabContainer` keeps timing state outside SwiftUI observation, uses stable equatable child hosts, and lets the native `TabView` switch without a custom whole-screen transition. Workout, Splits, History, and Settings present bounded prepared content for the committed first frame, then attach their live query-backed view. Root-tab stable frames retain the 300 ms warm-route budget. Data-backed Coach and hydrated Workout Preview pushes remain deep routes with the existing 500 ms budget.
+Settings is a native sheet opened from Today's profile menu.
+
+Every primary tab has a stable accessibility identifier. `RootTabContainer` keeps timing state outside SwiftUI observation, uses stable equatable child hosts, and lets the native `TabView` switch without a custom whole-screen transition. Workout, Splits, and History present bounded prepared content for the committed first frame, then attach their live query-backed view. Root-tab stable frames retain the 300 ms warm-route budget. Data-backed Coach and hydrated Workout Preview pushes remain deep routes with the existing 500 ms budget.
 
 Coach, Progress, Nutrition, Sleep, Hydration, HealthKit settings, Backup/Export, Plate Calculator, Exercise Library, and templates are reached from those primary areas.
 
@@ -168,9 +169,9 @@ GymTrackerTests/
 GymTrackerUITests/
 ```
 
-Current coverage includes rotation successor/migration behavior; Readiness v2 aggregate fixtures, evidence caps, eligibility, confidence, calibration, safeguards, trend filtering, provisional presentation, and immediate check-in refresh; broader Coach intelligence; snapshot-builder parity and bounded target work; duration calibration selection/fallback/outlier behavior; monthly attendance targets and local-day grouping; duration-field synchronization; reorder-reducer and launch-order invariants; motivation-catalog rotation; standard/single-PR/multi-PR completion presentation mapping; sleep recovery reliability plus Nap Timer, HealthKit access/import, provisional-copy, no-future-date, and deterministic Sleep UI fixtures; nutrition/export reliability; full-app backup reliability; Coach/Workout Preview performance and lifecycle UI; real drag-to-Logger continuity; four-hour workout interception; a prior-lower-performance PR completion fixture through responsive Done and Summary retirement; Settings/Profile/Workout Tools/Appearance reachability; historical Nutrition navigation; five-day Splits editing without template-note controls; History navigation; and workout logging UI.
+Current coverage includes rotation successor/migration behavior; Readiness v2 aggregate fixtures, evidence caps, eligibility, confidence, calibration, safeguards, trend filtering, provisional presentation, and immediate check-in refresh; broader Coach intelligence; snapshot-builder parity and bounded target work; duration calibration selection/fallback/outlier behavior; monthly attendance targets and local-day grouping; duration-field synchronization; reorder-reducer and launch-order invariants; motivation-catalog rotation; standard/single-PR/multi-PR completion presentation mapping; sleep recovery reliability plus Nap Timer, HealthKit access/import, provisional-copy, no-future-date, and deterministic Sleep UI fixtures; nutrition/export reliability; full-app backup reliability; Coach/Workout Preview performance and lifecycle UI; real drag-to-Logger continuity; four-hour workout interception; a prior-lower-performance PR completion fixture through responsive Done and Summary retirement; Settings/Profile/Workout Tools/Appearance reachability from Today's profile menu; historical Nutrition navigation; five-day Splits editing without template-note controls; History navigation; and workout logging UI.
 
-Useful UI-test launch arguments include in-memory storage and seeded fixtures handled by the app and `SeedDataService`. With the in-memory argument present, internal-only `-UITestAppearance light|dark|system`, `-UITestInitialTab today|workout|splits|history|settings`, and the Sleep fixture arguments for populated, active, morning, invalid-editor, and elapsed-nap states make visual and route evidence deterministic without changing production data, appearance, or navigation state.
+Useful UI-test launch arguments include in-memory storage and seeded fixtures handled by the app and `SeedDataService`. With the in-memory argument present, internal-only `-UITestAppearance light|dark|system`, `-UITestInitialTab today|workout|splits|history`, and the Sleep fixture arguments for populated, active, morning, invalid-editor, and elapsed-nap states make visual and route evidence deterministic without changing production data, appearance, or navigation state. Settings is exercised from Today's profile menu.
 
 ## Icon Pipeline
 
