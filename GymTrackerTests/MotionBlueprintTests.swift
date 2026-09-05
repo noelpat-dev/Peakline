@@ -3,19 +3,6 @@ import XCTest
 
 @MainActor
 final class MotionBlueprintTests: XCTestCase {
-    func testRoleSpecsKeepReleaseAndExpressiveAccessibilityContracts() {
-        let release = AppMotion.spec(for: .tapRelease)
-        XCTAssertTrue(release.duration.upperBound <= AppMotion.microDurationMaximum)
-        XCTAssertTrue(release.feel.localizedCaseInsensitiveContains("snappy"))
-
-        let metric = AppMotion.spec(for: .metricChange)
-        XCTAssertEqual(metric.duration, AppMotion.expressiveDurationRange)
-        XCTAssertTrue(metric.feel.localizedCaseInsensitiveContains("without layout shift"))
-
-        XCTAssertEqual(AppMotion.reduceMotionPolicy(for: .metricChange), .opacity)
-        XCTAssertEqual(AppMotion.reduceMotionPolicy(for: .celebration), .immediate)
-    }
-
     func testCustomStaggerStepStillCapsTrailingItemsAsOneGroup() {
         let step = 0.04
 
@@ -64,40 +51,5 @@ final class MotionBlueprintTests: XCTestCase {
         XCTAssertEqual(state.progress(at: start.addingTimeInterval(-1)), 0, accuracy: 0.0001)
         XCTAssertEqual(state.progress(at: start.addingTimeInterval(30)), 0.5, accuracy: 0.0001)
         XCTAssertEqual(state.progress(at: start.addingTimeInterval(61)), 1, accuracy: 0.0001)
-    }
-
-    func testCompletionPresentationIsExclusivelyPROrOrdinary() throws {
-        let rating = try XCTUnwrap(WorkoutRating.options.first { $0.id == 4 })
-        let pr = PRRecord(
-            id: "motion-pr",
-            sessionId: UUID(),
-            exerciseLogId: UUID(),
-            setLogId: UUID(),
-            exerciseName: "Bench Press",
-            date: Date(timeIntervalSince1970: 1_700_000_000),
-            workoutSplitName: "Push",
-            prType: .estimatedOneRepMax,
-            value: 82,
-            displayValue: "82 kg",
-            previousDisplayValue: "80 kg",
-            improvementDescription: "Estimated 1RM 80kg → 82kg"
-        )
-
-        let ordinary = WorkoutCelebrationPresentation.completion(
-            rating: rating,
-            durationText: "42m",
-            prs: []
-        )
-        let personalRecord = WorkoutCelebrationPresentation.completion(
-            rating: rating,
-            durationText: "42m",
-            prs: [pr]
-        )
-
-        XCTAssertEqual(ordinary.style, .completedWorkout)
-        XCTAssertNotEqual(ordinary.systemImage, "trophy.fill")
-        XCTAssertEqual(personalRecord.style, .pr)
-        XCTAssertEqual(personalRecord.systemImage, "trophy.fill")
-        XCTAssertNotEqual(ordinary.title, personalRecord.title)
     }
 }

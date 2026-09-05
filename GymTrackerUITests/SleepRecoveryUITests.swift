@@ -60,7 +60,7 @@ final class SleepRecoveryUITests: XCTestCase {
         XCTAssertTrue(waitForIdentifier("sleep-log-nap"))
         XCTAssertTrue(waitForText("7h 50m", maxSwipes: 12), "The older session should remain visible in History")
 
-        tapAction(identifier: "sleep-add-manual", labels: ["Add Sleep"], maxSwipes: 12)
+        tapAction(identifier: "sleep-add-manual", maxSwipes: 12)
         XCTAssertTrue(waitForNavigationTitle("Add Sleep"))
     }
 
@@ -98,11 +98,11 @@ final class SleepRecoveryUITests: XCTestCase {
         XCTAssertTrue(waitForText("Session quality: \(initialHistoryScore ?? -1)"))
         XCTAssertTrue(waitForText("Manual"))
 
-        tapAction(identifier: "sleep-detail-edit", labels: ["Edit Sleep Session"], maxSwipes: 10)
+        tapAction(identifier: "sleep-detail-edit", maxSwipes: 10)
         XCTAssertTrue(waitForNavigationTitle("Edit Sleep"))
-        tapAction(identifier: "sleep-quality-picker", labels: ["Sleep quality", "Sleep quality Excellent"], maxSwipes: 8)
+        tapAction(identifier: "sleep-editor-quality", maxSwipes: 8)
         tapAction(labels: ["Excellent"], maxSwipes: 4)
-        tapAction(identifier: "sleep-editor-save", labels: ["Save Sleep Session"], maxSwipes: 10)
+        tapAction(identifier: "sleep-editor-save", maxSwipes: 10)
 
         XCTAssertTrue(waitForNavigationTitle("Sleep Detail"))
         let editedDetailElement = textContaining("Session quality:")
@@ -132,9 +132,9 @@ final class SleepRecoveryUITests: XCTestCase {
         XCTAssertTrue(waitForText("Sleep Mode Active"))
         XCTAssertFalse(waitForNavigationTitle("Good morning"), "A 90-minute active session must remain below the four-hour morning-confirmation threshold")
 
-        tapAction(identifier: "sleep-active-confirm", labels: ["Confirm Wake Time"], maxSwipes: 8)
+        tapAction(identifier: "sleep-active-confirm", maxSwipes: 8)
         XCTAssertTrue(waitForNavigationTitle("Good morning"))
-        tapAction(identifier: "sleep-morning-confirm", labels: ["Confirm Wake Time"], maxSwipes: 10)
+        tapAction(identifier: "sleep-morning-confirm", maxSwipes: 10)
 
         XCTAssertTrue(waitForIdentifierGone("sleep-active-hero", timeout: 8))
         XCTAssertTrue(waitForText("Last night's sleep"))
@@ -144,12 +144,12 @@ final class SleepRecoveryUITests: XCTestCase {
         launch(arguments: ["-UITestSleepActiveFixture"])
         openSleep()
 
-        tapAction(identifier: "sleep-active-discard", labels: ["Discard sleep session", "Discard"], maxSwipes: 8)
+        tapAction(identifier: "sleep-active-discard", maxSwipes: 8)
         XCTAssertTrue(waitForAlert("Discard active sleep?"))
         app.alerts.firstMatch.buttons["Cancel"].tap()
         XCTAssertTrue(waitForIdentifier("sleep-active-hero"))
 
-        tapAction(identifier: "sleep-active-discard", labels: ["Discard sleep session", "Discard"], maxSwipes: 8)
+        tapAction(identifier: "sleep-active-discard", maxSwipes: 8)
         XCTAssertTrue(waitForAlert("Discard active sleep?"))
         app.alerts.firstMatch.buttons["Discard"].tap()
         XCTAssertTrue(waitForIdentifierGone("sleep-active-hero", timeout: 8))
@@ -161,7 +161,7 @@ final class SleepRecoveryUITests: XCTestCase {
         openSleep()
 
         XCTAssertTrue(waitForNavigationTitle("Good morning"))
-        tapAction(identifier: "sleep-morning-discard", labels: ["Discard Session"], maxSwipes: 10)
+        tapAction(identifier: "sleep-morning-discard", maxSwipes: 10)
 
         XCTAssertTrue(
             waitForAlertAny(["Discard this sleep session?", "Discard sleep session?"]),
@@ -170,7 +170,7 @@ final class SleepRecoveryUITests: XCTestCase {
         tapAlertButton(named: ["Keep Session", "Cancel"])
         XCTAssertTrue(waitForNavigationTitle("Good morning"))
 
-        tapAction(identifier: "sleep-morning-discard", labels: ["Discard Session"], maxSwipes: 10)
+        tapAction(identifier: "sleep-morning-discard", maxSwipes: 10)
         XCTAssertTrue(waitForAlertAny(["Discard this sleep session?", "Discard sleep session?"]))
         tapAlertButton(named: ["Discard"])
         XCTAssertTrue(waitForIdentifierGone("sleep-active-hero", timeout: 8))
@@ -180,7 +180,7 @@ final class SleepRecoveryUITests: XCTestCase {
         launch()
         openSleep()
 
-        tapAction(identifier: "sleep-manual-entry", labels: ["Add Sleep", "Manual Entry"], maxSwipes: 8)
+        tapAction(identifier: "sleep-add-manual", maxSwipes: 8)
         XCTAssertTrue(waitForNavigationTitle("Add Sleep"))
         XCTAssertTrue(waitForText("Duration"))
         XCTAssertTrue(waitForText("Sleep start"))
@@ -189,8 +189,8 @@ final class SleepRecoveryUITests: XCTestCase {
         // The editor starts with a valid eight-hour range. Repository-level
         // tests cover invalid dates without depending on locale-specific
         // date-picker wheel ordering.
-        tapAction(identifier: "sleep-editor-save", labels: ["Save Sleep Session"], maxSwipes: 10)
-        XCTAssertTrue(waitForAnyIdentifierGone(["sleep-manual-entry", "sleep-add-manual"], timeout: 8))
+        tapAction(identifier: "sleep-editor-save", maxSwipes: 10)
+        XCTAssertTrue(waitForIdentifierGone("sleep-add-manual", timeout: 8))
         XCTAssertTrue(waitForIdentifier("sleep-populated-hero"))
         XCTAssertTrue(waitForText("Manual"))
     }
@@ -199,12 +199,12 @@ final class SleepRecoveryUITests: XCTestCase {
         launch(arguments: ["-UITestSleepInvalidEditorFixture"])
         openSleep()
 
-        tapAction(identifier: "sleep-manual-entry", labels: ["Add Sleep", "Manual Entry"], maxSwipes: 8)
+        tapAction(identifier: "sleep-add-manual", maxSwipes: 8)
         XCTAssertTrue(waitForNavigationTitle("Add Sleep"))
         XCTAssertTrue(waitForIdentifier("sleep-editor-start"))
         XCTAssertTrue(waitForIdentifier("sleep-editor-wake"))
 
-        tapAction(identifier: "sleep-editor-save", labels: ["Save Sleep Session"], maxSwipes: 10)
+        tapAction(identifier: "sleep-editor-save", maxSwipes: 10)
 
         let editorError = app.descendants(matching: .any)["sleep-editor-error"]
         XCTAssertTrue(editorError.waitForExistence(timeout: 5))
@@ -217,11 +217,11 @@ final class SleepRecoveryUITests: XCTestCase {
         launch(arguments: ["-UITestSleepPopulatedFixture"])
         openSleep()
 
-        tapAction(identifier: "sleep-nap-timer", labels: ["Nap Timer"], maxSwipes: 10)
+        tapAction(identifier: "sleep-nap-timer", maxSwipes: 10)
         XCTAssertTrue(waitForNavigationTitle("Nap Timer"))
         XCTAssertTrue(waitForText("30:00"))
 
-        tapAction(identifier: "sleep-nap-timer-primary", labels: ["Start Nap Timer"], maxSwipes: 10)
+        tapAction(identifier: "sleep-nap-timer-primary", maxSwipes: 10)
         XCTAssertTrue(waitForText("Nap in progress"))
         let runningTimer = napTimerValue()
         XCTAssertTrue(runningTimer.waitForExistence(timeout: 3))
@@ -229,24 +229,24 @@ final class SleepRecoveryUITests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(1.1))
         XCTAssertNotEqual(runningTimer.label, initialTimerLabel, "The nap timer should derive its display from elapsed date time")
 
-        tapAction(identifier: "sleep-nap-timer-close", labels: ["Close"], maxSwipes: 4)
+        tapAction(identifier: "sleep-nap-timer-close", maxSwipes: 4)
         XCTAssertTrue(
             waitForAlertAny(["Discard nap timer?", "Close nap timer?"], timeout: 2),
             "Closing an active nap timer must require confirmation"
         )
         tapAlertButton(named: ["Keep Timer", "Cancel"])
-        tapAction(identifier: "sleep-nap-timer-close", labels: ["Close"], maxSwipes: 4)
+        tapAction(identifier: "sleep-nap-timer-close", maxSwipes: 4)
         XCTAssertTrue(waitForAlertAny(["Discard nap timer?", "Close nap timer?"]))
         tapAlertButton(named: ["Discard", "Close"])
         XCTAssertTrue(waitForSleep())
 
-        tapAction(identifier: "sleep-nap-timer", labels: ["Nap Timer"], maxSwipes: 10)
+        tapAction(identifier: "sleep-nap-timer", maxSwipes: 10)
         XCTAssertTrue(waitForNavigationTitle("Nap Timer"))
-        tapAction(identifier: "sleep-nap-timer-primary", labels: ["Start Nap Timer"], maxSwipes: 10)
+        tapAction(identifier: "sleep-nap-timer-primary", maxSwipes: 10)
         let rejectionTimer = napTimerValue()
         XCTAssertTrue(rejectionTimer.waitForExistence(timeout: 3), "Expected a visible timer value before the under-minimum finish")
         XCTAssertTrue(rejectionTimer.label.hasPrefix("0:"), "The rejection case must start from now, got \(rejectionTimer.label)")
-        tapAction(identifier: "sleep-nap-timer-primary", labels: ["Finish Nap"], maxSwipes: 10)
+        tapAction(identifier: "sleep-nap-timer-primary", maxSwipes: 10)
 
         XCTAssertTrue(waitForNavigationTitle("Nap Timer"))
         let napTimerError = textContaining("Keep the timer running for at least 10 minutes before saving a nap.")
@@ -254,7 +254,7 @@ final class SleepRecoveryUITests: XCTestCase {
         XCTAssertEqual(napTimerError.identifier, "sleep-nap-timer-error")
         XCTAssertTrue(app.descendants(matching: .any)["sleep-nap-timer-primary"].label.contains("Finish Nap"))
 
-        tapAction(identifier: "sleep-nap-timer-close", labels: ["Close"], maxSwipes: 4)
+        tapAction(identifier: "sleep-nap-timer-close", maxSwipes: 4)
         XCTAssertTrue(
             waitForAlertAny(["Discard nap timer?", "Close nap timer?"], timeout: 2),
             "Closing after an under-minimum nap rejection must require confirmation"
@@ -267,12 +267,12 @@ final class SleepRecoveryUITests: XCTestCase {
         launch(arguments: ["-UITestSleepPopulatedFixture", "-UITestNapElapsedFixture"])
         openSleep()
 
-        tapAction(identifier: "sleep-nap-timer", labels: ["Nap Timer"], maxSwipes: 12)
+        tapAction(identifier: "sleep-nap-timer", maxSwipes: 12)
         XCTAssertTrue(waitForNavigationTitle("Nap Timer"))
-        tapAction(identifier: "sleep-nap-timer-primary", labels: ["Start Nap Timer"], maxSwipes: 10)
+        tapAction(identifier: "sleep-nap-timer-primary", maxSwipes: 10)
         XCTAssertTrue(waitForText("Nap in progress") || waitForText("Target reached"))
 
-        tapAction(identifier: "sleep-nap-timer-primary", labels: ["Finish Nap"], maxSwipes: 10)
+        tapAction(identifier: "sleep-nap-timer-primary", maxSwipes: 10)
         XCTAssertTrue(waitForText("Nap saved"))
         let completedPrimary = app.descendants(matching: .any)["sleep-nap-timer-primary"]
         XCTAssertTrue(completedPrimary.waitForExistence(timeout: 5))
@@ -290,11 +290,11 @@ final class SleepRecoveryUITests: XCTestCase {
         launch()
         openSleep()
 
-        tapAction(identifier: "sleep-settings-button", labels: ["Sleep settings"], maxSwipes: 4)
+        tapAction(identifier: "sleep-settings-button", maxSwipes: 4)
         XCTAssertTrue(waitForNavigationTitle("Sleep Settings"))
         XCTAssertTrue(waitForText("Preferred Sleep Source"))
 
-        tapAction(identifier: "sleep-settings-preferred-source", labels: ["Preferred sleep source"], maxSwipes: 10)
+        tapAction(identifier: "sleep-settings-preferred-source", maxSwipes: 10)
         XCTAssertTrue(waitForText("Automatic"))
         XCTAssertTrue(waitForText("Apple Health"))
         XCTAssertTrue(waitForText("Sleep Mode"))
@@ -333,7 +333,7 @@ final class SleepRecoveryUITests: XCTestCase {
             XCTAssertTrue(exportToggle.isEnabled)
         }
 
-        tapAction(identifier: "sleep-settings-done", labels: ["Done"], maxSwipes: 12)
+        tapAction(identifier: "sleep-settings-done", maxSwipes: 12)
         XCTAssertTrue(waitForSleep())
     }
 
@@ -346,7 +346,7 @@ final class SleepRecoveryUITests: XCTestCase {
 
     private func openSleep() {
         XCTAssertTrue(waitForToday(), "Expected a hittable Today screen before opening Sleep")
-        tapAction(identifier: "quick-action-sleep", labels: ["Sleep"], maxSwipes: 8)
+        tapAction(identifier: "quick-action-sleep", maxSwipes: 8)
         XCTAssertTrue(waitForSleep(), "Expected Today quick action to open Sleep")
     }
 
@@ -408,18 +408,8 @@ final class SleepRecoveryUITests: XCTestCase {
     }
 
     @discardableResult
-    private func waitForAnyIdentifier(_ identifiers: [String], timeout: TimeInterval = 8) -> Bool {
-        identifiers.contains { waitForIdentifier($0, timeout: timeout / Double(max(1, identifiers.count))) }
-    }
-
-    @discardableResult
     private func waitForIdentifierGone(_ identifier: String, timeout: TimeInterval = 8) -> Bool {
         app.descendants(matching: .any)[identifier].waitForNonExistence(timeout: timeout)
-    }
-
-    @discardableResult
-    private func waitForAnyIdentifierGone(_ identifiers: [String], timeout: TimeInterval = 8) -> Bool {
-        identifiers.allSatisfy { waitForIdentifierGone($0, timeout: timeout / Double(max(1, identifiers.count))) }
     }
 
     @discardableResult
@@ -499,35 +489,14 @@ final class SleepRecoveryUITests: XCTestCase {
 
     private func hittableElement(identifier: String?, labels: [String]) -> XCUIElement? {
         if let identifier {
-            let button = app.buttons[identifier]
-            if button.exists && button.isHittable {
-                return button
-            }
+            let element = app.descendants(matching: .any)[identifier].firstMatch
+            return element.exists && element.isHittable ? element : nil
         }
 
         for label in labels {
-            let exactButton = app.buttons[label]
-            if exactButton.exists && exactButton.isHittable {
-                return exactButton
-            }
-
-            let matchingButtons = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", label))
-            for index in 0..<matchingButtons.count {
-                let button = matchingButtons.element(boundBy: index)
-                if button.exists && button.isHittable {
-                    return button
-                }
-            }
-
-            let matchingElements = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] %@", label))
-            for index in 0..<matchingElements.count {
-                let element = matchingElements.element(boundBy: index)
-                if element.exists && element.isHittable {
-                    return element
-                }
-            }
+            let button = app.buttons[label]
+            if button.exists && button.isHittable { return button }
         }
-
         return nil
     }
 
@@ -679,26 +648,12 @@ final class SleepRecoveryUITests: XCTestCase {
         app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] %@", value)).firstMatch
     }
 
-    private func textMatching(_ predicate: NSPredicate) -> XCUIElement {
-        app.descendants(matching: .any).matching(predicate).firstMatch
-    }
-
     private func napTimerValue() -> XCUIElement {
-        app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "[0-9]+:[0-9]{2}")).firstMatch
+        app.staticTexts["sleep-nap-timer-value"]
     }
 
     private func buttonContaining(_ value: String) -> XCUIElement {
         app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", value)).firstMatch
-    }
-
-    private func firstButton(containing values: [String]) -> XCUIElement {
-        for value in values {
-            let button = buttonContaining(value)
-            if button.exists {
-                return button
-            }
-        }
-        return app.buttons.firstMatch
     }
 
     private func toggleContaining(_ value: String) -> XCUIElement {

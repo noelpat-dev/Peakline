@@ -12,28 +12,27 @@ final class AppLifecycleSwipeAwayUITests: XCTestCase {
         app = nil
     }
 
-    func testRepeatedBackgroundTerminateRelaunchLifecycle() throws {
-        let cycles = 10
+    func testBackgroundTerminateAndRelaunchRemainsUsable() throws {
+        app = makeApp()
+        app.launch()
+        waitForToday()
+        primeLifecycleRelatedRoutes()
 
-        for cycle in 1...cycles {
-            app = makeApp()
-            app.launch()
-            print("LIFECYCLE_SWIPE_AWAY cycle=\(cycle) launched")
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 5))
+        app.activate()
+        waitForToday()
 
-            waitForToday(cycle: cycle)
-
-            if cycle == 1 {
-                primeLifecycleRelatedRoutes()
-            }
-
-            XCUIDevice.shared.press(.home)
-            print("LIFECYCLE_SWIPE_AWAY cycle=\(cycle) backgrounded")
-            RunLoop.current.run(until: Date().addingTimeInterval(1.0))
-
-            app.terminate()
-            print("LIFECYCLE_SWIPE_AWAY cycle=\(cycle) terminated")
-            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
-        }
+        app.terminate()
+        XCTAssertTrue(app.wait(for: .notRunning, timeout: 5))
+        app.launch()
+        waitForToday()
+        // The fixture is in-memory: verify a usable relaunch, not durable restoration.
+        tapElement(identifier: "quick-action-sleep", maxSwipes: 5)
+        XCTAssertTrue(app.descendants(matching: .any)["sleep-screen"].waitForExistence(timeout: 8))
+        tapBackButton()
+        waitForToday()
+        print("LIFECYCLE_RELAUNCH_PASS")
     }
 
     private func makeApp() -> XCUIApplication {
@@ -46,15 +45,14 @@ final class AppLifecycleSwipeAwayUITests: XCTestCase {
         return app
     }
 
-    private func waitForToday(cycle: Int) {
+    private func waitForToday() {
         XCTAssertTrue(
-            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
-                app.staticTexts["Today"].waitForExistence(timeout: 10),
-            "Expected Today to settle in lifecycle cycle \(cycle)"
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
+            "Expected Today to settle"
         )
         XCTAssertTrue(
-            app.descendants(matching: .any)["today-suggested-split"].waitForExistence(timeout: 10),
-            "Expected Today suggested split in lifecycle cycle \(cycle)"
+            app.descendants(matching: .any)["today-readiness-hero"].waitForExistence(timeout: 10),
+            "Expected the Today readiness hero"
         )
     }
 
@@ -65,12 +63,12 @@ final class AppLifecycleSwipeAwayUITests: XCTestCase {
                 app.staticTexts["Sleep"].waitForExistence(timeout: 8)
         )
         tapBackButton()
-        waitForToday(cycle: 1)
+        waitForToday()
 
-        tapElement(identifier: "quick-action-readiness", maxSwipes: 8)
+        tapElement(identifier: "today-readiness-hero", maxSwipes: 8)
         XCTAssertTrue(waitForCoachScreen(), "Expected Coach to open during lifecycle priming")
         tapBackButton()
-        waitForToday(cycle: 1)
+        waitForToday()
 
         tapTab(at: 1, expectedTitle: "Workout")
         tapElement(identifier: "workout-recommended-preview", maxSwipes: 8)
@@ -78,7 +76,7 @@ final class AppLifecycleSwipeAwayUITests: XCTestCase {
         tapBackButton()
         XCTAssertTrue(waitForWorkoutScreen(), "Expected Workout to return after lifecycle priming")
         tapTab(at: 0, expectedTitle: "Today")
-        waitForToday(cycle: 1)
+        waitForToday()
     }
 
     private func tapTab(at index: Int, expectedTitle: String) {

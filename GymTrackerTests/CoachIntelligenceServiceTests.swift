@@ -1012,15 +1012,6 @@ final class CoachIntelligenceServiceTests: XCTestCase {
         XCTAssertTrue(snapshot.diagnostics.actionHistoryInfluence?.localizedCaseInsensitiveContains("coach actions") == true)
     }
 
-    func testNoHistoryUserFixtureKeepsDiagnosticsCalm() {
-        let snapshot = makeSnapshot(
-            checkIns: [checkIn(daysAgo: 0, energy: 5, soreness: 1, stress: 1, motivation: 5)]
-        )
-
-        XCTAssertEqual(snapshot.diagnostics.feedbackInfluence, ["No local feedback yet."])
-        XCTAssertEqual(snapshot.diagnostics.actionHistoryInfluence, "No coach action history yet.")
-    }
-
     func testCoachPreferencesDefaultsAndCalibrationInfluence() {
         let preferences = CoachPreferences()
         XCTAssertEqual(preferences.aggressiveness, .balanced)

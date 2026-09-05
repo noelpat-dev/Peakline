@@ -6,11 +6,15 @@ final class WorkoutLoggingUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments = ["-UITestInMemoryStore"]
+    }
+
+    private func launch(arguments: [String] = []) {
+        app.launchArguments = ["-UITestInMemoryStore"] + arguments
         app.launch()
     }
 
     func testSeededWorkoutCanLogSetPauseFinishAndReachHistory() throws {
+        launch()
         XCTAssertTrue(
             app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
             "Expected Today to be ready after launch"
@@ -103,14 +107,10 @@ final class WorkoutLoggingUITests: XCTestCase {
     }
 
     func testGenuinePRUsesStarburstCompletionAndReachesSummary() throws {
-        app.terminate()
-        app = XCUIApplication()
-        app.launchArguments = ["-UITestInMemoryStore", "-UITestPRCelebrationFixture"]
-        app.launch()
+        launch(arguments: ["-UITestPRCelebrationFixture"])
 
         XCTAssertTrue(
-            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
-                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
             "Expected Today to be ready after launch"
         )
 
@@ -153,9 +153,9 @@ final class WorkoutLoggingUITests: XCTestCase {
     }
 
     func testSubstitutePresentsOnFirstTapAndCanReopen() throws {
+        launch()
         XCTAssertTrue(
-            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
-                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
             "Expected Today to be ready after launch"
         )
 
@@ -177,9 +177,9 @@ final class WorkoutLoggingUITests: XCTestCase {
     }
 
     func testContinueShowsFreshTransitionCopyAcrossTwoExerciseChanges() throws {
+        launch()
         XCTAssertTrue(
-            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
-                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
             "Expected Today to be ready after launch"
         )
 
@@ -228,14 +228,10 @@ final class WorkoutLoggingUITests: XCTestCase {
     }
 
     func testLongWorkoutRequiresDurationConfirmationBeforeRating() throws {
-        app.terminate()
-        app = XCUIApplication()
-        app.launchArguments = ["-UITestInMemoryStore", "-UITestLongWorkoutFixture"]
-        app.launch()
+        launch(arguments: ["-UITestLongWorkoutFixture"])
 
         XCTAssertTrue(
-            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
-                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
             "Expected Today to be ready after launch"
         )
         tapTab(at: 1, expectedTitle: "Workout")

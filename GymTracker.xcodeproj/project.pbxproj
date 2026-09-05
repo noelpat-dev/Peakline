@@ -202,6 +202,8 @@
 		0010000000000000000000E5 /* SleepCoachingServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000E5 /* SleepCoachingServices.swift */; };
 		0010000000000000000000E6 /* SleepAnalyticsStores.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000E6 /* SleepAnalyticsStores.swift */; };
 		0010000000000000000000E7 /* SleepNotificationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000E7 /* SleepNotificationScheduler.swift */; };
+		C06AC0010000000000000002 /* CoachRouteSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06AC0010000000000000001 /* CoachRouteSnapshot.swift */; };
+		C06AC0010000000000000004 /* CoachRouteSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06AC0010000000000000003 /* CoachRouteSnapshotStore.swift */; };
 		D6E1E5922D596DB71B3D2162 /* ExerciseGuideCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD7027B4DC340CA2319550FE /* ExerciseGuideCatalog.swift */; };
 		FE148485CF56AB9C00DBC7E4 /* ExerciseGuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7C86890246333C09E1ADDAD /* ExerciseGuideView.swift */; };
 		16A3B42C69B46AC4863F4671 /* ExerciseArtworkCreditsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBB01F50E86D59606F66435E /* ExerciseArtworkCreditsView.swift */; };
@@ -378,6 +380,8 @@
 		0020000000000000000000C0 /* AccountBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountBackupView.swift; sourceTree = "<group>"; };
 		0020000000000000000000D4 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		0020000000000000000000D5 /* PeaklineModelSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeaklineModelSchema.swift; sourceTree = "<group>"; };
+		C06AC0010000000000000001 /* CoachRouteSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachRouteSnapshot.swift; sourceTree = "<group>"; };
+		C06AC0010000000000000003 /* CoachRouteSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachRouteSnapshotStore.swift; sourceTree = "<group>"; };
 		FD7027B4DC340CA2319550FE /* ExerciseGuideCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExerciseGuideCatalog.swift; path = GymTracker/Models/ExerciseGuideCatalog.swift; sourceTree = SOURCE_ROOT; };
 		C7C86890246333C09E1ADDAD /* ExerciseGuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExerciseGuideView.swift; path = GymTracker/Views/Settings/ExerciseGuideView.swift; sourceTree = SOURCE_ROOT; };
 		FBB01F50E86D59606F66435E /* ExerciseArtworkCreditsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExerciseArtworkCreditsView.swift; path = GymTracker/Views/Settings/ExerciseArtworkCreditsView.swift; sourceTree = SOURCE_ROOT; };
@@ -477,6 +481,7 @@
 				00200000000000000000006A /* HealthKitBridgeModels.swift */,
 				00200000000000000000006F /* SleepModels.swift */,
 				002000000000000000000091 /* ReadinessModels.swift */,
+				C06AC0010000000000000001 /* CoachRouteSnapshot.swift */,
 				00200000000000000000007E /* CoachAdjustmentEnums.swift */,
 				00200000000000000000007F /* CoachAdjustmentValueTypes.swift */,
 				002000000000000000000080 /* CoachPreferenceModels.swift */,
@@ -636,6 +641,7 @@
 				002000000000000000000071 /* HealthKitSleepService.swift */,
 				0020000000000000000000E0 /* ReadinessScoringService.swift */,
 				002000000000000000000092 /* CoachIntelligenceService.swift */,
+				C06AC0010000000000000003 /* CoachRouteSnapshotStore.swift */,
 				002000000000000000000095 /* CoachWorkoutAdjustmentService.swift */,
 				00200000000000000000009F /* WarmStartSnapshotStore.swift */,
 			);
@@ -1042,8 +1048,10 @@
 				00100000000000000000006D /* SleepModels.swift in Sources */,
 				00100000000000000000006F /* HealthKitSleepService.swift in Sources */,
 				001000000000000000000091 /* ReadinessModels.swift in Sources */,
+				C06AC0010000000000000002 /* CoachRouteSnapshot.swift in Sources */,
 				0010000000000000000000E0 /* ReadinessScoringService.swift in Sources */,
 				001000000000000000000092 /* CoachIntelligenceService.swift in Sources */,
+				C06AC0010000000000000004 /* CoachRouteSnapshotStore.swift in Sources */,
 				001000000000000000000093 /* CoachIntelligenceViews.swift in Sources */,
 				001000000000000000000095 /* CoachWorkoutAdjustmentService.swift in Sources */,
 				001000000000000000000096 /* CoachWorkoutAdjustmentViews.swift in Sources */,

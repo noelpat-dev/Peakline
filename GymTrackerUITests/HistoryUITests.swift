@@ -15,8 +15,7 @@ final class HistoryUITests: XCTestCase {
 
     func testHistoryOverviewIsCleanInformativeAndScrollable() throws {
         XCTAssertTrue(
-            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
-                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
             "Expected Today to be ready after launch"
         )
 
@@ -48,8 +47,7 @@ final class HistoryUITests: XCTestCase {
 
     func testHistoryCalendarFiltersAndSessionDetailOpen() throws {
         XCTAssertTrue(
-            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
-                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
             "Expected Today to be ready after launch"
         )
 
@@ -63,13 +61,14 @@ final class HistoryUITests: XCTestCase {
         ratingFilterChip.tap()
         XCTAssertTrue(app.navigationBars["Filters"].waitForExistence(timeout: 5))
         let pushFilter = app.buttons.matching(identifier: "Push").firstMatch
-        if pushFilter.waitForExistence(timeout: 3) {
-            pushFilter.tap()
-        }
+        XCTAssertTrue(pushFilter.waitForExistence(timeout: 3), "Expected the Push split filter")
+        pushFilter.tap()
         app.navigationBars["Filters"].buttons["Done"].tap()
 
         let firstRow = firstSessionRow()
         XCTAssertTrue(firstRow.waitForExistence(timeout: 8), "Expected a filtered History session row")
+        let filteredRows = app.buttons.matching(identifier: "history-session-row").allElementsBoundByIndex
+        XCTAssertTrue(filteredRows.allSatisfy { $0.label.contains("Push") }, "Push filtering must exclude other splits")
         scrollIntoHittableRegion(firstRow)
         XCTAssertTrue(firstRow.isHittable, "Expected filtered History row to be tappable")
         firstRow.tap()

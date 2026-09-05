@@ -12,8 +12,7 @@ final class SplitsPageUITests: XCTestCase {
 
     func testSeededSplitsOpenDetailAndAddSheet() throws {
         XCTAssertTrue(
-            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
-                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
             "Expected Today to be ready after launch"
         )
 
@@ -49,8 +48,7 @@ final class SplitsPageUITests: XCTestCase {
 
     func testFiveDayRotationCanBeOpenedAndSaved() throws {
         XCTAssertTrue(
-            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
-                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
             "Expected Today to be ready after launch"
         )
         tapTab(at: 2, expectedTitle: "Splits")

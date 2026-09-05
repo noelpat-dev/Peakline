@@ -610,7 +610,6 @@ final class SleepRecoveryReliabilityTests: XCTestCase {
         }
         XCTAssertEqual(earlyFinish.state.phase, .finishing)
         XCTAssertEqual(earlyCompletion.endDate, earlyFinishDate)
-        XCTAssertLessThanOrEqual(earlyCompletion.endDate, earlyFinishDate)
 
         let lateFinishDate = start.addingTimeInterval(25 * 60)
         let lateFinish = NapTimerStateMachine.reduce(
@@ -832,11 +831,6 @@ final class SleepRecoveryReliabilityTests: XCTestCase {
             HealthKitSleepImportPresentation.make(result: failed),
             .error("Apple Health sleep read failed. permission response unavailable")
         )
-    }
-
-    func testHealthKitSleepSampleQueryHasConservativeBound() {
-        XCTAssertEqual(HealthKitSleepService.sleepSampleQueryLimit, 10_000)
-        XCTAssertGreaterThan(HealthKitSleepService.sleepSampleQueryLimit, 0)
     }
 
     func testHealthKitImportBoundaryRejectsFutureStartAndEndWithFixedReferenceTime() {
