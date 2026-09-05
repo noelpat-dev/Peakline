@@ -1110,6 +1110,32 @@ struct CoachActionHistoryFilterService {
 }
 
 struct CoachExerciseMetadataService {
+    /// The unified editor owns exercise identity; retain only coach-specific choices.
+    func editorDraft(for exercise: Exercise, metadata: CoachExerciseMetadata?) -> CoachExerciseMetadataDraft {
+        var draft = CoachExerciseMetadataDraft(exercise: exercise, metadata: metadata)
+        if draft.role == .compound || draft.role == .isolation {
+            draft.role = exercise.isCompound ? .compound : .isolation
+        }
+        draft.primaryMuscleGroup = exercise.primaryMuscleGroup
+        draft.secondaryMuscleGroups = exercise.secondaryMuscleGroups.filter { $0 != exercise.primaryMuscleGroup }
+        draft.movementPattern = exercise.movementPattern
+        return draft
+    }
+
+    @discardableResult
+    func updateIfNeeded(_ metadata: CoachExerciseMetadata, from draft: CoachExerciseMetadataDraft) -> Bool {
+        let note = draft.userNote.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        guard metadata.role != draft.role
+            || metadata.primaryMuscleGroup != draft.primaryMuscleGroup
+            || metadata.secondaryMuscleGroups != draft.secondaryMuscleGroups
+            || metadata.movementPattern != draft.movementPattern
+            || metadata.splitClassification != draft.splitClassification
+            || metadata.priority != draft.priority
+            || metadata.userNote != note else { return false }
+        update(metadata, from: draft)
+        return true
+    }
+
     func metadata(for exercise: Exercise, in metadata: [CoachExerciseMetadata]) -> CoachExerciseMetadata? {
         metadata.first { $0.exerciseId == exercise.id }
     }

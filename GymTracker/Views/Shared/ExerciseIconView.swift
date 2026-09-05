@@ -16,7 +16,7 @@ struct ExerciseIconView: View {
             return appTheme.colors.textTertiary
         }
 
-        return tint ?? appTheme.colors.accent
+        return tint ?? (iconKey.workoutGuideSlug == nil ? appTheme.colors.accent : appTheme.colors.textAccent)
     }
 
     var body: some View {
@@ -31,10 +31,16 @@ struct ExerciseIconView: View {
             .accessibilityLabel("\(iconKey.accessibilityName) exercise icon")
     }
 
+    private var assetName: String {
+        // The enum rawValue remains the compatibility key for decoding, while
+        // its visual asset is now always Workout Guide artwork.
+        return iconKey.assetName
+    }
+
     @ViewBuilder
     private var icon: some View {
-        if ExerciseIconAssetCache.hasAsset(named: iconKey.assetName) {
-            Image(iconKey.assetName)
+        if ExerciseIconAssetCache.hasAsset(named: assetName) {
+            Image(assetName)
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
@@ -65,12 +71,18 @@ struct ExerciseIconView: View {
     }
 
     private var iconSize: CGFloat {
-        showBackground ? size * 0.54 : size
+        guard showBackground else { return size }
+        // Detailed exercise poses need more space than the original compact glyphs.
+        return size * (assetName.hasPrefix("workout_guide_") ? 0.80 : 0.54)
     }
 
     @MainActor
     static func prewarm<S: Sequence>(_ keys: S) where S.Element == ExerciseIconKey {
         for key in keys {
+            if let guideAsset = key.workoutGuideAssetName(),
+               ExerciseIconAssetCache.hasAsset(named: guideAsset) {
+                continue
+            }
             _ = ExerciseIconAssetCache.hasAsset(named: key.assetName)
         }
     }

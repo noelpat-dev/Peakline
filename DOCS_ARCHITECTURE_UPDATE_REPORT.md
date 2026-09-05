@@ -2,64 +2,70 @@
 
 ## Summary
 
-Updated the canonical UI style guide to record the landed History redesign and the current Today/Workout typography alignment. The documentation stays token- and semantic-role-based, and no Swift or project files were changed by this documentation pass. The orchestrator already ran a full Debug build against the current source branch and it succeeded; no test suites were run. This report records the evidence and documentation decisions for the docs-only pass.
+Integrated the Workout Guide catalogue and artwork into Peakline in four increments: themed asset import, exact exercise mapping, native exercise information pages, and focused integration validation. The user-requested Luna agents owned artwork (xhigh), mapping (xhigh), and licensing (medium); the root agent integrated the UI and performed source/build validation. No separate licensing review was performed.
 
 ## Evidence Reviewed
 
-- Initial `git status --short`: existing `StartWorkoutView.swift` typography diff plus untracked user files `AGENTS_SCREENSHOT_TRANSCRIPTION.md` and `MOTION_BLUEPRINT_HANDOVER.md`; all were preserved.
-- `git log --oneline -n 10`, current branch `codex/workout-today-typography-consistency`, `git diff --stat`, and `git diff`.
-- `git diff main..HEAD` and the landed History commits:
-  - `770ebee` — History dashboard, attendance overview, compact month navigation, and session-row layout.
-  - `df27f0e` — compact collapsed calendar and prominent horizontal filter chips.
-  - `8c293b7` — workout dots and consistent logged-day treatment.
-  - `bd82520` — selected but unlogged current day remains unfilled.
-  - `65be7d7` — selected day is centred in the collapsed week.
-- `GymTracker/Views/History/HistoryView.swift`: current render order, attendance hero, month controls, calendar density, selected-day summary, filters, tappable rows, and semantic theme usage.
-- `GymTracker/Views/Shared/AppTheme.swift`: shared `AppTypography`, `AppTheme` colours, and `minimumHitTarget` metrics.
-- `GymTracker/Views/Shared/TodayDashboardComponents.swift`, `GymTracker/Views/Today/TodayView.swift`, and the current `StartWorkoutView.swift` diff for the shared `eyebrow`/`heroTitle`/`bodyEmphasis` hierarchy.
-- Historical context reports `Docs/investigations/HISTORY_HEADER_WARM_START_PERFORMANCE_REPORT.md` and `Docs/investigations/QUICK_ACTION_PREVIEW_FREEZE_HISTORY_REHAUL_REPORT.md`; current committed source and current diff were treated as authoritative.
+- Initial working-tree status and recent Git history. Existing Coach, Readiness, Workout, architecture, project membership, and test changes were preserved.
+- Scoped source and project diffs, new catalogue/guide files, the imported asset catalogue, and the licensing agent's completed files.
+- Pinned upstream commit `aac599224bb9780305239607ef98540b7e0ce389`: 302 catalogue entries and 906 SVG frames.
+- Importer checks: all frames are 512 × 512 monochrome vector artwork with template-rendering metadata; source SVG bytes are unchanged.
+- Final exact/explicit-alias coverage: 18 of 35 seeded exercises. Seated T-bar rows and close-grip weighted pull-ups are not treated as interchangeable with less specific source poses.
 
 ## Docs Changed
 
 | File | Change | Reason |
 |---|---|---|
-| `UI_STYLE_GUIDE.md` | Added shared cross-tab hero typography guidance and expanded the History pattern for native title treatment, attendance hero, compact calendar/month navigation, shared hit targets, workout dots, selected-day behavior, filters, concise session rows, and semantic theme colours. | Codifies the current implemented visual contract without adding History-specific magic values. |
-| `DOCS_ARCHITECTURE_UPDATE_REPORT.md` | Captured this pass's evidence and validation in the required audit report. The repository ignores `*_REPORT.md` by default, so this report is intended to be force-added for review. | Keeps the docs-update audit trail aligned with this change. |
+| `README.md` | Added the offline Exercise Guide. | Make the new capability discoverable. |
+| `FEATURE_SUMMARY.md` | Described gallery, details, entry routes, theme rendering, and source boundaries. | Reflect current implemented behaviour. |
+| `ARCHITECTURE.md` | Updated the icon pipeline and guide navigation ownership. | Record the bundled manifest, typed keys, retained compatibility, and refresh procedure. |
+| `UI_STYLE_GUIDE.md` | Recorded template tint, detailed-pose sizing, and manual pose selection. | Preserve all existing themes and immediate interaction. |
+| `KNOWN_ISSUES.md` | Recorded source coverage and the standing-calf-raise equipment collision. | Prevent unsupported illustration matches and overstatement of source content. |
+| `THIRD_PARTY_NOTICES.md` | Added artwork/source licensing notices. | Completed by the requested licensing agent. |
 
 ## Docs Checked But Not Changed
 
 | File | Reason |
 |---|---|
-| `README.md` | No product overview or route claim changed. |
-| `FEATURE_SUMMARY.md` | Existing History feature summary remains accurate; this pass changes the visual contract only. |
-| `ARCHITECTURE.md` | No ownership, navigation, data, or service architecture changed. |
-| `KNOWN_ISSUES.md` | No known issue was resolved or introduced by documentation-only work. |
-| `PERFORMANCE_ACCEPTANCE_GOAL.md` | No performance contract or validation result changed. |
-| `ROADMAP.md` | No roadmap priority changed. |
-| `NEXT_TASK.md` | The active handoff remains valid and was not superseded. |
-| `NEXT_CODEX_CHAT.md` | No follow-up handoff wording was required. |
-| `Docs/AUDIT_INDEX.md` | The existing archive index does not need a new canonical style-guide entry. |
-| `Docs/investigations/HISTORY_HEADER_WARM_START_PERFORMANCE_REPORT.md` | Historical implementation evidence; left unchanged. |
-| `Docs/investigations/QUICK_ACTION_PREVIEW_FREEZE_HISTORY_REHAUL_REPORT.md` | Historical rehaul report; current source and commits were more specific for this update. |
-| `AGENTS_SCREENSHOT_TRANSCRIPTION.md` | Untracked user file; explicitly left untouched. |
-| `MOTION_BLUEPRINT_HANDOVER.md` | Untracked user file; explicitly left untouched. |
+| `ROADMAP.md` | No unrelated roadmap work was expanded. |
+| `PERFORMANCE_ACCEPTANCE_GOAL.md` | No timing thresholds changed; this task does not claim full performance acceptance. |
+| `NEXT_TASK.md`, `NEXT_CODEX_CHAT.md`, `Docs/AUDIT_INDEX.md` | No planning or historical-audit rewrite was needed for this implementation. |
 
 ## Known Issues Updated
 
-None. The existing physical-device, accessibility, and visual-regression risks remain unchanged.
+The catalogue includes 302 exercises, but 17 starter exercises retain existing art because no safe exact source match was established. Each saved exercise still has an information page using its local metadata. Catalogue browsing is read-only and does not seed 302 records into SwiftData. The source has no written technique instructions.
 
 ## Next Task / Next Codex Chat Updated
 
-None. `NEXT_TASK.md` and `NEXT_CODEX_CHAT.md` remain unchanged.
+Neither file was changed. Additional artwork coverage requires matching source poses for the specialised movements, rather than broad substring substitutions.
 
 ## Validation
 
-- `git diff --check`: passed.
-- Full Debug build on the current source branch (already run by the orchestrator): passed.
-- Test suites: not run.
+- Baseline lower-split icon regression: 1 test passed.
+- Frozen integration build and focused catalogue/mapping/split checks: 6 tests passed, including successful loading of all 906 bundled image assets.
+- An earlier build overlapped mapper edits; its UI run lost the app connection during startup and was stopped. Results from that attempt are not claimed as passing validation.
+- Exercise Guide search, metadata, pose selection, and empty results: passed on iPhone 17 in blue/dark appearance.
+- Saved exercise editor -> information -> editor: passed with the largest accessibility text category in black/light appearance.
+- Preview -> guide -> Preview -> Logger -> guide -> Logger: passed in Fitness Green/dark appearance. This also retains the selected exercise when starting after reordering.
+- Three focused UI tests passed across two final invocations. Earlier harness attempts targeted the existing profile menu and a row identifier overridden by its parent; the tests were corrected to use Workout's direct Library entry and the existing exercise action label. No unrelated profile-menu or Preview navigation changes were made.
+- Screenshots of the guide, dark detail, and large-text light detail were inspected and saved under `/Users/noelpatricks/.codex/visualizations/2026/09/05/01a0719e-a396-7032-86c9-04e4925041d7/`.
+- Final `git diff --check`: passed. No full suite or performance acceptance verifier was run.
 
 ## Remaining Documentation Risks
 
-- The Today/Workout typography alignment is represented by the current `StartWorkoutView.swift` working-tree diff at the time of this pass; if that implementation diff is later dropped, the corresponding style-guide statement must be revisited.
-- The historical investigation reports retain earlier descriptions of the History layout and may be read as chronology rather than the current contract.
-- Device-level Dynamic Type, VoiceOver, Reduce Motion, and Reduce Transparency review was not repeated during this docs-only pass.
+Physical-device visual validation and the full performance acceptance verifier are outside the checks run by this task. The source SVG payload is approximately 26 MB; the compiled asset catalogue is larger. No database schema or workout persistence changes were introduced.
+
+## Follow-up: Unified Exercise Editor and Complete Artwork Replacement
+
+The user's follow-up explicitly permits representative images for related movements, superseding the earlier exact-only visual policy. A Luna xhigh agent replaced all 47 legacy exercise/category key mappings with Workout Guide assets; all 35 starter exercises now resolve new artwork. Raw icon keys remain compatible. Exact catalogue metadata remains separate, so a representative illustration never changes the saved exercise's identity or equipment.
+
+Exercise Library now opens the combined editor directly: illustration, bounded playback/manual pose selection, canonical exercise fields, and expandable coach-specific preferences. The toolbar information action opens credits only. `CoachExerciseMetadataService.editorDraft` reconciles shared muscles/movement from the exercise while preserving priority, role, context and notes; no-op updates retain timestamps. Reconciliation occurs on load and exit, not during image playback or note typing.
+
+Follow-up verification:
+
+- Focused Debug build passed on iPhone 17.
+- All eight catalogue/artwork tests, two metadata service checks, and the existing lower/upper split regression passed. The first run exposed an `Upper A` categorisation gap, corrected and rerun.
+- Existing coach-note save/reopen UI test passed with the consolidated preferences disclosure.
+- Combined editor inline poses, largest accessibility text layout, credits navigation and return UI test passed. The test helper was adjusted to avoid tapping a scrolled control underneath navigation chrome and to tap the fixed credits action directly.
+- Final large-text editor screenshot inspected; new representative artwork was also observed in the library. Existing user work remains preserved.
+- `git diff --check` passed. No full performance verifier or physical-device validation was run for this follow-up.

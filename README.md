@@ -26,6 +26,7 @@ The product is designed for the gym rather than for a social feed. It keeps the 
 - Provides a detailed workout preview with target suggestions, last-best-set context, alternatives, notes, addable exercises, real handle-based reordering, and history-calibrated duration ranges.
 - Offers fast live logging with set entry, rest timing, pause/resume, substitutions, skipped-exercise reasons, long-session confirmation, completion rating, and a prepared session summary.
 - Supports workout templates, recent-session repeat, exercise notes, and a metric plate calculator.
+- Includes an offline Exercise Guide with 302 illustrated movements, equipment/muscle filters, and three selectable poses per exercise; matching workout rows use the same theme-aware artwork.
 
 ### Coaching and progress
 

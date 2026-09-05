@@ -635,6 +635,35 @@ final class CoachIntelligenceServiceTests: XCTestCase {
         XCTAssertNil(metadata.userNote)
     }
 
+    func testUnifiedExerciseEditorSynchronizesSharedFieldsWithoutRepeatedWrites() {
+        let exercise = Exercise(name: "Bench Press", primaryMuscleGroup: .chest,
+                                secondaryMuscleGroups: [.triceps], movementPattern: .push,
+                                equipment: .barbell, isCompound: true)
+        let originalDate = Date(timeIntervalSince1970: 100)
+        let metadata = CoachExerciseMetadata(exerciseId: exercise.id, updatedAt: originalDate,
+            role: .priorityLift, primaryMuscleGroup: .back, secondaryMuscleGroups: [.biceps],
+            movementPattern: .pull, splitClassification: .push, priority: .high, userNote: "Keep my note")
+        let service = CoachExerciseMetadataService()
+        let draft = service.editorDraft(for: exercise, metadata: metadata)
+        XCTAssertEqual(draft.primaryMuscleGroup, .chest)
+        XCTAssertEqual(draft.secondaryMuscleGroups, [.triceps])
+        XCTAssertEqual(draft.movementPattern, .push)
+        XCTAssertEqual(draft.role, .priorityLift)
+        XCTAssertEqual(draft.priority, .high)
+        XCTAssertEqual(draft.userNote, "Keep my note")
+        XCTAssertTrue(service.updateIfNeeded(metadata, from: draft))
+        let settledDate = metadata.updatedAt
+        XCTAssertFalse(service.updateIfNeeded(metadata, from: draft))
+        XCTAssertEqual(metadata.updatedAt, settledDate)
+        exercise.primaryMuscleGroup = .shoulders
+        exercise.secondaryMuscleGroups = [.triceps, .shoulders]
+        let changed = service.editorDraft(for: exercise, metadata: metadata)
+        XCTAssertTrue(service.updateIfNeeded(metadata, from: changed))
+        XCTAssertEqual(metadata.primaryMuscleGroup, .shoulders)
+        XCTAssertEqual(metadata.secondaryMuscleGroups, [.triceps])
+        XCTAssertEqual(metadata.priority, .high)
+    }
+
     func testUserExerciseMetadataOverridesFallbackClassification() throws {
         let exerciseId = UUID()
         let plan = plannedExercise(name: "Mystery Press", exerciseId: exerciseId, sets: 5)

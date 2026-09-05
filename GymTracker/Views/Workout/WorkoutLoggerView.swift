@@ -1725,6 +1725,7 @@ private struct ExerciseLoggerSection: View {
     let onSetCompleted: ((SetLog) -> Void)?
 
     @State private var showingNotes = false
+    @State private var guideEntry: ExerciseGuideEntry?
 
     private var orderedSets: [SetLog] {
         exerciseLog.setLogs.sorted { $0.setNumber < $1.setNumber }
@@ -1750,7 +1751,7 @@ private struct ExerciseLoggerSection: View {
                 HStack(alignment: .top, spacing: 12) {
                     ExerciseIconView(
                         iconKey: ExerciseIconMapper.iconKey(for: exerciseLog),
-                        size: 50,
+                        size: 60,
                         showBackground: true,
                         isDecorative: true
                     )
@@ -1802,6 +1803,21 @@ private struct ExerciseLoggerSection: View {
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let entry = ExerciseIconMapper.guideEntry(forName: exerciseLog.exerciseNameSnapshot) {
+                    Button {
+                        guideEntry = entry
+                    } label: {
+                        Label("Exercise Guide", systemImage: "info.circle")
+                            .font(AppTypography.bodyEmphasis)
+                            .frame(minHeight: 44)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityIdentifier("workout-logger-exercise-guide")
+                    .sheet(item: $guideEntry) { entry in
+                        ExerciseGuideSheet(entry: entry)
+                    }
                 }
 
                 DisclosureGroup(isExpanded: $showingNotes) {

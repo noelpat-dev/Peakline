@@ -170,6 +170,7 @@ Copy rules:
 - Prefer familiar SF Symbols for system actions and exact exercise artwork where the asset pipeline provides it.
 - An icon must identify an action, state, or subject. Remove it if it only fills space.
 - Use one outer border for exercise icon tiles with a smaller background-free glyph centred inside; never add a second nested tile border.
+- Workout Guide exercise illustrations use template rendering with the theme’s contrast-adjusted `textAccent` token unless a caller supplies an explicit state tint. Detailed poses occupy more of the existing tile than compact legacy glyphs. The guide uses a lazy adaptive gallery and a shared three-pose preview. Exercise editors lead with that preview above one set of fields; coach-specific options are disclosed within the same section. A bounded entry sequence can be paused or replayed; manual selection remains immediate and Reduce Motion disables playback.
 - Icon-only controls require a label, an appropriate hint where needed, and a 44-point hit area even when the visible glyph is smaller.
 - Do not mix several unrelated symbol weights or container shapes in one control group.
 

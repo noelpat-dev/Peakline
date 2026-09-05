@@ -17,6 +17,12 @@ Current file: `KNOWN_ISSUES.md`
 - Use the performance acceptance verifier after changing Today, Coach, Workout Preview, root lifecycle, notifications, or HealthKit bridge code to catch `unsafeForcedSync` regressions early.
 - Historical workout display should continue to tolerate changed or missing exercises, splits, templates, and UUID snapshots.
 
+## Exercise Guide Coverage
+
+- All starter, legacy and split/category icon keys now display new artwork. Some illustrations intentionally represent related movements: preacher-curl variants share a pose, and abdominal crunch uses weighted crunch. Representative image metadata must never overwrite the exercise's actual equipment, muscles or name.
+- Exact catalogue details remain equipment-aware and separate from representative images. Name-only `Standing Calf Raise` remains excluded from exact guide matching because its seeded equipment differs from the catalogue.
+- The source contains poses and metadata, not written technique instructions. Its generated illustrations have not been validated as a comprehensive exercise-technique reference.
+
 ## Nutrition Scanner And Imports
 
 - Protect the Today-to-Nutrition scanner route: Today quick actions to Nutrition, Add Food, Scan Label, Scan Barcode, review, save, and return-to-log.

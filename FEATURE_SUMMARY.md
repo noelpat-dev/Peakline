@@ -88,11 +88,13 @@ The main value loop is:
 
 ### Exercise Icons
 
-- Exact PNG source icons live in `GymTracker/IconSource/ExerciseIcons/`.
-- Generated assets live in `GymTracker/Assets.xcassets/ExerciseIcons/`.
-- `Scripts/prepare_exercise_icons.py` copies approved source PNGs into the asset catalog.
-- `ExerciseIconMapper` maps exercise names to `ExerciseIconKey`.
-- Exact-name mappings should come before broad muscle-group fallbacks.
+- Exercise Guide is a read-only, searchable catalogue of 302 exercises with equipment and primary-muscle filters. Each catalogue detail page shows three selectable poses with optional playback, equipment, muscle groups, tracking type, and an artwork-credits route; it does not add catalogue entries to the user's saved exercises.
+- Exercise Library opens a combined editor with the illustration and pose controls at the top, followed by one set of exercise fields and expandable coach-specific preferences. Its top-right information button opens artwork credits. A short pose sequence plays on entry, stops after one cycle, and respects Reduce Motion; playback can also be paused or replayed. Matching catalogue exercises still expose details from Workout Preview and the logger.
+- All 906 Workout Guide SVG frames are bundled offline in `GymTracker/Assets.xcassets/WorkoutGuide/`, pinned to upstream commit `aac599224bb9780305239607ef98540b7e0ce389`. `Scripts/import_workout_guide_assets.py` imports and checks the monochrome vector assets; template rendering uses the active Peakline accent in Light and Dark appearance.
+- `ExerciseGuideCatalog` loads the bundled metadata once. Exact catalogue lookup stays separate from representative illustration lookup. All 47 legacy icon keys and all 35 starter exercises now display Workout Guide images, including split/category artwork; stored icon-key raw values remain compatible. Related variants intentionally share illustrations without replacing saved exercise data.
+- Original source assets and `Scripts/prepare_exercise_icons.py` remain in the repository for historical reference and are no longer selected by the exercise renderer. Source PNGs live in `GymTracker/IconSource/ExerciseIcons/`; their image sets live in `GymTracker/Assets.xcassets/ExerciseIcons/`.
+- The unified editor uses exercise primary/secondary muscles and movement as the shared source of truth for coach metadata. On open and exit it synchronizes only changed metadata, retains role/priority/split context/notes, and avoids per-frame or per-keystroke persistence work.
+- Artwork credits and CC BY-SA 4.0 notices are bundled under `GymTracker/Resources/WorkoutGuide/` and documented in `THIRD_PARTY_NOTICES.md`. The catalogue contains metadata and poses, not written technique instructions.
 
 ### Performance Acceptance Coverage
 
@@ -119,7 +121,7 @@ The main value loop is:
 ## Remaining Practical Expansion
 
 - Complete the remaining focused physical-device acceptance matrix on Noel's iPhone across Light, Dark, large Dynamic Type, VoiceOver, Reduce Motion, and Reduce Transparency.
-- Expand exact exercise icon coverage where source assets already exist.
+- Expand exact illustration coverage for specialised equipment variants only when a matching source is available.
 - Keep scanner, OCR, and nutrition import flows stable and reviewable.
 - Keep Firebase backup, local export, and migration safety strong before risky schema changes.
 - Validate the delete/reinstall/sign-in/restore path on Noel's iPhone after Firebase project setup.
