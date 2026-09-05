@@ -3,6 +3,7 @@ import SwiftUI
 import UIKit
 
 struct NutritionInsightsDashboardView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -146,7 +147,7 @@ struct NutritionInsightsDashboardView: View {
             }
 
                 DashboardSection(title: "Actions") {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2), spacing: 12) {
                     Button {
                         navigate(to: .logFood)
                     } label: {
@@ -339,7 +340,7 @@ struct NutritionInsightsDashboardView: View {
                         }
                     }
 
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2), spacing: 10) {
                         NutritionContextMetric(title: "Food logs", value: "\(todaySummary.loggedFoodCount)", caption: "today")
                         NutritionContextMetric(title: "Protein", value: "\(phase7Grams(todaySummary.protein))g", caption: "logged")
                     }
@@ -372,7 +373,7 @@ struct NutritionInsightsDashboardView: View {
                             }
                         }
 
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2), spacing: 10) {
                             if let bodyMass = appleHealthContext.bodyMassKg {
                                 NutritionContextMetric(title: "Weight", value: "\(bodyMass.formatted(.number.precision(.fractionLength(1)))) kg", caption: "Apple Health")
                             }
@@ -665,6 +666,7 @@ struct NutritionTargetsView: View {
 }
 
 struct WeeklyNutritionTrendsView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.appTheme) private var appTheme
 
     @Query
@@ -710,7 +712,7 @@ struct WeeklyNutritionTrendsView: View {
             WeeklyTrendPreview(summary: weeklySummary, goal: goal)
 
             DashboardSection(title: "Weekly Summary") {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2), spacing: 10) {
                     NutritionContextMetric(title: "Logged days", value: "\(weeklySummary.loggedDays)/\(weeklySummary.dailySummaries.count)", caption: "food present")
                     NutritionContextMetric(title: "Training days", value: "\(weeklySummary.trainingDays)", caption: "completed")
                     NutritionContextMetric(title: "Protein hit", value: "\(weeklySummary.proteinTargetHitDays)", caption: "target days")
@@ -850,10 +852,13 @@ struct NutritionHomeSummaryCard: View {
 }
 
 private struct MacroTargetGrid: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let summary: DailyNutritionSummary
     let goal: NutritionGoal
 
-    private let columns = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
+    private var columns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: 10), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2)
+    }
 
     var body: some View {
         LazyVGrid(columns: columns, spacing: 10) {
@@ -894,9 +899,7 @@ private struct MacroTargetProgressCard: View {
                 Image(systemName: systemImage)
                     .foregroundStyle(appTheme.colors.textAccent)
                 Spacer()
-                Text(statusText)
-                    .font(AppTypography.badge)
-                    .foregroundStyle(statusTint)
+                StatusBadge(statusText, role: statusRole)
             }
 
             Text(title)
@@ -906,8 +909,7 @@ private struct MacroTargetProgressCard: View {
             Text(valueText)
                 .font(AppTypography.cardTitle)
                 .foregroundStyle(appTheme.colors.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
 
             SwiftUI.ProgressView(value: progress, total: 1)
                 .tint(statusTint)
@@ -934,6 +936,11 @@ private struct MacroTargetProgressCard: View {
         let remaining = max(target - current, 0)
         if remaining == 0 { return "Hit" }
         return unit == "kcal" ? "\(phase7Kcal(remaining)) left" : "\(phase7Grams(remaining))g left"
+    }
+
+    private var statusRole: StatusBadge.Role {
+        guard let target, target > 0 else { return .neutral }
+        return current >= target ? .success : .accent
     }
 
     private var statusTint: Color {
@@ -963,12 +970,7 @@ private struct InsightCard: View {
                                 .font(AppTypography.sectionTitle)
                                 .foregroundStyle(appTheme.colors.textPrimary)
 
-                            Text(insight.category.displayName)
-                                .font(AppTypography.badge)
-                                .foregroundStyle(tint)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 5)
-                                .background(tint.opacity(0.14), in: Capsule())
+                            StatusBadge(insight.category.displayName, role: statusRole)
                         }
 
                         Text(insight.message)
@@ -997,16 +999,18 @@ private struct InsightCard: View {
         }
     }
 
-    private var tint: Color {
+    private var tint: Color { statusRole.textColor(appTheme.colors) }
+
+    private var statusRole: StatusBadge.Role {
         switch insight.severity {
         case .positive:
-            return appTheme.colors.success
+            return .success
         case .attention:
-            return appTheme.colors.warning
+            return .warning
         case .warning:
-            return appTheme.colors.warning
+            return .warning
         case .info:
-            return appTheme.colors.accent
+            return .accent
         }
     }
 }
@@ -1076,8 +1080,7 @@ private struct NutritionContextMetric: View {
             Text(value)
                 .font(AppTypography.cardTitle)
                 .foregroundStyle(appTheme.colors.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .fixedSize(horizontal: false, vertical: true)
 
             Text(title)
                 .font(AppTypography.chip)

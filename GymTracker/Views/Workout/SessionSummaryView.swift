@@ -81,6 +81,7 @@ struct SessionSummaryRenderSnapshot: Equatable, Sendable {
 }
 
 struct SessionSummaryView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
@@ -122,7 +123,10 @@ struct SessionSummaryView: View {
         FitnessScreen {
             FitnessCard(style: .hero) {
                 VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .top, spacing: 14) {
+                    let headerLayout = dynamicTypeSize.isAccessibilitySize
+                        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 14))
+                        : AnyLayout(HStackLayout(alignment: .top, spacing: 14))
+                    headerLayout {
                         ExerciseIconView(
                             iconKey: ExerciseIconMapper.splitIconKey(for: summary.splitName),
                             size: 58,
@@ -139,12 +143,10 @@ struct SessionSummaryView: View {
                             Text(summary.splitName)
                                 .font(AppTypography.heroTitle)
                                 .foregroundStyle(appTheme.colors.textPrimary)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.58)
-                                .allowsTightening(true)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
 
-                        Spacer()
+                        if !dynamicTypeSize.isAccessibilitySize { Spacer() }
 
                         CoachBadgeView(state: sessionPRs.isEmpty ? .ready : .pr)
                     }
@@ -155,23 +157,29 @@ struct SessionSummaryView: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .bottom, spacing: 14) {
-                            SessionSummaryPrimaryMetric(value: "\(summary.workingSetCount)")
-
-                            Divider()
-                                .overlay(appTheme.colors.cardBorder)
-                                .frame(height: 62)
-
+                        if !dynamicTypeSize.isAccessibilitySize {
                             HStack(alignment: .bottom, spacing: 14) {
-                                SessionSummarySupportingMetric(label: "Duration", value: summary.durationText)
-                                SessionSummarySupportingMetric(label: "Exercises", value: "\(summary.completedExerciseCount)")
-                                SessionSummarySupportingMetric(label: "Rating", value: summary.ratingText ?? "–")
+                                SessionSummaryPrimaryMetric(value: "\(summary.workingSetCount)")
+
+                                Divider()
+                                    .overlay(appTheme.colors.cardBorder)
+                                    .frame(height: 62)
+
+                                HStack(alignment: .bottom, spacing: 14) {
+                                    SessionSummarySupportingMetric(label: "Duration", value: summary.durationText)
+                                    SessionSummarySupportingMetric(label: "Exercises", value: "\(summary.completedExerciseCount)")
+                                    SessionSummarySupportingMetric(label: "Rating", value: summary.ratingText ?? "–")
+                                }
                             }
+
                         }
 
                         VStack(alignment: .leading, spacing: 12) {
                             SessionSummaryPrimaryMetric(value: "\(summary.workingSetCount)")
-                            HStack(alignment: .bottom, spacing: 16) {
+                            let metricsLayout = dynamicTypeSize.isAccessibilitySize
+                                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
+                                : AnyLayout(HStackLayout(alignment: .bottom, spacing: 16))
+                            metricsLayout {
                                 SessionSummarySupportingMetric(label: "Duration", value: summary.durationText)
                                 SessionSummarySupportingMetric(label: "Exercises", value: "\(summary.completedExerciseCount)")
                                 SessionSummarySupportingMetric(label: "Rating", value: summary.ratingText ?? "–")
@@ -428,8 +436,7 @@ private struct SessionSummarySupportingMetric: View {
             Text(value)
                 .font(AppTypography.workoutNumber)
                 .foregroundStyle(appTheme.colors.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.64)
+                .fixedSize(horizontal: false, vertical: true)
             Text(label)
                 .font(AppTypography.metadata)
                 .foregroundStyle(appTheme.colors.textSecondary)

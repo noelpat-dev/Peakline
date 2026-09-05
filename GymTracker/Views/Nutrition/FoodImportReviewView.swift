@@ -3,6 +3,7 @@ import SwiftUI
 import UIKit
 
 struct FoodImportReviewView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
@@ -108,7 +109,7 @@ struct FoodImportReviewView: View {
                         } else {
                             Picker("Base unit", selection: $baseUnit) {
                                 Text("g").tag(FoodAmountUnit.grams)
-                                Text("ml").tag(FoodAmountUnit.millilitres)
+                                Text(FoodAmountUnit.millilitres.shortName).tag(FoodAmountUnit.millilitres)
                                 Text("serving").tag(FoodAmountUnit.serving)
                             }
                             .pickerStyle(.segmented)
@@ -118,7 +119,7 @@ struct FoodImportReviewView: View {
                             title: "Serving size",
                             text: $servingSize,
                             placeholder: "Optional",
-                            suffix: baseUnit == .millilitres ? "ml" : "g",
+                            suffix: baseUnit == .millilitres ? FoodAmountUnit.millilitres.shortName : FoodAmountUnit.grams.shortName,
                             keyboardType: .decimalPad
                         )
                     }
@@ -313,7 +314,7 @@ struct FoodImportReviewView: View {
                         }
                     }
 
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2), spacing: 10) {
                         ParsedNutrientMetric(title: "Calories", value: parseResult.value(for: .calories), fallbackUnit: "kcal")
                         ParsedNutrientMetric(title: "Protein", value: parseResult.value(for: .protein), fallbackUnit: "g")
                         ParsedNutrientMetric(title: "Carbs", value: parseResult.value(for: .carbohydrates), fallbackUnit: "g")
@@ -982,8 +983,7 @@ private struct ParsedNutrientMetric: View {
             Text(valueText)
                 .font(AppTypography.cardTitle)
                 .foregroundStyle(appTheme.colors.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true)
 
             Text(value?.basis.displayName ?? "Not detected")
                 .font(.caption2)

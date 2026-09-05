@@ -55,7 +55,7 @@ struct StatusBadge: View {
             }
             Text(title)
                 .font(AppTypography.badge)
-                .lineLimit(1)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .foregroundStyle(role.textColor(appTheme.colors))
         .padding(.horizontal, appTheme.metrics.spacing8)

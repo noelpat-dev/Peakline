@@ -57,7 +57,7 @@ enum NutritionUnit: String, Codable, CaseIterable, Hashable {
         case .milligrams:
             return "mg"
         case .millilitres:
-            return "ml"
+            return "mL"
         case .unknown:
             return ""
         }
@@ -73,9 +73,9 @@ enum NutritionBasis: String, Codable, CaseIterable, Hashable {
     var displayName: String {
         switch self {
         case .per100g:
-            return "Per 100g"
+            return "Per 100 g"
         case .per100ml:
-            return "Per 100ml"
+            return "Per 100 mL"
         case .perServing:
             return "Per serving"
         case .unknown:
@@ -134,7 +134,7 @@ enum NutritionParseWarning: String, Codable, CaseIterable, Hashable, Identifiabl
         case .missingFat:
             return "Fat was not detected."
         case .basisNotDetected:
-            return "The parser could not clearly tell whether values are per 100g, per 100ml, or per serving."
+            return "The parser could not clearly tell whether values are per 100 g, per 100 mL, or per serving."
         case .onlyServingValuesDetected:
             return "Only per-serving values were detected. Check the serving size before saving."
         case .servingSizeMissing:

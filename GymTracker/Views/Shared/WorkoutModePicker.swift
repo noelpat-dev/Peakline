@@ -1,12 +1,13 @@
 import SwiftUI
 
 struct WorkoutModePicker: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var selection: WorkoutMode
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2), spacing: 10) {
             ForEach(WorkoutMode.allCases) { mode in
                 Button {
                     AppHaptics.selection()

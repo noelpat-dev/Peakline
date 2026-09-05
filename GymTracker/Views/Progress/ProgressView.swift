@@ -307,12 +307,7 @@ struct ProgressContentView: View {
 
                     Spacer(minLength: 8)
 
-                    Text(progressSignalBadge)
-                        .font(AppTypography.badge)
-                        .foregroundStyle(progressSignalTint)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 6)
-                        .background(progressSignalTint.opacity(0.14), in: Capsule())
+                    StatusBadge(progressSignalBadge, role: progressSignalRole)
                 }
 
                 Text(progressSignalMessage)
@@ -429,6 +424,16 @@ struct ProgressContentView: View {
             return appTheme.colors.success
         }
         return appTheme.colors.accent
+    }
+
+    private var progressSignalRole: StatusBadge.Role {
+        if displayedWeeklySummary.completedWorkouts == 0 || displayedSplitConsistency.missedSplitName != nil {
+            return .warning
+        }
+        if displayedWeeklySummary.prCount > 0 {
+            return .success
+        }
+        return .accent
     }
 
     private var progressLoadingCard: some View {

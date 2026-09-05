@@ -771,7 +771,7 @@ struct TodayView: View {
             case .progress:
                 ProgressContentView()
             case .nutrition:
-                DeferredNutritionDashboardHost(
+                NutritionDashboardView(
                     initialPayload: NutritionWarmStartStore.shared.dashboard
                 )
             case .sleep:

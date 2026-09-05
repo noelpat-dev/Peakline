@@ -1,71 +1,8 @@
 import SwiftData
 import SwiftUI
 
-struct DeferredNutritionDashboardHost: View {
-    let initialPayload: NutritionDashboardWarmStartPayload?
-
-    @State private var isLiveMounted = false
-    @State private var isVisible = false
-
-    private var totals: NutritionMacroSnapshot {
-        initialPayload?.totals
-            ?? NutritionMacroSnapshot(
-                calories: 0,
-                protein: 0,
-                carbs: 0,
-                fat: 0,
-                sugar: nil,
-                fibre: nil,
-                salt: nil
-            )
-    }
-
-    var body: some View {
-        Group {
-            if isLiveMounted {
-                NutritionDashboardView()
-            } else {
-                FitnessScreen(title: nil) {
-                    NutritionHeroCard(
-                        totals: totals,
-                        entryCount: initialPayload?.dayEntries.count ?? 0,
-                        isToday: true
-                    )
-                    .accessibilityIdentifier("nutrition-hero")
-
-                    DashboardSection(title: "Coach Context") {
-                        ReadinessContextCard(
-                            readiness: initialPayload?.readiness
-                                ?? CoachIntelligenceService.emptySnapshot().readiness,
-                            focus: .nutrition,
-                            title: "Nutrition in today's readiness"
-                        )
-                    }
-
-                    DashboardSection(title: "Macros") {
-                        MacroSummaryGrid(totals: totals)
-                    }
-                }
-                .navigationTitle("Nutrition")
-                .navigationBarTitleDisplayMode(.inline)
-                .accessibilityIdentifier("nutrition-screen")
-            }
-        }
-        .onAppear {
-            isVisible = true
-            guard !isLiveMounted else { return }
-            DispatchQueue.main.async {
-                DispatchQueue.main.async {
-                    guard isVisible else { return }
-                    isLiveMounted = true
-                }
-            }
-        }
-        .onDisappear { isVisible = false }
-    }
-}
-
 struct NutritionDashboardView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var readinessRefreshClock = ReadinessRefreshClock.shared
@@ -94,15 +31,14 @@ struct NutritionDashboardView: View {
     @State private var activeFoodLogSwipeID: UUID?
     @State private var didRequestInitialRefresh = false
     @State private var isPreparingInitialSnapshot = true
-    @StateObject private var dashboardArrival = DashboardArrivalCoordinator()
     @State private var dashboardRefreshTask: Task<Void, Never>?
     @State private var isDashboardVisible = false
 
-    init() {
+    init(initialPayload: NutritionDashboardWarmStartPayload? = nil) {
         _foodItems = Query(Self.foodItemsDescriptor)
         _logEntries = Query(Self.logEntriesDescriptor)
         _completedSessions = Query(Self.completedSessionsDescriptor)
-        if let warm = NutritionWarmStartStore.shared.dashboard {
+        if let warm = initialPayload ?? NutritionWarmStartStore.shared.dashboard {
             _dashboardSnapshot = State(initialValue: NutritionDashboardSnapshot(warm))
             _selectedDate = State(initialValue: warm.selectedDate)
             _isPreparingInitialSnapshot = State(initialValue: false)
@@ -275,7 +211,6 @@ struct NutritionDashboardView: View {
                     moveBackward: { moveSelectedDay(by: -1) },
                     moveForward: { moveSelectedDay(by: 1) }
                 )
-                .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 0), index: 0)
 
             NutritionHeroCard(
                 totals: snapshot.totals,
@@ -283,7 +218,6 @@ struct NutritionDashboardView: View {
                 isToday: isToday
             )
             .accessibilityIdentifier("nutrition-hero")
-            .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 1), index: 1)
 
             if isToday {
                 DashboardSection(title: "Coach Context") {
@@ -293,18 +227,15 @@ struct NutritionDashboardView: View {
                         title: "Nutrition in today's readiness"
                     )
                 }
-                .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 2), index: 2)
             } else {
                 DashboardSection(title: "Day Context") {
                     HistoricalNutritionContextCard(isTrainingDay: snapshot.isTrainingDay)
                 }
-                .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 2), index: 2)
             }
 
             DashboardSection(title: "Macros") {
                 MacroSummaryGrid(totals: snapshot.totals)
             }
-            .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 3), index: 3)
 
             if isToday {
                 DashboardSection(title: "Quick Actions") {
@@ -354,7 +285,6 @@ struct NutritionDashboardView: View {
                         .buttonStyle(PressableCardButtonStyle())
                     }
                 }
-                .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 4), index: 4)
             }
 
             if isToday && !snapshot.recentlyLoggedFoods.isEmpty {
@@ -374,7 +304,6 @@ struct NutritionDashboardView: View {
                     }
                     .scrollClipDisabled()
                 }
-                .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 5), index: 5)
             }
 
                 DashboardSection(title: isToday ? "Today" : "Meals") {
@@ -421,7 +350,6 @@ struct NutritionDashboardView: View {
                     }
                 }
                 }
-                .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 6), index: 6)
             }
         }
         .navigationTitle("Nutrition")
@@ -471,7 +399,6 @@ struct NutritionDashboardView: View {
         .onAppear {
             isDashboardVisible = true
             readinessRefreshClock.start()
-            dashboardArrival.start(itemCount: 7, reduceMotion: reduceMotion)
             healthPreferences = HealthKitPreferenceStore().load()
             nutritionGoal = nutritionGoalStore.loadGoal()
             // Build the first snapshot on the appear turn so the pushed
@@ -515,15 +442,11 @@ struct NutritionDashboardView: View {
             isDashboardVisible = false
             dashboardRefreshTask?.cancel()
             dashboardRefreshTask = nil
-            dashboardArrival.cancel()
         }
     }
 
     private var actionColumns: [GridItem] {
-        [
-            GridItem(.flexible(), spacing: 12),
-            GridItem(.flexible(), spacing: 12)
-        ]
+        Array(repeating: GridItem(.flexible(), spacing: 12), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2)
     }
 
     private func navigate(to route: NutritionRoute) {
@@ -1201,7 +1124,7 @@ struct ManualFoodEntryView: View {
 
                             Picker("Base unit", selection: $baseUnit) {
                                 Text("g").tag(FoodAmountUnit.grams)
-                                Text("ml").tag(FoodAmountUnit.millilitres)
+                                Text(FoodAmountUnit.millilitres.shortName).tag(FoodAmountUnit.millilitres)
                                 Text("serving").tag(FoodAmountUnit.serving)
                             }
                             .pickerStyle(.segmented)
@@ -1210,7 +1133,7 @@ struct ManualFoodEntryView: View {
                                 title: "Serving size",
                                 text: $servingSize,
                                 placeholder: "Optional",
-                                suffix: baseUnit == .millilitres ? "ml" : "g",
+                                suffix: baseUnit == .millilitres ? FoodAmountUnit.millilitres.shortName : FoodAmountUnit.grams.shortName,
                                 keyboardType: .decimalPad
                             )
                         }
@@ -1464,7 +1387,7 @@ struct LogFoodView: View {
 
                         Picker("Unit", selection: $amountUnit) {
                             Text("g").tag(FoodAmountUnit.grams)
-                            Text("ml").tag(FoodAmountUnit.millilitres)
+                            Text(FoodAmountUnit.millilitres.shortName).tag(FoodAmountUnit.millilitres)
                             Text("serving").tag(FoodAmountUnit.serving)
                         }
                         .pickerStyle(.segmented)
@@ -1598,7 +1521,7 @@ private struct NutritionHeroCard: View {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 7) {
-                        Text("Today's Intake")
+                        Text(isToday ? "Today's Intake" : "Selected Day's Intake")
                             .font(AppTypography.eyebrow)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .textCase(.uppercase)
@@ -1788,8 +1711,11 @@ private struct MealSectionCard: View {
                         .lineLimit(1)
                 }
 
-                VStack(spacing: 10) {
+                VStack(spacing: 0) {
                     ForEach(entries) { entry in
+                        if entry.id != entries.first?.id {
+                            Divider().overlay(appTheme.colors.cardBorder)
+                        }
                         FoodLogRow(
                             entry: entry,
                             shouldShowHealthKitStatus: shouldShowHealthKitStatus,
@@ -1869,9 +1795,7 @@ private struct FoodLogRow: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
-        .padding(.horizontal, appTheme.metrics.spacing12)
         .padding(.vertical, appTheme.metrics.spacing10)
-        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous))
         .contentShape(Rectangle())
     }
 

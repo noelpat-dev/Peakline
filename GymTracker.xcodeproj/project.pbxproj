@@ -145,6 +145,7 @@
 		0010000000000000000000A8 /* SleepRepositoryRollbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000A8 /* SleepRepositoryRollbackTests.swift */; };
 		0010000000000000000000A9 /* HealthKitSleepDeduplicationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000A9 /* HealthKitSleepDeduplicationTests.swift */; };
 		0010000000000000000000AA /* AppMotionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000AA /* AppMotionTests.swift */; };
+		0010000000000000000000AC /* ThemeContrastTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000AC /* ThemeContrastTests.swift */; };
 		0010000000000000000000AB /* MotionBlueprintTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000AB /* MotionBlueprintTests.swift */; };
 		0010000000000000000000B1 /* CoachWorkoutPreviewUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B1 /* CoachWorkoutPreviewUITests.swift */; };
 		0010000000000000000000B2 /* WorkoutLoggingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B2 /* WorkoutLoggingUITests.swift */; };
@@ -361,6 +362,7 @@
 		0020000000000000000000A8 /* SleepRepositoryRollbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepRepositoryRollbackTests.swift; sourceTree = "<group>"; };
 		0020000000000000000000A9 /* HealthKitSleepDeduplicationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitSleepDeduplicationTests.swift; sourceTree = "<group>"; };
 		0020000000000000000000AA /* AppMotionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMotionTests.swift; sourceTree = "<group>"; };
+		0020000000000000000000AC /* ThemeContrastTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeContrastTests.swift; sourceTree = "<group>"; };
 		0020000000000000000000AB /* MotionBlueprintTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionBlueprintTests.swift; sourceTree = "<group>"; };
 		0020000000000000000000A4 /* NutritionExportReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionExportReliabilityTests.swift; sourceTree = "<group>"; };
 		0020000000000000000000A5 /* WarmStartSnapshotStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WarmStartSnapshotStoreTests.swift; sourceTree = "<group>"; };
@@ -740,6 +742,7 @@
 				0020000000000000000000A8 /* SleepRepositoryRollbackTests.swift */,
 				0020000000000000000000A9 /* HealthKitSleepDeduplicationTests.swift */,
 				0020000000000000000000AA /* AppMotionTests.swift */,
+				0020000000000000000000AC /* ThemeContrastTests.swift */,
 				0020000000000000000000AB /* MotionBlueprintTests.swift */,
 				0020000000000000000000A4 /* NutritionExportReliabilityTests.swift */,
 				0020000000000000000000A5 /* WarmStartSnapshotStoreTests.swift */,
@@ -1096,6 +1099,7 @@
 				0010000000000000000000A8 /* SleepRepositoryRollbackTests.swift in Sources */,
 				0010000000000000000000A9 /* HealthKitSleepDeduplicationTests.swift in Sources */,
 				0010000000000000000000AA /* AppMotionTests.swift in Sources */,
+				0010000000000000000000AC /* ThemeContrastTests.swift in Sources */,
 				0010000000000000000000AB /* MotionBlueprintTests.swift in Sources */,
 				0010000000000000000000A4 /* NutritionExportReliabilityTests.swift in Sources */,
 				0010000000000000000000A5 /* WarmStartSnapshotStoreTests.swift in Sources */,

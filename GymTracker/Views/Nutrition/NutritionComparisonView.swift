@@ -3,6 +3,7 @@ import SwiftUI
 import UIKit
 
 struct NutritionComparisonView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
@@ -200,7 +201,7 @@ struct NutritionComparisonView: View {
 
     private var sourceCards: some View {
         DashboardSection(title: "Sources") {
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2), spacing: 10) {
                 ForEach(comparison.sources) { source in
                     NutritionSourceCard(source: source)
                 }
@@ -274,7 +275,7 @@ struct NutritionComparisonView: View {
 
                     Picker("Base unit", selection: $baseUnit) {
                         Text("g").tag(FoodAmountUnit.grams)
-                        Text("ml").tag(FoodAmountUnit.millilitres)
+                        Text(FoodAmountUnit.millilitres.shortName).tag(FoodAmountUnit.millilitres)
                         Text("serving").tag(FoodAmountUnit.serving)
                     }
                     .pickerStyle(.segmented)
@@ -283,7 +284,7 @@ struct NutritionComparisonView: View {
                         title: "Serving size",
                         text: $servingSize,
                         placeholder: "Optional",
-                        suffix: baseUnit == .millilitres ? "ml" : "g",
+                        suffix: baseUnit == .millilitres ? FoodAmountUnit.millilitres.shortName : FoodAmountUnit.grams.shortName,
                         keyboardType: .decimalPad
                     )
                 }
@@ -293,7 +294,7 @@ struct NutritionComparisonView: View {
 
     private var finalMacroSummary: some View {
         DashboardSection(title: baseUnit == .millilitres ? "Final per 100 mL" : "Final per 100 g") {
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2), spacing: 10) {
                 ComparisonMetricCard(title: "Calories", value: parsedValue(for: .calories), unit: "kcal")
                 ComparisonMetricCard(title: "Protein", value: parsedValue(for: .protein), unit: "g")
                 ComparisonMetricCard(title: "Carbs", value: parsedValue(for: .carbs), unit: "g")
@@ -732,8 +733,7 @@ private struct ComparisonMetricCard: View {
             Text(valueText)
                 .font(AppTypography.cardTitle)
                 .foregroundStyle(value == nil ? appTheme.colors.warning : appTheme.colors.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)

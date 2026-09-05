@@ -11,7 +11,7 @@ enum FoodAmountUnit: String, Codable, DisplayableEnum, Sendable {
         case .grams:
             return "g"
         case .millilitres:
-            return "ml"
+            return "mL"
         case .serving:
             return "serving"
         }

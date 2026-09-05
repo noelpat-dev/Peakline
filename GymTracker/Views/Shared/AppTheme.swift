@@ -210,7 +210,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
             hydration: self == .black ? accent : Color(hex: 0x0A84FF),
             danger: Color(hex: 0xFF453A),
             textAccent: textAccentColor(for: accent),
-            textSuccess: Color(light: 0x67CE67, dark: 0x67CE67),
+            textSuccess: Color(light: 0x176B2C, dark: 0x67CE67),
             textWarning: Color(light: 0xA34E00, dark: 0xFFAB2E),
             textHydration: self == .black
                 ? Color(light: 0x111114, dark: 0xF5F5F7)
@@ -222,7 +222,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
     private func textAccentColor(for accent: Color) -> Color {
         switch self {
         case .appleGreen:
-            return Color(light: 0x67CE67, dark: 0x67CE67)
+            return Color(light: 0x176B2C, dark: 0x67CE67)
         case .red:
             return Color(light: 0xD70015, dark: 0xFF6961)
         case .purple:

@@ -25,6 +25,8 @@ Current file: `KNOWN_ISSUES.md`
 
 ## Nutrition Scanner And Imports
 
+- 5 September UI consistency follow-up: Nutrition now uses one startup-seeded dashboard with no temporary screen replacement or arrival replay. The focused data-rich route timing gate remains unresolved: the pre-change sample was 1,086 ms and the implementation sample was 1,517 ms against 300 ms; startup also varied from 2,621 to 8,594 ms. These simulator samples do not establish a speed improvement. Functional navigation, Workout mode selection, Summary completion, and 72 badge contrast combinations passed; physical-device timing and the full performance verifier remain outstanding.
+
 - Protect the Today-to-Nutrition scanner route: Today quick actions to Nutrition, Add Food, Scan Label, Scan Barcode, review, save, and return-to-log.
 - Barcode, Open Food Facts, OCR, parser, and source-comparison values must remain editable and explicitly saved before becoming local truth.
 - Navigate to saved or imported foods by stable IDs rather than live SwiftData model objects.

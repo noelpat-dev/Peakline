@@ -34,9 +34,9 @@ struct NutritionDataIntegrityService {
         let basis: String
         switch baseUnit {
         case .grams:
-            basis = "per 100g"
+            basis = "per 100 g"
         case .millilitres:
-            basis = "per 100ml"
+            basis = "per 100 mL"
         case .serving:
             basis = "per serving"
         }
