@@ -1174,10 +1174,18 @@ private struct HistorySessionRowCard: View {
                     Spacer(minLength: 0)
 
                     if let ratingText = row.ratingText {
-                        Label(ratingText, systemImage: "star.fill")
+                        // Reserve the longest rating's width, including at larger text sizes.
+                        Label("Excellent", systemImage: "star.fill")
+                            .hidden()
+                            .overlay {
+                                Label(ratingText, systemImage: "star.fill")
+                            }
                             .font(AppTypography.metadataEmphasis)
                             .foregroundStyle(appTheme.colors.textAccent)
                             .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel("Rating: \(ratingText)")
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
                             .background(appTheme.colors.accentSurface, in: Capsule())
