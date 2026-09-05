@@ -107,6 +107,7 @@ struct AccountBackupView: View {
 
                 SecureField("Backup passphrase", text: $backupPassphrase)
                     .textContentType(.password)
+                    .accessibilityIdentifier("account-backup-passphrase")
                     .padding(12)
                     .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius8, style: .continuous))
                     .disabled(isWorking || !readiness.isReady)

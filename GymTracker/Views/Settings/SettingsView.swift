@@ -265,6 +265,7 @@ struct SettingsView: View {
                                 SettingsInlineRow(title: "Account & Backup", subtitle: "Firebase sign-in, encrypted save, and restore", systemImage: "lock.shield")
                             }
                             .buttonStyle(PeaklineButtonPressStyle())
+                            .accessibilityIdentifier("settings-account-backup")
 
                             SettingsDivider()
 

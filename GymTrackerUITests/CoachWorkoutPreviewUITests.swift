@@ -820,6 +820,24 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         )
     }
 
+    func testAccountBackupPassphraseAcceptsInputWhenAccountIsReady() throws {
+        openSettingsFromToday()
+        tapElement(identifier: "settings-account-backup", maxSwipes: 12)
+        XCTAssertTrue(app.navigationBars["Account & Backup"].waitForExistence(timeout: 8))
+
+        let passphrase = app.descendants(matching: .any)["account-backup-passphrase"]
+        XCTAssertTrue(passphrase.waitForExistence(timeout: 5))
+        let enabled = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isEnabled == YES"),
+            object: passphrase
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed)
+
+        passphrase.tap()
+        passphrase.typeText("correct horse battery staple")
+        XCTAssertFalse((passphrase.value as? String ?? "").isEmpty)
+    }
+
     func testHistoryRowsOpenAfterMotionRehaul() throws {
         tapTab(at: 3, expectedTitle: "History")
         tapHistorySessionRow(containing: "Push")
