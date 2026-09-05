@@ -641,7 +641,7 @@ struct TodayReadinessHero: View {
     }
 
     private var scoreColor: Color {
-        scoreText == "—" ? appTheme.colors.textSecondary : appTheme.colors.textSuccess
+        scoreText == "—" ? appTheme.colors.textSecondary : appTheme.colors.success
     }
 }
 
@@ -765,7 +765,7 @@ struct TodayMetricCard: View {
     }
 
     private var valueColor: Color {
-        highlightValue ? appTheme.colors.textSuccess : appTheme.colors.textPrimary
+        highlightValue ? appTheme.colors.success : appTheme.colors.textPrimary
     }
 }
 
@@ -814,7 +814,7 @@ struct TodayWeeklyActivityCard: View {
                 HStack(alignment: .firstTextBaseline, spacing: appTheme.metrics.spacing6) {
                     Text("\(completedCount)/\(dayCount)")
                         .font(AppTypography.workoutLargeNumber)
-                        .foregroundStyle(appTheme.colors.textSuccess)
+                        .foregroundStyle(appTheme.colors.success)
 
                     Text("days")
                         .font(AppTypography.body)
@@ -870,7 +870,7 @@ struct TodayWeeklyActivityCard: View {
         HStack(spacing: appTheme.metrics.spacing6) {
             ForEach(Array(completedDays.enumerated()), id: \.offset) { _, isComplete in
                 Circle()
-                    .fill(isComplete ? appTheme.colors.textSuccess : appTheme.colors.cardBackgroundElevated)
+                    .fill(isComplete ? appTheme.colors.success : appTheme.colors.cardBackgroundElevated)
                     .frame(
                         width: dynamicTypeSize.isAccessibilitySize
                             ? appTheme.metrics.spacing14
@@ -883,7 +883,7 @@ struct TodayWeeklyActivityCard: View {
                         Circle()
                             .stroke(
                                 isComplete
-                                    ? appTheme.colors.textSuccess.opacity(0.16)
+                                    ? appTheme.colors.success.opacity(0.16)
                                     : appTheme.colors.cardBorder,
                                 lineWidth: 0.75
                             )
