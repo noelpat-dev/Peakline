@@ -1160,37 +1160,13 @@ private struct HistorySessionRowCard: View {
             )
 
             VStack(alignment: .leading, spacing: appTheme.metrics.spacing4) {
-                HStack(alignment: .top, spacing: 8) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(row.splitName)
-                            .font(AppTypography.sectionTitle)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                            .lineLimit(1)
-                        Text(row.dateText)
-                            .font(AppTypography.metadata)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                    }
-
-                    Spacer(minLength: 0)
-
-                    if let ratingText = row.ratingText {
-                        // Reserve the longest rating's width, including at larger text sizes.
-                        Label("Excellent", systemImage: "star.fill")
-                            .hidden()
-                            .overlay {
-                                Label(ratingText, systemImage: "star.fill")
-                            }
-                            .font(AppTypography.metadataEmphasis)
-                            .foregroundStyle(appTheme.colors.textAccent)
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .accessibilityElement(children: .ignore)
-                            .accessibilityLabel("Rating: \(ratingText)")
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(appTheme.colors.accentSurface, in: Capsule())
-                    }
-                }
+                Text(row.splitName)
+                    .font(AppTypography.sectionTitle)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .lineLimit(1)
+                Text(row.dateText)
+                    .font(AppTypography.metadata)
+                    .foregroundStyle(appTheme.colors.textSecondary)
 
                 Text(PeaklineText.joinedMetadata([
                     "\(row.exerciseCountText) exercises",
@@ -1201,6 +1177,26 @@ private struct HistorySessionRowCard: View {
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+
+            if let ratingText = row.ratingText {
+                // Reserve the longest rating's width, including at larger text sizes.
+                Label("Excellent", systemImage: "star.fill")
+                    .hidden()
+                    .overlay {
+                        Label(ratingText, systemImage: "star.fill")
+                    }
+                    .font(AppTypography.metadataEmphasis)
+                    .foregroundStyle(appTheme.colors.textAccent)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Rating: \(ratingText)")
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(appTheme.colors.accentSurface, in: Capsule())
             }
 
             Image(systemName: "chevron.right")
