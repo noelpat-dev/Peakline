@@ -123,6 +123,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
         tapElement(identifier: "exercise-library-row-Bench Press", maxSwipes: 8)
         XCTAssertTrue(app.navigationBars["Bench Press"].waitForExistence(timeout: 5))
+        tapButton(containing: "Coaching preferences", maxSwipes: 10)
 
         tapElement(identifier: "coach-metadata-note", maxSwipes: 8)
         let noteField = app.descendants(matching: .any)["coach-metadata-note"]
@@ -134,6 +135,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
         tapElement(identifier: "exercise-library-row-Bench Press", maxSwipes: 8)
         XCTAssertTrue(app.navigationBars["Bench Press"].waitForExistence(timeout: 5))
+        tapButton(containing: "Coaching preferences", maxSwipes: 10)
         tapElement(identifier: "coach-metadata-note", maxSwipes: 8)
         let savedValue = app.descendants(matching: .any)["coach-metadata-note"].value as? String
         XCTAssertEqual(savedValue, "Priority bench for UI test")

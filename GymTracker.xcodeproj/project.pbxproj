@@ -202,6 +202,12 @@
 		0010000000000000000000E5 /* SleepCoachingServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000E5 /* SleepCoachingServices.swift */; };
 		0010000000000000000000E6 /* SleepAnalyticsStores.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000E6 /* SleepAnalyticsStores.swift */; };
 		0010000000000000000000E7 /* SleepNotificationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000E7 /* SleepNotificationScheduler.swift */; };
+		D6E1E5922D596DB71B3D2162 /* ExerciseGuideCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD7027B4DC340CA2319550FE /* ExerciseGuideCatalog.swift */; };
+		FE148485CF56AB9C00DBC7E4 /* ExerciseGuideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7C86890246333C09E1ADDAD /* ExerciseGuideView.swift */; };
+		16A3B42C69B46AC4863F4671 /* ExerciseArtworkCreditsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBB01F50E86D59606F66435E /* ExerciseArtworkCreditsView.swift */; };
+		AD801DEFB34D06A8E5E44E6B /* WorkoutGuide in Resources */ = {isa = PBXBuildFile; fileRef = 972666C4C12FB89883DD39DB /* WorkoutGuide */; };
+		0E00AE9C4F9BE622E6EDA33B /* ExerciseGuideUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F90A8222AAE63088EC3585FF /* ExerciseGuideUITests.swift */; };
+		645492999B905193C20BC3E3 /* ExerciseGuideCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C3AD24E9453E3998DFECC18 /* ExerciseGuideCatalogTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -372,6 +378,12 @@
 		0020000000000000000000C0 /* AccountBackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountBackupView.swift; sourceTree = "<group>"; };
 		0020000000000000000000D4 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		0020000000000000000000D5 /* PeaklineModelSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeaklineModelSchema.swift; sourceTree = "<group>"; };
+		FD7027B4DC340CA2319550FE /* ExerciseGuideCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExerciseGuideCatalog.swift; path = GymTracker/Models/ExerciseGuideCatalog.swift; sourceTree = SOURCE_ROOT; };
+		C7C86890246333C09E1ADDAD /* ExerciseGuideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExerciseGuideView.swift; path = GymTracker/Views/Settings/ExerciseGuideView.swift; sourceTree = SOURCE_ROOT; };
+		FBB01F50E86D59606F66435E /* ExerciseArtworkCreditsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExerciseArtworkCreditsView.swift; path = GymTracker/Views/Settings/ExerciseArtworkCreditsView.swift; sourceTree = SOURCE_ROOT; };
+		972666C4C12FB89883DD39DB /* WorkoutGuide */ = {isa = PBXFileReference; lastKnownFileType = folder; name = WorkoutGuide; path = GymTracker/Resources/WorkoutGuide; sourceTree = SOURCE_ROOT; };
+		F90A8222AAE63088EC3585FF /* ExerciseGuideUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExerciseGuideUITests.swift; path = GymTrackerUITests/ExerciseGuideUITests.swift; sourceTree = SOURCE_ROOT; };
+		8C3AD24E9453E3998DFECC18 /* ExerciseGuideCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExerciseGuideCatalogTests.swift; path = GymTrackerTests/ExerciseGuideCatalogTests.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -415,6 +427,7 @@
 		004000000000000000000002 /* GymTracker */ = {
 			isa = PBXGroup;
 			children = (
+				972666C4C12FB89883DD39DB /* WorkoutGuide */,
 				002000000000000000000019 /* Assets.xcassets */,
 				0020000000000000000000D4 /* LaunchScreen.storyboard */,
 				004000000000000000000003 /* App */,
@@ -445,6 +458,7 @@
 		004000000000000000000004 /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				FD7027B4DC340CA2319550FE /* ExerciseGuideCatalog.swift */,
 				002000000000000000000003 /* Enums.swift */,
 				002000000000000000000004 /* UserProfile.swift */,
 				002000000000000000000005 /* TrainingSplit.swift */,
@@ -550,6 +564,8 @@
 		00400000000000000000000B /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				FBB01F50E86D59606F66435E /* ExerciseArtworkCreditsView.swift */,
+				C7C86890246333C09E1ADDAD /* ExerciseGuideView.swift */,
 				002000000000000000000013 /* SettingsView.swift */,
 				002000000000000000000017 /* ExerciseLibraryView.swift */,
 				002000000000000000000044 /* BackupExportView.swift */,
@@ -711,6 +727,7 @@
 		004000000000000000000018 /* GymTrackerTests */ = {
 			isa = PBXGroup;
 			children = (
+				8C3AD24E9453E3998DFECC18 /* ExerciseGuideCatalogTests.swift */,
 				0020000000000000000000A1 /* CoachIntelligenceServiceTests.swift */,
 				0020000000000000000000A2 /* WorkoutReliabilityTests.swift */,
 				0020000000000000000000A3 /* SleepRecoveryReliabilityTests.swift */,
@@ -729,6 +746,7 @@
 		004000000000000000000019 /* GymTrackerUITests */ = {
 			isa = PBXGroup;
 			children = (
+				F90A8222AAE63088EC3585FF /* ExerciseGuideUITests.swift */,
 				0020000000000000000000B1 /* CoachWorkoutPreviewUITests.swift */,
 				0020000000000000000000B2 /* WorkoutLoggingUITests.swift */,
 				0020000000000000000000B3 /* NutritionScannerNavigationUITests.swift */,
@@ -859,6 +877,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AD801DEFB34D06A8E5E44E6B /* WorkoutGuide in Resources */,
 				001000000000000000000018 /* Assets.xcassets in Resources */,
 				0010000000000000000000D4 /* LaunchScreen.storyboard in Resources */,
 			);
@@ -904,6 +923,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				16A3B42C69B46AC4863F4671 /* ExerciseArtworkCreditsView.swift in Sources */,
+				FE148485CF56AB9C00DBC7E4 /* ExerciseGuideView.swift in Sources */,
+				D6E1E5922D596DB71B3D2162 /* ExerciseGuideCatalog.swift in Sources */,
 				001000000000000000000001 /* GymTrackerApp.swift in Sources */,
 				0010000000000000000000D5 /* PeaklineModelSchema.swift in Sources */,
 				001000000000000000000002 /* RootTabView.swift in Sources */,
@@ -1059,6 +1081,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				645492999B905193C20BC3E3 /* ExerciseGuideCatalogTests.swift in Sources */,
 				0010000000000000000000A1 /* CoachIntelligenceServiceTests.swift in Sources */,
 				0010000000000000000000A2 /* WorkoutReliabilityTests.swift in Sources */,
 				0010000000000000000000A3 /* SleepRecoveryReliabilityTests.swift in Sources */,
@@ -1077,6 +1100,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0E00AE9C4F9BE622E6EDA33B /* ExerciseGuideUITests.swift in Sources */,
 				0010000000000000000000B1 /* CoachWorkoutPreviewUITests.swift in Sources */,
 				0010000000000000000000B2 /* WorkoutLoggingUITests.swift in Sources */,
 				0010000000000000000000B3 /* NutritionScannerNavigationUITests.swift in Sources */,

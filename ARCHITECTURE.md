@@ -175,25 +175,21 @@ Useful UI-test launch arguments include in-memory storage and seeded fixtures ha
 
 ## Icon Pipeline
 
-Source PNGs live outside the asset catalog:
+`ExerciseGuideCatalog` decodes the pinned `GymTracker/Resources/WorkoutGuide/manifest.json` once and builds immutable lookup indexes. Its 302 records retain equipment, muscles, exercise type, three frames, and upstream attribution. Catalogue browsing is independent of SwiftData and never seeds or alters the user's exercise library.
 
-```text
-GymTracker/IconSource/ExerciseIcons/
-```
+`ExerciseIconMapper.guideEntry` retains exact catalogue lookup, while `illustrationEntry` permits representative artwork for related movements. All legacy and generated `ExerciseIconKey` values now resolve to Workout Guide image assets; the old raw values remain stable for decoding. No saved exercise metadata is inferred from a representative image. `ExerciseIconView` uses cached asset availability and template tint, with more space for detailed poses inside existing tiles.
 
-Generated assets live here:
+- New SVG image sets: `GymTracker/Assets.xcassets/WorkoutGuide/`.
+- Pinned upstream: `bryllim/workout-guide` commit `aac599224bb9780305239607ef98540b7e0ce389`.
+- Import/check: `python3 -B Scripts/import_workout_guide_assets.py --source /path/to/workout-guide --check` (omit `--check` to import).
+- Retained original PNG pipeline: `GymTracker/IconSource/ExerciseIcons/`, `GymTracker/Assets.xcassets/ExerciseIcons/`, and `Scripts/prepare_exercise_icons.py`.
+- Credits and source/change records: `GymTracker/Resources/WorkoutGuide/` and `THIRD_PARTY_NOTICES.md`.
 
-```text
-GymTracker/Assets.xcassets/ExerciseIcons/
-```
+`ExerciseGuideLibraryView` provides a lazy searchable gallery with equipment and primary-muscle filters. `ExercisePosePreview` is shared by catalogue details and the exercise editor: manual pose selection cancels playback, a requested sequence stops after one cycle, and scene inactivity/Reduce Motion prevent playback. The editor plays a short sequence on entry and displays the existing exercise fields directly below it; its toolbar opens artwork credits. Workout Preview and Logger continue presenting exact catalogue details through `ExerciseGuideSheet`.
 
-When adding or replacing an exact exercise icon:
+`ExerciseEditorView` queries coach metadata only for its exercise ID. The exercise model owns shared primary/secondary muscles and movement, while coach role, priority, split context and notes remain independent choices. The existing metadata service constructs the unified draft and skips no-op updates. The editor reconciles once on load and again on exit, preserving metadata identity and avoiding persistence work during pose updates or note typing. No SwiftData model crosses the playback task's suspension points.
 
-1. Add the source filename to `ICON_MAP` in `Scripts/prepare_exercise_icons.py`.
-2. Confirm the asset case in `ExerciseIconKey`.
-3. Add exact-name mapping rules in `ExerciseIconMapper` before broad fallbacks.
-4. Run `python3 Scripts/prepare_exercise_icons.py`.
-5. Build and visually verify the exercise rows that should use the asset.
+When updating the catalogue, retain the pinned source and attribution, run the importer checks, keep typed guide keys aligned with the manifest, and validate the focused catalogue/mapping tests plus the affected screens on iPhone 17. Exact catalogue detail matches include equipment; representative thumbnails may intentionally reuse related movements at the user’s request.
 
 ## Future Change Guardrails
 

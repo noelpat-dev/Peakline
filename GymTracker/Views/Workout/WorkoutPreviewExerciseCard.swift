@@ -116,6 +116,7 @@ struct WorkoutPreviewExerciseCard: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    @State private var guideEntry: ExerciseGuideEntry?
     @State private var isGestureDragging = false
     @State private var gestureVerticalOffset: CGFloat = 0
 
@@ -140,7 +141,7 @@ struct WorkoutPreviewExerciseCard: View {
         HStack(alignment: .top, spacing: 12) {
             ExerciseIconView(
                 iconKey: ExerciseIconMapper.iconKey(forName: exercise.exerciseNameSnapshot),
-                size: 44,
+                size: 56,
                 showBackground: true,
                 isDecorative: true
             )
@@ -208,6 +209,9 @@ struct WorkoutPreviewExerciseCard: View {
         )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("workout-preview-exercise-row-\(exercise.exerciseNameSnapshot)")
+        .sheet(item: $guideEntry) { entry in
+            ExerciseGuideSheet(entry: entry)
+        }
     }
 
     private var reorderHandle: some View {
@@ -274,6 +278,15 @@ struct WorkoutPreviewExerciseCard: View {
 
     private var actionsButton: some View {
         Menu {
+            if let entry = ExerciseIconMapper.guideEntry(forName: exercise.exerciseNameSnapshot) {
+                Button {
+                    guideEntry = entry
+                } label: {
+                    Label("Exercise Guide", systemImage: "info.circle")
+                }
+                .accessibilityIdentifier("workout-preview-exercise-guide")
+            }
+
             Button {
                 requestSubstitute()
             } label: {
