@@ -219,6 +219,7 @@ struct TodayView: View {
             sessionSignature,
             unfinishedSignature,
             hydrationSignature,
+            signature(foodLogEntries, limit: 160) { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSince1970)" },
             String(hydrationTargetML),
             "workoutRevision:\(workoutWarmStartInvalidation.revision)",
             readinessRefreshClock.token.signature
@@ -405,6 +406,9 @@ struct TodayView: View {
         }
 
         return TodayDashboardSnapshot(
+            nutritionTotals: NutritionCalculatorService().totals(
+                from: foodLogEntries.filter { Calendar.current.isDateInToday($0.loggedAt) }
+            ),
             trainingDecision: decision,
             hydrationSummary: hydrationService.summary(
                 entries: hydrationEntries,
@@ -544,14 +548,17 @@ struct TodayView: View {
                         .accessibilityIdentifier("quick-action-hydration")
 
                         TodayMetricCard(
-                            title: "Coach Brief",
-                            systemImage: "doc.text",
-                            value: coachBriefValueText,
-                            detail: coachBriefDetailText,
-                            footer: nil,
-                            action: openCoachRoute
+                            title: "Nutrition",
+                            systemImage: "fork.knife",
+                            value: nutritionValueText,
+                            detail: nutritionDetailText,
+                            footer: "Open Nutrition",
+                            isMetric: true,
+                            highlightValue: nutritionTotals.calories > 0,
+                            action: { openRoute(.nutrition) }
                         )
-                        .accessibilityIdentifier("today-coach-brief-open")
+                        .accessibilityIdentifier("quick-action-nutrition")
+                        .todayReentryWash(isActive: reentryWashCards.contains(.nutrition))
                     }
                     .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 1), index: 1)
 
@@ -995,15 +1002,21 @@ struct TodayView: View {
         return "\(HydrationService.formatAmount(hydrationSummary.targetML)) goal · \(percentage)%"
     }
 
-    private var coachBriefValueText: String {
-        guard hasLoadedReadiness else { return "—" }
-        let title = currentCoachSnapshot.adaptiveGuidance.title.components(separatedBy: ": ").last ?? ""
-        return title.prefix(1).uppercased() + title.dropFirst()
+    private var nutritionTotals: NutritionMacroSnapshot {
+        if lastTodaySnapshotSignature == nil, let initialStartupSnapshot {
+            return initialStartupSnapshot.nutritionDashboardWarmStartPayload.totals
+        }
+        return currentTodaySnapshot.nutritionTotals
     }
 
-    private var coachBriefDetailText: String {
-        guard hasLoadedReadiness else { return "Preparing your local coaching brief" }
-        return currentCoachSnapshot.adaptiveGuidance.primarySuggestion
+    private var nutritionValueText: String {
+        "\(Int(nutritionTotals.calories.rounded())) kcal"
+    }
+
+    private var nutritionDetailText: String {
+        let totals = nutritionTotals
+        guard totals.calories > 0 || totals.protein > 0 else { return "No food logged yet" }
+        return "\(Int(totals.protein.rounded())) g protein today"
     }
 
     private var completedDaysThisWeek: [Bool] {
@@ -1465,6 +1478,7 @@ private struct DeferredSleepDashboardHost: View {
 }
 
 private struct TodayDashboardSnapshot {
+    let nutritionTotals: NutritionMacroSnapshot
     let trainingDecision: TrainingDecision
     let hydrationSummary: DailyHydrationSummary
     let suggestedSplit: TrainingSplit?
@@ -1481,6 +1495,7 @@ private struct TodayDashboardSnapshot {
     let completedDaysThisWeek: [Bool]
 
     static let empty = TodayDashboardSnapshot(
+        nutritionTotals: NutritionCalculatorService().totals(from: []),
         trainingDecision: TrainingDecision(
             recommendedSplitName: nil,
             recommendedMode: .full,

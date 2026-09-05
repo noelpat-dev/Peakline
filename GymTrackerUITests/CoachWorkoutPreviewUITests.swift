@@ -227,7 +227,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
             "Expected Today to expose the redesigned readiness hero"
         )
 
-        tapElement(identifier: "today-coach-brief-open", maxSwipes: 4)
+        tapElement(identifier: "today-readiness-hero", maxSwipes: 4)
         XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Coach to open")
         let coachCall = app.descendants(matching: .any)["coach-todays-call"]
         XCTAssertTrue(coachCall.waitForExistence(timeout: 12))
@@ -285,7 +285,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
 
-        tapElement(identifier: "today-coach-brief-open", maxSwipes: 4)
+        tapElement(identifier: "today-readiness-hero", maxSwipes: 4)
         XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Coach to open")
 
         edgeSwipeBack()
@@ -1024,7 +1024,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     func testCoachOmitsDuplicateCheckIn() throws {
         launch(arguments: ["-UITestCoachFatigueFixture"])
 
-        tapElement(identifier: "today-coach-brief-open", maxSwipes: 4)
+        tapElement(identifier: "today-readiness-hero", maxSwipes: 4)
         XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Coach to open")
         for _ in 0..<18 { app.swipeUp() }
         XCTAssertFalse(app.staticTexts["Today's Check-In"].exists)
@@ -1044,7 +1044,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         XCTAssertTrue(coverage.waitForExistence(timeout: 3))
         XCTAssertEqual(coverage.label, "0 of 5 signals included")
 
-        tapElement(identifier: "today-coach-brief-open", maxSwipes: 4)
+        tapElement(identifier: "today-readiness-hero", maxSwipes: 4)
         XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Coach to open")
         let coachHeadline = app.descendants(matching: .any)["coach-todays-call"]
         XCTAssertTrue(coachHeadline.waitForExistence(timeout: 2))
@@ -1320,8 +1320,6 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
     private func todayMenuTitle(for identifier: String) -> String? {
         switch identifier {
-        case "quick-action-nutrition":
-            return "Nutrition"
         case "quick-action-progress":
             return "Progress & Charts"
         default:
