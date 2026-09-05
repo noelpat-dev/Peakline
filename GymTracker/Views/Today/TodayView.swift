@@ -227,7 +227,7 @@ struct TodayView: View {
     }
 
     private var todaySnapshotSignatureForObservation: String? {
-        isWorkoutCompletionPresentationActive || !isDashboardVisible ? nil : todaySnapshotSignature
+        isWorkoutCompletionPresentationActive || !isDashboardVisible || selectedRoute != nil ? nil : todaySnapshotSignature
     }
 
     private var trainingDecision: TrainingDecision {
@@ -281,7 +281,7 @@ struct TodayView: View {
     }
 
     private var sleepReadinessSignatureForObservation: SleepAnalyticsInputSignature? {
-        isWorkoutCompletionPresentationActive || !isDashboardVisible ? nil : currentSleepReadinessSignature
+        isWorkoutCompletionPresentationActive || !isDashboardVisible || selectedRoute != nil ? nil : currentSleepReadinessSignature
     }
 
     private var hydrationSummary: DailyHydrationSummary {
@@ -321,7 +321,7 @@ struct TodayView: View {
     }
 
     private var coachSnapshotSignatureForObservation: String? {
-        isWorkoutCompletionPresentationActive || !isDashboardVisible ? nil : currentCoachSnapshotSignature
+        isWorkoutCompletionPresentationActive || !isDashboardVisible || selectedRoute != nil ? nil : currentCoachSnapshotSignature
     }
 
     private var sleepSettingsSignature: String {
@@ -643,11 +643,11 @@ struct TodayView: View {
                 refreshTodaySnapshot()
             }
             .onChange(of: sleepReadinessSignatureForObservation) { _, signature in
-                guard signature != nil else { return }
+                guard signature != nil, lastSleepReadinessSignature != nil else { return }
                 refreshSleepReadiness()
             }
             .onChange(of: coachSnapshotSignatureForObservation) { _, signature in
-                guard signature != nil else { return }
+                guard signature != nil, lastCoachSnapshotSignature != nil else { return }
                 refreshCoachSnapshot()
             }
             .onReceive(NotificationCenter.default.publisher(for: .workoutCompletionPresentationBegan)) { _ in

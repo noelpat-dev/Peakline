@@ -44,6 +44,8 @@ Current file: `KNOWN_ISSUES.md`
 
 ## Coach And Recovery
 
+- 5 September Today/Coach validation: startup/cache regression tests and Coach/Weekly Review background retention pass, and direct tracing confirms unchanged Coach inputs skip all four refresh calculations. Performance acceptance is not fully cleared: data-rich XCUI routes exceeded the 500 ms Coach and 300 ms Nutrition budgets, and an automated readiness tap intermittently failed to navigate. A final direct data-rich Coach sample measured 616 ms on first entry and 284 ms on re-entry. Check cold entry and repeated taps on Noel’s iPhone before calling the transition consistently smooth; the full verifier and physical-device pass have not been run for this change.
+
 - Coaching is deterministic and still evolving.
 - Fatigue, plateau, deload, and recovery recommendations should not overstate certainty.
 - Every recommendation needs a short reason.

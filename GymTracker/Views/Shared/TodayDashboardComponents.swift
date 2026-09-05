@@ -634,6 +634,7 @@ struct TodayReadinessHero: View {
                     }
                 }
             }
+            .contentShape(Rectangle())
         }
         .buttonStyle(PressableCardButtonStyle())
         .accessibilityHint("Opens your readiness details")

@@ -281,15 +281,22 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testTodayCoachSupportsNativeEdgeSwipeBack() throws {
-        launch(arguments: ["-UITestCoachFatigueFixture"])
-
+        launch(arguments: ["-UITestCoachFatigueFixture"], performance: true)
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.descendants(matching: .any)["today-coach-brief-open"].exists)
+        XCTAssertTrue(app.buttons["quick-action-nutrition"].exists)
 
-        tapElement(identifier: "today-readiness-hero", maxSwipes: 4)
-        XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Coach to open")
-
-        edgeSwipeBack()
-        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
+        for _ in 0..<3 {
+            tapElement(identifier: "today-readiness-hero", maxSwipes: 4)
+            XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Coach to open")
+            let call = app.descendants(matching: .any)["coach-todays-call"]
+            XCTAssertTrue(call.exists)
+            XCTAssertFalse(call.label.localizedCaseInsensitiveContains("preparing"))
+            XCTAssertTrue(app.descendants(matching: .any)["coach-why-this-section"].exists)
+            edgeSwipeBack()
+            XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
+        }
+        assertPerformanceAcceptancePassed()
     }
 
     func testCoachAndWeeklyReviewRemainHydratedAcrossBackgrounding() throws {

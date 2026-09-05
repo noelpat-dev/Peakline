@@ -442,6 +442,16 @@ final class FullAppBackupReliabilityTests: XCTestCase {
 
         XCTAssertEqual(snapshot.activeSplitCount, 5)
         XCTAssertEqual(snapshot.trainingCall.recommendedSplitName, "Upper")
+        let mountedInputs = try CoachRouteInputs.load(in: context)
+        XCTAssertEqual(snapshot.coachRouteSnapshot.intelligenceInputSignature, mountedInputs.currentCoachSnapshotSignature)
+        XCTAssertEqual(snapshot.coachRouteSnapshot.trainingInputSignature, mountedInputs.currentWeeklyReviewSignature)
+        XCTAssertEqual(snapshot.coachRouteSnapshot.sleepAnalytics.inputSignature, mountedInputs.currentSleepAnalyticsSignature)
+
+        workout.date = workout.date.addingTimeInterval(60)
+        try context.save()
+        let changedInputs = try CoachRouteInputs.load(in: context)
+        XCTAssertNotEqual(snapshot.coachRouteSnapshot.intelligenceInputSignature, changedInputs.currentCoachSnapshotSignature)
+        XCTAssertNotEqual(snapshot.coachRouteSnapshot.trainingInputSignature, changedInputs.currentWeeklyReviewSignature)
     }
 
     private func makeContainer() throws -> ModelContainer {

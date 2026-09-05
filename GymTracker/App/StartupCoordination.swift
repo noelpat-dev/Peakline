@@ -608,6 +608,8 @@ enum AppStartupMigrationService {
 
 @MainActor
 struct StartupModelProjections {
+    let coachIntelligenceInputSignature: String
+    let coachTrainingInputSignature: String
     let sourceRevision: Int
     let splitSnapshots: [TrainingSplitSnapshot]
     let workoutSnapshots: [WorkoutAnalyticsSession]
@@ -648,6 +650,7 @@ struct StartupModelProjections {
         in context: ModelContext,
         deferSleepSnapshots: Bool = false
     ) throws -> StartupModelProjections {
+        ReadinessRefreshClock.shared.start()
         let sourceRevision = WorkoutWarmStartInvalidation.shared.revision
         var splitDescriptor = FetchDescriptor<TrainingSplit>(
             predicate: #Predicate<TrainingSplit> { $0.isActive },
@@ -870,20 +873,8 @@ struct StartupModelProjections {
             dayStart: Calendar.current.startOfDay(for: readinessEvaluatedAt),
             hydrationPhase: HydrationPacingPhase(date: readinessEvaluatedAt)
         )
-        let coachSnapshot = CoachIntelligenceService().snapshot(
-            for: readinessEvaluatedAt,
-            activeSplits: orderedActiveSplits,
-            exercises: exercises,
-            sleepSessions: sleepSessions,
-            napSessions: napSessions,
-            hydrationEntries: hydrationEntries,
-            completedWorkouts: completedWorkouts,
-            foodLogs: foodLogs,
-            checkIns: checkIns,
-            sleepSettings: sleepSettings,
-            hydrationTargetML: hydrationTargetML,
-            nutritionGoal: nutritionGoal
-        )
+        let coachInputs = try CoachRouteInputs.load(in: context)
+        let coachSnapshot = coachInputs.makeCoachSnapshot()
         let previewWarmSnapshots = WorkoutPreviewSnapshotBuilder.build(
             activeSplits: orderedActiveSplits,
             splitSnapshots: splitSnapshots,
@@ -895,6 +886,8 @@ struct StartupModelProjections {
         )
 
         return StartupModelProjections(
+            coachIntelligenceInputSignature: coachInputs.currentCoachSnapshotSignature,
+            coachTrainingInputSignature: coachInputs.currentWeeklyReviewSignature,
             sourceRevision: sourceRevision,
             splitSnapshots: splitSnapshots,
             workoutSnapshots: workoutSnapshots,
@@ -951,7 +944,6 @@ struct StartupPureProjection: Sendable {
 }
 
 struct StartupDerivedValues: Sendable {
-    let trainingCall: TrainingCallSnapshot
     let coachDerivedMetrics: CoachDerivedMetrics
     let weeklyReview: WeeklyReview
     let progressWeeklySummary: WeeklyTrainingSummary
@@ -980,18 +972,6 @@ enum StartupSnapshotBuilder {
         let splitSnapshots = projection.splitSnapshots
         let workoutSnapshots = projection.workoutSnapshots
 
-        let trainingCallTask = Task.detached(priority: .userInitiated) {
-            let summary = CoachRecommendationEngine().makeSummary(
-                activeSplits: splitSnapshots,
-                completedSessions: workoutSnapshots
-            )
-            return TrainingCallSnapshotBuilder().make(
-                decision: summary.trainingDecision,
-                activeSplits: splitSnapshots,
-                completedSessions: workoutSnapshots
-            )
-        }
-
         let coachRouteValuesTask = Task.detached(priority: .userInitiated) {
             (
                 CoachDerivedMetrics.make(
@@ -1015,12 +995,10 @@ enum StartupSnapshotBuilder {
                 )
             )
         }
-        let trainingCall = await trainingCallTask.value
         let coachRouteValues = await coachRouteValuesTask.value
         let progressValues = await progressValuesTask.value
 
         return StartupDerivedValues(
-            trainingCall: trainingCall,
             coachDerivedMetrics: coachRouteValues.0,
             weeklyReview: coachRouteValues.1,
             progressWeeklySummary: progressValues.0,
@@ -1138,7 +1116,14 @@ enum StartupSnapshotBuilder {
         sleepSnapshots: StartupSleepSnapshots,
         derived: StartupDerivedValues
     ) -> StartupSnapshotBundle {
-        let trainingCall = derived.trainingCall.neutralizedForProvisionalReadiness(
+        let trainingCall = TrainingCallSnapshotBuilder().make(
+            decision: derived.coachDerivedMetrics.summary.trainingDecision,
+            activeSplits: projections.splitSnapshots,
+            completedSessions: projections.workoutSnapshots,
+            readiness: projections.coachSnapshot.readiness,
+            fatigueRisk: projections.coachSnapshot.fatigueRisk,
+            targetSuggestions: derived.coachDerivedMetrics.targetSuggestions
+        ).neutralizedForProvisionalReadiness(
             if: projections.coachSnapshot.readiness.isProvisional
         )
         let recommendedSplit = projections.recommendedSplits
@@ -1165,7 +1150,9 @@ enum StartupSnapshotBuilder {
                 derivedMetrics: derived.coachDerivedMetrics,
                 sleepAnalytics: sleepSnapshots.analytics,
                 trainingCall: trainingCall,
-                recommendedSplit: recommendedSplit
+                recommendedSplit: recommendedSplit,
+                intelligenceInputSignature: projections.coachIntelligenceInputSignature,
+                trainingInputSignature: projections.coachTrainingInputSignature
             ),
             sleepAnalyticsSnapshot: sleepSnapshots.analytics,
             sleepReadinessSnapshot: sleepSnapshots.readiness,

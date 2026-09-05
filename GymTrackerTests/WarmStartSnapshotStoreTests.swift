@@ -20,6 +20,29 @@ final class WarmStartSnapshotStoreTests: XCTestCase {
         XCTAssertEqual(first, second)
     }
 
+    func testCoachWarmRefreshSignaturesSurvivePublicationButInvalidateChangedIntelligence() {
+        let prepared = CoachRouteRenderSnapshot(
+            intelligence: CoachIntelligenceService.emptySnapshot(),
+            weeklyReview: nil,
+            derivedMetrics: .placeholder,
+            sleepAnalytics: SleepAnalyticsService.emptySnapshot(),
+            trainingCall: .placeholder,
+            intelligenceInputSignature: "prepared-recovery",
+            trainingInputSignature: "prepared-training"
+        )
+        let published = prepared.withSourceGeneration(12)
+        XCTAssertEqual(published.intelligenceInputSignature, "prepared-recovery")
+        XCTAssertEqual(published.trainingInputSignature, "prepared-training")
+        let changed = published.replacing(
+            intelligence: CoachIntelligenceService.emptySnapshot(),
+            trainingCall: .placeholder,
+            recommendedSplit: nil,
+            sourceGeneration: 13
+        )
+        XCTAssertNil(changed.intelligenceInputSignature)
+        XCTAssertEqual(changed.trainingInputSignature, "prepared-training")
+    }
+
     func testCoachRoutePublicationKeepsFreshReadinessCallAndSplitInOneGeneration() {
         let store = CoachRouteSnapshotStore.shared
         store.resetForTesting()

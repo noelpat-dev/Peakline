@@ -6,6 +6,9 @@ struct CoachRouteRenderSnapshot: @unchecked Sendable {
     /// generation so a newer intelligence score cannot be paired with an
     /// older actionable decision.
     let sourceGeneration: Int
+    /// Exact startup/live refresh guards; partial intelligence updates invalidate only their guard.
+    let intelligenceInputSignature: String?
+    let trainingInputSignature: String?
     let intelligence: CoachIntelligenceSnapshot
     let weeklyReview: WeeklyReview?
     let derivedMetrics: CoachDerivedMetrics
@@ -21,8 +24,12 @@ struct CoachRouteRenderSnapshot: @unchecked Sendable {
         sleepAnalytics: SleepAnalyticsSnapshot,
         trainingCall: TrainingCallSnapshot,
         recommendedSplit: WorkoutPreviewSplit? = nil,
-        sourceGeneration: Int = 0
+        sourceGeneration: Int = 0,
+        intelligenceInputSignature: String? = nil,
+        trainingInputSignature: String? = nil
     ) {
+        self.intelligenceInputSignature = intelligenceInputSignature
+        self.trainingInputSignature = trainingInputSignature
         self.sourceGeneration = sourceGeneration
         self.intelligence = intelligence.routeCacheValueSnapshot
         self.weeklyReview = weeklyReview
@@ -91,16 +98,22 @@ struct CoachRouteRenderSnapshot: @unchecked Sendable {
             sleepAnalytics: sleepAnalytics,
             trainingCall: trainingCall,
             recommendedSplit: recommendedSplit,
-            sourceGeneration: sourceGeneration
+            sourceGeneration: sourceGeneration,
+            trainingInputSignature: trainingInputSignature
         )
     }
 
     func withSourceGeneration(_ sourceGeneration: Int) -> CoachRouteRenderSnapshot {
-        replacing(
+        CoachRouteRenderSnapshot(
             intelligence: intelligence,
+            weeklyReview: weeklyReview,
+            derivedMetrics: derivedMetrics,
+            sleepAnalytics: sleepAnalytics,
             trainingCall: dailyDecision.trainingCall,
             recommendedSplit: recommendedSplit,
-            sourceGeneration: sourceGeneration
+            sourceGeneration: sourceGeneration,
+            intelligenceInputSignature: intelligenceInputSignature,
+            trainingInputSignature: trainingInputSignature
         )
     }
 }
