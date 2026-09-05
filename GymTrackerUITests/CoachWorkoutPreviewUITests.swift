@@ -848,6 +848,10 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         tapTabAndAssertResponsive(at: 2, expectedTitle: "Splits")
         tapTabAndAssertResponsive(at: 3, expectedTitle: "History")
         tapTabAndAssertResponsive(at: 1, expectedTitle: "Workout")
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 5))
+        app.activate()
+        XCTAssertTrue(app.buttons["workout-recommended-preview"].waitForExistence(timeout: 5))
         tapTabAndAssertResponsive(at: 0, expectedTitle: "Today")
 
         assertPerformanceAcceptancePassed()
