@@ -1304,6 +1304,7 @@ private struct DeferredWorkoutTabHost: View {
 
     @State private var isLiveMounted = false
     @State private var isVisible = false
+    @State private var pendingDashboardAction: WorkoutDashboardInitialAction? = nil
 
     var body: some View {
         Group {
@@ -1312,30 +1313,29 @@ private struct DeferredWorkoutTabHost: View {
                     initialReadinessSnapshot: initialReadinessSnapshot,
                     initialReadinessSignature: initialReadinessSignature,
                     initialFirstFrameSnapshot: initialFirstFrameSnapshot,
-                    initialOverallReadinessIsProvisional: initialOverallReadinessIsProvisional
+                    initialOverallReadinessIsProvisional: initialOverallReadinessIsProvisional,
+                    initialDashboardAction: pendingDashboardAction
                 )
             } else {
                 NavigationStack {
                     FitnessScreen {
-                        FitnessCard(style: .hero) {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("Recommended workout")
-                                    .font(AppTypography.eyebrow)
-                                Text(
-                                    initialFirstFrameSnapshot.dashboard.recommendedSplit?.name
-                                        ?? initialFirstFrameSnapshot.dashboard.trainingCall.title
-                                )
-                                .font(AppTypography.cardTitle)
-                                Text(initialFirstFrameSnapshot.dashboard.trainingCall.reason)
-                                    .font(AppTypography.body)
-                                    .foregroundStyle(.secondary)
-
-                                Button("Open Preview") {
+                        if let recommendedSplit = initialFirstFrameSnapshot.dashboard.recommendedSplit {
+                            WorkoutDashboardHero(
+                                splitName: recommendedSplit.name,
+                                iconKey: ExerciseIconMapper.splitIconKey(for: recommendedSplit.name),
+                                status: preparedStatus,
+                                exerciseCount: recommendedSplit.exerciseCount,
+                                durationText: recommendedSplit.estimatedDurationText,
+                                modeText: initialFirstFrameSnapshot.dashboard.trainingCall.recommendedMode.displayName,
+                                onStart: {
+                                    pendingDashboardAction = .startRecommended
+                                    isLiveMounted = true
+                                },
+                                onPreview: {
+                                    pendingDashboardAction = .previewRecommended
                                     isLiveMounted = true
                                 }
-                                .buttonStyle(.borderedProminent)
-                                .accessibilityIdentifier("workout-recommended-preview")
-                            }
+                            )
                         }
                     }
                     .navigationTitle("Workout")
@@ -1358,6 +1358,27 @@ private struct DeferredWorkoutTabHost: View {
                 guard isVisible else { return }
                 isLiveMounted = true
             }
+        }
+    }
+
+    private var preparedStatus: CoachBadgeState {
+        if initialOverallReadinessIsProvisional {
+            return .provisional
+        }
+
+        if initialFirstFrameSnapshot.dashboard.trainingCall.recommendedMode == .recovery {
+            return .recovery
+        }
+
+        switch initialFirstFrameSnapshot.dashboard.trainingCall.action {
+        case .recover:
+            return .recovery
+        case .push:
+            return .ready
+        case .repeatTarget:
+            return .repeatTarget
+        case .rebalance, .buildBaseline:
+            return .baseline
         }
     }
 }

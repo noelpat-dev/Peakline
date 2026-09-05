@@ -12,8 +12,7 @@ final class WorkoutLoggingUITests: XCTestCase {
 
     func testSeededWorkoutCanLogSetPauseFinishAndReachHistory() throws {
         XCTAssertTrue(
-            app.navigationBars["Today"].waitForExistence(timeout: 10) ||
-                app.staticTexts["Today"].waitForExistence(timeout: 10),
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
             "Expected Today to be ready after launch"
         )
 

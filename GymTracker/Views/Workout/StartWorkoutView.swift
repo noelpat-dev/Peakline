@@ -8,17 +8,20 @@ struct StartWorkoutView: View {
     private let initialReadinessSignature: SleepAnalyticsInputSignature?
     private let initialFirstFrameSnapshot: WorkoutStartFirstFrameSnapshot?
     private let initialOverallReadinessIsProvisional: Bool
+    private let initialDashboardAction: WorkoutDashboardInitialAction?
 
     init(
         initialReadinessSnapshot: WorkoutSleepReadinessSnapshot? = nil,
         initialReadinessSignature: SleepAnalyticsInputSignature? = nil,
         initialFirstFrameSnapshot: WorkoutStartFirstFrameSnapshot? = nil,
-        initialOverallReadinessIsProvisional: Bool = true
+        initialOverallReadinessIsProvisional: Bool = true,
+        initialDashboardAction: WorkoutDashboardInitialAction? = nil
     ) {
         self.initialReadinessSnapshot = initialReadinessSnapshot
         self.initialReadinessSignature = initialReadinessSignature
         self.initialFirstFrameSnapshot = initialFirstFrameSnapshot
         self.initialOverallReadinessIsProvisional = initialOverallReadinessIsProvisional
+        self.initialDashboardAction = initialDashboardAction
     }
 
     var body: some View {
@@ -27,7 +30,8 @@ struct StartWorkoutView: View {
                 initialReadinessSnapshot: initialReadinessSnapshot,
                 initialReadinessSignature: initialReadinessSignature,
                 initialFirstFrameSnapshot: initialFirstFrameSnapshot,
-                initialOverallReadinessIsProvisional: initialOverallReadinessIsProvisional
+                initialOverallReadinessIsProvisional: initialOverallReadinessIsProvisional,
+                initialDashboardAction: initialDashboardAction
             ) { route in
                 push(route)
             }
@@ -67,6 +71,8 @@ struct StartWorkoutView: View {
             )
         case .templates:
             WorkoutTemplateLibraryView()
+        case .library:
+            ExerciseLibraryView()
         case let .preview(route):
             WorkoutPreviewRouteView(preparedRoute: route.preparedRoute) {
                 navigationPath.removeAll()
@@ -119,6 +125,11 @@ struct StartWorkoutView: View {
     }
 }
 
+enum WorkoutDashboardInitialAction: Equatable {
+    case startRecommended
+    case previewRecommended
+}
+
 /// Keeps dashboard item construction behind the lazy stack's visibility
 /// boundary. `FitnessScreen` accepts an already-built `Content` value, so its
 /// lazy stack cannot prevent every dashboard card from being constructed while
@@ -146,6 +157,236 @@ private struct StartWorkoutLazyScreen<Content: View>: View {
         .scrollDismissesKeyboard(.interactively)
         .submitLabel(.done)
         .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
+    }
+}
+
+struct WorkoutDashboardPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(AppTypography.button)
+            .foregroundStyle(appTheme.colors.backgroundPrimary)
+            .padding(.horizontal, 16)
+            .frame(minHeight: appTheme.metrics.buttonHeight)
+            .frame(maxWidth: .infinity)
+            .background(appTheme.colors.textPrimary, in: Capsule())
+            .navigationPressFeedback(
+                isPressed: configuration.isPressed,
+                reduceMotion: reduceMotion,
+                pressedOpacity: 0.88
+            )
+    }
+}
+
+struct WorkoutDashboardHero: View {
+    @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    let splitName: String
+    let iconKey: ExerciseIconKey
+    let status: CoachBadgeState
+    let exerciseCount: Int
+    let durationText: String
+    let modeText: String
+    let onStart: () -> Void
+    let onPreview: () -> Void
+
+    var body: some View {
+        FitnessCard(style: .hero, padding: appTheme.metrics.spacing18) {
+            VStack(alignment: .leading, spacing: appTheme.metrics.spacing12) {
+                Text("TODAY")
+                    .font(AppTypography.eyebrow)
+                    .foregroundStyle(appTheme.mutedText)
+                    .tracking(0.7)
+
+                HStack(alignment: .center, spacing: 14) {
+                    ExerciseIconView(
+                        iconKey: iconKey,
+                        size: 58,
+                        tint: appTheme.colors.textPrimary,
+                        showBackground: true,
+                        isDecorative: true
+                    )
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(splitName)
+                            .font(AppTypography.heroTitle)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                            .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.78)
+                    }
+
+                    if !dynamicTypeSize.isAccessibilitySize {
+                        Spacer(minLength: 8)
+                        CoachBadgeView(state: status)
+                    }
+                }
+
+                if dynamicTypeSize.isAccessibilitySize {
+                    CoachBadgeView(state: status)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+
+                ViewThatFits(in: .horizontal) {
+                    metadataRow
+                    metadataStack
+                }
+
+                VStack(spacing: appTheme.metrics.spacing10) {
+                    Button {
+                        onStart()
+                    } label: {
+                        Label("Start Workout", systemImage: "play.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(WorkoutDashboardPrimaryButtonStyle())
+                    .accessibilityIdentifier("workout-recommended-start")
+
+                    Button {
+                        onPreview()
+                    } label: {
+                        Label("Preview Workout", systemImage: "list.bullet")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(NeutralFitnessButtonStyle())
+                    .accessibilityIdentifier("workout-recommended-preview")
+                }
+            }
+        }
+    }
+
+    private var metadataRow: some View {
+        HStack(spacing: 10) {
+            metadataItem(
+                systemImage: "list.bullet",
+                text: exerciseCountText
+            )
+            metadataDivider
+            metadataItem(systemImage: "clock", text: durationText)
+            metadataDivider
+            metadataItem(systemImage: "figure.strengthtraining.traditional", text: modeText)
+        }
+        .foregroundStyle(appTheme.colors.textSecondary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var metadataStack: some View {
+        VStack(alignment: .leading, spacing: appTheme.metrics.spacing8) {
+            metadataItem(
+                systemImage: "list.bullet",
+                text: exerciseCountText
+            )
+            metadataItem(systemImage: "clock", text: durationText)
+            metadataItem(systemImage: "figure.strengthtraining.traditional", text: modeText)
+        }
+        .foregroundStyle(appTheme.colors.textSecondary)
+    }
+
+    private func metadataItem(systemImage: String, text: String) -> some View {
+        Label(text, systemImage: systemImage)
+            .font(AppTypography.metadataEmphasis)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+            .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.78)
+    }
+
+    private var exerciseCountText: String {
+        exerciseCount > 0
+            ? PeaklineText.count(exerciseCount, singular: "exercise")
+            : "Plan ready"
+    }
+
+    private var metadataDivider: some View {
+        Rectangle()
+            .fill(appTheme.colors.cardBorder)
+            .frame(width: 1, height: 18)
+            .accessibilityHidden(true)
+    }
+}
+
+struct WorkoutToolsGrid: View {
+    @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    let onEmptyWorkout: () -> Void
+    let onTemplates: () -> Void
+    let onCoach: () -> Void
+    let onExerciseLibrary: () -> Void
+
+    var body: some View {
+        LazyVGrid(columns: toolColumns, spacing: appTheme.metrics.cardSpacing) {
+            ForEach(toolItems) { item in
+                toolButton(item)
+            }
+        }
+    }
+
+    private var toolColumns: [GridItem] {
+        let columnCount: Int
+        if dynamicTypeSize.isAccessibilitySize {
+            columnCount = 1
+        } else if dynamicTypeSize >= .xxLarge {
+            columnCount = 2
+        } else {
+            columnCount = 4
+        }
+
+        return Array(
+            repeating: GridItem(.flexible(), spacing: appTheme.metrics.cardSpacing),
+            count: columnCount
+        )
+    }
+
+    private var toolItems: [WorkoutToolItem] {
+        [
+            WorkoutToolItem(title: "Empty Workout", systemImage: "plus", action: onEmptyWorkout),
+            WorkoutToolItem(title: "Templates", systemImage: "doc.on.doc", action: onTemplates),
+            WorkoutToolItem(title: "Coach", systemImage: "sparkles", action: onCoach),
+            WorkoutToolItem(title: "Exercise Library", systemImage: "dumbbell", action: onExerciseLibrary)
+        ]
+    }
+
+    private func toolButton(_ item: WorkoutToolItem) -> some View {
+        Button {
+            item.action()
+        } label: {
+            FitnessCard(style: .compact, padding: appTheme.metrics.spacing10) {
+                VStack(spacing: appTheme.metrics.spacing6) {
+                    Image(systemName: item.systemImage)
+                        .font(AppTypography.rounded(size: 24, weight: .semibold))
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .frame(minWidth: appTheme.metrics.minimumHitTarget, minHeight: appTheme.metrics.minimumHitTarget)
+
+                    Text(item.title)
+                        .font(AppTypography.metadataEmphasis)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                        .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.82)
+                        .frame(maxWidth: .infinity)
+                }
+                .frame(maxWidth: .infinity, minHeight: 74)
+            }
+        }
+        .buttonStyle(PressableCardButtonStyle())
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel(item.title)
+        .accessibilityIdentifier(item.id == "Empty Workout" ? "start-empty-workout" : "workout-tool-\(item.id.lowercased().replacingOccurrences(of: " ", with: "-"))")
+    }
+}
+
+private struct WorkoutToolItem: Identifiable {
+    let id: String
+    let title: String
+    let systemImage: String
+    let action: () -> Void
+
+    init(title: String, systemImage: String, action: @escaping () -> Void) {
+        id = title
+        self.title = title
+        self.systemImage = systemImage
+        self.action = action
     }
 }
 
@@ -190,6 +431,7 @@ struct StartWorkoutContentView: View {
     @State private var isOverallReadinessProvisional = true
     @State private var showsSupportingDashboardItems = false
     @State private var supportingDashboardRevealTask: Task<Void, Never>?
+    @State private var didConsumeInitialDashboardAction = false
     @ObservedObject private var overallReadinessSnapshotStore = OverallReadinessSnapshotStore.shared
 
     private let openRoute: ((StartWorkoutRoute) -> Void)?
@@ -200,15 +442,18 @@ struct StartWorkoutContentView: View {
     private let sleepSettingsStore = SleepSettingsStore()
     private let sleepReadinessStore = SleepWorkoutReadinessSnapshotStore.shared
     private let dashboardWarmStartStore = WorkoutDashboardWarmStartStore.shared
+    private let initialDashboardAction: WorkoutDashboardInitialAction?
 
     init(
         initialReadinessSnapshot: WorkoutSleepReadinessSnapshot? = nil,
         initialReadinessSignature: SleepAnalyticsInputSignature? = nil,
         initialFirstFrameSnapshot: WorkoutStartFirstFrameSnapshot? = nil,
         initialOverallReadinessIsProvisional: Bool = true,
+        initialDashboardAction: WorkoutDashboardInitialAction? = nil,
         openRoute: ((StartWorkoutRoute) -> Void)? = nil
     ) {
         self.openRoute = openRoute
+        self.initialDashboardAction = initialDashboardAction
         let usableInitialSnapshot: WorkoutStartFirstFrameSnapshot?
         if let initialFirstFrameSnapshot,
            initialFirstFrameSnapshot.workoutRevision == WorkoutWarmStartInvalidation.shared.revision {
@@ -308,7 +553,10 @@ struct StartWorkoutContentView: View {
                 trainingCall: presentationCall,
                 recommendedSplit: StartWorkoutRecommendedSplitSnapshot(
                     id: split.id,
-                    name: split.name
+                    name: split.name,
+                    mode: presentationCall.recommendedMode,
+                    exerciseCount: currentSplitCardSnapshots.first(where: { $0.splitId == split.id })?.exerciseCount ?? split.exercises.count,
+                    estimatedDurationText: currentSplitCardSnapshots.first(where: { $0.splitId == split.id })?.estimatedDurationText ?? "Plan ready"
                 )
             )
         }
@@ -319,11 +567,24 @@ struct StartWorkoutContentView: View {
     private func presentationSafeDashboardSnapshot(
         _ snapshot: StartWorkoutDashboardSnapshot
     ) -> StartWorkoutDashboardSnapshot {
-        StartWorkoutDashboardSnapshot(
-            trainingCall: snapshot.trainingCall.neutralizedForProvisionalReadiness(
-                if: currentOverallReadinessIsProvisional
-            ),
-            recommendedSplit: snapshot.recommendedSplit
+        let safeCall = snapshot.trainingCall.neutralizedForProvisionalReadiness(
+            if: currentOverallReadinessIsProvisional
+        )
+        guard let recommendedSplit = snapshot.recommendedSplit,
+              recommendedSplit.mode != safeCall.recommendedMode else {
+            return StartWorkoutDashboardSnapshot(
+                trainingCall: safeCall,
+                recommendedSplit: snapshot.recommendedSplit
+            )
+        }
+
+        return StartWorkoutDashboardSnapshot(
+            trainingCall: safeCall,
+            recommendedSplit: StartWorkoutRecommendedSplitSnapshot(
+                id: recommendedSplit.id,
+                name: recommendedSplit.name,
+                mode: safeCall.recommendedMode
+            )
         )
     }
 
@@ -456,32 +717,38 @@ struct StartWorkoutContentView: View {
                 recommendedWorkoutCard(recommendedSplit)
             }
 
-            if let recommendation = adaptiveSleepRecommendation {
-                DashboardSection(title: "Readiness") {
-                    workoutRecoveryBanner(recommendation)
-                }
-            } else if !currentOverallReadinessIsProvisional,
-                      let hint = preWorkoutSleepHint(for: sleepSummary) {
-                DashboardSection(title: "Readiness") {
-                    sleepReadinessCard(title: hint.title, suggestion: hint.suggestion)
-                }
-            } else if let support = provisionalSleepSupport {
-                DashboardSection(title: "Readiness") {
-                    sleepReadinessCard(title: support.title, suggestion: support.suggestion)
-                }
-            }
-
             if showsSupportingDashboardItems {
-                DashboardSection(title: "Start") {
+                DashboardSection(title: "Tools") {
+                    WorkoutToolsGrid(
+                        onEmptyWorkout: {
+                            openSession(createEmptyWorkout(), requiresSave: true)
+                        },
+                        onTemplates: {
+                            navigate(to: .templates)
+                        },
+                        onCoach: {
+                            navigate(to: .coach)
+                        },
+                        onExerciseLibrary: {
+                            navigate(to: .library)
+                        }
+                    )
+                }
+
+                DashboardSection(title: "Your Workouts") {
                     ForEach(currentSplitCardSnapshots) { snapshot in
                         splitStartCard(snapshot)
                     }
-
-                    emptyWorkoutCard
                 }
 
                 if let recentSnapshot = currentRecentSessionSnapshot {
-                    recentSessionCard(recentSnapshot)
+                    DashboardSection(title: "Recent Workout") {
+                        recentSessionCard(recentSnapshot)
+                    }
+                }
+
+                DashboardSection(title: "Readiness") {
+                    workoutReadinessContextRow()
                 }
             }
         }
@@ -514,6 +781,8 @@ struct StartWorkoutContentView: View {
                     )
                 case .templates:
                     WorkoutTemplateLibraryView()
+                case .library:
+                    ExerciseLibraryView()
                 case let .preview(route):
                     WorkoutPreviewRouteView(preparedRoute: route.preparedRoute) {
                         fallbackRoute = nil
@@ -553,7 +822,13 @@ struct StartWorkoutContentView: View {
             }
             sleepSettings = sleepSettingsStore.load()
             restoreWarmedDashboardIfNeeded()
-            scheduleDashboardSnapshotRefresh(force: dashboardSnapshot == nil)
+            let preparedMode = dashboardSnapshot?.recommendedSplit?.mode
+            let presentationMode = dashboardSnapshot?.trainingCall.neutralizedForProvisionalReadiness(
+                if: currentOverallReadinessIsProvisional
+            ).recommendedMode
+            scheduleDashboardSnapshotRefresh(
+                force: dashboardSnapshot == nil || preparedMode != presentationMode
+            )
             if lastSleepReadinessSignature == nil {
                 Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(50))
@@ -568,6 +843,7 @@ struct StartWorkoutContentView: View {
                     isSleepReadinessObservationEnabled = true
                 }
             }
+            consumeInitialDashboardActionIfNeeded()
         }
         .onChange(of: dashboardSignatureForObservation) { _, signature in
             guard signature != nil else { return }
@@ -580,6 +856,7 @@ struct StartWorkoutContentView: View {
         .onChange(of: overallReadinessSnapshotStore.snapshot) { _, snapshot in
             guard snapshot.revision > 0 else { return }
             isOverallReadinessProvisional = snapshot.isProvisional
+            scheduleDashboardSnapshotRefresh(force: true)
         }
         .onReceive(NotificationCenter.default.publisher(for: .workoutCompletionPresentationBegan)) { _ in
             isWorkoutCompletionPresentationActive = true
@@ -600,6 +877,27 @@ struct StartWorkoutContentView: View {
         }
     }
 
+    private func consumeInitialDashboardActionIfNeeded() {
+        guard let initialDashboardAction,
+              !didConsumeInitialDashboardAction else { return }
+
+        Task { @MainActor in
+            await Task.yield()
+            guard isDashboardVisible,
+                  unfinishedSessions.isEmpty,
+                  let recommendedSplit = currentDashboardSnapshot.recommendedSplit else { return }
+            didConsumeInitialDashboardAction = true
+
+            switch initialDashboardAction {
+            case .startRecommended:
+                startRecommendedWorkout(recommendedSplit)
+            case .previewRecommended:
+                guard let liveSplit = activeSplits.first(where: { $0.id == recommendedSplit.id }) else { return }
+                preview(liveSplit, mode: currentDashboardSnapshot.trainingCall.recommendedMode)
+            }
+        }
+    }
+
     private func scheduleDashboardSnapshotRefresh(force: Bool = false) {
         guard isDashboardVisible, !isWorkoutCompletionPresentationActive else { return }
         let signature = currentDashboardSignature
@@ -611,6 +909,25 @@ struct StartWorkoutContentView: View {
             guard !Task.isCancelled, !isWorkoutCompletionPresentationActive else { return }
             await refreshDashboardSnapshot(signature: signature)
         }
+    }
+
+    private func recommendedSplitSnapshot(
+        for split: TrainingSplit,
+        mode: WorkoutMode
+    ) -> StartWorkoutRecommendedSplitSnapshot {
+        let prepared = WorkoutPreviewWarmStartStore.shared.snapshot(
+            for: WorkoutPreviewSplit(split),
+            mode: mode
+        )
+        return StartWorkoutRecommendedSplitSnapshot(
+            id: split.id,
+            name: split.name,
+            mode: mode,
+            exerciseCount: prepared?.plannedExercises.count ?? split.exercises.count,
+            estimatedDurationText: prepared.map {
+                "\($0.estimatedDuration.lowerBound)–\($0.estimatedDuration.upperBound) min"
+            } ?? estimatedDurationText(for: split)
+        )
     }
 
     private func refreshDashboardSnapshot(signature: String) async {
@@ -642,14 +959,13 @@ struct StartWorkoutContentView: View {
                 trainingCall: presentationCall,
                 recommendedSplit: activeSplits.first {
                     $0.name == presentationCall.recommendedSplitName
-                }.map {
-                    StartWorkoutRecommendedSplitSnapshot(id: $0.id, name: $0.name)
-                }
+                }.map { recommendedSplitSnapshot(for: $0, mode: presentationCall.recommendedMode) }
             )
             recentSessionSnapshot = makeRecentSessionSnapshot()
             splitCardSnapshots = displayedSplits.map(makeSplitCardSnapshot)
             lastDashboardSignature = signature
             hasSeededDashboardSnapshot = true
+            consumeInitialDashboardActionIfNeeded()
         }
     }
 
@@ -660,6 +976,7 @@ struct StartWorkoutContentView: View {
         return StartWorkoutRecentSessionSnapshot(
             sessionId: session.id,
             splitName: session.splitNameSnapshot,
+            dateText: session.date.formatted(date: .abbreviated, time: .omitted),
             durationText: summary.durationText,
             ratingText: summary.ratingText ?? "-",
             highlightText: summary.bestSetImprovements.first ?? summary.takeaway,
@@ -668,12 +985,19 @@ struct StartWorkoutContentView: View {
     }
 
     private func makeSplitCardSnapshot(_ split: TrainingSplit) -> StartWorkoutSplitCardSnapshot {
-        StartWorkoutSplitCardSnapshot(
+        let preparedFullSnapshot = WorkoutPreviewWarmStartStore.shared.snapshot(
+            for: WorkoutPreviewSplit(split),
+            mode: .full
+        )
+        return StartWorkoutSplitCardSnapshot(
             splitId: split.id,
             splitName: split.name,
             lastTrainedText: lastTrainedText(for: split),
-            estimatedDurationText: estimatedDurationText(for: split),
+            estimatedDurationText: preparedFullSnapshot.map {
+                "\($0.estimatedDuration.lowerBound)–\($0.estimatedDuration.upperBound) min"
+            } ?? estimatedDurationText(for: split),
             exerciseCount: split.exercises.count,
+            plannedExerciseCount: preparedFullSnapshot?.plannedExercises.count,
             badgeState: badgeState(for: split)
         )
     }
@@ -715,14 +1039,13 @@ struct StartWorkoutContentView: View {
                 trainingCall: presentationCall,
                 recommendedSplit: activeSplits.first {
                     $0.name == presentationCall.recommendedSplitName
-                }.map {
-                    StartWorkoutRecommendedSplitSnapshot(id: $0.id, name: $0.name)
-                }
+                }.map { recommendedSplitSnapshot(for: $0, mode: presentationCall.recommendedMode) }
             )
             recentSessionSnapshot = completedSessions.first.map(StartWorkoutRecentSessionSnapshot.placeholder)
             splitCardSnapshots = displayedSplits.map(StartWorkoutSplitCardSnapshot.placeholder)
             lastDashboardSignature = currentDashboardSignature
             hasSeededDashboardSnapshot = true
+            consumeInitialDashboardActionIfNeeded()
         }
     }
 
@@ -733,6 +1056,7 @@ struct StartWorkoutContentView: View {
                     ExerciseIconView(
                         iconKey: ExerciseIconMapper.splitIconKey(for: session.splitNameSnapshot),
                         size: 46,
+                        tint: appTheme.colors.textPrimary,
                         showBackground: true,
                         isDecorative: true
                     )
@@ -785,139 +1109,102 @@ struct StartWorkoutContentView: View {
             Label("Resume", systemImage: "play.circle.fill")
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(PrimaryFitnessButtonStyle())
+        .buttonStyle(WorkoutDashboardPrimaryButtonStyle())
+        .accessibilityIdentifier("workout-active-resume")
     }
 
     private func discardButton(_ session: WorkoutSession) -> some View {
-        Button {
+        Button(role: .destructive) {
             pendingDiscardSession = session
         } label: {
             Label("Discard", systemImage: "xmark.circle")
+                .foregroundStyle(appTheme.colors.textDanger)
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(NeutralFitnessButtonStyle())
+        .accessibilityIdentifier("workout-active-discard")
     }
 
     private func recommendedWorkoutCard(_ split: StartWorkoutRecommendedSplitSnapshot) -> some View {
-        FitnessCard(style: .hero) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top) {
-                    ExerciseIconTile(
-                        iconKey: ExerciseIconMapper.splitIconKey(for: split.name),
-                        title: nil,
-                        size: 58,
-                        style: .compact
-                    )
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Recommended Today")
-                            .font(AppTypography.eyebrow)
-                            .foregroundStyle(appTheme.mutedText)
-                            .textCase(.uppercase)
-                        Text(split.name)
-                            .font(AppTypography.heroTitle)
-                    }
-
-                    Spacer()
-                    CoachBadgeView(state: .ready)
-                }
-
-                Text(currentDashboardSnapshot.trainingCall.reason)
-                    .font(AppTypography.bodyEmphasis)
-                    .foregroundStyle(appTheme.mutedText)
-
-                Label(
-                    PeaklineText.joinedMetadata([
-                        "\(currentDashboardSnapshot.trainingCall.recommendedMode.displayName) mode",
-                        currentDashboardSnapshot.trainingCall.confidence.displayName.lowercased()
-                    ]),
-                    systemImage: currentDashboardSnapshot.trainingCall.recommendedMode.systemImage
-                )
-                    .font(AppTypography.metadataEmphasis)
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 10) {
-                        recommendedPreviewButton(split)
-                        coachButton
-                    }
-
-                    VStack(spacing: 10) {
-                        recommendedPreviewButton(split)
-                        coachButton
-                    }
-                }
+        WorkoutDashboardHero(
+            splitName: split.name,
+            iconKey: ExerciseIconMapper.splitIconKey(for: split.name),
+            status: recommendedBadgeState,
+            exerciseCount: split.exerciseCount,
+            durationText: split.estimatedDurationText,
+            modeText: currentDashboardSnapshot.trainingCall.recommendedMode.displayName,
+            onStart: {
+                startRecommendedWorkout(split)
+            },
+            onPreview: {
+                guard let liveSplit = activeSplits.first(where: { $0.id == split.id }) else { return }
+                preview(liveSplit, mode: currentDashboardSnapshot.trainingCall.recommendedMode)
             }
+        )
+    }
+
+    private var recommendedBadgeState: CoachBadgeState {
+        if currentOverallReadinessIsProvisional {
+            return .provisional
+        }
+
+        if currentDashboardSnapshot.trainingCall.recommendedMode == .recovery {
+            return .recovery
+        }
+
+        switch currentDashboardSnapshot.trainingCall.action {
+        case .recover:
+            return .recovery
+        case .push:
+            return .ready
+        case .repeatTarget:
+            return .repeatTarget
+        case .rebalance, .buildBaseline:
+            return .baseline
         }
     }
 
-    private func recommendedPreviewButton(_ split: StartWorkoutRecommendedSplitSnapshot) -> some View {
-        Button {
-            guard let liveSplit = activeSplits.first(where: { $0.id == split.id }) else { return }
-            preview(liveSplit, mode: currentDashboardSnapshot.trainingCall.recommendedMode)
-        } label: {
-            Label("Preview", systemImage: "target")
-                .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(PrimaryFitnessButtonStyle())
-        .accessibilityIdentifier("workout-recommended-preview")
-    }
+    private func workoutReadinessContextRow() -> some View {
+        let recommendation = adaptiveSleepRecommendation
+        let hint = !currentOverallReadinessIsProvisional ? preWorkoutSleepHint(for: sleepSummary) : nil
+        let support = provisionalSleepSupport
+        let title = recommendation?.title
+            ?? hint?.title
+            ?? (currentOverallReadinessIsProvisional ? "Provisional guidance" : "Coach context")
+        let message = PeaklineText.joinedMetadata([
+            currentDashboardSnapshot.trainingCall.reason,
+            recommendation?.message ?? hint?.suggestion ?? support?.suggestion ?? ""
+        ])
+        let tint = recommendation.map { recoveryTint(for: $0) } ?? appTheme.colors.textSecondary
+        let icon = recommendation.map { recoveryIcon(for: $0) }
+            ?? ((hint != nil || support != nil) ? "moon.stars.fill" : "checkmark.seal.fill")
 
-    private var coachButton: some View {
-        Button {
-            navigate(to: .coach)
-        } label: {
-            Label("Coach", systemImage: "sparkles")
-                .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(SecondaryFitnessButtonStyle())
-    }
-
-    private func sleepReadinessCard(title: String, suggestion: String) -> some View {
-        FitnessCard(style: .compact) {
+        return FitnessCard(style: .compact) {
             HStack(alignment: .top, spacing: 12) {
-                FitnessIconBadge(systemImage: "moon.stars.fill", size: 40)
+                FitnessIconBadge(
+                    systemImage: icon,
+                    size: 40,
+                    tint: tint,
+                    background: tint.opacity(0.14)
+                )
 
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(title)
+                    Text(PeaklineText.joinedMetadata([
+                        title,
+                        currentDashboardSnapshot.trainingCall.confidence.displayName
+                    ]))
                         .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
 
-                    Text(suggestion)
+                    Text(message)
                         .font(AppTypography.metadata)
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-        .accessibilityElement(children: .combine)
-    }
 
-    private func workoutRecoveryBanner(_ recommendation: AdaptiveTrainingRecommendation) -> some View {
-        FitnessCard(style: .compact) {
-            HStack(alignment: .top, spacing: 12) {
-                FitnessIconBadge(
-                    systemImage: recoveryIcon(for: recommendation),
-                    size: 40,
-                    tint: recoveryTint(for: recommendation),
-                    background: recoveryTint(for: recommendation).opacity(0.14)
-                )
-
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(recommendation.title)
-                        .font(AppTypography.sectionTitle)
-                        .foregroundStyle(appTheme.colors.textPrimary)
-
-                    Text(recommendation.message)
-                        .font(AppTypography.body)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if let action = recommendation.suggestedActions.first {
+                    if let action = recommendation?.suggestedActions.first {
                         Text(action.displayName)
                             .font(AppTypography.metadataEmphasis)
-                            .foregroundStyle(recoveryTint(for: recommendation))
+                            .foregroundStyle(tint)
                     }
                 }
 
@@ -979,10 +1266,12 @@ struct StartWorkoutContentView: View {
                 splitName: snapshot.splitName,
                 lastTrainedText: snapshot.lastTrainedText,
                 estimatedDurationText: snapshot.estimatedDurationText,
-                exerciseCount: snapshot.exerciseCount,
-                badgeState: snapshot.badgeState,
+                exerciseCount: snapshot.plannedExerciseCount ?? snapshot.exerciseCount,
+                badgeState: snapshot.splitName == currentDashboardSnapshot.recommendedSplit?.name
+                    ? recommendedBadgeState : snapshot.badgeState,
                 actionTitle: nil,
-                action: nil
+                action: nil,
+                iconTint: appTheme.colors.textPrimary
             )
         }
         .buttonStyle(PressableCardButtonStyle())
@@ -993,65 +1282,69 @@ struct StartWorkoutContentView: View {
         openPreview(WorkoutPreviewSplit(split), mode: mode)
     }
 
-    private var emptyWorkoutCard: some View {
-        Button {
-            openSession(createEmptyWorkout(), requiresSave: true)
-        } label: {
-            DashboardActionTile(
-                title: "Empty workout",
-                subtitle: "Build a one-off session from scratch",
-                systemImage: "plus",
-                status: nil,
-                layout: .horizontal,
-                showsChevron: true,
-                minHeight: appTheme.metrics.largeRowMinHeight
+    private func startRecommendedWorkout(_ snapshot: StartWorkoutRecommendedSplitSnapshot) {
+        guard let split = activeSplits.first(where: { $0.id == snapshot.id }) else { return }
+
+        let mode = currentDashboardSnapshot.trainingCall.recommendedMode
+        let previewSplit = WorkoutPreviewSplit(split)
+        let warmStartStore = WorkoutPreviewWarmStartStore.shared
+        let preparedSnapshot = warmStartStore.snapshot(for: previewSplit, mode: mode)
+            ?? warmStartStore.snapshot(
+                for: warmStartStore.prepareRoute(for: previewSplit, initialMode: mode),
+                mode: mode
             )
-        }
-        .buttonStyle(PressableCardButtonStyle())
-        .accessibilityIdentifier("start-empty-workout")
+        let plannedExercises = preparedSnapshot?.plannedExercises
+            ?? modePlanner.plannedExercises(
+                from: previewSplit.exercises,
+                mode: mode
+            )
+        let draft = WorkoutLaunchDraft(
+            splitId: split.id,
+            splitName: split.name,
+            modeLabel: mode.displayName,
+            exercises: plannedExercises
+        )
+        let session = draft.makeSession()
+        modelContext.insert(session)
+        openSession(session, requiresSave: true)
     }
 
     private func recentSessionCard(_ snapshot: StartWorkoutRecentSessionSnapshot) -> some View {
         FitnessCard(style: .compact) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    ExerciseIconView(
-                        iconKey: snapshot.iconKey,
-                        size: 44,
-                        showBackground: true,
-                        isDecorative: true
-                    )
+            HStack(alignment: .center, spacing: 12) {
+                ExerciseIconView(
+                    iconKey: snapshot.iconKey,
+                    size: 44,
+                    tint: appTheme.colors.textPrimary,
+                    showBackground: true,
+                    isDecorative: true
+                )
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Recent Session")
-                            .font(AppTypography.metadataEmphasis)
-                            .foregroundStyle(appTheme.mutedText)
-                            .textCase(.uppercase)
-                        Text(snapshot.splitName)
-                            .font(AppTypography.cardTitle)
-                    }
-
-                    Spacer()
-                    CoachBadgeView(state: snapshot.badgeState)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(snapshot.splitName)
+                        .font(AppTypography.compactCardTitle)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                    Text(PeaklineText.joinedMetadata([
+                        snapshot.dateText,
+                        snapshot.durationText
+                    ]))
+                        .font(AppTypography.metadata)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .lineLimit(2)
                 }
 
-                HStack(spacing: 10) {
-                    MetricTile(label: "Duration", value: snapshot.durationText, caption: nil, systemImage: "timer")
-                    MetricTile(label: "Rating", value: snapshot.ratingText, caption: nil, systemImage: "face.smiling")
-                }
-
-                Text(snapshot.highlightText)
-                    .font(AppTypography.body)
-                    .foregroundStyle(appTheme.mutedText)
+                Spacer(minLength: 8)
 
                 Button {
                     guard let session = completedSessions.first(where: { $0.id == snapshot.sessionId }) else { return }
                     openPreview(reuseBuilder.previewSplit(from: session))
                 } label: {
-                    Label("Repeat Last Workout", systemImage: "repeat")
-                        .frame(maxWidth: .infinity)
+                    Image(systemName: "repeat")
+                        .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
                 }
-                .buttonStyle(SecondaryFitnessButtonStyle())
+                .buttonStyle(NeutralFitnessButtonStyle())
+                .accessibilityLabel("Repeat Last Workout")
+                .accessibilityHint(snapshot.highlightText)
                 .disabled(completedSessions.first { $0.id == snapshot.sessionId } == nil)
             }
         }
@@ -1074,7 +1367,7 @@ struct StartWorkoutContentView: View {
 
     private func badgeState(for split: TrainingSplit) -> CoachBadgeState {
         guard let recommendedName = currentDashboardSnapshot.trainingCall.recommendedSplitName else { return .baseline }
-        return recommendedName == split.name ? .ready : .repeatTarget
+        return recommendedName == split.name ? recommendedBadgeState : .repeatTarget
     }
 
     private func activeElapsedText(for session: WorkoutSession) -> String {
@@ -1226,6 +1519,7 @@ struct StartWorkoutPreviewRoute: Hashable {
 enum StartWorkoutRoute: Hashable, Identifiable {
     case coach
     case templates
+    case library
     case preview(StartWorkoutPreviewRoute)
 
     var id: Self { self }
@@ -1236,6 +1530,8 @@ enum StartWorkoutRoute: Hashable, Identifiable {
             return "coach"
         case .templates:
             return "templates"
+        case .library:
+            return "library"
         case let .preview(route):
             return "preview-\(route.split.id.uuidString)-\(route.mode.rawValue)"
         }
@@ -1245,7 +1541,7 @@ enum StartWorkoutRoute: Hashable, Identifiable {
         switch self {
         case .coach:
             return .warm
-        case .templates, .preview:
+        case .templates, .library, .preview:
             return .deep
         }
     }
@@ -1336,6 +1632,7 @@ struct WorkoutStartFirstFrameSnapshot: Sendable {
                 lastTrainedText: lastTrainedText,
                 estimatedDurationText: estimatedDurationText,
                 exerciseCount: split.exercises.count,
+                plannedExerciseCount: preparedFullWorkout?.plannedExercises.count,
                 badgeState: badgeState
             )
         }
@@ -1345,8 +1642,19 @@ struct WorkoutStartFirstFrameSnapshot: Sendable {
                 trainingCall: trainingCall,
                 recommendedSplit: activeSplits.first {
                     $0.name == trainingCall.recommendedSplitName
-                }.map {
-                    StartWorkoutRecommendedSplitSnapshot(id: $0.id, name: $0.name)
+                }.map { split in
+                    let prepared = previewWarmSnapshots.first {
+                        $0.splitID == split.id && $0.mode == trainingCall.recommendedMode
+                    }
+                    return StartWorkoutRecommendedSplitSnapshot(
+                        id: split.id,
+                        name: split.name,
+                        mode: trainingCall.recommendedMode,
+                        exerciseCount: prepared?.plannedExercises.count ?? split.exercises.count,
+                        estimatedDurationText: prepared.map {
+                            "\($0.estimatedDuration.lowerBound)–\($0.estimatedDuration.upperBound) min"
+                        } ?? "Plan ready"
+                    )
                 }
             ),
             recentSession: historyWorkouts.first.map(StartWorkoutRecentSessionSnapshot.placeholder),
@@ -1364,6 +1672,23 @@ struct WorkoutStartFirstFrameSnapshot: Sendable {
 struct StartWorkoutRecommendedSplitSnapshot: Sendable {
     let id: UUID
     let name: String
+    let mode: WorkoutMode
+    let exerciseCount: Int
+    let estimatedDurationText: String
+
+    init(
+        id: UUID,
+        name: String,
+        mode: WorkoutMode = .full,
+        exerciseCount: Int = 0,
+        estimatedDurationText: String = "Plan ready"
+    ) {
+        self.id = id
+        self.name = name
+        self.mode = mode
+        self.exerciseCount = exerciseCount
+        self.estimatedDurationText = estimatedDurationText
+    }
 }
 
 struct StartWorkoutDashboardSnapshot: Sendable {
@@ -1387,6 +1712,7 @@ struct StartWorkoutDashboardSnapshot: Sendable {
 struct StartWorkoutRecentSessionSnapshot: Sendable {
     let sessionId: UUID
     let splitName: String
+    let dateText: String
     let durationText: String
     let ratingText: String
     let highlightText: String
@@ -1400,6 +1726,7 @@ struct StartWorkoutRecentSessionSnapshot: Sendable {
         StartWorkoutRecentSessionSnapshot(
             sessionId: session.id,
             splitName: session.splitNameSnapshot,
+            dateText: session.date.formatted(date: .abbreviated, time: .omitted),
             durationText: durationText(for: session),
             ratingText: ratingText(for: session.perceivedDifficulty),
             highlightText: "Last session is ready to repeat while Peakline prepares the full summary.",
@@ -1411,6 +1738,7 @@ struct StartWorkoutRecentSessionSnapshot: Sendable {
         StartWorkoutRecentSessionSnapshot(
             sessionId: workout.id,
             splitName: workout.splitName,
+            dateText: workout.date.formatted(date: .abbreviated, time: .omitted),
             durationText: durationText(for: workout),
             ratingText: ratingText(for: workout.rating),
             highlightText: "Last session is ready to repeat while Peakline prepares the full summary.",
@@ -1492,6 +1820,7 @@ struct StartWorkoutSplitCardSnapshot: Identifiable, Sendable {
     let lastTrainedText: String
     let estimatedDurationText: String
     let exerciseCount: Int
+    let plannedExerciseCount: Int?
     let badgeState: CoachBadgeState
 
     var id: UUID { splitId }
@@ -1503,6 +1832,7 @@ struct StartWorkoutSplitCardSnapshot: Identifiable, Sendable {
             lastTrainedText: "Ready to start",
             estimatedDurationText: "Plan ready",
             exerciseCount: 0,
+            plannedExerciseCount: nil,
             badgeState: .baseline
         )
     }

@@ -364,6 +364,33 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         assertPerformanceAcceptancePassed()
     }
 
+    func testWorkoutRecommendedStartOpensLoggerDirectly() throws {
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
+
+        tapTab(at: 1, expectedTitle: "Workout")
+        tapElement(identifier: "workout-recommended-start", maxSwipes: 8)
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["workout-logger-screen"].waitForExistence(timeout: 8),
+            "Expected Start Workout to open the logger directly"
+        )
+
+        tapBackButton()
+        XCTAssertTrue(waitForWorkoutScreen())
+        tapElement(identifier: "workout-active-resume")
+        XCTAssertTrue(app.descendants(matching: .any)["workout-logger-screen"].waitForExistence(timeout: 8))
+
+        tapBackButton()
+        tapElement(identifier: "workout-active-discard")
+        let confirmation = app.alerts["Discard active workout?"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 3))
+        confirmation.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons["workout-active-resume"].exists)
+        tapElement(identifier: "workout-active-discard")
+        confirmation.buttons["Discard"].tap()
+        XCTAssertTrue(app.buttons["workout-recommended-start"].waitForExistence(timeout: 5))
+    }
+
     func testPreviewStartDoubleTapCreatesOneResponsiveLogger() throws {
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
 

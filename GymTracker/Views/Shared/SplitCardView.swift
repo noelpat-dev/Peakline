@@ -10,6 +10,7 @@ struct SplitCardView: View {
     let badgeState: CoachBadgeState
     let actionTitle: String?
     let action: (() -> Void)?
+    var iconTint: Color? = nil
 
     var body: some View {
         FitnessCard(style: .compact) {
@@ -18,6 +19,7 @@ struct SplitCardView: View {
                     ExerciseIconView(
                         iconKey: ExerciseIconMapper.splitIconKey(for: splitName),
                         size: 44,
+                        tint: iconTint,
                         showBackground: true,
                         isDecorative: true
                     )

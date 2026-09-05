@@ -804,6 +804,8 @@ struct TodayView: View {
             CoachRouteDestinationView()
         case .templates:
             WorkoutTemplateLibraryView()
+        case .library:
+            ExerciseLibraryView()
         case let .preview(route):
             WorkoutPreviewRouteView(preparedRoute: route.preparedRoute) {
                 startWorkoutRoute = nil
