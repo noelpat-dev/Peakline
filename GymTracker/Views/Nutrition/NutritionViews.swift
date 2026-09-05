@@ -600,6 +600,8 @@ struct NutritionDashboardView: View {
 private struct NutritionDayNavigator: View {
     @Environment(\.appTheme) private var appTheme
 
+    @State private var showsDatePicker = false
+
     @Binding var selectedDate: Date
     let canMoveForward: Bool
     let moveBackward: () -> Void
@@ -610,32 +612,51 @@ private struct NutritionDayNavigator: View {
     }
 
     var body: some View {
-        FitnessCard(style: .compact, padding: 14) {
-            HStack(spacing: 10) {
-                navigationButton(
-                    systemImage: "chevron.left",
-                    accessibilityLabel: "Previous nutrition day",
-                    action: moveBackward
-                )
+        HStack(spacing: appTheme.metrics.spacing8) {
+            navigationButton(
+                systemImage: "chevron.left",
+                accessibilityLabel: "Previous nutrition day",
+                action: moveBackward
+            )
 
+            Button {
+                showsDatePicker = true
+            } label: {
+                Text(selectedDate.formatted(.dateTime.day().month(.wide).year()))
+                    .font(AppTypography.compactCardTitle)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, minHeight: appTheme.metrics.minimumHitTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PressableCardButtonStyle())
+            .accessibilityLabel("Nutrition date")
+            .accessibilityValue(selectedDate.formatted(date: .complete, time: .omitted))
+            .accessibilityHint("Opens the calendar to choose a day")
+            .accessibilityIdentifier("nutrition-date-picker")
+            .popover(isPresented: $showsDatePicker) {
                 DatePicker(
                     "Nutrition date",
                     selection: $selectedDate,
                     in: Date.distantPast...today,
                     displayedComponents: .date
                 )
-                .datePickerStyle(.compact)
-                .labelsHidden()
-                .frame(maxWidth: .infinity)
-                .accessibilityIdentifier("nutrition-date-picker")
-
-                navigationButton(
-                    systemImage: "chevron.right",
-                    accessibilityLabel: "Next nutrition day",
-                    isDisabled: !canMoveForward,
-                    action: moveForward
-                )
+                .datePickerStyle(.graphical)
+                // The graphical picker needs an explicit width in a compact popover.
+                .frame(width: 320)
+                .padding(appTheme.metrics.screenPadding)
+                .presentationCompactAdaptation(.popover)
+                .onChange(of: selectedDate) { _, _ in
+                    showsDatePicker = false
+                }
             }
+
+            navigationButton(
+                systemImage: "chevron.right",
+                accessibilityLabel: "Next nutrition day",
+                isDisabled: !canMoveForward,
+                action: moveForward
+            )
         }
     }
 
@@ -647,7 +668,7 @@ private struct NutritionDayNavigator: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.subheadline.weight(.bold))
+                .font(AppTypography.eyebrow)
                 .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
                 .background(
                     appTheme.elevatedCardBackground,
@@ -655,10 +676,10 @@ private struct NutritionDayNavigator: View {
                 )
                 .overlay {
                     RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
-                        .stroke(appTheme.colors.cardBorder.opacity(0.56), lineWidth: 0.75)
+                        .stroke(appTheme.colors.cardBorder.opacity(0.56), lineWidth: 1)
                 }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableCardButtonStyle())
         .foregroundStyle(isDisabled ? appTheme.colors.textTertiary : appTheme.colors.textPrimary)
         .disabled(isDisabled)
         .accessibilityLabel(accessibilityLabel)

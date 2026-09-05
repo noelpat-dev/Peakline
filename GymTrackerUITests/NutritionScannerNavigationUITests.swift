@@ -77,6 +77,12 @@ final class NutritionScannerNavigationUITests: XCTestCase {
 
         app.buttons["Next nutrition day"].tap()
         XCTAssertTrue(app.staticTexts["Coach Context"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Next nutrition day"].isEnabled)
+
+        app.buttons["nutrition-date-picker"].tap()
+        let calendar = app.datePickers.firstMatch
+        XCTAssertTrue(calendar.waitForExistence(timeout: 5), "The date heading must still open the native calendar")
+        XCTAssertGreaterThanOrEqual(calendar.frame.width, 300, "The popover must fit all seven calendar columns")
     }
 
     func testNutritionTargetsExposeFibreAndDismissKeyboardInteractively() throws {
