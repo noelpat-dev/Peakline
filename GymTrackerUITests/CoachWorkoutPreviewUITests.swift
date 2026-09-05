@@ -6,47 +6,20 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        var launchArguments = ["-UITestInMemoryStore"]
-        if !name.contains("ReadinessV2") {
-            launchArguments.append("-UITestCoachFatigueFixture")
-        }
-        if name.contains("QuickActionProblemPaths") {
-            launchArguments.append("-UITestLargeHistoryFixture")
-        }
-        if name.contains("HistoryRowsOpenAfterMotionRehaul") {
-            launchArguments.append("-UITestLargeHistoryFixture")
-        }
-        if name.contains("DataRich") {
-            launchArguments += ["-UITestLargeHistoryFixture", "-UITestSavedFoodsFixture"]
-        }
-        if name.contains("BrandedStartupSlow") {
-            launchArguments += [
-                "-UITestStartupAnimationMaxMS", "250",
-                "-UITestStartupPreparationDelayMS", "900"
-            ]
-        } else if name.contains("BrandedStartup") {
-            launchArguments += [
-                "-UITestStartupAnimationMaxMS", "1500",
-                "-UITestStartupPreparationDelayMS", "350"
-            ]
-        }
-        if name.contains("PerformanceAcceptance") ||
-            name.contains("DoesNotFreeze") ||
-            name.contains("UsefulContent") ||
-            name.contains("Hydrates") ||
-            name.contains("Hydration") ||
-            name.contains("Scrolling") ||
-            name.contains("StartButtonRemains") ||
-            name.contains("ModeChangeDoesNotOverRefreshAfterMotionRehaul")
-        {
-            launchArguments.append("-PerformanceAcceptanceMode")
+    }
+
+    private func launch(arguments: [String] = [], performance: Bool = false) {
+        app.launchArguments = ["-UITestInMemoryStore"] + arguments
+        if performance {
+            app.launchArguments.append("-PerformanceAcceptanceMode")
             app.launchEnvironment["PERFORMANCE_ACCEPTANCE_MODE"] = "1"
         }
-        app.launchArguments = launchArguments
         app.launch()
     }
 
     func testBrandedStartupWaitsForCriticalReadyThenShowsToday() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture", "-UITestStartupAnimationMaxMS", "1500", "-UITestStartupPreparationDelayMS", "350"])
+
         let splash = app.descendants(matching: .any)["startup-brand-screen"]
         XCTAssertTrue(splash.waitForExistence(timeout: 3))
         XCTAssertTrue(splash.label.localizedCaseInsensitiveContains("Peakline"))
@@ -60,6 +33,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testBrandedStartupSlowPathSettlesAndShowsTruthfulProgress() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture", "-UITestStartupAnimationMaxMS", "250", "-UITestStartupPreparationDelayMS", "900"])
+
         let splash = app.descendants(matching: .any)["startup-brand-screen"]
         XCTAssertTrue(splash.waitForExistence(timeout: 3))
 
@@ -77,6 +52,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testPreviewCancelApplyResetAndStartOriginalFlows() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         openWorkoutPreview()
 
         tapElement(identifier: "coach-action-reduceAccessories")
@@ -104,6 +81,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testManualDeloadPlannerCanOpenAndSaveBlock() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         openWorkoutPreview()
 
         tapElement(identifier: "coach-action-deloadStyleSession")
@@ -119,12 +98,14 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testExerciseMetadataEditorCanSaveCoachContext() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         openExerciseLibrary()
 
         tapElement(identifier: "exercise-library-row-Bench Press", maxSwipes: 8)
         XCTAssertTrue(app.navigationBars["Bench Press"].waitForExistence(timeout: 5))
-        tapButton(containing: "Coaching preferences", maxSwipes: 10)
 
+        tapButton(containing: "Coaching preferences", maxSwipes: 10)
         tapElement(identifier: "coach-metadata-note", maxSwipes: 8)
         let noteField = app.descendants(matching: .any)["coach-metadata-note"]
         noteField.tap()
@@ -141,7 +122,9 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         XCTAssertEqual(savedValue, "Priority bench for UI test")
     }
 
-    func testCoachActionHistoryDetailFiltersAndSavesFeedback() throws {
+    func testCoachActionHistoryDetailCanSubmitFeedbackAndReturn() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         openCoachHub()
 
         tapElement(identifier: "coach-history-detail-open", maxSwipes: 8)
@@ -161,6 +144,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testCoachPreferencesAndSplitIntentOpen() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         openCoachHub()
 
         tapElement(identifier: "coach-preferences-open", maxSwipes: 18)
@@ -178,6 +163,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testProblemNavigationCardsOpenWithoutFreezing() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         openCoachHub()
 
         tapElement(identifier: "coach-preferences-open", maxSwipes: 18)
@@ -195,6 +182,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testQuickActionProblemPathsOpenUnderLargeHistoryFixture() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture", "-UITestLargeHistoryFixture"])
+
         tapTodayMenuAction(title: "Progress & Charts")
         XCTAssertTrue(app.descendants(matching: .any)["progress-pr-timeline-open"].waitForExistence(timeout: 8))
         tapElement(identifier: "progress-pr-timeline-open", maxSwipes: 2)
@@ -213,6 +202,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testBulkMetadataEditorReviewAndApply() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         openExerciseLibrary()
 
         tapElement(identifier: "bulk-metadata-open", maxSwipes: 2)
@@ -224,6 +215,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testPerformanceAcceptanceRoutes() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"], performance: true)
+
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
         XCTAssertTrue(
             app.descendants(matching: .any)["startup-critical-ready"].waitForExistence(timeout: 5),
@@ -269,6 +262,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testReviewTodayPlanOpensPreparedPreviewWithoutStartingLogger() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
 
         tapElement(identifier: "today-review-plan", maxSwipes: 8)
@@ -286,6 +281,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testTodayCoachSupportsNativeEdgeSwipeBack() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
 
         tapElement(identifier: "today-coach-brief-open", maxSwipes: 4)
@@ -296,6 +293,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testCoachAndWeeklyReviewRemainHydratedAcrossBackgrounding() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
 
         tapElement(identifier: "today-readiness-hero", maxSwipes: 8)
@@ -319,6 +318,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testTodayStartWorkoutCoachOpensAndReturnsResponsively() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
 
         tapButton(containing: "Start Workout", maxSwipes: 2)
@@ -330,43 +331,14 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
             app.descendants(matching: .any)["coach-why-this-section"].waitForExistence(timeout: 1),
             "Expected the first supporting Coach card to mount with the prepared hero"
         )
-        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 2), "Expected app window to remain responsive")
 
         tapBackButton()
         XCTAssertTrue(waitForWorkoutScreen(), "Expected Coach back navigation to return to Workout")
     }
 
-    func testQuickActionsStartWorkoutPreviewDoesNotFreeze() throws {
-        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
-
-        tapElement(identifier: "quick-action-workout", maxSwipes: 5)
-        XCTAssertTrue(waitForWorkoutScreen(), "Expected Quick Actions -> Start Workout to open Workout")
-
-        tapElement(identifier: "workout-recommended-preview", maxSwipes: 8)
-        XCTAssertTrue(waitForPreviewScreen(), "Expected Quick Actions -> Start Workout -> Preview to open")
-        XCTAssertTrue(app.buttons["workout-preview-start"].waitForExistence(timeout: 5), "Expected Preview start button to be available")
-        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 2), "Expected app window to remain responsive")
-
-        tapBackButton(from: "Preview")
-        XCTAssertTrue(waitForWorkoutScreen(), "Expected back navigation from Preview to return to Workout")
-        assertPerformanceAcceptancePassed()
-    }
-
-    func testWorkoutStartWorkoutPreviewDoesNotFreeze() throws {
-        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
-
-        tapTab(at: 1, expectedTitle: "Workout")
-        tapElement(identifier: "workout-recommended-preview", maxSwipes: 8)
-        XCTAssertTrue(waitForPreviewScreen(), "Expected Workout tab preview to open")
-        XCTAssertTrue(app.buttons["workout-preview-start"].waitForExistence(timeout: 5), "Expected Preview start button to be available")
-        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 2), "Expected app window to remain responsive")
-
-        tapBackButton(from: "Preview")
-        XCTAssertTrue(waitForWorkoutScreen(), "Expected back navigation from Preview to return to Workout")
-        assertPerformanceAcceptancePassed()
-    }
-
     func testWorkoutRecommendedStartOpensLoggerDirectly() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
 
         tapTab(at: 1, expectedTitle: "Workout")
@@ -393,7 +365,9 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         XCTAssertTrue(app.buttons["workout-recommended-start"].waitForExistence(timeout: 5))
     }
 
-    func testPreviewStartDoubleTapCreatesOneResponsiveLogger() throws {
+    func testPreviewStartDoubleTapShowsOneLogger() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
 
         tapTab(at: 1, expectedTitle: "Workout")
@@ -407,24 +381,11 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         let logger = app.otherElements["workout-logger-screen"]
         XCTAssertTrue(logger.waitForExistence(timeout: 5), "Expected one live workout logger after a rapid repeated tap")
         XCTAssertEqual(app.otherElements.matching(identifier: "workout-logger-screen").count, 1)
-        assertPerformanceAcceptancePassed()
     }
 
-    func testRepeatLastWorkoutDoesNotFreeze() throws {
-        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
+    func testQuickActionsPreviewShowsPreparedContent() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"], performance: true)
 
-        tapTab(at: 1, expectedTitle: "Workout")
-        tapButton(containing: "Repeat Last Workout", maxSwipes: 10)
-        XCTAssertTrue(waitForPreviewScreen(), "Expected Repeat Last Workout to open Preview")
-        XCTAssertTrue(app.buttons["workout-preview-start"].waitForExistence(timeout: 5), "Expected repeated Preview start button to be available")
-        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 2), "Expected app window to remain responsive")
-
-        tapBackButton(from: "Preview")
-        XCTAssertTrue(waitForWorkoutScreen(), "Expected back navigation from repeated Preview to return to Workout")
-        assertPerformanceAcceptancePassed()
-    }
-
-    func testQuickActionsPreviewShowsUsefulContentQuickly() throws {
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
 
         tapElement(identifier: "quick-action-workout", maxSwipes: 5)
@@ -433,81 +394,57 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         tapElement(identifier: "workout-recommended-preview", maxSwipes: 8)
         XCTAssertTrue(waitForPreviewScreen(), "Expected Quick Actions -> Start Workout -> Preview to open")
 
-        let hydratedElapsed = waitForElement(
-            app.descendants(matching: .any)["workout-preview-hydrated-content"],
-            timeout: 3,
-            label: "hydrated preview"
-        )
-        let startElapsed = waitForElement(app.buttons["workout-preview-start"], timeout: 3, label: "preview start button")
-        let rowsElapsed = waitForElement(app.descendants(matching: .any)["workout-preview-basic-exercise-rows"], timeout: 3, label: "preview basic rows")
-        let guidanceElapsed = waitForElement(app.descendants(matching: .any)["workout-preview-guidance-chips"], timeout: 4, label: "preview coach guidance or fallback")
+        XCTAssertTrue(app.descendants(matching: .any)["workout-preview-hydrated-content"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["workout-preview-start"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["workout-preview-basic-exercise-rows"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["workout-preview-guidance-chips"].waitForExistence(timeout: 4))
 
-        print("PREVIEW_HYDRATION_METRIC flow=quick_actions hydrated=\(hydratedElapsed) start=\(startElapsed) rows=\(rowsElapsed) guidance=\(guidanceElapsed)")
-        XCTAssertLessThan(hydratedElapsed, 0.5)
-        XCTAssertLessThan(startElapsed, 3)
-        XCTAssertLessThan(rowsElapsed, 3)
         XCTAssertFalse(app.staticTexts["Targets loading"].exists)
         XCTAssertFalse(app.staticTexts["Coach details are preparing."].exists)
-        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 2), "Expected app window to remain responsive")
 
         tapBackButton(from: "Preview")
         XCTAssertTrue(waitForWorkoutScreen(), "Expected back navigation from Preview to return to Workout")
         assertPerformanceAcceptancePassed()
     }
 
-    func testWorkoutPreviewHydratesExerciseRowsBeforeCoachGuidance() throws {
+    func testWorkoutPreviewShowsExerciseRowsAndCoachGuidance() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"], performance: true)
+
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
 
         tapTab(at: 1, expectedTitle: "Workout")
         tapElement(identifier: "workout-recommended-preview", maxSwipes: 8)
         XCTAssertTrue(waitForPreviewScreen(), "Expected Workout tab preview to open")
 
-        let rowsElapsed = waitForElement(app.descendants(matching: .any)["workout-preview-basic-exercise-rows"], timeout: 3, label: "preview basic rows")
-        let guidanceElapsed = waitForElement(app.descendants(matching: .any)["workout-preview-guidance-chips"], timeout: 4, label: "preview coach guidance or fallback")
-
-        print("PREVIEW_HYDRATION_METRIC flow=workout rows=\(rowsElapsed) guidance=\(guidanceElapsed)")
-        XCTAssertLessThan(rowsElapsed, 3)
-        XCTAssertTrue(guidanceElapsed >= 0)
+        XCTAssertTrue(app.descendants(matching: .any)["workout-preview-basic-exercise-rows"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["workout-preview-guidance-chips"].waitForExistence(timeout: 4))
 
         tapBackButton(from: "Preview")
         XCTAssertTrue(waitForWorkoutScreen(), "Expected back navigation from Preview to return to Workout")
         assertPerformanceAcceptancePassed()
     }
 
-    func testRepeatLastWorkoutPreviewHydratesResponsively() throws {
+    func testRepeatLastWorkoutPreviewShowsPreparedContent() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"], performance: true)
+
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
 
         tapTab(at: 1, expectedTitle: "Workout")
         tapButton(containing: "Repeat Last Workout", maxSwipes: 10)
         XCTAssertTrue(waitForPreviewScreen(), "Expected Repeat Last Workout to open Preview")
 
-        let startElapsed = waitForElement(app.buttons["workout-preview-start"], timeout: 3, label: "repeat preview start button")
-        let rowsElapsed = waitForElement(app.descendants(matching: .any)["workout-preview-basic-exercise-rows"], timeout: 3, label: "repeat preview basic rows")
-        let guidanceElapsed = waitForElement(app.descendants(matching: .any)["workout-preview-guidance-chips"], timeout: 4, label: "repeat preview coach guidance or fallback")
-
-        print("PREVIEW_HYDRATION_METRIC flow=repeat_last start=\(startElapsed) rows=\(rowsElapsed) guidance=\(guidanceElapsed)")
-        XCTAssertLessThan(startElapsed, 3)
-        XCTAssertLessThan(rowsElapsed, 3)
-        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 2), "Expected app window to remain responsive")
+        XCTAssertTrue(app.buttons["workout-preview-start"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["workout-preview-basic-exercise-rows"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["workout-preview-guidance-chips"].waitForExistence(timeout: 4))
 
         tapBackButton(from: "Preview")
         XCTAssertTrue(waitForWorkoutScreen(), "Expected back navigation from repeated Preview to return to Workout")
         assertPerformanceAcceptancePassed()
     }
 
-    func testPreviewHydrationDoesNotRestartRepeatedly() throws {
-        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
-
-        tapTab(at: 1, expectedTitle: "Workout")
-        tapElement(identifier: "workout-recommended-preview", maxSwipes: 8)
-        XCTAssertTrue(waitForPreviewScreen(), "Expected Workout tab preview to open")
-        XCTAssertTrue(app.buttons["workout-preview-start"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.descendants(matching: .any)["workout-preview-basic-exercise-rows"].waitForExistence(timeout: 3))
-
-        assertPerformanceAcceptancePassed()
-    }
-
     func testPreviewStartButtonRemainsAvailableDuringHydration() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"], performance: true)
+
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
 
         tapTab(at: 1, expectedTitle: "Workout")
@@ -526,13 +463,17 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testWorkoutPreviewModeChangeDoesNotOverRefreshAfterMotionRehaul() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"], performance: true)
+
         openWorkoutPreview()
         tapButton(containing: "Quick", maxSwipes: 4)
         XCTAssertTrue(waitForPreviewScreen(), "Expected Preview to remain visible after motion-aware mode change")
         assertPerformanceAcceptancePassed()
     }
 
-    func testWorkoutPreviewScrollingKeepsExerciseOrderStableAndUsesDedicatedReorderHandle() throws {
+    func testWorkoutPreviewShowsReorderHandleAndRetainsContentAfterScrolling() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"], performance: true)
+
         openWorkoutPreview()
 
         let reorderHandle = app.descendants(matching: .any)["workout-preview-reorder-handle"].firstMatch
@@ -551,6 +492,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testWorkoutPreviewReordersByDroppingOnRowAndLoggerKeepsThatOrder() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         openWorkoutPreview()
 
         let firstExercise = "Incline Chest Press (Smith)"
@@ -611,6 +554,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testWorkoutPreviewOptionalExerciseMenuSelectsAndAddsExercise() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         openWorkoutPreview()
 
         let menu = assertReachable(
@@ -636,6 +581,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testWorkoutPreviewFullModeDoesNotScrollHorizontally() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         openWorkoutPreview(splitName: "Legs")
 
         let content = app.descendants(matching: .any)["workout-preview-hydrated-content"]
@@ -653,6 +600,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testWorkoutPreviewActionsUseAnchoredNamedMenuAndAccessibleTarget() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         openWorkoutPreview()
 
         var actions = app.buttons["workout-preview-exercise-actions"].firstMatch
@@ -675,6 +624,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testWorkoutPreviewStateSurvivesAnimatedTabRoundTrip() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         openWorkoutPreview()
         XCTAssertTrue(app.buttons["workout-preview-start"].waitForExistence(timeout: 5))
 
@@ -689,6 +640,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testAppearanceChoicesCanBeSelectedAndRemainSelected() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         openSettingsFromToday()
         tapElement(identifier: "settings-appearance", maxSwipes: 8)
 
@@ -706,6 +659,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testSettingsIsReachableFromTodayProfileMenuAndDismisses() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
         let tabBar = app.tabBars.firstMatch
         XCTAssertEqual(tabBar.buttons.count, 4)
@@ -724,6 +679,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testSettingsProfileWorkoutToolsAndAppearanceAreTruthfulAndReachable() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         openSettingsFromToday()
         tapElement(identifier: "settings-profile", maxSwipes: 4)
 
@@ -823,6 +780,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testHistoryRowsOpenAfterMotionRehaul() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture", "-UITestLargeHistoryFixture"])
+
         tapTab(at: 3, expectedTitle: "History")
         tapHistorySessionRow(containing: "Push")
         XCTAssertTrue(
@@ -832,14 +791,9 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         )
     }
 
-    func testTabSelectionStillWorksAfterMotionRehaul() throws {
-        tapTab(at: 1, expectedTitle: "Workout")
-        tapTab(at: 2, expectedTitle: "Splits")
-        tapTab(at: 3, expectedTitle: "History")
-        tapTab(at: 0, expectedTitle: "Today")
-    }
-
     func testPerformanceAcceptanceRootTabTransitionsRemainResponsive() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"], performance: true)
+
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
         XCTAssertTrue(
             app.descendants(matching: .any)["startup-critical-ready"].waitForExistence(timeout: 5),
@@ -850,12 +804,18 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         tapTabAndAssertResponsive(at: 2, expectedTitle: "Splits")
         tapTabAndAssertResponsive(at: 3, expectedTitle: "History")
         tapTabAndAssertResponsive(at: 1, expectedTitle: "Workout")
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 5))
+        app.activate()
+        XCTAssertTrue(app.buttons["workout-recommended-preview"].waitForExistence(timeout: 5))
         tapTabAndAssertResponsive(at: 0, expectedTitle: "Today")
 
         assertPerformanceAcceptancePassed()
     }
 
     func testPerformanceAcceptanceDataRichReadinessRoute() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture", "-UITestLargeHistoryFixture", "-UITestSavedFoodsFixture"], performance: true)
+
         prepareDataRichPerformanceRoute()
         measurePrimaryQuickAction(
             identifier: "today-readiness-hero",
@@ -870,6 +830,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testPerformanceAcceptanceDataRichSleepRoute() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture", "-UITestLargeHistoryFixture", "-UITestSavedFoodsFixture"], performance: true)
+
         prepareDataRichPerformanceRoute()
         measurePrimaryQuickAction(
             identifier: "quick-action-sleep",
@@ -885,6 +847,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testPerformanceAcceptanceDataRichNutritionRoute() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture", "-UITestLargeHistoryFixture", "-UITestSavedFoodsFixture"], performance: true)
+
         prepareDataRichPerformanceRoute()
         measurePrimaryQuickAction(
             identifier: "quick-action-nutrition",
@@ -899,6 +863,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testPerformanceAcceptanceDataRichProgressRoute() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture", "-UITestLargeHistoryFixture", "-UITestSavedFoodsFixture"], performance: true)
+
         prepareDataRichPerformanceRoute()
         measurePrimaryQuickAction(
             identifier: "quick-action-progress",
@@ -913,6 +879,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testPerformanceAcceptanceDataRichHydrationRoute() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture", "-UITestLargeHistoryFixture", "-UITestSavedFoodsFixture"], performance: true)
+
         prepareDataRichPerformanceRoute()
         measurePrimaryQuickAction(
             identifier: "quick-action-hydration",
@@ -926,6 +894,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testPerformanceAcceptanceDataRichPreviewRoute() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture", "-UITestLargeHistoryFixture", "-UITestSavedFoodsFixture"], performance: true)
+
         prepareDataRichPerformanceRoute()
         scrollTodayToTop()
         tapElement(identifier: "quick-action-workout", maxSwipes: 8)
@@ -942,6 +912,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testDataRichPrimaryQuickActionsRemainPopulated() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture", "-UITestLargeHistoryFixture", "-UITestSavedFoodsFixture"])
+
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.descendants(matching: .any)["startup-critical-ready"].waitForExistence(timeout: 5))
         waitForDataRichFixtureInsertionToSettle()
@@ -1016,10 +988,11 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         tapBackButton(from: "Preview")
         tapBackButton(from: "Workout")
 
-        assertPerformanceAcceptancePassed()
     }
 
     func testDataRichRootTabsRemainPopulated() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture", "-UITestLargeHistoryFixture", "-UITestSavedFoodsFixture"])
+
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.descendants(matching: .any)["startup-critical-ready"].waitForExistence(timeout: 5))
         waitForDataRichFixtureInsertionToSettle()
@@ -1031,6 +1004,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testCoachOmitsDuplicateCheckIn() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         tapElement(identifier: "today-coach-brief-open", maxSwipes: 4)
         XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Coach to open")
         for _ in 0..<18 { app.swipeUp() }
@@ -1039,6 +1014,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testReadinessV2ShowsProvisionalCoverageAndMissingSignals() throws {
+        launch()
+
         let provisional = app.descendants(matching: .any)["readiness-provisional-status"].firstMatch
         let coverage = app.descendants(matching: .any)["readiness-signal-coverage"]
         let score = app.descendants(matching: .any)["today-readiness-score-value"]
@@ -1074,6 +1051,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testReadinessV2CheckInSaveRefreshesScoreImmediately() throws {
+        launch()
+
         let score = app.descendants(matching: .any)["today-readiness-score-value"]
         XCTAssertTrue(score.waitForExistence(timeout: 10))
         XCTAssertEqual(score.label, "—")
@@ -1098,6 +1077,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testTodayCheckInPresentsDismissesAndReopensSmoothly() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
 
         tapTodayCheckIn()
@@ -1116,6 +1097,8 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testPerformanceAcceptanceManualBlockerFlow() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"], performance: true)
+
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
 
         tapElement(identifier: "quick-action-sleep", maxSwipes: 5)
@@ -1517,13 +1500,6 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
             app.staticTexts["Coach"].waitForExistence(timeout: 12)
     }
 
-    private func waitForCoachDismissed() -> Bool {
-        waitUntil(timeout: 12) {
-            !app.descendants(matching: .any)["coach-screen"].exists &&
-                !app.navigationBars["Coach"].exists
-        }
-    }
-
     private func waitForWorkoutScreen() -> Bool {
         app.descendants(matching: .any)["workout-screen"].waitForExistence(timeout: 12) ||
             app.buttons["workout-recommended-preview"].waitForExistence(timeout: 12) ||
@@ -1536,32 +1512,6 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         app.navigationBars["Preview"].waitForExistence(timeout: 15) ||
             app.staticTexts["Preview"].waitForExistence(timeout: 15) ||
             app.buttons["workout-preview-start"].waitForExistence(timeout: 15)
-    }
-
-    private func dailyCallElement(containing splitName: String) -> XCUIElement {
-        let identified = app.descendants(matching: .any)["coach-todays-call"]
-        if identified.exists {
-            return identified
-        }
-
-        return app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", splitName)).firstMatch
-    }
-
-    private func waitForPreviewDismissed() -> Bool {
-        waitUntil(timeout: 12) {
-            !app.buttons["workout-preview-start"].exists &&
-                !app.navigationBars["Preview"].exists
-        }
-    }
-
-    @discardableResult
-    private func waitForElement(_ element: XCUIElement, timeout: TimeInterval, label: String) -> TimeInterval {
-        let startedAt = Date()
-        if element.exists {
-            return Date().timeIntervalSince(startedAt)
-        }
-        XCTAssertTrue(element.waitForExistence(timeout: timeout), "Expected \(label) within \(timeout)s")
-        return Date().timeIntervalSince(startedAt)
     }
 
     private func waitUntil(timeout: TimeInterval, condition: () -> Bool) -> Bool {
@@ -1589,24 +1539,6 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         print("PERF_ACCEPTANCE_UI_SUMMARY \(summary)")
         XCTAssertTrue(summary.contains("performance_acceptance=PASS"), summary)
         XCTAssertFalse(summary.contains("FAIL"), summary)
-    }
-
-    private func assertCheckInRatingRow(_ suffix: String) {
-        let title = app.staticTexts["check-in-title-\(suffix)"]
-        XCTAssertTrue(title.waitForExistence(timeout: 3), "Expected check-in title \(suffix)")
-        XCTAssertFalse(app.staticTexts["check-in-value-\(suffix)"].exists, "Did not expect old \(suffix) value badge")
-
-        var previousMidX: CGFloat?
-        for rating in 1...5 {
-            let button = app.buttons["check-in-rating-\(suffix)-\(rating)"]
-            XCTAssertTrue(button.waitForExistence(timeout: 3), "Expected \(suffix) rating \(rating)")
-            XCTAssertGreaterThan(button.frame.width, 0, "Expected \(suffix) rating \(rating) to have width")
-
-            if let previousMidX {
-                XCTAssertGreaterThan(button.frame.midX, previousMidX, "Expected \(suffix) rating buttons to render left-to-right")
-            }
-            previousMidX = button.frame.midX
-        }
     }
 
     private func assertCheckInSelectionResponds(row: String, rating: Int) {

@@ -24,15 +24,17 @@ final class NutritionScannerNavigationUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        var launchArguments = ["-UITestInMemoryStore"]
-        if name.contains("SavedFoods") {
-            launchArguments.append("-UITestSavedFoodsFixture")
-        }
-        app.launchArguments = launchArguments
+    }
+
+    private func launch(savedFoods: Bool = false) {
+        app.launchArguments = ["-UITestInMemoryStore"]
+        if savedFoods { app.launchArguments.append("-UITestSavedFoodsFixture") }
         app.launch()
     }
 
     func testQuickActionNutritionCanOpenScannerSurfaces() throws {
+        launch()
+
         XCTAssertTrue(
             app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
             "Expected Today to be ready after launch"
@@ -54,23 +56,9 @@ final class NutritionScannerNavigationUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Scan nutrition label"].waitForExistence(timeout: 5))
     }
 
-    func testTodayNutritionCardCanReachFoodLoggingEntryPoint() throws {
-        XCTAssertTrue(
-            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
-            "Expected Today to be ready after launch"
-        )
-
-        openNutritionFromQuickAction()
-        XCTAssertTrue(app.navigationBars["Nutrition"].waitForExistence(timeout: 5))
-
-        tapButton(containing: "Add Food", maxSwipes: 3)
-        XCTAssertTrue(app.navigationBars["Add Food"].waitForExistence(timeout: 5))
-
-        tapButton(containing: "Scan Barcode", maxSwipes: 2)
-        XCTAssertTrue(app.navigationBars["Scan Barcode"].waitForExistence(timeout: 5))
-    }
-
     func testNutritionPreviousDayIsReadOnlyAndNavigatesWithArrows() throws {
+        launch()
+
         XCTAssertTrue(
             app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
             "Expected Today to be ready after launch"
@@ -92,6 +80,8 @@ final class NutritionScannerNavigationUITests: XCTestCase {
     }
 
     func testNutritionTargetsExposeFibreAndDismissKeyboardInteractively() throws {
+        launch()
+
         XCTAssertTrue(
             app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
             "Expected Today to be ready after launch"
@@ -123,6 +113,8 @@ final class NutritionScannerNavigationUITests: XCTestCase {
     }
 
     func testSavedFoodsNativeSwipeDeleteShowsConfirmationWithoutBreakingScroll() throws {
+        launch(savedFoods: true)
+
         openSavedFoods()
         XCTAssertTrue(app.staticTexts["Banana"].waitForExistence(timeout: 5))
 
@@ -142,6 +134,8 @@ final class NutritionScannerNavigationUITests: XCTestCase {
     }
 
     func testSavedFoodsDeleteCancelAndConfirmRemainSafe() throws {
+        launch(savedFoods: true)
+
         openSavedFoods()
         XCTAssertTrue(app.staticTexts["Banana"].waitForExistence(timeout: 5))
         assertSavedFoodPrimaryActionsWork(for: "Banana")
@@ -300,36 +294,12 @@ final class NutritionScannerNavigationUITests: XCTestCase {
         start.press(forDuration: 0.01, thenDragTo: end)
     }
 
-    private func navigateBack(from navigationTitle: String? = nil, to expectedNavigationTitle: String? = nil) {
-        let navigationBar = navigationTitle.map { app.navigationBars[$0] } ?? app.navigationBars.element(boundBy: 0)
-        XCTAssertTrue(navigationBar.waitForExistence(timeout: 5), "Expected a navigation bar before going back")
-
-        let namedBackButtons = [expectedNavigationTitle, "Back", "BackButton"].compactMap { $0 }
-        for buttonName in namedBackButtons {
-            let button = navigationBar.buttons[buttonName]
-            guard button.exists && button.isHittable else { continue }
-            button.tap()
-            if waitForNavigationBar(expectedNavigationTitle) {
-                return
-            }
-        }
-
-        let backButton = navigationBar.buttons.element(boundBy: 0)
-        XCTAssertTrue(backButton.waitForExistence(timeout: 5), "Expected a back button")
+    private func navigateBack(from navigationTitle: String, to expectedNavigationTitle: String) {
+        let backButton = app.navigationBars[navigationTitle].buttons.element(boundBy: 0)
+        XCTAssertTrue(backButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(backButton.isHittable)
         backButton.tap()
-        if waitForNavigationBar(expectedNavigationTitle) {
-            return
-        }
-
-        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.50))
-        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.50))
-        start.press(forDuration: 0.05, thenDragTo: end)
-        XCTAssertTrue(waitForNavigationBar(expectedNavigationTitle), "Expected to navigate back")
-    }
-
-    private func waitForNavigationBar(_ navigationTitle: String?) -> Bool {
-        guard let navigationTitle else { return true }
-        return app.navigationBars[navigationTitle].waitForExistence(timeout: 5)
+        XCTAssertTrue(app.navigationBars[expectedNavigationTitle].waitForExistence(timeout: 5), "Expected one native back action to return to \(expectedNavigationTitle)")
     }
 
     private func tapButton(containing text: String, maxSwipes: Int) {

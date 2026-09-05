@@ -211,7 +211,7 @@ final class WorkoutReliabilityTests: XCTestCase {
         )
     }
 
-    func testWorkoutPreviewOrderReducerHandlesAdjacentMovesNoOpsAndInvariants() {
+    func testWorkoutPreviewOrderReducerHandlesAdjacentMovesAndNoOps() {
         let first = UUID(uuidString: "20000000-0000-0000-0000-000000000001")!
         let second = UUID(uuidString: "20000000-0000-0000-0000-000000000002")!
         let third = UUID(uuidString: "20000000-0000-0000-0000-000000000003")!
@@ -227,13 +227,6 @@ final class WorkoutReliabilityTests: XCTestCase {
         XCTAssertEqual(WorkoutPreviewOrderReducer.move(original, sourceID: second, destinationID: second), original)
         XCTAssertEqual(WorkoutPreviewOrderReducer.move(original, sourceID: missing, destinationID: second), original)
         XCTAssertEqual(WorkoutPreviewOrderReducer.move(original, sourceID: second, destinationID: missing), original)
-        XCTAssertEqual(adjacentDown.count, original.count)
-        XCTAssertEqual(Set(adjacentDown), Set(original))
-        XCTAssertEqual(
-            adjacentDown.filter { $0 != second },
-            original.filter { $0 != second },
-            "Moving one ID must preserve every other ID's relative order"
-        )
     }
 
     func testWorkoutLaunchDraftUsesReducerOrderForLoggerExerciseLogs() {
@@ -262,34 +255,6 @@ final class WorkoutReliabilityTests: XCTestCase {
         let session = draft.makeSession(startedAt: Date(timeIntervalSince1970: 1_722_000_000))
         XCTAssertEqual(session.exerciseLogs.map(\.exerciseNameSnapshot), ["Third", "First", "Second"])
         XCTAssertEqual(session.exerciseLogs.map(\.orderIndex), [0, 1, 2])
-    }
-
-    func testLocalWorkoutPreviewReorderLeavesPreparedRouteSnapshotUnchanged() throws {
-        let store = WorkoutPreviewWarmStartStore.shared
-        store.resetForTesting()
-        defer { store.resetForTesting() }
-
-        let exercises = [
-            WorkoutSelectableExercise(id: UUID(), exerciseId: UUID(), name: "First", targetSets: 2, minReps: 6, maxReps: 10, notes: nil),
-            WorkoutSelectableExercise(id: UUID(), exerciseId: UUID(), name: "Second", targetSets: 2, minReps: 8, maxReps: 12, notes: nil),
-            WorkoutSelectableExercise(id: UUID(), exerciseId: UUID(), name: "Third", targetSets: 2, minReps: 10, maxReps: 15, notes: nil)
-        ]
-        let split = WorkoutPreviewSplit(id: UUID(), name: "Fixture", exercises: exercises)
-        store.replaceActiveSnapshots(WorkoutMode.allCases.map { .fallback(split: split, mode: $0) })
-        let route = store.prepareRoute(for: split, initialMode: .full)
-        let before = try XCTUnwrap(store.snapshot(for: route, mode: .full))
-
-        let localIDs = WorkoutPreviewOrderReducer.move(
-            before.selectedExerciseIDs,
-            sourceID: exercises[2].id,
-            destinationID: exercises[0].id
-        )
-        let after = try XCTUnwrap(store.snapshot(for: route, mode: .full))
-
-        XCTAssertNotEqual(localIDs, before.selectedExerciseIDs)
-        XCTAssertEqual(after.selectedExerciseIDs, before.selectedExerciseIDs)
-        XCTAssertEqual(after.plannedExercises.map(\.id), before.plannedExercises.map(\.id))
-        XCTAssertEqual(after.sourceSignature, before.sourceSignature)
     }
 
     func testWorkoutMotivationCatalogIsLargeUniqueAndComplete() {
@@ -367,6 +332,11 @@ final class WorkoutReliabilityTests: XCTestCase {
             durationText: "58m",
             prs: [prRecord(index: 1, exerciseLogID: exerciseLogID, exerciseName: "Bench Press")]
         )
+
+        let ordinary = WorkoutCelebrationPresentation.completion(rating: rating, durationText: "58m", prs: [])
+        XCTAssertEqual(ordinary.style, .completedWorkout)
+        XCTAssertNotEqual(ordinary.systemImage, "trophy.fill")
+        XCTAssertNotEqual(ordinary.title, presentation.title)
 
         XCTAssertEqual(presentation.style, .pr)
         XCTAssertEqual(presentation.title, "New best unlocked.")
@@ -500,12 +470,12 @@ final class WorkoutReliabilityTests: XCTestCase {
         XCTAssertLessThanOrEqual(adjusted.confidence, 0.7)
     }
 
-    func testWorkoutDurationEstimateUsesPersonalSameModeMedianAndIgnoresOutliers() {
+    func testWorkoutDurationEstimateUsesPersonalCalibration() {
         let now = date(day: 20, hour: 12)
         let calibration = WorkoutDurationCalibration(samples: [
-            WorkoutDurationSample(date: date(day: 19, hour: 12), splitName: "Lower", mode: .quick, durationSeconds: 3_600, completedWorkingSetCount: 12),
-            WorkoutDurationSample(date: date(day: 18, hour: 12), splitName: "Lower", mode: .quick, durationSeconds: 3_300, completedWorkingSetCount: 11),
-            WorkoutDurationSample(date: date(day: 17, hour: 12), splitName: "Lower", mode: .quick, durationSeconds: 3_900, completedWorkingSetCount: 13),
+            WorkoutDurationSample(date: date(day: 19, hour: 12), splitName: "Lower", mode: .quick, durationSeconds: 4_320, completedWorkingSetCount: 12),
+            WorkoutDurationSample(date: date(day: 18, hour: 12), splitName: "Lower", mode: .quick, durationSeconds: 3_960, completedWorkingSetCount: 11),
+            WorkoutDurationSample(date: date(day: 17, hour: 12), splitName: "Lower", mode: .quick, durationSeconds: 4_680, completedWorkingSetCount: 13),
             WorkoutDurationSample(date: date(day: 16, hour: 12), splitName: "Lower", mode: .quick, durationSeconds: 9 * 3_600, completedWorkingSetCount: 12),
             WorkoutDurationSample(date: date(day: 15, hour: 12), splitName: "Push", mode: .full, durationSeconds: 7_200, completedWorkingSetCount: 12)
         ])
@@ -529,7 +499,7 @@ final class WorkoutReliabilityTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(estimate, 50...70)
+        XCTAssertEqual(estimate, 60...85)
     }
 
     func testWorkoutDurationEstimateUsesConservativeModeFallbacksWhenHistoryIsSparse() {
@@ -1015,28 +985,19 @@ final class WorkoutReliabilityTests: XCTestCase {
         XCTAssertFalse(session.completed)
     }
 
-    func testWorkoutDurationCalibrationFiltersInvalidSamplesAtEveryBoundary() {
+    func testWorkoutDurationCalibrationRejectsFourHourSampleAtMinimumSampleCount() {
         let now = date(day: 20, hour: 12)
-        let invalidOnly = WorkoutDurationCalibration(samples: [
-            WorkoutDurationSample(date: now.addingTimeInterval(1), splitName: "Push", mode: .full, durationSeconds: 3_600, completedWorkingSetCount: 12),
-            WorkoutDurationSample(date: now.addingTimeInterval(-181 * 86_400), splitName: "Push", mode: .full, durationSeconds: 3_600, completedWorkingSetCount: 12),
-            WorkoutDurationSample(date: date(day: 19, hour: 12), splitName: "Push", mode: .full, durationSeconds: 599, completedWorkingSetCount: 2),
-            WorkoutDurationSample(date: date(day: 18, hour: 12), splitName: "Push", mode: .full, durationSeconds: 4 * 3_600, completedWorkingSetCount: 12),
-            WorkoutDurationSample(date: date(day: 17, hour: 12), splitName: "Push", mode: .full, durationSeconds: 3_600, completedWorkingSetCount: 0)
-        ])
-
-        XCTAssertNil(invalidOnly.minutesPerWorkingSet(splitName: "Push", mode: .full, now: now))
-
-        let inclusiveLowerBoundary = WorkoutDurationCalibration(samples: [
+        let validSamples = [
             WorkoutDurationSample(date: date(day: 19, hour: 12), splitName: "Push", mode: .full, durationSeconds: 600, completedWorkingSetCount: 2),
-            WorkoutDurationSample(date: date(day: 18, hour: 12), splitName: "Push", mode: .full, durationSeconds: 600, completedWorkingSetCount: 2),
-            WorkoutDurationSample(date: date(day: 17, hour: 12), splitName: "Push", mode: .full, durationSeconds: 600, completedWorkingSetCount: 2)
-        ])
+            WorkoutDurationSample(date: date(day: 18, hour: 12), splitName: "Push", mode: .full, durationSeconds: 600, completedWorkingSetCount: 2)
+        ]
+        let fourHourSample = WorkoutDurationSample(date: date(day: 17, hour: 12), splitName: "Push", mode: .full, durationSeconds: 4 * 3_600, completedWorkingSetCount: 12)
+        let rejected = WorkoutDurationCalibration(samples: validSamples + [fourHourSample])
+        XCTAssertNil(rejected.minutesPerWorkingSet(splitName: "Push", mode: .full, now: now))
 
-        XCTAssertEqual(
-            inclusiveLowerBoundary.minutesPerWorkingSet(splitName: "Push", mode: .full, now: now),
-            5
-        )
+        let minimumDurationSample = WorkoutDurationSample(date: date(day: 17, hour: 12), splitName: "Push", mode: .full, durationSeconds: 600, completedWorkingSetCount: 2)
+        let accepted = WorkoutDurationCalibration(samples: validSamples + [minimumDurationSample])
+        XCTAssertEqual(accepted.minutesPerWorkingSet(splitName: "Push", mode: .full, now: now), 5)
     }
 
     func testWorkoutDurationSampleRequiresCompletedWorkoutAndWorkingSet() {

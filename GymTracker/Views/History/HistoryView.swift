@@ -1834,7 +1834,7 @@ private struct WorkoutHistoryDetailView: View {
                     ForEach(sessionPRs.prefix(4)) { record in
                         Label(record.improvementDescription, systemImage: "trophy.fill")
                             .font(AppTypography.bodyEmphasis)
-                            .foregroundStyle(appTheme.colors.textWarning)
+                            .foregroundStyle(Color(hex: 0xE6A817))
                     }
                 }
             }
@@ -2111,7 +2111,7 @@ private struct ExerciseHistorySummary: View {
                 if let firstPR = prs.first {
                     Label(firstPR.improvementDescription, systemImage: "trophy.fill")
                         .font(AppTypography.chip)
-                        .foregroundStyle(appTheme.colors.textWarning)
+                        .foregroundStyle(Color(hex: 0xE6A817))
                 }
 
                 if sets.isEmpty {

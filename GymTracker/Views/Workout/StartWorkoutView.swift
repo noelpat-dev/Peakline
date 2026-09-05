@@ -210,13 +210,11 @@ struct WorkoutDashboardHero: View {
                         isDecorative: true
                     )
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(splitName)
-                            .font(AppTypography.heroTitle)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
-                            .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.78)
-                    }
+                    Text(splitName)
+                        .font(AppTypography.heroTitle)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                        .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.78)
 
                     if !dynamicTypeSize.isAccessibilitySize {
                         Spacer(minLength: 8)
@@ -316,9 +314,14 @@ struct WorkoutToolsGrid: View {
 
     var body: some View {
         LazyVGrid(columns: toolColumns, spacing: appTheme.metrics.cardSpacing) {
-            ForEach(toolItems) { item in
-                toolButton(item)
-            }
+            toolButton("Empty Workout", systemImage: "plus", action: onEmptyWorkout)
+                .accessibilityIdentifier("start-empty-workout")
+            toolButton("Templates", systemImage: "doc.on.doc", action: onTemplates)
+                .accessibilityIdentifier("workout-tool-templates")
+            toolButton("Coach", systemImage: "sparkles", action: onCoach)
+                .accessibilityIdentifier("workout-tool-coach")
+            toolButton("Exercise Library", systemImage: "dumbbell", action: onExerciseLibrary)
+                .accessibilityIdentifier("workout-tool-exercise-library")
         }
     }
 
@@ -338,27 +341,20 @@ struct WorkoutToolsGrid: View {
         )
     }
 
-    private var toolItems: [WorkoutToolItem] {
-        [
-            WorkoutToolItem(title: "Empty Workout", systemImage: "plus", action: onEmptyWorkout),
-            WorkoutToolItem(title: "Templates", systemImage: "doc.on.doc", action: onTemplates),
-            WorkoutToolItem(title: "Coach", systemImage: "sparkles", action: onCoach),
-            WorkoutToolItem(title: "Exercise Library", systemImage: "dumbbell", action: onExerciseLibrary)
-        ]
-    }
-
-    private func toolButton(_ item: WorkoutToolItem) -> some View {
-        Button {
-            item.action()
-        } label: {
+    private func toolButton(
+        _ title: String,
+        systemImage: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
             FitnessCard(style: .compact, padding: appTheme.metrics.spacing10) {
                 VStack(spacing: appTheme.metrics.spacing6) {
-                    Image(systemName: item.systemImage)
+                    Image(systemName: systemImage)
                         .font(AppTypography.rounded(size: 24, weight: .semibold))
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .frame(minWidth: appTheme.metrics.minimumHitTarget, minHeight: appTheme.metrics.minimumHitTarget)
 
-                    Text(item.title)
+                    Text(title)
                         .font(AppTypography.metadataEmphasis)
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .multilineTextAlignment(.center)
@@ -371,22 +367,7 @@ struct WorkoutToolsGrid: View {
         }
         .buttonStyle(PressableCardButtonStyle())
         .frame(maxWidth: .infinity)
-        .accessibilityLabel(item.title)
-        .accessibilityIdentifier(item.id == "Empty Workout" ? "start-empty-workout" : "workout-tool-\(item.id.lowercased().replacingOccurrences(of: " ", with: "-"))")
-    }
-}
-
-private struct WorkoutToolItem: Identifiable {
-    let id: String
-    let title: String
-    let systemImage: String
-    let action: () -> Void
-
-    init(title: String, systemImage: String, action: @escaping () -> Void) {
-        id = title
-        self.title = title
-        self.systemImage = systemImage
-        self.action = action
+        .accessibilityLabel(title)
     }
 }
 
@@ -436,7 +417,6 @@ struct StartWorkoutContentView: View {
 
     private let openRoute: ((StartWorkoutRoute) -> Void)?
     private let modePlanner = WorkoutModePlanner()
-    private let summaryBuilder = SessionSummaryBuilder()
     private let reuseBuilder = WorkoutReuseBuilder()
     private let rotationService = TrainingRotationService()
     private let sleepSettingsStore = SleepSettingsStore()
@@ -593,7 +573,7 @@ struct StartWorkoutContentView: View {
             return recentSessionSnapshot
         }
 
-        return recentSessionSnapshot ?? completedSessions.first.map(StartWorkoutRecentSessionSnapshot.placeholder)
+        return recentSessionSnapshot ?? completedSessions.first.map(StartWorkoutRecentSessionSnapshot.make)
     }
 
     private var currentSplitCardSnapshots: [StartWorkoutSplitCardSnapshot] {
@@ -878,12 +858,12 @@ struct StartWorkoutContentView: View {
     }
 
     private func consumeInitialDashboardActionIfNeeded() {
-        guard let initialDashboardAction,
-              !didConsumeInitialDashboardAction else { return }
+        guard let initialDashboardAction else { return }
 
         Task { @MainActor in
             await Task.yield()
-            guard isDashboardVisible,
+            guard !didConsumeInitialDashboardAction,
+                  isDashboardVisible,
                   unfinishedSessions.isEmpty,
                   let recommendedSplit = currentDashboardSnapshot.recommendedSplit else { return }
             didConsumeInitialDashboardAction = true
@@ -961,27 +941,12 @@ struct StartWorkoutContentView: View {
                     $0.name == presentationCall.recommendedSplitName
                 }.map { recommendedSplitSnapshot(for: $0, mode: presentationCall.recommendedMode) }
             )
-            recentSessionSnapshot = makeRecentSessionSnapshot()
+            recentSessionSnapshot = completedSessions.first.map(StartWorkoutRecentSessionSnapshot.make)
             splitCardSnapshots = displayedSplits.map(makeSplitCardSnapshot)
             lastDashboardSignature = signature
             hasSeededDashboardSnapshot = true
             consumeInitialDashboardActionIfNeeded()
         }
-    }
-
-    private func makeRecentSessionSnapshot() -> StartWorkoutRecentSessionSnapshot? {
-        guard let session = completedSessions.first else { return nil }
-
-        let summary = summaryBuilder.build(from: session, completedSessions: completedSessions, activeSplits: activeSplits)
-        return StartWorkoutRecentSessionSnapshot(
-            sessionId: session.id,
-            splitName: session.splitNameSnapshot,
-            dateText: session.date.formatted(date: .abbreviated, time: .omitted),
-            durationText: summary.durationText,
-            ratingText: summary.ratingText ?? "-",
-            highlightText: summary.bestSetImprovements.first ?? summary.takeaway,
-            badgeState: summary.bestSetImprovements.isEmpty ? .ready : .pr
-        )
     }
 
     private func makeSplitCardSnapshot(_ split: TrainingSplit) -> StartWorkoutSplitCardSnapshot {
@@ -1041,7 +1006,7 @@ struct StartWorkoutContentView: View {
                     $0.name == presentationCall.recommendedSplitName
                 }.map { recommendedSplitSnapshot(for: $0, mode: presentationCall.recommendedMode) }
             )
-            recentSessionSnapshot = completedSessions.first.map(StartWorkoutRecentSessionSnapshot.placeholder)
+            recentSessionSnapshot = completedSessions.first.map(StartWorkoutRecentSessionSnapshot.make)
             splitCardSnapshots = displayedSplits.map(StartWorkoutSplitCardSnapshot.placeholder)
             lastDashboardSignature = currentDashboardSignature
             hasSeededDashboardSnapshot = true
@@ -1344,7 +1309,7 @@ struct StartWorkoutContentView: View {
                 }
                 .buttonStyle(NeutralFitnessButtonStyle())
                 .accessibilityLabel("Repeat Last Workout")
-                .accessibilityHint(snapshot.highlightText)
+                .accessibilityHint("Preview this session’s exercises before starting another workout.")
                 .disabled(completedSessions.first { $0.id == snapshot.sessionId } == nil)
             }
         }
@@ -1657,7 +1622,7 @@ struct WorkoutStartFirstFrameSnapshot: Sendable {
                     )
                 }
             ),
-            recentSession: historyWorkouts.first.map(StartWorkoutRecentSessionSnapshot.placeholder),
+            recentSession: historyWorkouts.first.map(StartWorkoutRecentSessionSnapshot.make),
             splitCards: splitCards,
             dashboardSignature: dashboardSignature,
             workoutRevision: workoutRevision
@@ -1714,35 +1679,26 @@ struct StartWorkoutRecentSessionSnapshot: Sendable {
     let splitName: String
     let dateText: String
     let durationText: String
-    let ratingText: String
-    let highlightText: String
-    let badgeState: CoachBadgeState
 
     var iconKey: ExerciseIconKey {
         ExerciseIconMapper.splitIconKey(for: splitName)
     }
 
-    static func placeholder(_ session: WorkoutSession) -> StartWorkoutRecentSessionSnapshot {
+    static func make(_ session: WorkoutSession) -> StartWorkoutRecentSessionSnapshot {
         StartWorkoutRecentSessionSnapshot(
             sessionId: session.id,
             splitName: session.splitNameSnapshot,
             dateText: session.date.formatted(date: .abbreviated, time: .omitted),
-            durationText: durationText(for: session),
-            ratingText: ratingText(for: session.perceivedDifficulty),
-            highlightText: "Last session is ready to repeat while Peakline prepares the full summary.",
-            badgeState: .ready
+            durationText: durationText(for: session)
         )
     }
 
-    static func placeholder(_ workout: HistoryWorkoutSnapshot) -> StartWorkoutRecentSessionSnapshot {
+    static func make(_ workout: HistoryWorkoutSnapshot) -> StartWorkoutRecentSessionSnapshot {
         StartWorkoutRecentSessionSnapshot(
             sessionId: workout.id,
             splitName: workout.splitName,
             dateText: workout.date.formatted(date: .abbreviated, time: .omitted),
-            durationText: durationText(for: workout),
-            ratingText: ratingText(for: workout.rating),
-            highlightText: "Last session is ready to repeat while Peakline prepares the full summary.",
-            badgeState: .ready
+            durationText: durationText(for: workout)
         )
     }
 
@@ -1792,25 +1748,6 @@ struct StartWorkoutRecentSessionSnapshot: Sendable {
         }
 
         return "\(seconds)s"
-    }
-
-    private static func ratingText(for score: Int?) -> String {
-        guard let score else { return "-" }
-
-        switch score {
-        case 1:
-            return "Rough"
-        case 2:
-            return "Okay"
-        case 3:
-            return "Good"
-        case 4:
-            return "Great"
-        case 5:
-            return "Excellent"
-        default:
-            return "\(score)/5"
-        }
     }
 }
 

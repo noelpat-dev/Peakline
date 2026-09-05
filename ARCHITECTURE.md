@@ -64,7 +64,7 @@ GymTracker/Models/
 ```
 
 - Workout core: `WorkoutSession`, `ExerciseLog`, `SetLog`, `Exercise`, `TrainingSplit`, `UserProfile`, `BodyweightLog`, shared enums. `TrainingSplit.activeRotationIndex` is optional for migration safety; `isActive` controls programme membership.
-- Coach and readiness: recommendation models, coach workout adjustment models (`CoachAdjustmentEnums`, `CoachAdjustmentValueTypes`, `CoachPreferenceModels`, `CoachHistoryModels`), readiness models.
+- Coach and readiness: recommendation models, coach workout adjustment models (`CoachAdjustmentEnums`, `CoachAdjustmentValueTypes`, `CoachPreferenceModels`, `CoachHistoryModels`), readiness models. `CoachRouteSnapshot.swift` owns the shared Coach route payload, derived metrics, and presentation values used by startup, Today, and Coach.
 - Nutrition: food log/item models, import drafts, OCR/parse/comparison/insight models. `NutritionGoal.dailyFibreTarget` is optional for legacy preference and backup compatibility.
 - Sleep and recovery: sleep, nap, recovery, and coaching-support models.
 - HealthKit bridge: local models used to track sync state and review requirements.
@@ -92,6 +92,7 @@ GymTracker/Services/
 
 Service guardrails:
 
+- `CoachRouteSnapshotStore.swift` owns shared Coach route publication, invalidation, and monotonic generation ordering. Startup, Today, and Coach prepare inputs and publish through this existing store; `CoachView.swift` owns the mounted screen and its live refresh scheduling. These responsibilities are separate from the shared payload definitions in `Models/CoachRouteSnapshot.swift`.
 - Keep recommendation reasons short and explainable.
 - Keep external sources optional and non-destructive.
 - Keep parser/OCR/barcode results editable before save.

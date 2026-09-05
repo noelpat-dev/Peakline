@@ -103,6 +103,17 @@ final class ReadinessRefreshClock: ObservableObject {
         scheduleNextBoundary(after: now)
     }
 
+    private func resume(now: Date = .now) {
+        let current = ReadinessRefreshToken(date: now, calendar: calendar, generation: generation)
+        if current != token {
+            refresh(now: now)
+        } else {
+            // Activation alone does not change readiness inputs. Keep cached
+            // dashboards valid, but restart the timer cancelled on resigning.
+            scheduleNextBoundary(after: now)
+        }
+    }
+
     private func installObservers() {
         let center = NotificationCenter.default
         observers.append(center.addObserver(
@@ -110,7 +121,7 @@ final class ReadinessRefreshClock: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+            Task { @MainActor in self?.resume() }
         })
         observers.append(center.addObserver(
             forName: UIApplication.willResignActiveNotification,

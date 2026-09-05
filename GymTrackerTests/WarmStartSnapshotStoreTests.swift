@@ -3,33 +3,6 @@ import XCTest
 
 @MainActor
 final class WarmStartSnapshotStoreTests: XCTestCase {
-    func testWorkoutWarmStartSourceSignatureUsesScalarWorkoutFieldsOnly() {
-        let session = WorkoutSession(
-            date: Date(timeIntervalSince1970: 1_000),
-            splitId: UUID(),
-            splitNameSnapshot: "Push - Full",
-            endedAt: Date(timeIntervalSince1970: 4_600),
-            durationMinutes: 60,
-            durationSeconds: 3_600,
-            completed: true
-        )
-        let exerciseLog = ExerciseLog(
-            workoutSessionId: session.id,
-            exerciseId: UUID(),
-            exerciseNameSnapshot: "Bench Press",
-            orderIndex: 0
-        )
-        let setLog = SetLog(exerciseLogId: exerciseLog.id, setNumber: 1)
-        setLog.exerciseLog = exerciseLog
-        exerciseLog.setLogs = [setLog]
-        session.exerciseLogs = [exerciseLog]
-
-        let before = WorkoutWarmStartSourceSignature.workout(session)
-        setLog.completed = true
-
-        XCTAssertEqual(before, WorkoutWarmStartSourceSignature.workout(session))
-    }
-
     func testWorkoutWarmStartSourceSignatureCanonicalizesCollectionOrder() {
         let first = WorkoutWarmStartSourceSignature.make(
             revision: 4,
@@ -170,15 +143,6 @@ final class WarmStartSnapshotStoreTests: XCTestCase {
         XCTAssertNil(store.weeklySummary)
     }
 
-    func testWorkoutWarmStartInvalidationAdvancesRevision() {
-        let invalidation = WorkoutWarmStartInvalidation.shared
-        let previousRevision = invalidation.revision
-
-        invalidation.invalidate(reason: .completedWorkoutSetEdited)
-
-        XCTAssertEqual(invalidation.revision, previousRevision + 1)
-    }
-
     func testWorkoutWarmStartInvalidationPersistsAcrossStoreRecreation() throws {
         let suiteName = "WorkoutWarmStartInvalidationTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -314,6 +278,13 @@ final class WarmStartSnapshotStoreTests: XCTestCase {
                 workoutSignatures: workoutSignatures
             )
         )
+
+        session.exerciseLogs[0].setLogs[0].completed = false
+        XCTAssertEqual(initial, WorkoutWarmStartSourceSignature.make(
+            revision: 7,
+            splitSignatures: splitSignatures,
+            workoutSignatures: [WorkoutWarmStartSourceSignature.workout(session)]
+        ))
 
         session.durationSeconds = 2_760
         XCTAssertNotEqual(
