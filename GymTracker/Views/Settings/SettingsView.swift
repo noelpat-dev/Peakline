@@ -82,7 +82,6 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("appTheme") private var storedTheme = AppTheme.black.rawValue
     @AppStorage("appAppearance") private var storedAppearance = AppAppearance.system.rawValue
     @State private var profile: UserProfile?
     @State private var showingProfileEditor = false
@@ -371,10 +370,6 @@ struct SettingsView: View {
         showingProfileEditor = profile != nil
     }
 
-    private var selectedTheme: AppTheme {
-        AppTheme(rawValue: storedTheme) ?? .black
-    }
-
     private var selectedAppearance: AppAppearance {
         AppAppearance.launchArgumentOverride
             ?? AppAppearance(rawValue: storedAppearance)
@@ -382,10 +377,7 @@ struct SettingsView: View {
     }
 
     private var appearanceStatus: String {
-        PeaklineText.joinedMetadata([
-            selectedAppearance.displayName,
-            selectedTheme.displayName
-        ])
+        selectedAppearance.displayName
     }
 }
 
@@ -535,18 +527,7 @@ private struct SettingsDivider: View {
 
 private struct AppearanceSettingsView: View {
     @Environment(\.appTheme) private var appTheme
-    @AppStorage("appTheme") private var storedTheme = AppTheme.black.rawValue
     @AppStorage("appAppearance") private var storedAppearance = AppAppearance.system.rawValue
-
-    private let availableThemes = AppTheme.allCases
-
-    private var selectedTheme: Binding<AppTheme> {
-        Binding {
-            AppTheme(rawValue: storedTheme) ?? .black
-        } set: { newTheme in
-            storedTheme = newTheme.rawValue
-        }
-    }
 
     private var selectedAppearance: Binding<AppAppearance> {
         Binding {
@@ -558,21 +539,6 @@ private struct AppearanceSettingsView: View {
 
     var body: some View {
         FitnessScreen {
-            DashboardSection(title: "Accent Colour") {
-                FitnessCard(padding: appTheme.metrics.spacing10) {
-                    VStack(spacing: appTheme.metrics.spacing6) {
-                        ForEach(availableThemes) { theme in
-                            ThemeOptionRow(
-                                theme: theme,
-                                isSelected: selectedTheme.wrappedValue == theme
-                            ) {
-                                selectedTheme.wrappedValue = theme
-                            }
-                        }
-                    }
-                }
-            }
-
             DashboardSection(title: "Mode") {
                 FitnessCard(padding: appTheme.metrics.spacing10) {
                     LazyVGrid(
@@ -594,68 +560,6 @@ private struct AppearanceSettingsView: View {
         .navigationTitle("Appearance")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("appearance-settings-screen")
-    }
-}
-
-private struct ThemeOptionRow: View {
-    @Environment(\.appTheme) private var appTheme
-
-    let theme: AppTheme
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                Circle()
-                    .fill(theme.colors.accent)
-                    .frame(width: 30, height: 30)
-                    .overlay {
-                        Circle()
-                            .stroke(.white.opacity(0.55), lineWidth: 1)
-                    }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(theme.displayName)
-                        .font(AppTypography.sectionTitle)
-                        .foregroundStyle(appTheme.colors.textPrimary)
-                    Text(themeDescription)
-                        .font(AppTypography.metadata)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                }
-
-                Spacer()
-
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(isSelected ? theme.colors.accent : appTheme.colors.textTertiary)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 12)
-            .background(isSelected ? theme.colors.accentSurface : Color.clear, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius12, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(theme.displayName) accent colour")
-        .accessibilityValue(isSelected ? "Selected" : "Not selected")
-        .accessibilityIdentifier("theme-option-\(theme.rawValue)")
-    }
-
-    private var themeDescription: String {
-        switch theme {
-        case .appleGreen:
-            return "Workout green accents"
-        case .red:
-            return "Bold red intensity"
-        case .purple:
-            return "High contrast violet"
-        case .orange:
-            return "Warm amber energy"
-        case .blue:
-            return "Cool training blue"
-        case .black:
-            return "Adaptive monochrome accents"
-        }
     }
 }
 

@@ -186,11 +186,12 @@ struct ExercisePosePreview: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     let entry: ExerciseGuideEntry
-    var autoplay = false
     @State private var selectedFrame = 1
-    @State private var isPlaying = false
+    @State private var direction = 1
+    @State private var isVisible = false
+    @State private var selectionRevision = 0
 
-    private var shouldPlay: Bool { isPlaying && !reduceMotion && scenePhase == .active }
+    private var shouldPlay: Bool { isVisible && !reduceMotion && scenePhase == .active }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -203,8 +204,10 @@ struct ExercisePosePreview: View {
             HStack(spacing: 12) {
                 ForEach(1...3, id: \.self) { frame in
                     Button {
-                        isPlaying = false
                         selectedFrame = frame
+                        if frame == 1 { direction = 1 }
+                        if frame == 3 { direction = -1 }
+                        selectionRevision += 1
                     } label: {
                         VStack(spacing: 6) {
                             ExerciseGuideImage(entry: entry, frame: frame)
@@ -230,32 +233,19 @@ struct ExercisePosePreview: View {
             }
         }
 
-        .overlay(alignment: .topTrailing) {
-            if !reduceMotion {
-                Button {
-                    isPlaying.toggle()
-                } label: {
-                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                        .frame(width: 44, height: 44)
-                        .background(appTheme.colors.accentSurface, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(appTheme.colors.textAccent)
-                .accessibilityLabel(isPlaying ? "Pause exercise animation" : "Play exercise animation")
-                .accessibilityIdentifier("exercise-preview-playback")
-            }
-        }
-        .onAppear { isPlaying = autoplay }
-        .onDisappear { isPlaying = false }
-        .task(id: shouldPlay) {
+        .onAppear { isVisible = true }
+        .onDisappear { isVisible = false }
+        .task(id: "\(shouldPlay)-\(selectionRevision)") {
             guard shouldPlay else { return }
-            for frame in [2, 3, 2, 1] {
+            // Sleep between discrete asset changes; no display-link or model updates.
+            while !Task.isCancelled {
                 do { try await Task.sleep(for: .milliseconds(850)) }
                 catch { return }
                 guard !Task.isCancelled else { return }
-                selectedFrame = frame
+                if selectedFrame == 1 { direction = 1 }
+                if selectedFrame == 3 { direction = -1 }
+                selectedFrame += direction
             }
-            isPlaying = false
         }
     }
 }

@@ -345,7 +345,7 @@ private struct ExerciseForm: View {
         Form {
             if let illustration {
                 Section {
-                    ExercisePosePreview(entry: illustration, autoplay: true)
+                    ExercisePosePreview(entry: illustration)
                         .id(illustration.slug)
                         .padding(.vertical, 4)
                 }

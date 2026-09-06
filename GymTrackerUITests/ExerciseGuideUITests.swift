@@ -8,6 +8,45 @@ final class ExerciseGuideUITests: XCTestCase {
         app = XCUIApplication()
     }
 
+    func testPosePlaybackRepeatsAndContinuesAfterSelection() {
+        launch(appearance: "dark", theme: "black")
+        openGuide()
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        search.typeText("Weighted Crunch")
+        tap("exercise-guide-row-weighted-crunch")
+        XCTAssertFalse(app.buttons["exercise-preview-playback"].exists)
+        let illustration = app.images["exercise-guide-illustration"]
+        app.buttons["exercise-guide-pose-1"].tap()
+        var observed = [1]
+        let deadline = Date().addingTimeInterval(9)
+        while observed.count < 9 && Date() < deadline {
+            let label = illustration.label
+            if let frame = (1...3).first(where: { label.contains("pose \($0) of 3") }), frame != observed.last {
+                observed.append(frame)
+            }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        XCTAssertEqual(observed, [1, 2, 3, 2, 1, 2, 3, 2, 1])
+        app.buttons["exercise-guide-pose-3"].tap()
+        XCTAssertTrue(app.buttons["exercise-guide-pose-3"].isSelected)
+        let returnsToMiddle = NSPredicate(format: "label CONTAINS %@", "pose 2 of 3")
+        expectation(for: returnsToMiddle, evaluatedWith: illustration)
+        waitForExpectations(timeout: 2)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        var resumedLabels = Set<String>()
+        let resumeDeadline = Date().addingTimeInterval(4)
+        while resumedLabels.count < 3 && Date() < resumeDeadline {
+            resumedLabels.insert(illustration.label)
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        XCTAssertEqual(resumedLabels, Set((1...3).map { "Weighted Crunch, pose \($0) of 3" }))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.navigationBars["Exercise Guide"].waitForExistence(timeout: 5))
+    }
+
     func testGuideSearchDetailsPosesAndReturnToLibrary() {
         launch(appearance: "dark", theme: "blue")
         openGuide()
@@ -97,7 +136,13 @@ final class ExerciseGuideUITests: XCTestCase {
 
     private func openLibrary() {
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 15))
-        app.tabBars.buttons.element(boundBy: 1).tap()
+        let workoutTab = app.tabBars.buttons["Workout"]
+        XCTAssertTrue(workoutTab.waitForExistence(timeout: 5))
+        workoutTab.tap()
+        let workoutScreen = app.descendants(matching: .any)["workout-screen"].firstMatch
+        // The launch transition can consume the first tab tap. Confirm arrival before scrolling.
+        if !workoutScreen.waitForExistence(timeout: 3) { workoutTab.tap() }
+        XCTAssertTrue(workoutScreen.waitForExistence(timeout: 5))
         tap("workout-tool-exercise-library")
         XCTAssertTrue(app.navigationBars["Exercise Library"].waitForExistence(timeout: 5))
     }

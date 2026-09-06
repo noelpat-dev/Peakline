@@ -136,31 +136,11 @@ enum PeaklineText {
 }
 
 enum AppTheme: String, CaseIterable, Identifiable {
-    case appleGreen
-    case red
-    case purple
-    case orange
-    case blue
     case black
 
     var id: String { rawValue }
 
-    var displayName: String {
-        switch self {
-        case .appleGreen:
-            return "Fitness Green"
-        case .red:
-            return "Pulse Red"
-        case .purple:
-            return "Purple"
-        case .orange:
-            return "Orange"
-        case .blue:
-            return "Blue"
-        case .black:
-            return "Black"
-        }
-    }
+    var displayName: String { "Black" }
 
     var primaryColor: Color {
         colors.accent
@@ -175,26 +155,12 @@ enum AppTheme: String, CaseIterable, Identifiable {
     }
 
     var colors: AppThemeColors {
-        let accent: Color
-        switch self {
-        case .appleGreen:
-            accent = Color(hex: 0x30D158)
-        case .red:
-            accent = Color(hex: 0xFF2C2C)
-        case .purple:
-            accent = Color(hex: 0xBF5AF2)
-        case .orange:
-            accent = Color(hex: 0xFF9F0A)
-        case .blue:
-            accent = Color(hex: 0x0A84FF)
-        case .black:
-            accent = Color(light: 0x111114, dark: 0xF5F5F7)
-        }
+        let accent = Color(light: 0x111114, dark: 0xF5F5F7)
 
         return AppThemeColors(
             accent: accent,
-            accentForeground: accentForeground,
-            accentHighlight: accentHighlight(for: accent),
+            accentForeground: Color(light: 0xFFFFFF, dark: 0x000000),
+            accentHighlight: Color(light: 0x3A3A3C, dark: 0xFFFFFF),
             accentSurface: accent.opacity(0.12),
             accentSurfaceStrong: accent.opacity(0.20),
             backgroundPrimary: Color(light: 0xF4F4F7, dark: 0x08080A),
@@ -207,58 +173,16 @@ enum AppTheme: String, CaseIterable, Identifiable {
             textTertiary: Color(light: 0x85858D, dark: 0x7D7D86),
             success: Color(hex: 0x30D158),
             warning: Color(hex: 0xFF9F0A),
-            hydration: self == .black ? accent : Color(hex: 0x0A84FF),
+            hydration: accent,
             danger: Color(hex: 0xFF453A),
-            textAccent: textAccentColor(for: accent),
+            textAccent: accent,
             textSuccess: Color(light: 0x176B2C, dark: 0x67CE67),
             textWarning: Color(light: 0xA34E00, dark: 0xFFAB2E),
-            textHydration: self == .black
-                ? Color(light: 0x111114, dark: 0xF5F5F7)
-                : Color(light: 0x0060DF, dark: 0x409CFF),
+            textHydration: accent,
             textDanger: Color(light: 0xD70015, dark: 0xFF6961)
         )
     }
 
-    private func textAccentColor(for accent: Color) -> Color {
-        switch self {
-        case .appleGreen:
-            return Color(light: 0x176B2C, dark: 0x67CE67)
-        case .red:
-            return Color(light: 0xD70015, dark: 0xFF6961)
-        case .purple:
-            return Color(light: 0x8E44AD, dark: 0xD18CF5)
-        case .orange:
-            return Color(light: 0xA34E00, dark: 0xFFAB2E)
-        case .blue:
-            return Color(light: 0x0060DF, dark: 0x409CFF)
-        case .black:
-            return Color(light: 0x111114, dark: 0xF5F5F7)
-        }
-    }
-
-    private var accentForeground: Color {
-        switch self {
-        case .appleGreen, .orange, .blue:
-            return .black
-        case .red, .purple:
-            return .white
-        case .black:
-            return Color(light: 0xFFFFFF, dark: 0x000000)
-        }
-    }
-
-    private func accentHighlight(for accent: Color) -> Color {
-        switch self {
-        case .appleGreen:
-            return Color(hex: 0x64D80A)
-        case .red:
-            return Color(hex: 0xFF5A5A)
-        case .black:
-            return Color(light: 0x3A3A3C, dark: 0xFFFFFF)
-        case .purple, .orange, .blue:
-            return accent.opacity(0.86)
-        }
-    }
 }
 
 enum AppAppearance: String, CaseIterable, Identifiable {
