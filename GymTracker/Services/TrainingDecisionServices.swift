@@ -215,7 +215,7 @@ struct TrainingCallSnapshotBuilder {
             mode: guarded.mode
         )
         let signals = sourceSignals(
-            decision: decision,
+            reason: guarded.reason,
             readiness: readiness,
             fatigueRisk: fatigueRisk,
             primaryTarget: primaryTarget,
@@ -423,14 +423,14 @@ struct TrainingCallSnapshotBuilder {
     }
 
     private func sourceSignals(
-        decision: TrainingDecision,
+        reason: String,
         readiness: ReadinessScore?,
         fatigueRisk: CoachFatigueRisk?,
         primaryTarget: TargetSuggestion?,
         completedSessions: [WorkoutAnalyticsSession],
         selectedPreviewMode: WorkoutMode?
     ) -> [String] {
-        var signals = [decision.reason]
+        var signals = [reason]
 
         if let readiness {
             signals.append("Readiness \(readiness.value) - \(readiness.category.displayName), \(readiness.confidence.displayName.lowercased()).")
@@ -441,7 +441,9 @@ struct TrainingCallSnapshotBuilder {
         }
 
         if let primaryTarget {
-            signals.append("Primary target: \(primaryTarget.reason)")
+            let history = primaryTarget.lastBestSetDescription.map { "last best \($0)" }
+                ?? "no completed set history yet"
+            signals.append("Primary lift: \(primaryTarget.exerciseName) — \(history).")
         }
 
         if recentSkippedFatigue(in: completedSessions) {

@@ -97,7 +97,6 @@ private struct WorkoutPreviewExerciseDragStyle: ViewModifier {
                 }
             }
             .scaleEffect(isDragging && !reduceMotion ? 1.012 : 1)
-            .offset(y: reduceMotion ? 0 : verticalOffset)
             .shadow(
                 color: isDragging
                     ? Color.black.opacity(colorScheme == .dark ? 0.34 : 0.16)
@@ -109,6 +108,10 @@ private struct WorkoutPreviewExerciseDragStyle: ViewModifier {
             .opacity(isDragging ? 0.98 : 1)
             .zIndex(isDragging ? 2 : 0)
             .animation(AppMotion.previewReorderLift(reduceMotion: reduceMotion), value: isDragging)
+            // Keep the live finger offset outside the lift animation. The
+            // pickup can settle visually without making the lifted row lag
+            // behind the next drag update.
+            .offset(y: reduceMotion ? 0 : verticalOffset)
     }
 }
 
@@ -119,6 +122,8 @@ struct WorkoutPreviewExerciseCard: View {
     @State private var guideEntry: ExerciseGuideEntry?
     @State private var isGestureDragging = false
     @State private var gestureVerticalOffset: CGFloat = 0
+    @State private var isGestureEnding = false
+    @GestureState private var isGestureActive = false
 
     let exercise: PlannedWorkoutExercise
     let suggestion: TargetSuggestion
@@ -136,6 +141,7 @@ struct WorkoutPreviewExerciseCard: View {
     let gestureDropEdge: WorkoutPreviewExerciseDropEdge?
     let updateGestureDropTarget: (CGPoint) -> Void
     let finishGestureDrop: (CGPoint) -> Void
+    let cancelGestureDrop: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -234,32 +240,67 @@ struct WorkoutPreviewExerciseCard: View {
             .animation(AppMotion.previewReorderLift(reduceMotion: reduceMotion), value: isGestureDragging)
             .contentShape(Circle())
             .highPriorityGesture(
-                DragGesture(
-                    minimumDistance: 4,
-                    coordinateSpace: .named(WorkoutPreviewExerciseOrderCoordinateSpace.name)
+                LongPressGesture(
+                    minimumDuration: AppMotion.Duration.micro.seconds,
+                    maximumDistance: 10
                 )
+                .sequenced(before: DragGesture(
+                    minimumDistance: 0,
+                    coordinateSpace: .named(WorkoutPreviewExerciseOrderCoordinateSpace.name)
+                ))
+                .updating($isGestureActive) { value, isActive, _ in
+                    if case .second = value {
+                        isActive = true
+                    }
+                }
                 .onChanged { value in
+                    guard case let .second(pressRecognized, dragValue) = value, pressRecognized else { return }
+
                     if !isGestureDragging {
+                        isGestureEnding = false
                         isGestureDragging = true
                         AppHaptics.prepareSelection()
                         AppHaptics.lightImpact()
                     }
+                    guard let dragValue else { return }
                     AppMotion.withoutAnimation {
-                        gestureVerticalOffset = value.translation.height
+                        gestureVerticalOffset = dragValue.translation.height
                     }
-                    updateGestureDropTarget(value.location)
+                    updateGestureDropTarget(dragValue.location)
                 }
                 .onEnded { value in
+                    guard
+                        case let .second(true, dragValue?) = value,
+                        isGestureDragging,
+                        !isGestureEnding
+                    else {
+                        if isGestureDragging {
+                            resetCancelledGesture()
+                        } else {
+                            cancelGestureDrop()
+                        }
+                        return
+                    }
+
+                    isGestureEnding = true
                     withAnimation(AppMotion.previewReorderCommit(reduceMotion: reduceMotion)) {
-                        finishGestureDrop(value.location)
+                        finishGestureDrop(dragValue.location)
                         gestureVerticalOffset = 0
                         isGestureDragging = false
                     }
                 }
             )
+            .onChange(of: isGestureActive) { wasActive, isActive in
+                guard wasActive, !isActive, isGestureDragging, !isGestureEnding else { return }
+
+                // A scroll handoff or disappearing gesture has no onEnded
+                // callback. Restore both local lift state and the parent's
+                // insertion cue when that cancellation path occurs.
+                resetCancelledGesture()
+            }
             .accessibilityLabel("Reorder \(exercise.exerciseNameSnapshot)")
             .accessibilityValue("Position \(position) of \(totalCount)")
-            .accessibilityHint("Drag up or down and release when the insertion line appears, or use Move Up and Move Down actions")
+            .accessibilityHint("Press and hold briefly, then drag up or down and release when the insertion line appears, or use Move Up and Move Down actions")
             .accessibilityIdentifier("workout-preview-reorder-handle")
             .accessibilityActions {
                 if canMoveToTop {
@@ -274,6 +315,17 @@ struct WorkoutPreviewExerciseCard: View {
                     }
                 }
             }
+    }
+
+    private func resetCancelledGesture() {
+        guard !isGestureEnding else { return }
+
+        isGestureEnding = true
+        withAnimation(AppMotion.previewReorderCommit(reduceMotion: reduceMotion)) {
+            cancelGestureDrop()
+            gestureVerticalOffset = 0
+            isGestureDragging = false
+        }
     }
 
     private var actionsButton: some View {

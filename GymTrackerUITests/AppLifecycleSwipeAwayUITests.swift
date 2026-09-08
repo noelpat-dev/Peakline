@@ -86,8 +86,7 @@ final class AppLifecycleSwipeAwayUITests: XCTestCase {
         XCTAssertTrue(tab.waitForExistence(timeout: 5), "Expected tab \(index) to exist")
         tab.tap()
         XCTAssertTrue(
-            app.navigationBars[expectedTitle].waitForExistence(timeout: 5) ||
-                app.staticTexts[expectedTitle].waitForExistence(timeout: 5),
+            app.descendants(matching: .any)["\(expectedTitle.lowercased())-screen"].waitForExistence(timeout: 5),
             "Expected \(expectedTitle) tab to be visible"
         )
     }

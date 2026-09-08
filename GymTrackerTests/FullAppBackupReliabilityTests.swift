@@ -586,19 +586,44 @@ final class FullAppBackupReliabilityTests: XCTestCase {
 private struct InjectedBackupFailure: Error {}
 
 final class StartupPresentationReducerTests: XCTestCase {
-    func testFastReadyPathRevealsThenHides() {
+    func testCriticalReadyWaitsForAnimationCompletion() {
         var state = StartupPresentationState.animating
         state = StartupPresentationReducer.reduce(state, event: .criticalReady)
+        XCTAssertEqual(state, .waitingForAnimation)
+
+        state = StartupPresentationReducer.reduce(state, event: .animationFinished)
         XCTAssertEqual(state, .revealing)
 
         state = StartupPresentationReducer.reduce(state, event: .revealFinished)
         XCTAssertEqual(state, .hidden)
     }
 
-    func testSlowPathSettlesBeforeItReveals() {
+    func testAnimationCompletionWaitsForCriticalReady() {
+        var state = StartupPresentationState.animating
+        state = StartupPresentationReducer.reduce(state, event: .animationFinished)
+        XCTAssertEqual(state, .waitingForCriticalReady)
+
+        state = StartupPresentationReducer.reduce(state, event: .criticalReady)
+        XCTAssertEqual(state, .revealing)
+    }
+
+    func testSlowThresholdThenCriticalReadyStillWaitsForAnimationCompletion() {
         var state = StartupPresentationState.animating
         state = StartupPresentationReducer.reduce(state, event: .slowThresholdReached)
         XCTAssertEqual(state, .holdingSlow)
+
+        state = StartupPresentationReducer.reduce(state, event: .criticalReady)
+        XCTAssertEqual(state, .holdingSlowForAnimation)
+
+        state = StartupPresentationReducer.reduce(state, event: .animationFinished)
+        XCTAssertEqual(state, .revealing)
+    }
+
+    func testSlowThresholdAfterAnimationCompletionStillWaitsForCriticalReady() {
+        var state = StartupPresentationState.animating
+        state = StartupPresentationReducer.reduce(state, event: .animationFinished)
+        state = StartupPresentationReducer.reduce(state, event: .slowThresholdReached)
+        XCTAssertEqual(state, .holdingSlowForCriticalReady)
 
         state = StartupPresentationReducer.reduce(state, event: .criticalReady)
         XCTAssertEqual(state, .revealing)
@@ -610,9 +635,19 @@ final class StartupPresentationReducerTests: XCTestCase {
             event: .interrupted
         )
         XCTAssertEqual(state, .interrupted)
+        XCTAssertEqual(
+            StartupPresentationReducer.reduce(state, event: .start),
+            .interrupted
+        )
 
         state = StartupPresentationReducer.reduce(state, event: .resumeAfterInteraction)
         XCTAssertEqual(state, .holdingSlow)
+
+        state = StartupPresentationReducer.reduce(state, event: .animationFinished)
+        XCTAssertEqual(state, .holdingSlowForCriticalReady)
+
+        state = StartupPresentationReducer.reduce(state, event: .criticalReady)
+        XCTAssertEqual(state, .revealing)
     }
 
     func testLateEventsCannotReopenHiddenPresentation() {
@@ -622,6 +657,10 @@ final class StartupPresentationReducerTests: XCTestCase {
         )
         XCTAssertEqual(
             StartupPresentationReducer.reduce(.hidden, event: .resumeAfterInteraction),
+            .hidden
+        )
+        XCTAssertEqual(
+            StartupPresentationReducer.reduce(.hidden, event: .animationFinished),
             .hidden
         )
     }

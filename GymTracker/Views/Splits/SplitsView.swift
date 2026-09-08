@@ -170,6 +170,7 @@ struct SplitsView: View {
                                                 inactiveSplitRow(split)
                                             }
                                             .buttonStyle(PeaklineButtonPressStyle())
+                                            .accessibilityIdentifier("other-split-card-\(split.name.peaklineAccessibilityIdentifierFragment)")
 
                                             Menu {
                                                 Button(role: .destructive) {
@@ -236,23 +237,22 @@ struct SplitsView: View {
                 Button("Cancel", role: .cancel) {
                     pendingDeleteSplitID = nil
                 }
-
-        .alert(
-            "Split deletion failed",
-            isPresented: Binding(
-                get: { deleteErrorText != nil },
-                set: { if !$0 { deleteErrorText = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(deleteErrorText ?? "")
-        }
                 Button("Delete", role: .destructive) {
                     deletePendingSplit()
                 }
             } message: {
                 Text("This removes the split template and its exercise setup. Workout history stays intact.")
+            }
+            .alert(
+                "Split deletion failed",
+                isPresented: Binding(
+                    get: { deleteErrorText != nil },
+                    set: { if !$0 { deleteErrorText = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(deleteErrorText ?? "")
             }
         }
         .onAppear {
@@ -407,10 +407,13 @@ struct SplitsView: View {
                 Text(split.name)
                     .font(AppTypography.bodyEmphasis)
                     .foregroundStyle(appTheme.colors.textPrimary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(PeaklineText.count(split.exercises.count, singular: "exercise"))
                     .font(AppTypography.metadata)
                     .foregroundStyle(appTheme.colors.textSecondary)
             }
+            .layoutPriority(1)
 
             Spacer()
 

@@ -226,8 +226,16 @@ struct TodayView: View {
         ].joined(separator: "|")
     }
 
+    private var shouldObserveDashboardInputs: Bool {
+        isDashboardVisible
+            && !isWorkoutCompletionPresentationActive
+            && selectedRoute == nil
+            && previewRoute == nil
+            && startWorkoutRoute == nil
+    }
+
     private var todaySnapshotSignatureForObservation: String? {
-        isWorkoutCompletionPresentationActive || !isDashboardVisible || selectedRoute != nil ? nil : todaySnapshotSignature
+        shouldObserveDashboardInputs ? todaySnapshotSignature : nil
     }
 
     private var trainingDecision: TrainingDecision {
@@ -281,7 +289,7 @@ struct TodayView: View {
     }
 
     private var sleepReadinessSignatureForObservation: SleepAnalyticsInputSignature? {
-        isWorkoutCompletionPresentationActive || !isDashboardVisible || selectedRoute != nil ? nil : currentSleepReadinessSignature
+        shouldObserveDashboardInputs ? currentSleepReadinessSignature : nil
     }
 
     private var hydrationSummary: DailyHydrationSummary {
@@ -321,7 +329,7 @@ struct TodayView: View {
     }
 
     private var coachSnapshotSignatureForObservation: String? {
-        isWorkoutCompletionPresentationActive || !isDashboardVisible || selectedRoute != nil ? nil : currentCoachSnapshotSignature
+        shouldObserveDashboardInputs ? currentCoachSnapshotSignature : nil
     }
 
     private var sleepSettingsSignature: String {
@@ -518,7 +526,7 @@ struct TodayView: View {
                             detail: nextLiftDetailText,
                             footer: nextLiftFooterText,
                             isMetric: false,
-                            highlightValue: false,
+                            isEnabled: !unfinishedSessions.isEmpty || suggestedSplit != nil,
                             action: nextLiftAction
                         )
                         .accessibilityIdentifier("quick-action-workout")
@@ -542,7 +550,6 @@ struct TodayView: View {
                             detail: hydrationDetailText,
                             footer: hydrationFooterText,
                             isMetric: true,
-                            highlightValue: hydrationSummary.totalML > 0,
                             action: { openRoute(.hydration) }
                         )
                         .accessibilityIdentifier("quick-action-hydration")
@@ -554,7 +561,6 @@ struct TodayView: View {
                             detail: nutritionDetailText,
                             footer: "Open Nutrition",
                             isMetric: true,
-                            highlightValue: nutritionTotals.calories > 0,
                             action: { openRoute(.nutrition) }
                         )
                         .accessibilityIdentifier("quick-action-nutrition")
@@ -869,6 +875,11 @@ struct TodayView: View {
                     Label("Review Today’s Plan", systemImage: "list.bullet")
                 }
                 .disabled(suggestedSplit == nil)
+                .accessibilityHint(
+                    suggestedSplit == nil
+                        ? "Unavailable until an active split is available"
+                        : "Opens your prepared workout preview"
+                )
 
                 Button {
                     openRoute(.nutrition)
@@ -1750,16 +1761,18 @@ struct HydrationView: View {
     @State private var customAmount = ""
     @State private var showingCustomAmount = false
     @State private var errorText: String?
-    @State private var confirmation: HydrationEntry?
+    @State private var confirmationID: UUID?
     @State private var sleepSettings = SleepSettingsStore().load()
     @State private var hydrationTargetML = HydrationSettingsStore().dailyTargetML()
     @State private var nutritionGoal = NutritionGoalService().loadGoal()
     @State private var readinessScore = WarmRouteSnapshots.overallReadiness(fallback: nil)
     @State private var lastReadinessSignature: String?
     @State private var activeHydrationSwipeID: UUID?
+    @State private var liveReadinessObservationEnabled = false
 
     private let coachIntelligence = CoachIntelligenceService()
     private let service = HydrationService()
+    private let persistence = HydrationPersistence()
     private let settingsStore = HydrationSettingsStore()
     private let sleepSettingsStore = SleepSettingsStore()
     private let nutritionGoalStore = NutritionGoalService()
@@ -1812,6 +1825,11 @@ struct HydrationView: View {
         service.entries(for: .now, entries: entries)
     }
 
+    private var confirmation: HydrationEntry? {
+        guard let confirmationID else { return nil }
+        return entries.first { $0.id == confirmationID }
+    }
+
     private var summary: DailyHydrationSummary {
         service.summary(entries: entries, targetML: hydrationTargetML)
     }
@@ -1829,6 +1847,10 @@ struct HydrationView: View {
             "\(nutritionGoal.updatedAt.timeIntervalSince1970)",
             readinessRefreshClock.token.signature
         ].joined(separator: "|")
+    }
+
+    private var readinessSignatureForObservation: String? {
+        liveReadinessObservationEnabled ? currentReadinessSignature : nil
     }
 
     var body: some View {
@@ -1902,6 +1924,7 @@ struct HydrationView: View {
         .alert("Custom amount", isPresented: $showingCustomAmount) {
             TextField("350", text: $customAmount)
                 .keyboardType(.numberPad)
+                .accessibilityLabel("Water amount in millilitres")
             Button("Cancel", role: .cancel) {
                 customAmount = ""
             }
@@ -1913,14 +1936,23 @@ struct HydrationView: View {
         }
         .onAppear {
             readinessRefreshClock.start()
+        }
+        .task {
+            // The water totals are live immediately; the supporting readiness
+            // card starts from the cached value while its inputs attach.
+            await Task.yield()
+            guard !Task.isCancelled else { return }
             sleepSettings = sleepSettingsStore.load()
             hydrationTargetML = settingsStore.dailyTargetML()
             nutritionGoal = nutritionGoalStore.loadGoal()
-            DispatchQueue.main.async {
-                refreshReadinessScore()
-            }
+            refreshReadinessScore()
+            liveReadinessObservationEnabled = true
         }
-        .onChange(of: currentReadinessSignature) { _, _ in
+        .onDisappear {
+            liveReadinessObservationEnabled = false
+        }
+        .onChange(of: readinessSignatureForObservation) { _, signature in
+            guard let signature, signature != lastReadinessSignature else { return }
             refreshReadinessScore()
         }
     }
@@ -2058,13 +2090,12 @@ struct HydrationView: View {
         }
 
         let entry = HydrationEntry(amountML: amount, source: source, context: .general)
-        modelContext.insert(entry)
         do {
-            try modelContext.save()
+            try persistence.insert(entry, in: modelContext)
             errorText = nil
             AppHaptics.success()
             withAnimation(AppMotion.transientConfirmation(reduceMotion: reduceMotion)) {
-                confirmation = entry
+                confirmationID = entry.id
             }
         } catch {
             AppHaptics.error()
@@ -2075,9 +2106,8 @@ struct HydrationView: View {
     private func delete(_ entry: HydrationEntry) {
         var saveError: Error?
         withAnimation(AppMotion.rowCollapse(reduceMotion: reduceMotion)) {
-            modelContext.delete(entry)
             do {
-                try modelContext.save()
+                try persistence.delete(entry, in: modelContext)
             } catch {
                 saveError = error
             }
@@ -2087,13 +2117,12 @@ struct HydrationView: View {
             AppHaptics.warning()
             errorText = nil
             activeHydrationSwipeID = nil
-            if confirmation?.id == entry.id {
+            if confirmationID == entry.id {
                 withAnimation(AppMotion.rowCollapse(reduceMotion: reduceMotion)) {
-                    confirmation = nil
+                    confirmationID = nil
                 }
             }
         } else {
-            modelContext.rollback()
             AppHaptics.error()
             errorText = "Could not delete that water entry."
         }

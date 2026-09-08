@@ -3,6 +3,7 @@ import Foundation
 
 enum WorkoutWarmStartInvalidationReason: String, Sendable {
     case workoutCompleted
+    case workoutDeleted
     case completedWorkoutEdited
     case completedWorkoutSetEdited
     case workoutReopened
@@ -675,7 +676,7 @@ enum WorkoutPreviewSnapshotBuilder {
 
             return WorkoutMode.allCases.map { mode in
                 let plannedExercises = plannedExercisesByMode[mode] ?? []
-                let suggestions = plannedExercises.reduce(into: [UUID: TargetSuggestion]()) { result, exercise in
+                let modeSuggestions = plannedExercises.reduce(into: [UUID: TargetSuggestion]()) { result, exercise in
                     let input = TargetSuggestionInput(exercise)
                     guard let suggestion = baseSuggestionsByInput[input] else { return }
                     result[exercise.id] = modePlanner.modeAdjustedSuggestion(
@@ -689,9 +690,12 @@ enum WorkoutPreviewSnapshotBuilder {
                     completedSessions: completedSessions,
                     readiness: coachSnapshot.readiness,
                     fatigueRisk: coachSnapshot.fatigueRisk,
-                    targetSuggestions: Array(suggestions.values),
+                    targetSuggestions: Array(modeSuggestions.values),
                     selectedPreviewMode: mode
                 )
+                let suggestions = modeSuggestions.mapValues {
+                    modePlanner.modeAdjustedSuggestion($0, mode: mode, trainingCall: trainingCall)
+                }
                 let selectedExerciseIDs = Set(plannedExercises.map(\.exerciseId))
                 let candidates = plannedExercises.reduce(into: [UUID: [ExerciseSubstitutionCandidate]]()) { result, planned in
                     result[planned.id] = candidatesByExerciseID[planned.exerciseId] ?? []

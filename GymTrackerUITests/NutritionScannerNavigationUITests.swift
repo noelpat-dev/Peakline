@@ -26,8 +26,8 @@ final class NutritionScannerNavigationUITests: XCTestCase {
         app = XCUIApplication()
     }
 
-    private func launch(savedFoods: Bool = false) {
-        app.launchArguments = ["-UITestInMemoryStore"]
+    private func launch(savedFoods: Bool = false, arguments: [String] = []) {
+        app.launchArguments = ["-UITestInMemoryStore"] + arguments
         if savedFoods { app.launchArguments.append("-UITestSavedFoodsFixture") }
         app.launch()
     }
@@ -161,6 +161,85 @@ final class NutritionScannerNavigationUITests: XCTestCase {
         searchSavedFoods(query: "tuna", expectedResult: "Tuna")
     }
 
+    func testManualCreateFoodSaveAndLogReturnsToLockedReviewAndReusesSavedFood() throws {
+        launch(arguments: ["-UITestUnknownBarcodeFixture"])
+
+        openManualCreateFoodReview()
+
+        let foodName = "UI Regression Food"
+        let nameField = app.textFields["Food name"]
+        let caloriesField = app.textFields["Calories"]
+
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5), "Expected the manual food name field")
+        nameField.tap()
+        nameField.typeText(foodName)
+
+        fillReviewField(caloriesField, with: "250")
+
+        tapAccessibilityButton(named: "Save and log food today", maxSwipes: 8)
+
+        XCTAssertTrue(app.navigationBars["Log Food"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts[foodName].waitForExistence(timeout: 5), "Expected the saved food to open in Log Food")
+
+        navigateBack(from: "Log Food", to: "Create Food")
+        XCTAssertTrue(app.staticTexts["Food saved"].waitForExistence(timeout: 5), "Expected the review to retain its saved state")
+        XCTAssertTrue(app.buttons["Log saved food today"].waitForExistence(timeout: 5))
+        let lockedNameField = app.textFields["Food name"]
+        let lockedCaloriesField = app.textFields["Calories"]
+        XCTAssertTrue(lockedNameField.waitForExistence(timeout: 5), "Expected the saved food name field after returning")
+        XCTAssertTrue(lockedCaloriesField.waitForExistence(timeout: 5), "Expected the saved calories field after returning")
+        XCTAssertEqual(lockedNameField.value as? String, foodName)
+        XCTAssertEqual(lockedCaloriesField.value as? String, "250")
+        XCTAssertFalse(lockedNameField.isEnabled, "Expected the saved food name field to be locked")
+        XCTAssertFalse(lockedCaloriesField.isEnabled, "Expected the saved calories field to be locked")
+
+        tapAccessibilityButton(named: "Log saved food today", maxSwipes: 8)
+        XCTAssertTrue(app.navigationBars["Log Food"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts[foodName].waitForExistence(timeout: 5), "Expected the second log action to reuse the same saved food")
+
+        navigateBack(from: "Log Food", to: "Create Food")
+        tapAccessibilityButton(named: "Finish saved food review", maxSwipes: 8)
+        XCTAssertTrue(app.navigationBars["Scan Barcode"].waitForExistence(timeout: 5), "Expected Done to dismiss the saved review")
+    }
+
+    func testHydrationQuickAddUndoAndReturnKeepTotalsCurrent() throws {
+        launch()
+        tapElement(identifier: "quick-action-hydration", maxSwipes: 4)
+        let progress = app.progressIndicators["Hydration progress"]
+        XCTAssertTrue(progress.waitForExistence(timeout: 5))
+        let initialValue = try XCTUnwrap(progress.value as? String)
+        XCTAssertTrue(initialValue.hasPrefix("0 mL out of"))
+
+        tapAccessibilityButton(named: "Add 500 millilitres of water", maxSwipes: 4)
+        let added = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value BEGINSWITH %@", "500 mL out of"),
+            object: progress
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [added], timeout: 5), .completed)
+        tapAccessibilityButton(named: "Undo", maxSwipes: 4)
+        let undone = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", initialValue),
+            object: progress
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [undone], timeout: 5), .completed)
+
+        app.navigationBars["Hydration"].buttons.firstMatch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 5))
+        tapElement(identifier: "quick-action-hydration", maxSwipes: 4)
+        XCTAssertTrue(progress.waitForExistence(timeout: 5))
+        XCTAssertEqual(progress.value as? String, initialValue)
+
+        tapAccessibilityButton(named: "Add 250 millilitres of water", maxSwipes: 4)
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 5))
+        app.activate()
+        let returned = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value BEGINSWITH %@", "250 mL out of"),
+            object: progress
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 5), .completed)
+    }
+
     private func openSavedFoods() {
         XCTAssertTrue(
             app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
@@ -174,6 +253,49 @@ final class NutritionScannerNavigationUITests: XCTestCase {
 
         tapButton(containing: "Saved Foods", maxSwipes: 2)
         XCTAssertTrue(app.navigationBars["Saved Foods"].waitForExistence(timeout: 5))
+    }
+
+    private func openManualCreateFoodReview() {
+        XCTAssertTrue(
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
+            "Expected Today to be ready after launch"
+        )
+
+        openNutritionFromQuickAction()
+        tapButton(containing: "Add Food", maxSwipes: 3)
+        XCTAssertTrue(app.navigationBars["Add Food"].waitForExistence(timeout: 5))
+
+        tapButton(containing: "Scan Barcode", maxSwipes: 2)
+        XCTAssertTrue(app.navigationBars["Scan Barcode"].waitForExistence(timeout: 5))
+
+        let manualBarcodeButton = app.buttons["Enter Barcode Manually"]
+        if !manualBarcodeButton.waitForExistence(timeout: 3) {
+            let allowCameraButton = app.buttons["Allow Camera"]
+            if allowCameraButton.exists {
+                allowCameraButton.tap()
+                let permissionAlert = app.alerts.firstMatch
+                if permissionAlert.waitForExistence(timeout: 5), permissionAlert.buttons["Allow"].exists {
+                    permissionAlert.buttons["Allow"].tap()
+                }
+            }
+        }
+
+        XCTAssertTrue(manualBarcodeButton.waitForExistence(timeout: 5), "Expected manual barcode entry on the scanner")
+        manualBarcodeButton.tap()
+
+        let barcodeField = app.textFields["Barcode"]
+        XCTAssertTrue(barcodeField.waitForExistence(timeout: 5), "Expected the manual barcode sheet")
+        barcodeField.tap()
+        barcodeField.typeText("4006381333931")
+        app.buttons["Lookup Barcode"].tap()
+
+        let createFood = app.buttons["Create Food Manually"]
+        XCTAssertTrue(createFood.waitForExistence(timeout: 5))
+        createFood.tap()
+        XCTAssertTrue(
+            app.navigationBars["Create Food"].waitForExistence(timeout: 5),
+            "Expected the deterministic unknown barcode fixture to reach manual create"
+        )
     }
 
     private func openNutritionFromQuickAction() {
@@ -306,6 +428,41 @@ final class NutritionScannerNavigationUITests: XCTestCase {
         XCTAssertTrue(backButton.isHittable)
         backButton.tap()
         XCTAssertTrue(app.navigationBars[expectedNavigationTitle].waitForExistence(timeout: 5), "Expected one native back action to return to \(expectedNavigationTitle)")
+    }
+
+    private func fillReviewField(_ field: XCUIElement, with value: String) {
+        var swipes = 0
+        while (!field.waitForExistence(timeout: 1) || !field.isHittable) && swipes < 8 {
+            let top = app.navigationBars.firstMatch.frame.maxY + 12
+            let isAboveViewport = field.exists && field.frame.minY < top
+            let upper = app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.25))
+            let lower = app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.45))
+            if isAboveViewport {
+                upper.press(forDuration: 0.05, thenDragTo: lower)
+            } else {
+                lower.press(forDuration: 0.05, thenDragTo: upper)
+            }
+            swipes += 1
+        }
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "Expected review field to exist")
+        XCTAssertTrue(field.isHittable, "Expected review field to be hittable")
+        field.tap()
+        field.typeText(value)
+    }
+
+    private func tapAccessibilityButton(named identifier: String, maxSwipes: Int) {
+        var button = app.buttons[identifier]
+        var swipes = 0
+        while (!button.waitForExistence(timeout: 1) || !button.isHittable) && swipes < maxSwipes {
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.45))
+            let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.20))
+            start.press(forDuration: 0.05, thenDragTo: end)
+            swipes += 1
+            button = app.buttons[identifier]
+        }
+        XCTAssertTrue(button.waitForExistence(timeout: 5), "Expected button \(identifier)")
+        XCTAssertTrue(button.isHittable, "Expected button \(identifier) to be hittable")
+        button.tap()
     }
 
     private func tapButton(containing text: String, maxSwipes: Int) {

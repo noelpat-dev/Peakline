@@ -39,7 +39,7 @@ struct RestTimerState: Equatable {
 
     func remainingSeconds(at date: Date = .now) -> Int {
         guard let endDate, completionDate == nil else { return 0 }
-        return max(0, Int(endDate.timeIntervalSince(date)))
+        return max(0, Int(ceil(endDate.timeIntervalSince(date))))
     }
 
     func progress(at date: Date = .now) -> Double {

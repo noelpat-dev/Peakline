@@ -1,6 +1,6 @@
 import Foundation
 
-struct NutritionMacroSnapshot {
+struct NutritionMacroSnapshot: Equatable {
     let calories: Double
     let protein: Double
     let carbs: Double

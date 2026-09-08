@@ -11,6 +11,7 @@ struct AppStartupView: View {
     @StateObject private var presentation = StartupPresentationCoordinator()
     @State private var splashOpacity = 1.0
     @State private var splashScale = 1.0
+    @State private var hasStartedSplashReveal = false
     @State private var email = ""
     @State private var password = ""
     @State private var backupPassphrase = ""
@@ -31,7 +32,8 @@ struct AppStartupView: View {
                 PeaklineSplashView(
                     stageText: coordinator.stageText,
                     showsProgress: presentation.showsSlowProgress,
-                    animatesWordmark: presentation.animatesWordmark && !reduceMotion
+                    animatesWordmark: presentation.animatesWordmark && !reduceMotion,
+                    onAnimationFinished: { presentation.markAnimationFinished() }
                 )
                 .opacity(splashOpacity)
                 .scaleEffect(splashScale)
@@ -40,6 +42,7 @@ struct AppStartupView: View {
                 .allowsHitTesting(true)
             }
         }
+        .accessibilityElement(children: .contain)
         .task {
             presentation.start()
             await coordinator.start(in: modelContext)
@@ -135,6 +138,7 @@ struct AppStartupView: View {
             startupSnapshot: snapshot,
             startupRevealComplete: presentation.isRevealComplete
         )
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("startup-critical-ready")
         #if DEBUG
         .accessibilityValue(performanceAcceptanceSummary)
@@ -146,20 +150,37 @@ struct AppStartupView: View {
         .allowsHitTesting(presentation.isRevealComplete)
         .accessibilityHidden(!presentation.isRevealComplete)
         .task(id: snapshot.preparedAt) {
-            guard presentation.beginReveal() else { return }
+            presentation.markCriticalReady()
             await Task.yield()
-
-            let duration = StartupPresentationTiming.current.revealDuration
-            withAnimation(
-                reduceMotion
-                    ? .easeOut(duration: duration)
-                    : .easeInOut(duration: duration)
-            ) {
-                splashOpacity = 0
-                splashScale = reduceMotion ? 1 : 1.015
+            if presentation.isRevealing {
+                startSplashReveal()
             }
+        }
+        .onChange(of: presentation.isRevealing) { _, isRevealing in
+            guard isRevealing else { return }
+            startSplashReveal()
+        }
+    }
 
-            try? await Task.sleep(for: .seconds(duration))
+    private func startSplashReveal() {
+        guard !hasStartedSplashReveal else { return }
+        hasStartedSplashReveal = true
+
+        guard !reduceMotion else {
+            splashOpacity = 0
+            splashScale = 1
+            presentation.finishReveal()
+            return
+        }
+
+        let duration = StartupPresentationTiming.current.revealDuration
+        withAnimation(
+            .easeInOut(duration: duration),
+            completionCriteria: .logicallyComplete
+        ) {
+            splashOpacity = 0
+            splashScale = 1.015
+        } completion: {
             presentation.finishReveal()
         }
     }
@@ -196,7 +217,7 @@ struct AppStartupView: View {
             appTheme.colors.backgroundPrimary.ignoresSafeArea()
 
             VStack(spacing: 18) {
-                ProgressView()
+                SwiftUI.ProgressView()
                     .tint(appTheme.colors.accent)
                     .opacity(action == nil ? 1 : 0)
 

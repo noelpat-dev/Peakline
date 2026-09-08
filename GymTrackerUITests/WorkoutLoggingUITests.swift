@@ -45,17 +45,23 @@ final class WorkoutLoggingUITests: XCTestCase {
         tapButton(identifier: "stepper-weight-increment", times: 2)
         tapButton(identifier: "stepper-reps-increment", times: 6)
 
-        let completeSet = app.buttons
-            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-logger-complete-set-"))
-            .firstMatch
-        XCTAssertTrue(completeSet.waitForExistence(timeout: 5), "Expected the completed-set action")
-        completeSet.tap()
-        XCTAssertTrue(app.staticTexts["Logged"].waitForExistence(timeout: 5))
-        let restTimer = app.descendants(matching: .any)["workout-rest-timer-active"]
-        for _ in 0..<8 where !restTimer.exists {
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "1 of [0-9]+ working sets? entered")).firstMatch.waitForExistence(timeout: 5),
+            "The live working-set count should follow entered data without a separate completion action"
+        )
+
+        XCTAssertFalse(
+            app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-logger-complete-set-")).firstMatch.exists,
+            "Set rows should not show a separate Complete Set action"
+        )
+        let timerPreset = app.buttons["1:00"]
+        for _ in 0..<8 where !timerPreset.isHittable {
             app.swipeDown()
         }
-        XCTAssertTrue(restTimer.waitForExistence(timeout: 5), "Expected rest timing to follow a persisted set completion")
+        XCTAssertTrue(timerPreset.waitForExistence(timeout: 5))
+        timerPreset.tap()
+        let restTimer = app.descendants(matching: .any)["workout-rest-timer-active"]
+        XCTAssertTrue(restTimer.waitForExistence(timeout: 5), "Expected the manual rest timer to remain available")
         for duration in ["1:00", "1:30", "2:00", "3:00"] {
             XCTAssertEqual(
                 app.buttons.matching(NSPredicate(format: "label == %@", duration)).count,

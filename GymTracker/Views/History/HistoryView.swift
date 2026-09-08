@@ -63,6 +63,11 @@ struct HistoryWarmSnapshot: Sendable {
     static let empty = HistoryWarmSnapshot(workouts: [], display: .empty)
 }
 
+struct HistoryMonthDisplaySnapshot: Sendable {
+    let calendarDaySummaries: [HistoryCalendarDaySummary]
+    let overview: HistoryOverviewSnapshot
+}
+
 /// Presents the already-built startup value projection for the first root-tab
 /// frame, then attaches the live SwiftData-backed History view. The prepared
 /// frame contains the real overview and recent rows, so deferring the live
@@ -150,9 +155,21 @@ private struct HistoryLazyScreen<Content: View>: View {
     }
 }
 
+private enum HistoryMonthLoadState: Equatable {
+    case loading
+    case loaded
+    case failed
+}
+
+private enum HistoryMonthLoadFailure: Error {
+    case invalidInterval
+}
+
 struct HistoryView: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.modelContext) private var modelContext
     @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
 
     @Query
@@ -173,12 +190,20 @@ struct HistoryView: View {
     @State private var didRequestInitialRefresh = false
     @State private var displaySnapshotReady = false
     @State private var historyScrollActive = false
+    @GestureState private var isHistoryDragActive = false
     @State private var historyRefreshPending = false
     @State private var isWorkoutCompletionPresentationActive = false
     @State private var isHistoryVisible = false
     @State private var isCalendarVisible = false
     @State private var calendarRevealTask: Task<Void, Never>?
     @State private var sourceSnapshotRefreshTask: Task<Void, Never>?
+    @State private var monthSnapshotRefreshTask: Task<Void, Never>?
+    @State private var monthWorkoutSnapshots: [HistoryWorkoutSnapshot] = []
+    @State private var monthSnapshotCacheKey: Date?
+    @State private var monthLoadState: HistoryMonthLoadState
+    @State private var monthLoadError: String?
+    @State private var monthLoadGeneration = 0
+    @State private var monthRefreshPending = false
     @State private var showingGoalEditor = false
     @State private var hasWarmSnapshotToValidate = false
     @State private var revealedAttendanceGeneration: String?
@@ -196,6 +221,14 @@ struct HistoryView: View {
         _lastSessionGeneration = State(initialValue: "")
         _displaySnapshotReady = State(initialValue: startupSnapshot != nil)
         _hasWarmSnapshotToValidate = State(initialValue: startupSnapshot != nil)
+        _monthWorkoutSnapshots = State(initialValue: startupSnapshot?.workouts ?? [])
+        _monthSnapshotCacheKey = State(
+            initialValue: startupSnapshot == nil
+                ? nil
+                : Calendar.current.dateInterval(of: .month, for: .now)?.start
+        )
+        _monthLoadState = State(initialValue: startupSnapshot == nil ? .loading : .loaded)
+        _monthLoadError = State(initialValue: nil)
     }
 
     private static var sessionsDescriptor: FetchDescriptor<WorkoutSession> {
@@ -277,13 +310,27 @@ struct HistoryView: View {
                     selectedDate: $selectedCalendarDate
                 )
 
-                HistoryOverviewCard(
-                    snapshot: currentDisplaySnapshot.overview,
-                    revealedAttendanceGeneration: $revealedAttendanceGeneration,
-                    editGoal: openGoalEditor
-                )
+                if monthLoadState == .loaded {
+                    HistoryOverviewCard(
+                        snapshot: currentDisplaySnapshot.overview,
+                        revealedAttendanceGeneration: $revealedAttendanceGeneration,
+                        editGoal: openGoalEditor
+                    )
+                    if monthLoadError != nil {
+                        HistoryMonthRetryCard(action: retryMonthSnapshotRefresh)
+                    }
+                } else {
+                    HistoryMonthStatusCard(
+                        title: monthLoadState == .loading ? "Loading month" : "History unavailable",
+                        message: monthLoadState == .loading
+                            ? "Loading workouts for the selected month."
+                            : "The selected month could not be loaded.",
+                        systemImage: monthLoadState == .loading ? "hourglass" : "exclamationmark.triangle",
+                        action: monthLoadState == .failed ? retryMonthSnapshotRefresh : nil
+                    )
+                }
 
-                if isCalendarVisible {
+                if isCalendarVisible, monthLoadState == .loaded {
                     FitnessCard(style: .compact, padding: 12) {
                         WorkoutCalendarView(
                             displayedMonth: $displayedMonth,
@@ -335,19 +382,16 @@ struct HistoryView: View {
             .accessibilityIdentifier("history-screen")
             .simultaneousGesture(
                 DragGesture(minimumDistance: 2)
+                    .updating($isHistoryDragActive) { _, isActive, _ in
+                        isActive = true
+                    }
                     .onChanged { _ in
                         guard !historyScrollActive else { return }
                         historyScrollActive = true
                         PerformanceTracer.mark(.historyScroll, "begin")
                     }
                     .onEnded { _ in
-                        guard historyScrollActive else { return }
-                        historyScrollActive = false
-                        PerformanceTracer.mark(.historyScroll, "end")
-                        if historyRefreshPending {
-                            historyRefreshPending = false
-                            scheduleSourceSnapshotRefresh()
-                        }
+                        finishHistoryScroll()
                     }
             )
             .navigationTitle("History")
@@ -397,6 +441,27 @@ struct HistoryView: View {
         .onChange(of: filters) { _, _ in
             refreshDisplaySnapshot()
         }
+        .onChange(of: displayedMonth) { _, _ in
+            scheduleMonthSnapshotRefresh()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else {
+                finishHistoryScroll(replayPending: false)
+                return
+            }
+
+            if historyRefreshPending {
+                historyRefreshPending = false
+                scheduleSourceSnapshotRefresh()
+            }
+            if monthRefreshPending {
+                monthRefreshPending = false
+                scheduleMonthSnapshotRefresh(force: true)
+            }
+        }
+        .onChange(of: isHistoryDragActive) { _, isActive in
+            if !isActive { finishHistoryScroll() }
+        }
         .onChange(of: profileGoalGeneration) { _, _ in
             refreshDisplaySnapshot()
         }
@@ -415,6 +480,27 @@ struct HistoryView: View {
             isCalendarVisible = false
             sourceSnapshotRefreshTask?.cancel()
             sourceSnapshotRefreshTask = nil
+            monthSnapshotRefreshTask?.cancel()
+            monthSnapshotRefreshTask = nil
+            monthLoadGeneration += 1
+            finishHistoryScroll(replayPending: false)
+            historyRefreshPending = false
+            monthRefreshPending = false
+        }
+    }
+
+    private func finishHistoryScroll(replayPending: Bool = true) {
+        guard historyScrollActive else { return }
+        historyScrollActive = false
+        PerformanceTracer.mark(.historyScroll, "end")
+        guard replayPending, isHistoryVisible, scenePhase == .active else { return }
+        if historyRefreshPending {
+            historyRefreshPending = false
+            scheduleSourceSnapshotRefresh()
+        }
+        if monthRefreshPending {
+            monthRefreshPending = false
+            scheduleMonthSnapshotRefresh(force: true)
         }
     }
 
@@ -438,7 +524,120 @@ struct HistoryView: View {
             }
             refreshSourceSnapshots(force: force)
             sourceSnapshotRefreshTask = nil
+            scheduleMonthSnapshotRefresh(force: true)
         }
+    }
+
+    private func scheduleMonthSnapshotRefresh(force: Bool = false) {
+        guard !historyScrollActive else {
+            monthRefreshPending = true
+            return
+        }
+        guard let intervals = HistoryFilterService.monthIntervals(for: displayedMonth) else {
+            monthLoadState = .failed
+            return
+        }
+
+        let cacheKey = intervals.current.start
+        monthLoadError = nil
+
+        if displaySnapshotReady, Self.recentSnapshotsCover(
+            workoutSnapshots,
+            comparisonInterval: intervals.comparison
+        ) {
+            monthSnapshotRefreshTask?.cancel()
+            monthLoadGeneration += 1
+            monthWorkoutSnapshots = workoutSnapshots
+            monthSnapshotCacheKey = cacheKey
+            monthLoadState = .loaded
+            refreshMonthDisplaySnapshot()
+            return
+        }
+
+        if !force, monthSnapshotCacheKey == cacheKey, monthLoadState == .loaded {
+            refreshMonthDisplaySnapshot()
+            return
+        }
+
+        monthSnapshotRefreshTask?.cancel()
+        monthLoadGeneration += 1
+        let generation = monthLoadGeneration
+        let month = displayedMonth
+        let hasLoadedCacheForMonth = monthLoadState == .loaded && monthSnapshotCacheKey == cacheKey
+        if !hasLoadedCacheForMonth {
+            monthLoadState = .loading
+        }
+        monthSnapshotRefreshTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled,
+                  isHistoryVisible,
+                  generation == monthLoadGeneration,
+                  calendarKey(for: displayedMonth) == cacheKey
+            else { return }
+
+            do {
+                guard let descriptor = HistoryFilterService.completedSessionsDescriptor(for: month) else {
+                    throw HistoryMonthLoadFailure.invalidInterval
+                }
+                let boundedSessions = try modelContext.fetch(descriptor)
+                let boundedSnapshots = boundedSessions.map(HistoryWorkoutSnapshot.init)
+
+                guard !Task.isCancelled,
+                      isHistoryVisible,
+                      generation == monthLoadGeneration,
+                      calendarKey(for: displayedMonth) == cacheKey
+                else { return }
+
+                monthWorkoutSnapshots = boundedSnapshots
+                monthSnapshotCacheKey = cacheKey
+                monthLoadState = .loaded
+                monthLoadError = nil
+                refreshMonthDisplaySnapshot()
+            } catch {
+                guard !Task.isCancelled,
+                      isHistoryVisible,
+                      generation == monthLoadGeneration,
+                      calendarKey(for: displayedMonth) == cacheKey
+                else { return }
+                monthLoadError = "The selected month could not be loaded."
+                if monthSnapshotCacheKey != cacheKey {
+                    monthLoadState = .failed
+                }
+            }
+            monthSnapshotRefreshTask = nil
+        }
+    }
+
+    private func refreshMonthDisplaySnapshot() {
+        guard monthLoadState == .loaded else { return }
+        let monthDisplay = PerformanceTracer.trace(.historyDisplaySnapshot) {
+            HistoryDisplaySnapshotBuilder.buildMonthDisplay(
+                workouts: monthWorkoutSnapshots,
+                filters: filters,
+                trainingDaysPerWeek: profiles.first?.trainingDaysPerWeek,
+                selectedMonth: displayedMonth
+            )
+        }
+        AppMotion.withoutAnimation {
+            displaySnapshot.calendarDaySummaries = monthDisplay.calendarDaySummaries
+            displaySnapshot.overview = monthDisplay.overview
+            displaySnapshotReady = true
+        }
+    }
+
+    private func calendarKey(for month: Date) -> Date? {
+        Calendar.current.dateInterval(of: .month, for: month)?.start
+    }
+
+    private static func recentSnapshotsCover(
+        _ snapshots: [HistoryWorkoutSnapshot],
+        comparisonInterval: DateInterval
+    ) -> Bool {
+        snapshots.count < 120 || snapshots.last?.date ?? .distantPast < comparisonInterval.start
+    }
+
+    private func retryMonthSnapshotRefresh() {
+        scheduleMonthSnapshotRefresh(force: true)
     }
 
     private func refreshSourceSnapshots(force: Bool = false) {
@@ -468,7 +667,9 @@ struct HistoryView: View {
             HistoryDisplaySnapshotBuilder.build(
                 workouts: workoutSnapshots,
                 filters: filters,
-                trainingDaysPerWeek: profiles.first?.trainingDaysPerWeek
+                trainingDaysPerWeek: profiles.first?.trainingDaysPerWeek,
+                selectedMonth: displayedMonth,
+                monthWorkouts: monthLoadState == .loaded ? monthWorkoutSnapshots : nil
             )
         }
         AppMotion.withoutAnimation {
@@ -789,11 +990,13 @@ private struct HistoryMonthNavigationRow: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
                 .frame(maxWidth: .infinity)
+                .accessibilityIdentifier("history-selected-month-title")
 
             monthButton(systemImage: "chevron.right") {
                 moveMonth(by: 1)
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("history-month-navigation")
     }
 
@@ -848,6 +1051,68 @@ private struct HistoryMonthNavigationRow: View {
     }
 }
 
+private struct HistoryMonthStatusCard: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let title: String
+    let message: String
+    let systemImage: String
+    let action: (() -> Void)?
+
+    var body: some View {
+        FitnessCard(style: .hero) {
+            HStack(alignment: .top, spacing: appTheme.metrics.spacing12) {
+                FitnessIconBadge(systemImage: systemImage, size: 42)
+
+                VStack(alignment: .leading, spacing: appTheme.metrics.spacing8) {
+                    Text(title)
+                        .font(AppTypography.cardTitle)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+
+                    Text(message)
+                        .font(AppTypography.body)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let action {
+                        Button("Try again", action: action)
+                            .font(AppTypography.metadataEmphasis)
+                            .buttonStyle(.borderless)
+                            .frame(minHeight: appTheme.metrics.minimumHitTarget)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct HistoryMonthRetryCard: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let action: () -> Void
+
+    var body: some View {
+        FitnessCard(style: .compact, padding: appTheme.metrics.spacing12) {
+            HStack(alignment: .center, spacing: appTheme.metrics.spacing8) {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(appTheme.colors.textSecondary)
+
+                Text("Month data could not be refreshed.")
+                    .font(AppTypography.metadata)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 0)
+
+                Button("Try again", action: action)
+                    .font(AppTypography.metadataEmphasis)
+                    .buttonStyle(.borderless)
+                    .frame(minHeight: appTheme.metrics.minimumHitTarget)
+            }
+        }
+    }
+}
+
 private struct HistoryOverviewCard: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -888,6 +1153,7 @@ private struct HistoryOverviewCard: View {
                 goalFooter
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("history-overview-card")
         .onChange(of: snapshot.currentVisitCount) { oldValue, newValue in
             if displayedVisitCount == nil {
@@ -916,6 +1182,7 @@ private struct HistoryOverviewCard: View {
                 .font(AppTypography.cardTitle)
                 .foregroundStyle(appTheme.colors.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("history-overview-month-title")
 
             Text("Gym days are counted once, even when a day contains more than one workout.")
                 .font(AppTypography.body)
@@ -955,7 +1222,7 @@ private struct HistoryOverviewCard: View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: appTheme.metrics.spacing10) {
                 HistoryOverviewSupportingMetric(
-                    label: "This month",
+                    label: "Gym time",
                     value: snapshot.currentDurationText
                 )
                 Divider().overlay(appTheme.colors.cardBorder)
@@ -965,14 +1232,14 @@ private struct HistoryOverviewCard: View {
                 )
                 Divider().overlay(appTheme.colors.cardBorder)
                 HistoryOverviewSupportingMetric(
-                    label: "Previous duration",
+                    label: "Previous time",
                     value: snapshot.previousDurationText
                 )
             }
         } else {
             HStack(alignment: .top, spacing: 0) {
                 HistoryOverviewSupportingMetric(
-                    label: "This month",
+                    label: "Gym time",
                     value: snapshot.currentDurationText
                 )
 
@@ -992,7 +1259,7 @@ private struct HistoryOverviewCard: View {
                     .padding(.horizontal, appTheme.metrics.spacing10)
 
                 HistoryOverviewSupportingMetric(
-                    label: "Previous duration",
+                    label: "Previous time",
                     value: snapshot.previousDurationText
                 )
             }
@@ -1957,6 +2224,7 @@ private struct WorkoutHistoryDetailView: View {
         modelContext.delete(session)
         do {
             try modelContext.save()
+            WorkoutWarmStartInvalidation.shared.invalidate(reason: .workoutDeleted)
             dismiss()
         } catch {
             modelContext.rollback()

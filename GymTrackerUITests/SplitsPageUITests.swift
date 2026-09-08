@@ -66,6 +66,37 @@ final class SplitsPageUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["splits-screen"].waitForExistence(timeout: 5))
     }
 
+    func testOtherSplitCanExpandOpenAndDelete() throws {
+        XCTAssertTrue(
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
+            "Expected Today to be ready after launch"
+        )
+        tapTab(at: 2, expectedTitle: "Splits")
+
+        let toggle = app.descendants(matching: .any)["other-splits-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        toggle.tap()
+
+        let otherSplit = app.descendants(matching: .any)["other-split-card-UI-Test-Other-Split"]
+        XCTAssertTrue(otherSplit.waitForExistence(timeout: 5))
+        otherSplit.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["split-detail-screen"].waitForExistence(timeout: 5))
+
+        tapBackButton()
+        XCTAssertTrue(app.descendants(matching: .any)["splits-screen"].waitForExistence(timeout: 5))
+
+        let otherActions = app.buttons["Actions for UI Test Other Split"]
+        XCTAssertTrue(otherActions.waitForExistence(timeout: 5))
+        otherActions.tap()
+        XCTAssertTrue(app.buttons["Delete Split"].waitForExistence(timeout: 5))
+        app.buttons["Delete Split"].tap()
+
+        let deleteAlert = app.alerts["Delete split?"]
+        XCTAssertTrue(deleteAlert.waitForExistence(timeout: 5))
+        deleteAlert.buttons["Delete"].tap()
+        XCTAssertFalse(otherSplit.waitForExistence(timeout: 2))
+    }
+
     private func tapTab(at index: Int, expectedTitle: String) {
         let tabBar = app.tabBars.firstMatch
         XCTAssertTrue(tabBar.waitForExistence(timeout: 5), "Expected tab bar to exist")

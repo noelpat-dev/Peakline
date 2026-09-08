@@ -2,8 +2,197 @@ import SwiftData
 import XCTest
 @testable import GymTracker
 
+private enum ExerciseLibraryInjectedSaveFailure: Error, Equatable {
+    case expected
+}
+
 @MainActor
 final class BackupRestoreReliabilityTests: XCTestCase {
+    func testExerciseLibrarySaveFailureRestoresTouchedRecordsAndKeepsUnrelatedChanges() throws {
+        let container = try PeaklineModelStore.makeContainer(isStoredInMemoryOnly: true)
+        let context = container.mainContext
+        let baselineDate = Date(timeIntervalSince1970: 1_800_000_000)
+        let exercise = Exercise(
+            name: "Bench Press",
+            primaryMuscleGroup: .chest,
+            movementPattern: .push,
+            equipment: .barbell,
+            isCompound: true,
+            updatedAt: baselineDate
+        )
+        let metadata = CoachExerciseMetadata(
+            exerciseId: exercise.id,
+            role: .accessory,
+            primaryMuscleGroup: .chest,
+            movementPattern: .push,
+            userNote: "Keep form strict"
+        )
+        context.insert(exercise)
+        context.insert(metadata)
+        try context.save()
+
+        let unrelatedPendingExercise = Exercise(
+            name: "Unrelated pending change",
+            primaryMuscleGroup: .back,
+            movementPattern: .pull,
+            equipment: .cable,
+            isCompound: false
+        )
+        context.insert(unrelatedPendingExercise)
+
+        let persistence = ExerciseLibraryPersistence(saveContext: { _ in
+            throw ExerciseLibraryInjectedSaveFailure.expected
+        })
+
+        XCTAssertThrowsError(try persistence.archive([exercise], in: context)) { error in
+            XCTAssertEqual(error as? ExerciseLibraryInjectedSaveFailure, .expected)
+        }
+        XCTAssertFalse(exercise.isArchived)
+        XCTAssertEqual(exercise.updatedAt, baselineDate)
+
+        XCTAssertThrowsError(
+            try persistence.applyMetadata(existingMetadata: [metadata], in: context) {
+                metadata.role = .priorityLift
+                metadata.userNote = "Changed before failure"
+                let inserted = CoachExerciseMetadata(
+                    exerciseId: UUID(),
+                    role: .warmUp,
+                    primaryMuscleGroup: .chest,
+                    movementPattern: .push
+                )
+                context.insert(inserted)
+                return [inserted]
+            }
+        ) { error in
+            XCTAssertEqual(error as? ExerciseLibraryInjectedSaveFailure, .expected)
+        }
+        XCTAssertEqual(metadata.role, .accessory)
+        XCTAssertEqual(metadata.userNote, "Keep form strict")
+        XCTAssertTrue(context.hasChanges)
+        XCTAssertNotNil(
+            try context.fetch(FetchDescriptor<Exercise>()).first {
+                $0.id == unrelatedPendingExercise.id
+            }
+        )
+    }
+
+    func testExerciseLibraryCreateFailureRemovesOnlyFailedInsertion() throws {
+        let container = try PeaklineModelStore.makeContainer(isStoredInMemoryOnly: true)
+        let context = container.mainContext
+        let unrelatedPendingExercise = Exercise(
+            name: "Existing pending exercise",
+            primaryMuscleGroup: .quads,
+            movementPattern: .squat,
+            equipment: .barbell,
+            isCompound: true
+        )
+        context.insert(unrelatedPendingExercise)
+        let insertedExercise = Exercise(
+            name: "Failed create",
+            primaryMuscleGroup: .chest,
+            movementPattern: .push,
+            equipment: .barbell,
+            isCompound: true
+        )
+
+        let persistence = ExerciseLibraryPersistence(saveContext: { _ in
+            throw ExerciseLibraryInjectedSaveFailure.expected
+        })
+
+        XCTAssertThrowsError(try persistence.insert(insertedExercise, in: context)) { error in
+            XCTAssertEqual(error as? ExerciseLibraryInjectedSaveFailure, .expected)
+        }
+        XCTAssertNil(
+            try context.fetch(FetchDescriptor<Exercise>()).first {
+                $0.id == insertedExercise.id
+            }
+        )
+        XCTAssertNotNil(
+            try context.fetch(FetchDescriptor<Exercise>()).first {
+                $0.id == unrelatedPendingExercise.id
+            }
+        )
+    }
+
+    func testSessionSummarySplitSaveFailureRestoresTemplateOrderAndRemovesInsertedRows() throws {
+        let container = try PeaklineModelStore.makeContainer(isStoredInMemoryOnly: true)
+        let context = container.mainContext
+        let baselineDate = Date(timeIntervalSince1970: 1_800_000_000)
+        let split = TrainingSplit(
+            name: "Push",
+            splitType: .custom,
+            updatedAt: baselineDate
+        )
+        let existing = SplitExercise(
+            splitId: split.id,
+            exerciseId: UUID(),
+            exerciseNameSnapshot: "Bench Press",
+            orderIndex: 4,
+            targetSets: 2,
+            minReps: 5,
+            maxReps: 8,
+            notes: "Baseline"
+        )
+        let unmatched = SplitExercise(
+            splitId: split.id,
+            exerciseId: UUID(),
+            exerciseNameSnapshot: "Lateral Raise",
+            orderIndex: 9,
+            targetSets: 3,
+            minReps: 10,
+            maxReps: 15,
+            notes: "Keep as a template fallback"
+        )
+        existing.split = split
+        unmatched.split = split
+        split.exercises = [existing, unmatched]
+
+        let session = WorkoutSession(
+            splitId: split.id,
+            splitNameSnapshot: "Push",
+            completed: true
+        )
+        let matchingLog = ExerciseLog(
+            workoutSessionId: session.id,
+            exerciseId: existing.exerciseId,
+            exerciseNameSnapshot: "Bench Press",
+            orderIndex: 0,
+            targetSets: 3,
+            minReps: 6,
+            maxReps: 10,
+            notes: "Session note"
+        )
+        let newLog = ExerciseLog(
+            workoutSessionId: session.id,
+            exerciseId: UUID(),
+            exerciseNameSnapshot: "Cable Fly",
+            orderIndex: 1,
+            targetSets: 2,
+            minReps: 10,
+            maxReps: 15
+        )
+        matchingLog.workoutSession = session
+        newLog.workoutSession = session
+        session.exerciseLogs = [matchingLog, newLog]
+        context.insert(split)
+        context.insert(session)
+        try context.save()
+
+        let persistence = SessionSummarySplitPersistence(saveContext: { _ in
+            throw ExerciseLibraryInjectedSaveFailure.expected
+        })
+
+        XCTAssertThrowsError(try persistence.update(split, with: session, in: context)) { error in
+            XCTAssertEqual(error as? ExerciseLibraryInjectedSaveFailure, .expected)
+        }
+        XCTAssertEqual(split.updatedAt, baselineDate)
+        XCTAssertEqual(split.exercises.count, 2)
+        XCTAssertEqual(existing.orderIndex, 4)
+        XCTAssertEqual(existing.targetSets, 2)
+        XCTAssertEqual(existing.notes, "Baseline")
+        XCTAssertEqual(unmatched.orderIndex, 9)
+    }
+
     func testJSONBackupImportRestoresWorkoutGraph() throws {
         let sourceContainer = try makeContainer()
         let sample = try insertSampleData(in: sourceContainer.mainContext)

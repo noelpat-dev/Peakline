@@ -21,19 +21,19 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         launch(arguments: ["-UITestCoachFatigueFixture", "-UITestStartupAnimationMaxMS", "1500", "-UITestStartupPreparationDelayMS", "350"])
 
         let splash = app.descendants(matching: .any)["startup-brand-screen"]
-        XCTAssertTrue(splash.waitForExistence(timeout: 3))
-        XCTAssertTrue(splash.label.localizedCaseInsensitiveContains("Peakline"))
-        XCTAssertFalse(app.images["startup-brand-mark"].exists)
-        XCTAssertEqual(splash.value as? String, "Loading")
-
         let criticalReady = app.descendants(matching: .any)["startup-critical-ready"]
+        // XCTest can finish attaching after the normal one-shot splash has
+        // completed. The reducer tests cover both readiness/animation orders;
+        // this path verifies the resulting usable Today screen.
         XCTAssertTrue(criticalReady.waitForExistence(timeout: 12))
         XCTAssertTrue(splash.waitForNonExistence(timeout: 3))
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 5))
     }
 
     func testBrandedStartupSlowPathSettlesAndShowsTruthfulProgress() throws {
-        launch(arguments: ["-UITestCoachFatigueFixture", "-UITestStartupAnimationMaxMS", "250", "-UITestStartupPreparationDelayMS", "900"])
+        // Hold actual preparation long enough for XCTest to attach and inspect
+        // the slow state; this uses the existing debug-only preparation delay.
+        launch(arguments: ["-UITestCoachFatigueFixture", "-UITestStartupAnimationMaxMS", "250", "-UITestStartupPreparationDelayMS", "12000"])
 
         let splash = app.descendants(matching: .any)["startup-brand-screen"]
         XCTAssertTrue(splash.waitForExistence(timeout: 3))
@@ -43,10 +43,11 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
             object: splash
         )
         XCTAssertEqual(XCTWaiter.wait(for: [slowStatusExpectation], timeout: 2), .completed)
-        XCTAssertFalse(app.descendants(matching: .any)["startup-critical-ready"].isHittable)
+        let criticalReady = app.descendants(matching: .any)["startup-critical-ready"]
+        XCTAssertFalse(criticalReady.isHittable)
 
         XCTAssertTrue(
-            app.descendants(matching: .any)["startup-critical-ready"].waitForExistence(timeout: 12)
+            criticalReady.waitForExistence(timeout: 12)
         )
         XCTAssertTrue(splash.waitForNonExistence(timeout: 3))
     }
@@ -308,10 +309,48 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         XCTAssertTrue(waitForCoachScreen(), "Expected Readiness to use the warmed Coach route")
         XCTAssertTrue(app.descendants(matching: .any)["coach-todays-call"].waitForExistence(timeout: 3))
 
+        let evidenceToggle = app.descendants(matching: .any)["coach-why-this-toggle"]
+        XCTAssertTrue(evidenceToggle.waitForExistence(timeout: 5), "Expected Coach evidence disclosure toggle")
+        XCTAssertEqual(evidenceToggle.value as? String, "Collapsed")
+        let tapEvidenceHeader = {
+            // SwiftUI exposes the disclosure's state on its enclosing AX group.
+            // Tap the native header button, not the centre of expanded details.
+            let header = evidenceToggle.elementType == .button
+                ? evidenceToggle
+                : evidenceToggle.buttons.firstMatch
+            XCTAssertTrue(header.waitForExistence(timeout: 5))
+            XCTAssertTrue(header.isHittable)
+            header.tap()
+        }
+
+        tapEvidenceHeader()
+        XCTAssertTrue(
+            waitUntil(timeout: 2) { evidenceToggle.value as? String == "Expanded" },
+            "Expected the Coach evidence disclosure to expand"
+        )
+
+        tapEvidenceHeader()
+        XCTAssertTrue(
+            waitUntil(timeout: 2) { evidenceToggle.value as? String == "Collapsed" },
+            "Expected the Coach evidence disclosure to collapse after a repeated toggle.\n\(evidenceToggle.debugDescription)"
+        )
+
+        tapEvidenceHeader()
+        XCTAssertTrue(
+            waitUntil(timeout: 2) { evidenceToggle.value as? String == "Expanded" },
+            "Expected the Coach evidence disclosure to expand again after repeated toggles"
+        )
+
         XCUIDevice.shared.press(.home)
         RunLoop.current.run(until: Date().addingTimeInterval(0.8))
         app.activate()
         XCTAssertTrue(app.descendants(matching: .any)["coach-todays-call"].waitForExistence(timeout: 3), "Expected Coach content to remain mounted after reactivation")
+        XCTAssertTrue(evidenceToggle.waitForExistence(timeout: 3), "Expected Coach evidence disclosure to remain mounted after reactivation")
+        XCTAssertEqual(
+            evidenceToggle.value as? String,
+            "Expanded",
+            "Expected Coach evidence disclosure state to survive backgrounding and re-entry"
+        )
 
         tapElement(identifier: "coach-weekly-review-open", maxSwipes: 12)
         XCTAssertTrue(app.navigationBars["Weekly Review"].waitForExistence(timeout: 5))
@@ -329,7 +368,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
 
-        tapButton(containing: "Start Workout", maxSwipes: 2)
+        tapTodayMenuAction(title: "Start Workout")
         XCTAssertTrue(waitForWorkoutScreen(), "Expected Today -> Start Workout to open")
 
         tapButton(containing: "Coach", maxSwipes: 5)
@@ -519,13 +558,30 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         XCTAssertTrue(secondHandle.waitForExistence(timeout: 5), "Expected the second exercise's reorder handle")
         XCTAssertTrue(secondHandle.isHittable, "Expected the dedicated drag source to be hittable")
 
+        secondHandle.tap()
+        XCTAssertEqual(secondHandle.value as? String, "Position 2 of 10", "A quick touch must not pick up or reorder an exercise")
+        XCTAssertEqual(previewReorderHandle(named: firstExercise).value as? String, "Position 1 of 10")
+
+        secondHandle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.2)
+        XCTAssertEqual(
+            previewReorderHandle(named: secondExercise).value as? String,
+            "Position 2 of 10",
+            "A short hold without a drop target must cancel without reordering the exercise"
+        )
+        XCTAssertEqual(
+            previewReorderHandle(named: firstExercise).value as? String,
+            "Position 1 of 10",
+            "A canceled reorder must leave the first exercise in place"
+        )
+
         let destination = firstRow.coordinate(withNormalizedOffset: CGVector(dx: 0.42, dy: 0.58))
         secondHandle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             .press(
-                forDuration: 1.2,
+                forDuration: 0.2,
                 thenDragTo: destination,
                 withVelocity: .slow,
-                thenHoldForDuration: 1
+                thenHoldForDuration: 0.1
             )
 
         XCTAssertTrue(
@@ -768,14 +824,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
         XCTAssertTrue(app.navigationBars["Appearance"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["appearance-settings-screen"].waitForExistence(timeout: 5))
-        let themeOption = assertReachable(
-            app.descendants(matching: .any)["theme-option-appleGreen"],
-            named: "labelled accent colour option"
-        )
-        XCTAssertEqual(themeOption.label, "Fitness Green accent colour")
-        XCTAssertTrue(
-            (themeOption.value as? String).map { ["Selected", "Not selected"].contains($0) } ?? false
-        )
+        XCTAssertFalse(app.descendants(matching: .any)["theme-option-appleGreen"].exists)
         let modeOption = assertReachable(
             app.descendants(matching: .any)["appearance-option-system"],
             named: "labelled appearance mode option"
@@ -924,11 +973,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         prepareDataRichPerformanceRoute()
         scrollTodayToTop()
         tapElement(identifier: "quick-action-workout", maxSwipes: 8)
-        XCTAssertTrue(waitForWorkoutScreen(), "Expected the Workout quick action to open Start Workout")
-        let previewButton = tappableElement(identifier: "workout-recommended-preview")
-        XCTAssertTrue(previewButton.waitForExistence(timeout: 8))
-        previewButton.tap()
-        XCTAssertTrue(waitForPreviewScreen(), "Expected Workout Preview to open")
+        XCTAssertTrue(waitForPreviewScreen(), "Expected Next Lift to open its prepared Preview directly")
         XCTAssertTrue(
             app.descendants(matching: .any)["workout-preview-hydrated-content"].waitForExistence(timeout: 5),
             "Expected Preview's actionable hydrated content"
@@ -1292,7 +1337,11 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         route: String,
         actionable: @escaping () -> Bool
     ) {
-        scrollTodayToTop()
+        // Avoid introducing scroll gestures when the action is already visible.
+        let entryIdentifier = todayMenuTitle(for: identifier) == nil ? identifier : "today-profile-menu"
+        if !tappableElement(identifier: entryIdentifier).isHittable {
+            scrollTodayToTop()
+        }
         let startedAt: Date
         if let menuTitle = todayMenuTitle(for: identifier) {
             tapElement(identifier: "today-profile-menu", maxSwipes: 2)
@@ -1415,9 +1464,14 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
             element = tappableElement(identifier: identifier)
         }
         XCTAssertTrue(element.waitForExistence(timeout: 5), "Expected \(identifier) to exist")
+        if !hasUnobscuredTapPoint(element) {
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
         XCTAssertTrue(
             hasUnobscuredTapPoint(element),
-            "Expected \(identifier) to have a tap point clear of bottom navigation chrome"
+            "Expected \(identifier) to have a tap point clear of navigation chrome. \(element.debugDescription)"
         )
         element.tap()
     }

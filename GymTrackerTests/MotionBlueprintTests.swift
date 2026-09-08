@@ -43,6 +43,22 @@ final class MotionBlueprintTests: XCTestCase {
         XCTAssertEqual(state.remainingSeconds(at: start), 0)
     }
 
+    func testRestTimerRemainingSecondsCeilsFractionalDeadlineAndExtension() {
+        let start = Date(timeIntervalSince1970: 15_000)
+        var state = RestTimerState()
+        state.start(durationSeconds: 90, now: start)
+
+        XCTAssertEqual(state.remainingSeconds(at: start.addingTimeInterval(89.25)), 1)
+        XCTAssertEqual(state.remainingSeconds(at: start.addingTimeInterval(90)), 0)
+        XCTAssertEqual(state.remainingSeconds(at: start.addingTimeInterval(90.25)), 0)
+
+        state.extend(by: 30, now: start.addingTimeInterval(89.25))
+
+        XCTAssertEqual(state.endDate, start.addingTimeInterval(120))
+        XCTAssertEqual(state.remainingSeconds(at: start.addingTimeInterval(119.25)), 1)
+        XCTAssertEqual(state.remainingSeconds(at: start.addingTimeInterval(120)), 0)
+    }
+
     func testRestTimerProgressClampsBeforeStartAndAfterEnd() {
         let start = Date(timeIntervalSince1970: 20_000)
         var state = RestTimerState()

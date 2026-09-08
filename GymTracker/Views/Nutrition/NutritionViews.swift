@@ -14,9 +14,6 @@ struct NutritionDashboardView: View {
     @Query
     private var logEntries: [FoodLogEntry]
 
-    @Query
-    private var completedSessions: [WorkoutSession]
-
     @State private var healthPreferences = HealthKitPreferenceStore().load()
     @State private var nutritionGoal = NutritionGoalService().loadGoal()
     @State private var selectedDate = Calendar.current.startOfDay(for: .now)
@@ -29,15 +26,14 @@ struct NutritionDashboardView: View {
     @State private var lastDashboardSignature: String?
     @State private var selectedRoute: NutritionRoute?
     @State private var activeFoodLogSwipeID: UUID?
-    @State private var didRequestInitialRefresh = false
     @State private var isPreparingInitialSnapshot = true
     @State private var dashboardRefreshTask: Task<Void, Never>?
     @State private var isDashboardVisible = false
+    @State private var liveObservationEnabled = false
 
     init(initialPayload: NutritionDashboardWarmStartPayload? = nil) {
         _foodItems = Query(Self.foodItemsDescriptor)
         _logEntries = Query(Self.logEntriesDescriptor)
-        _completedSessions = Query(Self.completedSessionsDescriptor)
         if let warm = initialPayload ?? NutritionWarmStartStore.shared.dashboard {
             _dashboardSnapshot = State(initialValue: NutritionDashboardSnapshot(warm))
             _selectedDate = State(initialValue: warm.selectedDate)
@@ -59,15 +55,6 @@ struct NutritionDashboardView: View {
         return descriptor
     }
 
-    private static var completedSessionsDescriptor: FetchDescriptor<WorkoutSession> {
-        var descriptor = FetchDescriptor<WorkoutSession>(
-            predicate: #Predicate<WorkoutSession> { $0.completed },
-            sortBy: [SortDescriptor(\.date, order: .reverse)]
-        )
-        descriptor.fetchLimit = 40
-        return descriptor
-    }
-
     private var currentDashboardSnapshot: NutritionDashboardSnapshot {
         dashboardSnapshot
     }
@@ -75,13 +62,11 @@ struct NutritionDashboardView: View {
     private var dashboardSignature: String {
         let foodItemsSignature = foodItems.prefix(180).map(foodItemSignature).joined(separator: ",")
         let logEntriesSignature = logEntries.prefix(160).map(foodLogEntrySignature).joined(separator: ",")
-        let workoutsSignature = completedSessions.prefix(40).map(workoutSignature).joined(separator: ",")
         let nutritionGoalSignature = String(nutritionGoal.updatedAt.timeIntervalSince1970)
         let healthKitSignature = healthPreferences.isHealthKitEnabled ? "healthkit-on" : "healthkit-off"
         let parts: [String] = [
             foodItemsSignature,
             logEntriesSignature,
-            workoutsSignature,
             nutritionGoalSignature,
             healthKitSignature,
             String(selectedDate.timeIntervalSince1970),
@@ -91,9 +76,8 @@ struct NutritionDashboardView: View {
         return parts.joined(separator: "|")
     }
 
-    private func workoutSignature(_ session: WorkoutSession) -> String {
-        let endedAt = session.endedAt?.timeIntervalSince1970 ?? 0
-        return "\(session.id.uuidString):\(endedAt)"
+    private var dashboardSignatureForObservation: String? {
+        liveObservationEnabled && isDashboardVisible ? dashboardSignature : nil
     }
 
     private func foodItemSignature(_ food: FoodItem) -> String {
@@ -114,24 +98,28 @@ struct NutritionDashboardView: View {
             makeDashboardSnapshot()
         }
         AppMotion.withoutAnimation {
-            dashboardSnapshot = nextSnapshot
+            if !dashboardSnapshot.hasSameContent(as: nextSnapshot) {
+                dashboardSnapshot = nextSnapshot
+            }
             lastDashboardSignature = signature
             isPreparingInitialSnapshot = false
+            liveObservationEnabled = true
         }
     }
 
     private func makeDashboardSnapshot() -> NutritionDashboardSnapshot {
         let dayEntries = foodLogs(on: selectedDate)
+        let entrySnapshots = dayEntries.map(NutritionFoodLogSnapshot.init)
         let recentFoods = recentlyLoggedFoods(from: logEntries, foodItems: foodItems)
         let readiness = WarmRouteSnapshots.overallReadiness(fallback: CoachIntelligenceService.emptySnapshot().readiness)
         let healthKitSyncRecords = healthKitSyncRecordsByEntryId(for: dayEntries)
 
         return NutritionDashboardSnapshot(
-            dayEntries: dayEntries.map(NutritionFoodLogSnapshot.init),
+            dayEntries: entrySnapshots,
             totals: calculator.totals(from: dayEntries),
             readiness: readiness,
             recentlyLoggedFoods: recentFoods.map(SavedFoodSnapshot.init),
-            mealEntries: Dictionary(grouping: dayEntries.map(NutritionFoodLogSnapshot.init), by: \.mealType),
+            mealEntries: Dictionary(grouping: entrySnapshots, by: \.mealType),
             isTrainingDay: hasCompletedWorkout(on: selectedDate),
             shouldShowHealthKitStatus: healthPreferences.isHealthKitEnabled,
             healthKitSyncRecordsByEntryId: healthKitSyncRecords
@@ -177,23 +165,17 @@ struct NutritionDashboardView: View {
     }
 
     private func recentlyLoggedFoods(from logEntries: [FoodLogEntry], foodItems: [FoodItem]) -> [FoodItem] {
-        let recentIds = logEntries.prefix(160).map(\.foodItemId)
+        let foodsByID = Dictionary(foodItems.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var seenIds = Set<UUID>()
-        let orderedUniqueIds = recentIds.filter { id in
-            if seenIds.contains(id) { return false }
-            seenIds.insert(id)
-            return true
+        var recentFoods: [FoodItem] = []
+        for entry in logEntries.prefix(160) {
+            guard seenIds.insert(entry.foodItemId).inserted,
+                  let food = foodsByID[entry.foodItemId] else { continue }
+            recentFoods.append(food)
+            if recentFoods.count == 3 { break }
         }
 
-        let recentFoods = orderedUniqueIds.compactMap { id in
-            foodItems.first { $0.id == id }
-        }
-
-        if recentFoods.isEmpty {
-            return Array(foodItems.prefix(3))
-        }
-
-        return Array(recentFoods.prefix(3))
+        return recentFoods.isEmpty ? Array(foodItems.prefix(3)) : recentFoods
     }
 
     var body: some View {
@@ -399,22 +381,20 @@ struct NutritionDashboardView: View {
         .onAppear {
             isDashboardVisible = true
             readinessRefreshClock.start()
-            healthPreferences = HealthKitPreferenceStore().load()
-            nutritionGoal = nutritionGoalStore.loadGoal()
-            // Build the first snapshot on the appear turn so the pushed
-            // frame is fully populated instead of a "Preparing" placeholder.
-            let shouldForceRefresh = !didRequestInitialRefresh
-            didRequestInitialRefresh = true
             dashboardRefreshTask?.cancel()
             dashboardRefreshTask = Task { @MainActor in
+                // Seed the screen from prepared values, then inspect live
+                // records asynchronously on each appearance.
                 await Task.yield()
                 guard !Task.isCancelled, isDashboardVisible else { return }
-                refreshDashboardSnapshot(force: shouldForceRefresh)
+                healthPreferences = HealthKitPreferenceStore().load()
+                nutritionGoal = nutritionGoalStore.loadGoal()
+                refreshDashboardSnapshot(force: true)
                 dashboardRefreshTask = nil
             }
         }
-        .onChange(of: dashboardSignature) { _, _ in
-            guard isDashboardVisible else { return }
+        .onChange(of: dashboardSignatureForObservation) { _, signature in
+            guard let signature, signature != lastDashboardSignature else { return }
             dashboardRefreshTask?.cancel()
             dashboardRefreshTask = Task { @MainActor in
                 await Task.yield()
@@ -440,6 +420,7 @@ struct NutritionDashboardView: View {
         }
         .onDisappear {
             isDashboardVisible = false
+            liveObservationEnabled = false
             dashboardRefreshTask?.cancel()
             dashboardRefreshTask = nil
         }
@@ -682,6 +663,17 @@ private struct NutritionDashboardSnapshot {
     var isTrainingDay: Bool
     var shouldShowHealthKitStatus: Bool
     var healthKitSyncRecordsByEntryId: [UUID: HealthKitFoodLogSyncRecord]
+
+    func hasSameContent(as other: Self) -> Bool {
+        dayEntries == other.dayEntries
+            && totals == other.totals
+            && readiness.id == other.readiness.id
+            && recentlyLoggedFoods == other.recentlyLoggedFoods
+            && mealEntries == other.mealEntries
+            && isTrainingDay == other.isTrainingDay
+            && shouldShowHealthKitStatus == other.shouldShowHealthKitStatus
+            && healthKitSyncRecordsByEntryId == other.healthKitSyncRecordsByEntryId
+    }
 
     init(
         dayEntries: [NutritionFoodLogSnapshot],

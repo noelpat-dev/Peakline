@@ -7,20 +7,47 @@ enum HistoryDisplaySnapshotBuilder {
         filters: HistoryFilters = HistoryFilters(),
         trainingDaysPerWeek: Int? = nil,
         now: Date = .now,
+        selectedMonth: Date? = nil,
+        monthWorkouts: [HistoryWorkoutSnapshot]? = nil,
         calendar: Calendar = .current
     ) -> HistoryDisplaySnapshot {
         let filtered = workouts.filter { workout in
             matches(workout, filters: filters, calendar: calendar)
         }
+        let monthDisplay = buildMonthDisplay(
+            workouts: monthWorkouts ?? workouts,
+            filters: filters,
+            trainingDaysPerWeek: trainingDaysPerWeek,
+            selectedMonth: selectedMonth ?? now,
+            calendar: calendar
+        )
+        let splitSource = monthWorkouts.map { workouts + $0 } ?? workouts
 
         return HistoryDisplaySnapshot(
             sessionRows: filtered.map(rowSnapshot),
+            calendarDaySummaries: monthDisplay.calendarDaySummaries,
+            splitOptions: Array(Set(splitSource.map { baseSplitName($0.splitName) })).sorted(),
+            overview: monthDisplay.overview
+        )
+    }
+
+    static func buildMonthDisplay(
+        workouts: [HistoryWorkoutSnapshot],
+        filters: HistoryFilters = HistoryFilters(),
+        trainingDaysPerWeek: Int? = nil,
+        selectedMonth: Date,
+        calendar: Calendar = .current
+    ) -> HistoryMonthDisplaySnapshot {
+        let filtered = workouts.filter { workout in
+            matches(workout, filters: filters, calendar: calendar)
+        }
+
+        return HistoryMonthDisplaySnapshot(
             calendarDaySummaries: calendarSummaries(filtered, calendar: calendar),
-            splitOptions: Array(Set(workouts.map { baseSplitName($0.splitName) })).sorted(),
             overview: monthlyOverview(
                 workouts,
                 trainingDaysPerWeek: trainingDaysPerWeek,
-                now: now,
+                selectedMonth: selectedMonth,
                 calendar: calendar
             )
         )
@@ -80,27 +107,25 @@ enum HistoryDisplaySnapshotBuilder {
     private static func monthlyOverview(
         _ workouts: [HistoryWorkoutSnapshot],
         trainingDaysPerWeek: Int?,
-        now: Date,
+        selectedMonth: Date,
         calendar: Calendar
     ) -> HistoryOverviewSnapshot {
-        guard let currentMonth = calendar.dateInterval(of: .month, for: now) else { return .empty }
-        let previousMonthDate = calendar.date(byAdding: .month, value: -1, to: currentMonth.start) ?? currentMonth.start
-        let previousMonth = calendar.dateInterval(of: .month, for: previousMonthDate)
-        let currentWorkouts = workouts.filter { currentMonth.contains($0.date) }
-        let previousWorkouts = previousMonth.map { interval in
-            workouts.filter { interval.contains($0.date) }
-        } ?? []
+        guard let intervals = HistoryFilterService.monthIntervals(for: selectedMonth, calendar: calendar) else {
+            return .empty
+        }
+        let currentWorkouts = workouts.filter { isDate($0.date, in: intervals.current) }
+        let previousWorkouts = workouts.filter { isDate($0.date, in: intervals.previous) }
         let currentVisits = Set(currentWorkouts.map { calendar.startOfDay(for: $0.date) }).count
         let previousVisits = Set(previousWorkouts.map { calendar.startOfDay(for: $0.date) }).count
         let currentDuration = currentWorkouts.reduce(0) { $0 + durationSeconds($1) }
         let previousDuration = previousWorkouts.reduce(0) { $0 + durationSeconds($1) }
-        let daysInMonth = calendar.range(of: .day, in: .month, for: currentMonth.start)?.count ?? 30
+        let daysInMonth = calendar.range(of: .day, in: .month, for: intervals.current.start)?.count ?? 30
         let monthlyTarget = trainingDaysPerWeek.map {
             max(1, Int((Double(daysInMonth * $0) / 7).rounded()))
         }
 
         return HistoryOverviewSnapshot(
-            monthTitle: currentMonth.start.formatted(.dateTime.month(.wide).year()),
+            monthTitle: intervals.current.start.formatted(.dateTime.month(.wide).year()),
             currentVisitCount: currentVisits,
             monthlyTarget: monthlyTarget,
             progress: monthlyTarget.map { min(1, Double(currentVisits) / Double($0)) } ?? 0,
@@ -109,6 +134,10 @@ enum HistoryDisplaySnapshotBuilder {
             previousDurationText: previousDuration > 0 ? formatDuration(previousDuration) : "No duration",
             goalSourceText: trainingDaysPerWeek.map { "Based on \($0) \($0 == 1 ? "day" : "days")/week" }
         )
+    }
+
+    private static func isDate(_ date: Date, in interval: DateInterval) -> Bool {
+        date >= interval.start && date < interval.end
     }
 
     private static func calendarSummaries(

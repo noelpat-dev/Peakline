@@ -37,7 +37,15 @@ struct CoachRouteRenderSnapshot: @unchecked Sendable {
         self.sleepAnalytics = sleepAnalytics
         self.recommendedSplit = recommendedSplit
 
-        let primaryTarget = derivedMetrics.targetSuggestions.first
+        let modePlanner = WorkoutModePlanner()
+        let displayedTargets = derivedMetrics.targetSuggestions.map {
+            modePlanner.modeAdjustedSuggestion(
+                $0,
+                mode: trainingCall.recommendedMode,
+                trainingCall: trainingCall
+            )
+        }
+        let primaryTarget = CoachDerivedMetrics.primaryTarget(from: displayedTargets, mode: trainingCall.recommendedMode)
         let badgeState: CoachBadgeState
         if trainingCall.recommendedMode == .recovery {
             badgeState = .recovery
@@ -166,6 +174,79 @@ struct CoachDerivedMetrics: Sendable {
         weeklyWorkingSetCount: 0,
         progressOpportunityInsights: []
     )
+
+    static func primaryTarget(from suggestions: [TargetSuggestion], mode: WorkoutMode) -> TargetSuggestion? {
+        suggestions.max { lhs, rhs in
+            let leftScore = primaryTargetScore(for: lhs, mode: mode)
+            let rightScore = primaryTargetScore(for: rhs, mode: mode)
+            if leftScore == rightScore {
+                return lhs.confidence < rhs.confidence
+            }
+            return leftScore < rightScore
+        }
+    }
+
+    private static func primaryTargetScore(for suggestion: TargetSuggestion, mode: WorkoutMode) -> Int {
+        switch mode {
+        case .recovery:
+            switch suggestion.recommendationType {
+            case .fatigueRisk:
+                return 90
+            case .repeatTarget:
+                return 80
+            case .reduceLoad:
+                return 75
+            case .possiblePlateau:
+                return 70
+            case .baseline:
+                return 65
+            case .addReps:
+                return 55
+            case .increaseLoad:
+                return 50
+            case .ready:
+                return 60
+            }
+        case .heavy:
+            switch suggestion.recommendationType {
+            case .increaseLoad:
+                return 90
+            case .addReps:
+                return 80
+            case .possiblePlateau:
+                return 72
+            case .repeatTarget:
+                return 66
+            case .baseline:
+                return 58
+            case .reduceLoad:
+                return 52
+            case .fatigueRisk:
+                return 45
+            case .ready:
+                return 70
+            }
+        case .full, .quick:
+            switch suggestion.recommendationType {
+            case .increaseLoad:
+                return 90
+            case .addReps:
+                return 85
+            case .repeatTarget:
+                return 76
+            case .possiblePlateau:
+                return 72
+            case .baseline:
+                return 62
+            case .reduceLoad:
+                return 58
+            case .fatigueRisk:
+                return 54
+            case .ready:
+                return 70
+            }
+        }
+    }
 
     static func make(
         activeSplits: [TrainingSplitSnapshot],

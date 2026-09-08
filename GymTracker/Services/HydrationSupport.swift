@@ -19,6 +19,46 @@ struct HydrationSettingsStore {
     }
 }
 
+struct HydrationPersistence {
+    private let saveContext: (ModelContext) throws -> Void
+
+    init(saveContext: @escaping (ModelContext) throws -> Void = { try $0.save() }) {
+        self.saveContext = saveContext
+    }
+
+    func insert(_ entry: HydrationEntry, in context: ModelContext) throws {
+        context.insert(entry)
+
+        do {
+            try saveContext(context)
+        } catch {
+            context.delete(entry)
+            throw error
+        }
+    }
+
+    func delete(_ entry: HydrationEntry, in context: ModelContext) throws {
+        let capturedEntry = HydrationEntry(
+            id: entry.id,
+            amountML: entry.amountML,
+            loggedAt: entry.loggedAt,
+            source: entry.source,
+            context: entry.context,
+            linkedWorkoutID: entry.linkedWorkoutID,
+            createdAt: entry.createdAt,
+            updatedAt: entry.updatedAt
+        )
+        context.delete(entry)
+
+        do {
+            try saveContext(context)
+        } catch {
+            context.insert(capturedEntry)
+            throw error
+        }
+    }
+}
+
 struct HydrationService {
     func entries(for date: Date, entries: [HydrationEntry], calendar: Calendar = .current) -> [HydrationEntry] {
         entries

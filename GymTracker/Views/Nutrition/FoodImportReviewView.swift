@@ -26,8 +26,10 @@ struct FoodImportReviewView: View {
     @State private var salt: String
     @State private var errorText: String?
     @State private var savedFoodForLogging: FoodImportLogRoute?
+    @State private var savedFoodID: UUID?
     @State private var isDetectedTextExpanded = false
     @State private var didCopyDetectedText = false
+    @State private var isSaving = false
 
     init(draft: FoodImportDraft, onRetakeLabelScan: (() -> Void)? = nil) {
         self.draft = draft
@@ -48,6 +50,10 @@ struct FoodImportReviewView: View {
         _sugar = State(initialValue: Self.fieldText(draft.sugarPer100g))
         _fibre = State(initialValue: Self.fieldText(draft.fibrePer100g))
         _salt = State(initialValue: Self.fieldText(draft.saltPer100g))
+    }
+
+    private var isSaved: Bool {
+        savedFoodID != nil
     }
 
     var body: some View {
@@ -78,6 +84,7 @@ struct FoodImportReviewView: View {
                     }
                 }
             }
+            .disabled(isSaved || isSaving)
 
             DashboardSection(title: "Nutrition Basis") {
                 FitnessCard {
@@ -125,6 +132,7 @@ struct FoodImportReviewView: View {
                     }
                 }
             }
+            .disabled(isSaved || isSaving)
 
             DashboardSection(title: macroSectionTitle) {
                 FitnessCard {
@@ -136,6 +144,7 @@ struct FoodImportReviewView: View {
                     }
                 }
             }
+            .disabled(isSaved || isSaving)
 
             DashboardSection(title: "Optional Details") {
                 FitnessCard {
@@ -146,6 +155,7 @@ struct FoodImportReviewView: View {
                     }
                 }
             }
+            .disabled(isSaved || isSaving)
 
             DashboardSection(title: "Save Check") {
                 saveCheckCard
@@ -166,20 +176,28 @@ struct FoodImportReviewView: View {
             Button {
                 save(shouldLog: false)
             } label: {
-                Label("Save Locally", systemImage: "checkmark")
+                Label(
+                    isSaving ? "Saving…" : (isSaved ? "Done" : "Save Locally"),
+                    systemImage: "checkmark"
+                )
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(PrimaryFitnessButtonStyle())
-            .accessibilityLabel("Save confirmed food")
+            .disabled(isSaving)
+            .accessibilityLabel(isSaved ? "Finish saved food review" : "Save confirmed food")
 
             Button {
                 save(shouldLog: true)
             } label: {
-                Label("Save & Log Today", systemImage: "plus")
+                Label(
+                    isSaving ? "Saving…" : (isSaved ? "Log Saved Food" : "Save & Log Today"),
+                    systemImage: "plus"
+                )
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(SecondaryFitnessButtonStyle())
-            .accessibilityLabel("Save and log food today")
+            .disabled(isSaving)
+            .accessibilityLabel(isSaved ? "Log saved food today" : "Save and log food today")
         }
         .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
@@ -214,6 +232,10 @@ struct FoodImportReviewView: View {
     }
 
     private var screenSubtitle: String {
+        if isSaved {
+            return "Food saved locally. Log it now or tap Done to finish."
+        }
+
         switch draft.source {
         case .labelScan, .editedLabelScan:
             return draft.nutritionParseResult == nil
@@ -289,7 +311,9 @@ struct FoodImportReviewView: View {
 
                             Text(parseResult.values.isEmpty
                                 ? "We found text, but could not confidently detect nutrition values. Fill the fields manually or retake the photo."
-                                : "\(parseResult.values.count) values detected from the label. All fields remain editable.")
+                                : (isSaved
+                                    ? "Food saved locally. The confirmed values are locked."
+                                    : "\(parseResult.values.count) values detected from the label. All fields remain editable."))
                                 .font(AppTypography.body)
                                 .foregroundStyle(appTheme.colors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -641,6 +665,9 @@ struct FoodImportReviewView: View {
     }
 
     private var saveCheckTitle: String {
+        if isSaved {
+            return "Food saved"
+        }
         if duplicateBarcodeText != nil {
             return "Barcode already saved"
         }
@@ -663,6 +690,9 @@ struct FoodImportReviewView: View {
     }
 
     private var saveCheckMessage: String {
+        if isSaved {
+            return "This food is saved locally. Log the saved food or tap Done to finish this review."
+        }
         if duplicateBarcodeText != nil {
             return "This barcode already matches a saved food. Use the existing local food or change the barcode."
         }
@@ -685,6 +715,9 @@ struct FoodImportReviewView: View {
     }
 
     private var saveCheckBadge: String {
+        if isSaved {
+            return "Saved"
+        }
         if duplicateBarcodeText != nil
             || needsBasisConfirmation
             || trimmedName.isEmpty
@@ -699,10 +732,16 @@ struct FoodImportReviewView: View {
     }
 
     private var saveCheckSystemImage: String {
-        saveCheckBadge == "Ready" ? "checkmark.seal" : "exclamationmark.triangle"
+        if isSaved {
+            return "checkmark.seal.fill"
+        }
+        return saveCheckBadge == "Ready" ? "checkmark.seal" : "exclamationmark.triangle"
     }
 
     private var saveCheckTint: Color {
+        if isSaved {
+            return appTheme.colors.success
+        }
         switch saveCheckBadge {
         case "Ready":
             return appTheme.colors.success
@@ -727,6 +766,9 @@ struct FoodImportReviewView: View {
     }
 
     private var saveResultSummary: String {
+        if isSaved {
+            return "Saved to your local food database."
+        }
         if draft.barcode.isEmpty {
             return "Creates a local verified food without a barcode."
         }
@@ -762,6 +804,7 @@ struct FoodImportReviewView: View {
     }
 
     private var duplicateBarcodeText: String? {
+        guard !isSaved else { return nil }
         guard !draft.barcode.isEmpty else { return nil }
         guard let duplicateFood = NutritionDataIntegrityService().existingFood(matchingBarcode: draft.barcode, in: savedFoods) else {
             return nil
@@ -828,6 +871,18 @@ struct FoodImportReviewView: View {
     }
 
     private func save(shouldLog: Bool) {
+        guard !isSaving else { return }
+
+        if let savedFoodID {
+            guard shouldLog else {
+                dismiss()
+                return
+            }
+            guard savedFoodForLogging == nil else { return }
+            savedFoodForLogging = FoodImportLogRoute(id: savedFoodID)
+            return
+        }
+
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needsBasisConfirmation else {
             errorText = "Choose whether the detected values are per 100 g, per 100 mL, or per serving."
@@ -854,6 +909,7 @@ struct FoodImportReviewView: View {
             return
         }
 
+        isSaving = true
         let trimmedBrand = brand.trimmingCharacters(in: .whitespacesAndNewlines)
         let now = Date.now
         let food = FoodItem(
@@ -881,10 +937,13 @@ struct FoodImportReviewView: View {
             SavedFoodWarmStartStore.shared.upsert(SavedFoodSnapshot(food))
         } catch {
             modelContext.delete(food)
+            isSaving = false
             errorText = "Couldn't save this food locally. Try again."
             return
         }
 
+        isSaving = false
+        savedFoodID = food.id
         if shouldLog {
             savedFoodForLogging = FoodImportLogRoute(id: food.id)
         } else {
@@ -1064,6 +1123,7 @@ private struct ReviewTextField: View {
 
             HStack(spacing: 8) {
                 TextField(placeholder, text: $text)
+                    .accessibilityLabel(title)
                     .keyboardType(keyboardType)
                     .textInputAutocapitalization(keyboardType == .default ? .words : .never)
                     .foregroundStyle(appTheme.colors.textPrimary)
@@ -1085,4 +1145,3 @@ private struct ReviewTextField: View {
         }
     }
 }
-

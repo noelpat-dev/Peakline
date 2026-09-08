@@ -48,6 +48,7 @@ struct SleepDashboardView: View {
     @State private var healthKitImportPresentation: HealthKitSleepImportPresentation = .idle
     @State private var locallyResolvedSessionIDs: Set<UUID> = []
     @State private var revealedSleepChartGeneration: String?
+    @State private var isDashboardVisible = false
 
     private let repository = SleepSessionRepository()
     private let scoring = SleepScoringService()
@@ -306,6 +307,7 @@ struct SleepDashboardView: View {
             Text("This removes the unfinished Sleep Mode session.")
         }
         .onAppear {
+            isDashboardVisible = true
             readinessRefreshClock.start()
             settings = settingsStore.load()
             hydrationTargetML = hydrationSettingsStore.dailyTargetML()
@@ -323,14 +325,17 @@ struct SleepDashboardView: View {
             }
             lastReadinessSignature = nil
             DispatchQueue.main.async {
+                guard isDashboardVisible else { return }
                 refreshSleepAnalytics(force: shouldForceRefresh)
                 refreshReadinessScore(force: shouldForceRefresh)
                 scheduleSleepImportIfEnabled()
             }
         }
         .onDisappear {
+            isDashboardVisible = false
             PerformanceTracer.mark(.healthKitSleepBridge, "dashboard onDisappear cancel_import begin")
             healthKitSleepImportTask?.cancel()
+            healthKitSleepImportTask = nil
             PerformanceTracer.mark(.healthKitSleepBridge, "dashboard onDisappear cancel_import end")
         }
         .onReceive(NotificationCenter.default.publisher(for: .appWillResignActiveForCleanup)) { _ in
@@ -339,22 +344,25 @@ struct SleepDashboardView: View {
             PerformanceTracer.mark(.healthKitSleepBridge, "dashboard willResignActive cancel_import end")
         }
         .onChange(of: analyticsObservationSignature) { _, _ in
+            guard isDashboardVisible else { return }
             refreshSleepAnalytics()
             refreshReadinessScore()
         }
         .onChange(of: currentReadinessSignature) { _, _ in
+            guard isDashboardVisible else { return }
             refreshReadinessScore()
         }
         .onChange(of: settings) { _, newValue in
             settingsStore.save(newValue)
-            refreshSleepAnalytics()
-            refreshReadinessScore()
             let sessionSnapshots = SleepNotificationScheduler.sessionSnapshots(from: sessions)
             let workoutSnapshots = SleepNotificationScheduler.workoutSnapshots(from: workouts)
             let notificationSettings = newValue
             Task {
                 await SleepNotificationScheduler().refreshAllSleepNotifications(settings: notificationSettings, sessions: sessionSnapshots, workouts: workoutSnapshots)
             }
+            guard isDashboardVisible else { return }
+            refreshSleepAnalytics()
+            refreshReadinessScore()
         }
     }
 
@@ -1079,7 +1087,9 @@ struct SleepDashboardView: View {
     }
 
     private func scheduleSleepImportIfEnabled() {
-        guard settings.enableAppleHealthImport, healthKitAuthorizationWasRequested else { return }
+        guard isDashboardVisible,
+              settings.enableAppleHealthImport,
+              healthKitAuthorizationWasRequested else { return }
         if let lastSync = settings.lastHealthKitSleepSyncAt, Date.now.timeIntervalSince(lastSync) < 30 * 60 {
             return
         }
@@ -1102,7 +1112,7 @@ struct SleepDashboardView: View {
                 existing: existing,
                 access: access
             )
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, isDashboardVisible else { return }
             applyHealthKitSleepImport(result)
         }
     }

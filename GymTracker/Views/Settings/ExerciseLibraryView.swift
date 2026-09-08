@@ -1,6 +1,119 @@
 import SwiftData
 import SwiftUI
 
+struct ExerciseLibraryArchiveSnapshot {
+    let isArchived: Bool
+    let updatedAt: Date
+
+    init(_ exercise: Exercise) {
+        isArchived = exercise.isArchived
+        updatedAt = exercise.updatedAt
+    }
+
+    func restore(on exercise: Exercise) {
+        exercise.isArchived = isArchived
+        exercise.updatedAt = updatedAt
+    }
+}
+
+struct ExerciseLibraryMetadataSnapshot {
+    let roleRawValue: String
+    let primaryMuscleGroupRawValue: String
+    let secondaryMuscleGroupRawValues: [String]
+    let movementPatternRawValue: String
+    let splitClassificationRawValue: String
+    let priorityRawValue: String
+    let userNote: String?
+    let updatedAt: Date
+
+    init(_ metadata: CoachExerciseMetadata) {
+        roleRawValue = metadata.roleRawValue
+        primaryMuscleGroupRawValue = metadata.primaryMuscleGroupRawValue
+        secondaryMuscleGroupRawValues = metadata.secondaryMuscleGroupRawValues
+        movementPatternRawValue = metadata.movementPatternRawValue
+        splitClassificationRawValue = metadata.splitClassificationRawValue
+        priorityRawValue = metadata.priorityRawValue
+        userNote = metadata.userNote
+        updatedAt = metadata.updatedAt
+    }
+
+    func restore(on metadata: CoachExerciseMetadata) {
+        metadata.roleRawValue = roleRawValue
+        metadata.primaryMuscleGroupRawValue = primaryMuscleGroupRawValue
+        metadata.secondaryMuscleGroupRawValues = secondaryMuscleGroupRawValues
+        metadata.movementPatternRawValue = movementPatternRawValue
+        metadata.splitClassificationRawValue = splitClassificationRawValue
+        metadata.priorityRawValue = priorityRawValue
+        metadata.userNote = userNote
+        metadata.updatedAt = updatedAt
+    }
+}
+
+struct ExerciseLibraryPersistence {
+    private let saveContext: (ModelContext) throws -> Void
+
+    init(saveContext: @escaping (ModelContext) throws -> Void = { context in
+        try context.save()
+    }) {
+        self.saveContext = saveContext
+    }
+
+    func save(in context: ModelContext) throws {
+        try saveContext(context)
+    }
+
+    func archive(_ exercises: [Exercise], in context: ModelContext) throws {
+        let snapshots = exercises.map { (exercise: $0, snapshot: ExerciseLibraryArchiveSnapshot($0)) }
+        for exercise in exercises {
+            exercise.isArchived = true
+            exercise.updatedAt = .now
+        }
+
+        do {
+            try saveContext(context)
+        } catch {
+            for item in snapshots {
+                item.snapshot.restore(on: item.exercise)
+            }
+            throw error
+        }
+    }
+
+    func insert(_ exercise: Exercise, in context: ModelContext) throws {
+        context.insert(exercise)
+
+        do {
+            try saveContext(context)
+        } catch {
+            context.delete(exercise)
+            throw error
+        }
+    }
+
+    func applyMetadata(
+        existingMetadata: [CoachExerciseMetadata],
+        in context: ModelContext,
+        mutation: () -> [CoachExerciseMetadata]
+    ) throws {
+        let snapshots = existingMetadata.map {
+            (metadata: $0, snapshot: ExerciseLibraryMetadataSnapshot($0))
+        }
+        let insertedMetadata = mutation()
+
+        do {
+            try saveContext(context)
+        } catch {
+            for item in snapshots {
+                item.snapshot.restore(on: item.metadata)
+            }
+            for metadata in insertedMetadata {
+                context.delete(metadata)
+            }
+            throw error
+        }
+    }
+}
+
 struct ExerciseLibraryView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
@@ -14,6 +127,10 @@ struct ExerciseLibraryView: View {
     @State private var showingAddExercise = false
     @State private var showingArchived = false
     @State private var showingBulkMetadataEditor = false
+    @State private var persistenceErrorMessage: String?
+    @State private var pendingArchiveIDs: [UUID] = []
+
+    private let persistence = ExerciseLibraryPersistence()
 
     private var visibleExercises: [Exercise] {
         exercises.filter { showingArchived || !$0.isArchived }
@@ -51,7 +168,10 @@ struct ExerciseLibraryView: View {
                 } else {
                     ForEach(visibleExercises) { exercise in
                         NavigationLink {
-                            ExerciseEditorView(exercise: exercise)
+                            ExerciseEditorView(exercise: exercise) { message in
+                                pendingArchiveIDs = []
+                                persistenceErrorMessage = message
+                            }
                         } label: {
                             ExerciseLibraryRow(
                                 exercise: exercise,
@@ -92,14 +212,55 @@ struct ExerciseLibraryView: View {
                 existingMetadata: coachMetadata
             )
         }
+        .alert("Couldn't save exercise", isPresented: Binding(
+            get: { persistenceErrorMessage != nil },
+            set: { if !$0 { persistenceErrorMessage = nil } }
+        )) {
+            Button("Retry") {
+                if pendingArchiveIDs.isEmpty {
+                    do {
+                        try persistence.save(in: modelContext)
+                        persistenceErrorMessage = nil
+                    } catch {
+                        persistenceErrorMessage = error.localizedDescription
+                    }
+                } else {
+                    retryArchive()
+                }
+            }
+            Button("OK", role: .cancel) {
+                persistenceErrorMessage = nil
+            }
+        } message: {
+            Text(persistenceErrorMessage ?? "Please try again.")
+        }
     }
 
     private func archiveExercises(at offsets: IndexSet) {
-        for index in offsets {
-            visibleExercises[index].isArchived = true
-            visibleExercises[index].updatedAt = .now
+        let ids = offsets.map { visibleExercises[$0].id }
+        archiveExercises(withIDs: ids)
+    }
+
+    private func retryArchive() {
+        archiveExercises(withIDs: pendingArchiveIDs)
+    }
+
+    private func archiveExercises(withIDs ids: [UUID]) {
+        let selectedExercises = exercises.filter { ids.contains($0.id) }
+        guard !selectedExercises.isEmpty else {
+            pendingArchiveIDs = []
+            persistenceErrorMessage = nil
+            return
         }
-        try? modelContext.save()
+
+        do {
+            try persistence.archive(selectedExercises, in: modelContext)
+            pendingArchiveIDs = []
+            persistenceErrorMessage = nil
+        } catch {
+            pendingArchiveIDs = ids
+            persistenceErrorMessage = error.localizedDescription
+        }
     }
 }
 
@@ -156,6 +317,9 @@ private struct AddExerciseView: View {
     @State private var movementPattern = MovementPattern.push
     @State private var equipment = EquipmentType.barbell
     @State private var isCompound = true
+    @State private var saveError: String?
+
+    private let persistence = ExerciseLibraryPersistence()
 
     var body: some View {
         NavigationStack {
@@ -183,6 +347,19 @@ private struct AddExerciseView: View {
                 }
             }
         }
+        .alert("Couldn't create exercise", isPresented: Binding(
+            get: { saveError != nil },
+            set: { if !$0 { saveError = nil } }
+        )) {
+            Button("Retry") {
+                createExercise()
+            }
+            Button("Cancel", role: .cancel) {
+                saveError = nil
+            }
+        } message: {
+            Text(saveError ?? "Please try again.")
+        }
     }
 
     private func createExercise() {
@@ -194,9 +371,48 @@ private struct AddExerciseView: View {
             equipment: equipment,
             isCompound: isCompound
         )
-        modelContext.insert(exercise)
-        try? modelContext.save()
-        dismiss()
+
+        do {
+            try persistence.insert(exercise, in: modelContext)
+            saveError = nil
+            dismiss()
+        } catch {
+            saveError = error.localizedDescription
+        }
+    }
+}
+
+private struct ExerciseEditorChangeSignature: Equatable {
+    let name: String
+    let primaryMuscleGroup: MuscleGroup
+    let secondaryMuscleGroups: [MuscleGroup]
+    let movementPattern: MovementPattern
+    let equipment: EquipmentType
+    let isCompound: Bool
+    let isArchived: Bool
+    let coachRole: CoachExerciseMetadataRole
+    let coachSplitClassification: CoachSplitClassification
+    let coachPriority: CoachExercisePriorityLevel
+    let coachNote: String
+
+    init(
+        exercise: Exercise,
+        coachRole: CoachExerciseMetadataRole,
+        coachSplitClassification: CoachSplitClassification,
+        coachPriority: CoachExercisePriorityLevel,
+        coachNote: String
+    ) {
+        name = exercise.name
+        primaryMuscleGroup = exercise.primaryMuscleGroup
+        secondaryMuscleGroups = exercise.secondaryMuscleGroups
+        movementPattern = exercise.movementPattern
+        equipment = exercise.equipment
+        isCompound = exercise.isCompound
+        isArchived = exercise.isArchived
+        self.coachRole = coachRole
+        self.coachSplitClassification = coachSplitClassification
+        self.coachPriority = coachPriority
+        self.coachNote = coachNote
     }
 }
 
@@ -213,9 +429,13 @@ private struct ExerciseEditorView: View {
     @State private var didLoadCoachMetadata = false
     @State private var saveError: String?
     private let metadataService = CoachExerciseMetadataService()
+    private let persistence = ExerciseLibraryPersistence()
 
-    init(exercise: Exercise) {
+    private let reportExitSaveError: (String) -> Void
+
+    init(exercise: Exercise, reportExitSaveError: @escaping (String) -> Void) {
         self.exercise = exercise
+        self.reportExitSaveError = reportExitSaveError
         let exerciseID = exercise.id
         _matchingCoachMetadata = Query(
             filter: #Predicate<CoachExerciseMetadata> { $0.exerciseId == exerciseID },
@@ -233,6 +453,16 @@ private struct ExerciseEditorView: View {
             splitClassification: coachSplitClassification,
             priority: coachPriority,
             userNote: coachNote
+        )
+    }
+
+    private var changeSignature: ExerciseEditorChangeSignature {
+        ExerciseEditorChangeSignature(
+            exercise: exercise,
+            coachRole: coachRole,
+            coachSplitClassification: coachSplitClassification,
+            coachPriority: coachPriority,
+            coachNote: coachNote
         )
     }
 
@@ -274,10 +504,19 @@ private struct ExerciseEditorView: View {
             if role == .compound { exercise.isCompound = true }
             if role == .isolation { exercise.isCompound = false }
         }
-        .onDisappear {
-            synchronizeMetadata()
-            if modelContext.hasChanges { exercise.updatedAt = .now }
+        .task(id: changeSignature) { @MainActor in
+            guard didLoadCoachMetadata else { return }
+            let signature = changeSignature
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled,
+                  didLoadCoachMetadata,
+                  changeSignature == signature else { return }
             saveChanges()
+        }
+        .onDisappear {
+            if !saveChanges(), let saveError {
+                reportExitSaveError(saveError)
+            }
         }
         .alert("Couldn't save exercise", isPresented: Binding(
             get: { saveError != nil },
@@ -299,7 +538,6 @@ private struct ExerciseEditorView: View {
         coachPriority = initial.priority
         coachNote = initial.userNote
         didLoadCoachMetadata = true
-        synchronizeMetadata()
         saveChanges()
     }
 
@@ -316,15 +554,27 @@ private struct ExerciseEditorView: View {
         }
     }
 
-    private func saveChanges() {
-        guard modelContext.hasChanges else { return }
-        do {
-            try modelContext.save()
+    @discardableResult
+    private func saveChanges() -> Bool {
+        guard didLoadCoachMetadata else { return true }
+        synchronizeMetadata()
+        guard modelContext.hasChanges else {
             saveError = nil
+            return true
+        }
+        exercise.updatedAt = .now
+        do {
+            try persistence.save(in: modelContext)
+            saveError = nil
+            return true
         } catch {
+            // These are intentional editor changes. Keep the draft available
+            // for Retry instead of restoring older values and losing input.
             saveError = error.localizedDescription
+            return false
         }
     }
+
 }
 
 private struct ExerciseForm: View {
@@ -473,9 +723,11 @@ private struct BulkCoachMetadataEditorView: View {
     @State private var applyMovement = false
     @State private var movementPattern = MovementPattern.push
     @State private var review: CoachBulkMetadataReview?
+    @State private var saveError: String?
 
     private let bulkService = CoachBulkMetadataService()
     private let metadataService = CoachExerciseMetadataService()
+    private let persistence = ExerciseLibraryPersistence()
 
     var body: some View {
         NavigationStack {
@@ -590,6 +842,21 @@ private struct BulkCoachMetadataEditorView: View {
                     }
                 }
             }
+        }
+        .alert("Couldn't apply metadata", isPresented: Binding(
+            get: { saveError != nil },
+            set: { if !$0 { saveError = nil } }
+        )) {
+            Button("Retry") {
+                if let review {
+                    apply(review)
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                saveError = nil
+            }
+        } message: {
+            Text(saveError ?? "Please try again.")
         }
         .onAppear {
             if selectedExerciseIds.isEmpty {
@@ -707,25 +974,40 @@ private struct BulkCoachMetadataEditorView: View {
     private func apply(_ review: CoachBulkMetadataReview) {
         let metadataByExerciseId = Dictionary(existingMetadata.map { ($0.exerciseId, $0) }, uniquingKeysWith: { first, _ in first })
         let matchedIds = Set(review.matchedExerciseIds)
-
-        for exercise in exercises where matchedIds.contains(exercise.id) {
-            let existing = metadataByExerciseId[exercise.id]
-            guard let draft = bulkService.updatedDraft(
-                for: exercise,
-                existingMetadata: existing,
-                update: bulkUpdate,
-                overwriteExisting: overwriteExisting
-            ) else { continue }
-
-            if let existing {
-                metadataService.update(existing, from: draft)
-            } else {
-                modelContext.insert(metadataService.makeMetadata(from: draft, exercise: exercise))
-            }
+        let changes: [(exercise: Exercise, existing: CoachExerciseMetadata?, draft: CoachExerciseMetadataDraft)] = exercises.compactMap { exercise in
+            guard matchedIds.contains(exercise.id),
+                  let draft = bulkService.updatedDraft(
+                      for: exercise,
+                      existingMetadata: metadataByExerciseId[exercise.id],
+                      update: bulkUpdate,
+                      overwriteExisting: overwriteExisting
+                  ) else { return nil }
+            return (exercise, metadataByExerciseId[exercise.id], draft)
         }
+        let existingChanges = changes.compactMap { $0.existing }
 
-        try? modelContext.save()
-        dismiss()
+        do {
+            try persistence.applyMetadata(existingMetadata: existingChanges, in: modelContext) {
+                var insertedMetadata: [CoachExerciseMetadata] = []
+                for change in changes {
+                    if let existing = change.existing {
+                        metadataService.update(existing, from: change.draft)
+                    } else {
+                        let metadata = metadataService.makeMetadata(
+                            from: change.draft,
+                            exercise: change.exercise
+                        )
+                        modelContext.insert(metadata)
+                        insertedMetadata.append(metadata)
+                    }
+                }
+                return insertedMetadata
+            }
+            saveError = nil
+            dismiss()
+        } catch {
+            saveError = error.localizedDescription
+        }
     }
 
     private func metadataToggle<Content: View>(

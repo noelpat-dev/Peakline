@@ -327,15 +327,12 @@ struct SettingsView: View {
             guard !Task.isCancelled else { return }
             deferredSectionsVisible = true
         }
-        .onAppear {
-            guard !didLoadProfile else { return }
+        .task(id: initialProfileSnapshot == nil) {
+            guard !didLoadProfile, initialProfileSnapshot == nil else { return }
+            try? await Task.sleep(for: .milliseconds(100))
+            guard !Task.isCancelled else { return }
             didLoadProfile = true
-            guard initialProfileSnapshot == nil else { return }
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(100))
-                guard !Task.isCancelled else { return }
-                loadProfile()
-            }
+            loadProfile()
         }
         .onDisappear {
             deferredSectionsVisible = false

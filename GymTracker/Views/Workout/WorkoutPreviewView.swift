@@ -17,9 +17,103 @@ private struct WorkoutPreviewExerciseRowFrameCollector: ViewModifier {
     }
 }
 
-private struct WorkoutPreviewExerciseDropTarget: Equatable {
+struct WorkoutPreviewExerciseDropTarget: Equatable {
     let exerciseID: UUID
     let edge: WorkoutPreviewExerciseDropEdge
+
+    static func resolve(
+        location: CGPoint,
+        sourceID: UUID,
+        selectedExerciseIds: [UUID],
+        rowFrames: [UUID: CGRect]
+    ) -> Self? {
+        guard
+            let sourceIndex = selectedExerciseIds.firstIndex(of: sourceID),
+            let destination = (
+                rowFrames
+                    .filter { id, frame in
+                        id != sourceID && frame.contains(location)
+                    }
+                    .min { lhs, rhs in
+                        abs(lhs.value.midY - location.y) < abs(rhs.value.midY - location.y)
+                    }
+            ),
+            let destinationIndex = selectedExerciseIds.firstIndex(of: destination.key)
+        else {
+            return nil
+        }
+
+        return Self(
+            exerciseID: destination.key,
+            edge: sourceIndex < destinationIndex ? .after : .before
+        )
+    }
+}
+
+private struct WorkoutPreviewCoachActionsCard: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let recommendations: [CoachWorkoutActionRecommendation]
+    let appliedTitle: String?
+    let resetAction: () -> Void
+    let requestAction: (CoachWorkoutAdjustmentAction) -> Void
+
+    var body: some View {
+        FitnessCard(style: .compact) {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Coach Actions", systemImage: "slider.horizontal.3")
+                    .font(AppTypography.sectionTitle)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .accessibilityIdentifier("workout-preview-guidance-chips")
+
+                if let appliedTitle {
+                    HStack(spacing: 8) {
+                        Label("\(appliedTitle) applied", systemImage: "checkmark.seal.fill")
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(appTheme.colors.textSuccess)
+
+                        Spacer(minLength: 8)
+
+                        Button("Reset", action: resetAction)
+                            .font(AppTypography.bodyEmphasis)
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("workout-preview-reset-original")
+                    }
+                }
+
+                ForEach(recommendations) { recommendation in
+                    Button {
+                        requestAction(recommendation.action)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: recommendation.action.systemImage)
+                                .frame(width: 22)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(recommendation.title)
+                                    .font(AppTypography.bodyEmphasis)
+                                Text(recommendation.summary)
+                                    .font(AppTypography.metadata)
+                                    .foregroundStyle(appTheme.colors.textSecondary)
+                                    .lineLimit(2)
+                            }
+
+                            Spacer(minLength: 8)
+
+                            Image(systemName: "chevron.right")
+                                .font(AppTypography.eyebrow)
+                                .foregroundStyle(appTheme.colors.textTertiary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("coach-action-\(recommendation.action.rawValue)")
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("coach-actions-card")
+    }
 }
 
 struct WorkoutPreviewView: View {
@@ -159,6 +253,9 @@ struct WorkoutPreviewView: View {
             },
             finishGestureDrop: { location in
                 finishGestureDrop(sourceID: exercise.id, location: location)
+            },
+            cancelGestureDrop: {
+                cancelGestureDrop()
             }
         )
     }
@@ -271,20 +368,36 @@ struct WorkoutPreviewView: View {
 
             DashboardSection(title: "Coach Brief") {
                 FitnessCard(style: .compact) {
-                    HStack(alignment: .top, spacing: 12) {
-                        Text(snapshot.coachSummaryText)
-                            .font(AppTypography.body)
-                            .foregroundStyle(appTheme.mutedText)
-                            .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .top, spacing: 12) {
+                            Text(snapshot.coachSummaryText)
+                                .font(AppTypography.body)
+                                .foregroundStyle(appTheme.mutedText)
+                                .fixedSize(horizontal: false, vertical: true)
 
-                        Spacer(minLength: 8)
+                            Spacer(minLength: 8)
 
-                        CoachBadgeView(state: snapshot.coachSummaryBadge)
+                            CoachBadgeView(state: snapshot.coachSummaryBadge)
+                        }
+
+                        if selectedMode != snapshot.trainingCall.recommendedMode {
+                            Text("\(selectedMode.displayName) mode is selected. Coach recommends \(snapshot.trainingCall.recommendedMode.displayName.lowercased()) based on current signals.")
+                                .font(AppTypography.metadata)
+                                .foregroundStyle(appTheme.mutedText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
                 .accessibilityIdentifier("workout-preview-training-call-audit")
 
-                previewCoachActionsCard(snapshot: snapshot)
+                WorkoutPreviewCoachActionsCard(
+                    recommendations: snapshot.actionRecommendations,
+                    appliedTitle: appliedWorkoutAdjustment?.title,
+                    resetAction: resetCoachAdjustment,
+                    requestAction: { action in
+                        requestCoachAction(action, preparedSnapshot: snapshot)
+                    }
+                )
 
                 if appliedWorkoutAdjustment != nil {
                     originalPlanShortcut(snapshot: snapshot)
@@ -528,69 +641,6 @@ struct WorkoutPreviewView: View {
         }
     }
 
-    private func previewCoachActionsCard(snapshot: WorkoutPreviewPreparedSnapshot) -> some View {
-        FitnessCard(style: .compact) {
-            VStack(alignment: .leading, spacing: 10) {
-                Label("Coach Actions", systemImage: "slider.horizontal.3")
-                    .font(AppTypography.sectionTitle)
-                    .foregroundStyle(appTheme.colors.textPrimary)
-
-                if let appliedWorkoutAdjustment {
-                    HStack(spacing: 8) {
-                        Label("\(appliedWorkoutAdjustment.title) applied", systemImage: "checkmark.seal.fill")
-                            .font(AppTypography.bodyEmphasis)
-                            .foregroundStyle(appTheme.colors.textSuccess)
-
-                        Spacer(minLength: 8)
-
-                        Button("Reset") {
-                            resetCoachAdjustment()
-                        }
-                        .font(AppTypography.bodyEmphasis)
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("workout-preview-reset-original")
-                    }
-                }
-
-                ForEach(snapshot.actionRecommendations) { recommendation in
-                    Button {
-                        requestCoachAction(recommendation.action, preparedSnapshot: snapshot)
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: recommendation.action.systemImage)
-                                .frame(width: 22)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(recommendation.title)
-                                    .font(AppTypography.bodyEmphasis)
-                                Text(recommendation.summary)
-                                    .font(AppTypography.metadata)
-                                    .foregroundStyle(appTheme.colors.textSecondary)
-                                    .lineLimit(2)
-                            }
-
-                            Spacer(minLength: 8)
-
-                            Image(systemName: "chevron.right")
-                                .font(AppTypography.eyebrow)
-                                .foregroundStyle(appTheme.colors.textTertiary)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("coach-action-\(recommendation.action.rawValue)")
-                }
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("coach-actions-card")
-        .overlay {
-            Color.clear
-                .accessibilityIdentifier("workout-preview-guidance-chips")
-                .allowsHitTesting(false)
-        }
-    }
-
     private func planReadinessStat(label: String, value: String, systemImage: String) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 5) {
@@ -640,7 +690,7 @@ struct WorkoutPreviewView: View {
         case .recovery:
             return "Volume is lower and targets stay controlled for a lighter training day."
         case .heavy:
-            return "The session keeps the load progression work prominent."
+            return "Main lifts lead, with a focus on controlled, heavier work."
         }
     }
 
@@ -763,7 +813,7 @@ struct WorkoutPreviewView: View {
         case .recovery:
             return "Recovery mode lowers volume and softens target pressure."
         case .heavy:
-            return "Heavy mode keeps the focus on load progression."
+            return "Heavy mode prioritises the main lifts."
         }
     }
 
@@ -932,29 +982,19 @@ struct WorkoutPreviewView: View {
         )
     }
 
+    private func cancelGestureDrop() {
+        gestureDropTarget = nil
+    }
+
     private func gestureDestination(
         at location: CGPoint,
         sourceID: UUID
     ) -> WorkoutPreviewExerciseDropTarget? {
-        guard
-            let sourceIndex = selectedExerciseIds.firstIndex(of: sourceID),
-            let destination = (
-                exerciseRowFrames
-                    .filter { id, frame in
-                        id != sourceID && frame.contains(location)
-                    }
-                    .min { lhs, rhs in
-                        abs(lhs.value.midY - location.y) < abs(rhs.value.midY - location.y)
-                    }
-            ),
-            let destinationIndex = selectedExerciseIds.firstIndex(of: destination.key)
-        else {
-            return nil
-        }
-
-        return WorkoutPreviewExerciseDropTarget(
-            exerciseID: destination.key,
-            edge: sourceIndex < destinationIndex ? .after : .before
+        WorkoutPreviewExerciseDropTarget.resolve(
+            location: location,
+            sourceID: sourceID,
+            selectedExerciseIds: selectedExerciseIds,
+            rowFrames: exerciseRowFrames
         )
     }
 

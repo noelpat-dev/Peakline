@@ -38,6 +38,7 @@ struct WorkoutLoggerView: View {
     @State private var templateNotesByExerciseId: [UUID: String] = [:]
     @State private var templateNotesSignature: String?
     @State private var substitutionRequest: WorkoutSubstitutionRequest?
+    @State private var pendingSkippedReasonSelections: [UUID: SkippedExerciseReason] = [:]
     @State private var isCompletionCommitted = false
     @State private var didSuspendWarmRefreshForCompletion = false
     @State private var completedSessions: [WorkoutSession] = []
@@ -153,11 +154,17 @@ struct WorkoutLoggerView: View {
                 )
             }
         }
-        .sheet(isPresented: $showingSkippedReasonSheet, onDismiss: consumePendingFinishAfterModal) {
+        .sheet(isPresented: $showingSkippedReasonSheet, onDismiss: {
+            if !pendingFinishAfterModal {
+                pendingSkippedReasonSelections = [:]
+            }
+            consumePendingFinishAfterModal()
+        }) {
             SkippedExerciseReasonSheet(
                 skippedLogs: skippedReasonService.skippedLogs(in: session),
                 save: applySkippedReasonsAndFinish,
                 finishWithoutReasons: {
+                    pendingSkippedReasonSelections = [:]
                     pendingFinishAfterModal = true
                 }
             )
@@ -436,6 +443,7 @@ struct WorkoutLoggerView: View {
 
         if let currentExerciseLog {
             ExerciseLoggerSection(
+                session: session,
                 exerciseLog: currentExerciseLog,
                 contextLabel: "Current exercise - \(currentExerciseIndex + 1) of \(orderedExerciseLogs.count)",
                 templateNote: templateNote(for: currentExerciseLog),
@@ -443,9 +451,9 @@ struct WorkoutLoggerView: View {
                 isCompletedWorkout: isEditingCompletedWorkout || session.completed,
                 canSubstitute: hasSubstitutionCandidates(for: currentExerciseLog),
                 requestSubstitution: { requestSubstitution(for: currentExerciseLog) },
-                reportPersistenceError: { completionErrorMessage = $0 },
-                onSetCompleted: { _ in
-                    startRestTimer(for: currentExerciseLog)
+                reportPersistenceError: { message in
+                    refreshOrderedExerciseLogsCache(force: true)
+                    completionErrorMessage = message
                 }
             )
             .id(currentExerciseLog.id)
@@ -490,14 +498,17 @@ struct WorkoutLoggerView: View {
         } else {
             ForEach(orderedExerciseLogs) { exerciseLog in
                 ExerciseLoggerSection(
+                    session: session,
                     exerciseLog: exerciseLog,
                     templateNote: templateNote(for: exerciseLog),
                     previousPerformance: previousPerformanceByExerciseId[exerciseLog.exerciseId],
                     isCompletedWorkout: isEditingCompletedWorkout || session.completed,
                     canSubstitute: hasSubstitutionCandidates(for: exerciseLog),
                     requestSubstitution: { requestSubstitution(for: exerciseLog) },
-                    reportPersistenceError: { completionErrorMessage = $0 },
-                    onSetCompleted: nil
+                    reportPersistenceError: { message in
+                        refreshOrderedExerciseLogsCache(force: true)
+                        completionErrorMessage = message
+                    }
                 )
             }
         }
@@ -640,25 +651,28 @@ struct WorkoutLoggerView: View {
                 let exercise = exercises.first(where: { $0.id == selectedExerciseId })
             else { return }
 
-            let log = ExerciseLog(
-                workoutSessionId: session.id,
-                exerciseId: exercise.id,
-                exerciseNameSnapshot: exercise.name,
-                orderIndex: orderedExerciseLogs.count,
-                targetSets: 2,
-                minReps: 8,
-                maxReps: 12
-            )
-            log.workoutSession = session
-            session.exerciseLogs.append(log)
-            self.selectedExerciseId = nil
-            refreshOrderedExerciseLogsCache(force: true)
-            if orderedExerciseLogs.count == 1 {
-                currentExerciseIndex = 0
-            }
+            let transaction = WorkoutLoggerPersistenceTransaction(session: session)
             do {
-                try modelContext.save()
+                try transaction.perform(in: modelContext) {
+                    let log = ExerciseLog(
+                        workoutSessionId: session.id,
+                        exerciseId: exercise.id,
+                        exerciseNameSnapshot: exercise.name,
+                        orderIndex: orderedExerciseLogs.count,
+                        targetSets: 2,
+                        minReps: 8,
+                        maxReps: 12
+                    )
+                    log.workoutSession = session
+                    session.exerciseLogs.append(log)
+                }
+                self.selectedExerciseId = nil
+                refreshOrderedExerciseLogsCache(force: true)
+                if orderedExerciseLogs.count == 1 {
+                    currentExerciseIndex = 0
+                }
             } catch {
+                refreshOrderedExerciseLogsCache(force: true)
                 completionErrorMessage = "Peakline could not add this exercise. Please try again."
             }
         }
@@ -676,20 +690,26 @@ struct WorkoutLoggerView: View {
         guard logs.indices.contains(newIndex) else { return }
 
         let currentId = currentExerciseLog?.id
-        logs.swapAt(index, newIndex)
+        let transaction = WorkoutLoggerPersistenceTransaction(session: session)
+        do {
+            try transaction.perform(in: modelContext) {
+                logs.swapAt(index, newIndex)
 
-        for (orderIndex, log) in logs.enumerated() {
-            log.orderIndex = orderIndex
-        }
-        refreshOrderedExerciseLogsCache(force: true)
-
-        if let currentId, let updatedCurrentIndex = logs.firstIndex(where: { $0.id == currentId }) {
-            withExerciseChangeAnimation {
-                currentExerciseIndex = updatedCurrentIndex
+                for (orderIndex, log) in logs.enumerated() {
+                    log.orderIndex = orderIndex
+                }
             }
-        }
 
-        try? modelContext.save()
+            refreshOrderedExerciseLogsCache(force: true)
+            if let currentId, let updatedCurrentIndex = logs.firstIndex(where: { $0.id == currentId }) {
+                withExerciseChangeAnimation {
+                    currentExerciseIndex = updatedCurrentIndex
+                }
+            }
+        } catch {
+            refreshOrderedExerciseLogsCache(force: true)
+            completionErrorMessage = "Peakline could not save this exercise order. Please try again."
+        }
     }
 
     private func continueToNextExercise() {
@@ -722,7 +742,7 @@ struct WorkoutLoggerView: View {
     }
 
     private func dismissMotivationOverlay() {
-        guard overlayPhase.showsCelebration, overlayVisible else { return }
+        guard overlayPhase.showsCelebration, overlayVisible, !overlayActionInFlight else { return }
         let dismissedPhase = overlayPhase
         overlayActionInFlight = true
 
@@ -803,17 +823,17 @@ struct WorkoutLoggerView: View {
     private func finishWorkout() {
         PerformanceTracer.trace(.workoutLoggerFinish) {
             guard !isEditingCompletedWorkout else {
+                let transaction = WorkoutLoggerPersistenceTransaction(session: session)
                 guard durationService.apply(
                     activeDurationSeconds: editableDurationSeconds,
                     to: session
                 ) else { return }
                 markEnteredSetsComplete()
                 do {
-                    try modelContext.save()
+                    try transaction.perform(in: modelContext) {}
                     WorkoutWarmStartInvalidation.shared.invalidate(reason: .completedWorkoutEdited)
                     dismiss()
                 } catch {
-                    modelContext.rollback()
                     completionErrorMessage = "Peakline could not save these workout changes. Please try again."
                 }
                 return
@@ -847,29 +867,15 @@ struct WorkoutLoggerView: View {
         overlayPhase = .saving
         overlayActionInFlight = true
 
-        withAnimation(
-            AppMotion.popupExit(reduceMotion: reduceMotion),
-            completionCriteria: .logicallyComplete
-        ) {
+        withAnimation(AppMotion.popupExit(reduceMotion: reduceMotion)) {
             overlayVisible = false
-        } completion: {
-            saveCompletedWorkout(rating: rating)
         }
+        saveCompletedWorkout(rating: rating)
     }
 
     private func applySkippedReasonsAndFinish(_ selections: [UUID: SkippedExerciseReason]) {
-        for log in skippedReasonService.skippedLogs(in: session) {
-            if let reason = selections[log.id] {
-                skippedReasonService.append(reason: reason, to: log)
-            }
-        }
-
-        do {
-            try modelContext.save()
-            pendingFinishAfterModal = true
-        } catch {
-            completionErrorMessage = error.localizedDescription
-        }
+        pendingSkippedReasonSelections = selections
+        pendingFinishAfterModal = true
     }
 
     private func consumePendingFinishAfterModal() {
@@ -885,7 +891,7 @@ struct WorkoutLoggerView: View {
     }
 
     private func saveCompletedWorkout(rating: WorkoutRating) {
-        let originalCompletionState = WorkoutSessionCompletionState(session)
+        let transaction = WorkoutLoggerPersistenceTransaction(session: session)
         let end = Date()
         if !didSuspendWarmRefreshForCompletion {
             didSuspendWarmRefreshForCompletion = true
@@ -901,9 +907,9 @@ struct WorkoutLoggerView: View {
         let activeSeconds = completionDurationOverrideSeconds
             ?? activeDurationSeconds(at: session.endedAt ?? end)
         guard durationService.apply(activeDurationSeconds: activeSeconds, to: session) else {
+            transaction.restore(in: modelContext)
             finishCompletionPresentation()
             isCompletionCommitted = false
-            originalCompletionState.restore(session)
             overlayPhase = .rating
             overlayActionInFlight = false
             completionErrorMessage = "Enter a workout duration of at least one minute."
@@ -916,7 +922,13 @@ struct WorkoutLoggerView: View {
         markEnteredSetsComplete()
 
         do {
-            try modelContext.save()
+            try transaction.perform(in: modelContext) {
+                for log in skippedReasonService.skippedLogs(in: session) {
+                    if let reason = pendingSkippedReasonSelections[log.id] {
+                        skippedReasonService.append(reason: reason, to: log)
+                    }
+                }
+            }
             WorkoutWarmStartInvalidation.shared.invalidate(reason: .workoutCompleted)
             PerformanceTracer.mark(.workoutLoggerFinish, "local_save_complete")
             let summarySessions = [session] + completedSessions.filter { $0.id != session.id }
@@ -939,11 +951,11 @@ struct WorkoutLoggerView: View {
             }
             AppHaptics.success()
             PerformanceTracer.mark(.workoutLoggerFinish, "completion_overlay_requested")
+            pendingSkippedReasonSelections = [:]
         } catch {
             finishCompletionPresentation()
             isCompletionCommitted = false
             summaryRenderSnapshot = nil
-            originalCompletionState.restore(session)
             overlayPhase = .rating
             overlayActionInFlight = false
             completionErrorMessage = error.localizedDescription
@@ -963,29 +975,6 @@ struct WorkoutLoggerView: View {
     private func markEnteredSetsComplete() {
         for set in session.exerciseLogs.flatMap(\.setLogs) where set.weight > 0 || set.reps > 0 || set.rpe != nil {
             set.completed = true
-        }
-    }
-
-    private func startRestTimer(for exerciseLog: ExerciseLog) {
-        guard !isEditingCompletedWorkout, !session.completed else { return }
-
-        let configuredRest = activeSplits
-            .first(where: { $0.id == session.splitId })?
-            .exercises
-            .first(where: { $0.exerciseId == exerciseLog.exerciseId })?
-            .restSeconds
-        let duration = max(30, min(configuredRest ?? RestTimerState.defaultDurationSeconds, 300))
-        let nextSet = exerciseLog.setLogs
-            .filter { !$0.completed }
-            .min { $0.setNumber < $1.setNumber }?
-            .setNumber
-
-        withAnimation(AppMotion.animation(for: .sheetPresent, reduceMotion: reduceMotion)) {
-            restTimerState.start(
-                durationSeconds: duration,
-                exerciseName: exerciseLog.exerciseNameSnapshot,
-                nextSetNumber: nextSet
-            )
         }
     }
 
@@ -1034,33 +1023,42 @@ struct WorkoutLoggerView: View {
             reason: .preferAlternative
         )
 
-        if exerciseLog.setLogs.contains(where: { $0.completed || $0.weight > 0 || $0.reps > 0 || $0.rpe != nil }) {
-            appendSubstitutionNote(note, to: exerciseLog)
-            let replacement = ExerciseLog(
-                workoutSessionId: session.id,
-                exerciseId: exercise.id,
-                exerciseNameSnapshot: exercise.name,
-                orderIndex: exerciseLog.orderIndex + 1,
-                targetSets: exerciseLog.targetSets,
-                minReps: exerciseLog.minReps,
-                maxReps: exerciseLog.maxReps,
-                notes: note
-            )
-            replacement.workoutSession = session
-            session.exerciseLogs.append(replacement)
-            for (index, log) in session.exerciseLogs.sorted(by: { $0.orderIndex < $1.orderIndex }).enumerated() {
-                log.orderIndex = index
+        let transaction = WorkoutLoggerPersistenceTransaction(session: session)
+        do {
+            try transaction.perform(in: modelContext) {
+                if exerciseLog.setLogs.contains(where: { $0.completed || $0.weight > 0 || $0.reps > 0 || $0.rpe != nil }) {
+                    appendSubstitutionNote(note, to: exerciseLog)
+                    let replacement = ExerciseLog(
+                        workoutSessionId: session.id,
+                        exerciseId: exercise.id,
+                        exerciseNameSnapshot: exercise.name,
+                        orderIndex: exerciseLog.orderIndex + 1,
+                        targetSets: exerciseLog.targetSets,
+                        minReps: exerciseLog.minReps,
+                        maxReps: exerciseLog.maxReps,
+                        notes: note
+                    )
+                    replacement.workoutSession = session
+                    session.exerciseLogs.append(replacement)
+                    for (index, log) in session.exerciseLogs.sorted(by: { $0.orderIndex < $1.orderIndex }).enumerated() {
+                        log.orderIndex = index
+                    }
+                } else {
+                    exerciseLog.exerciseId = exercise.id
+                    exerciseLog.exerciseNameSnapshot = exercise.name
+                    appendSubstitutionNote(note, to: exerciseLog)
+                }
             }
-        } else {
-            exerciseLog.exerciseId = exercise.id
-            exerciseLog.exerciseNameSnapshot = exercise.name
-            appendSubstitutionNote(note, to: exerciseLog)
-        }
 
-        try? modelContext.save()
-        refreshOrderedExerciseLogsCache(force: true)
-        refreshPreviousPerformanceCache(force: true)
-        refreshTemplateNotesCache(force: true)
+            refreshOrderedExerciseLogsCache(force: true)
+            refreshPreviousPerformanceCache(force: true)
+            refreshTemplateNotesCache(force: true)
+        } catch {
+            refreshOrderedExerciseLogsCache(force: true)
+            refreshPreviousPerformanceCache(force: true)
+            refreshTemplateNotesCache(force: true)
+            completionErrorMessage = "Peakline could not save this substitution. Please try again."
+        }
     }
 
     private func appendSubstitutionNote(_ text: String, to exerciseLog: ExerciseLog) {
@@ -1079,15 +1077,19 @@ struct WorkoutLoggerView: View {
 
     private func togglePause() {
         let now = Date()
-
-        if let pausedAt = session.pausedAt {
-            session.accumulatedPausedSeconds += max(0, Int(now.timeIntervalSince(pausedAt)))
-            session.pausedAt = nil
-        } else {
-            session.pausedAt = now
+        let transaction = WorkoutLoggerPersistenceTransaction(session: session)
+        do {
+            try transaction.perform(in: modelContext) {
+                if let pausedAt = session.pausedAt {
+                    session.accumulatedPausedSeconds += max(0, Int(now.timeIntervalSince(pausedAt)))
+                    session.pausedAt = nil
+                } else {
+                    session.pausedAt = now
+                }
+            }
+        } catch {
+            completionErrorMessage = "Peakline could not save the pause change. Please try again."
         }
-
-        try? modelContext.save()
     }
 
     private var hasSkippedPlannedExercises: Bool {
@@ -1714,6 +1716,7 @@ private struct ExerciseLoggerSection: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let session: WorkoutSession
     @Bindable var exerciseLog: ExerciseLog
     var contextLabel: String? = nil
     let templateNote: String?
@@ -1722,7 +1725,6 @@ private struct ExerciseLoggerSection: View {
     let canSubstitute: Bool
     let requestSubstitution: () -> Void
     let reportPersistenceError: (String) -> Void
-    let onSetCompleted: ((SetLog) -> Void)?
 
     @State private var showingNotes = false
     @State private var guideEntry: ExerciseGuideEntry?
@@ -1854,11 +1856,13 @@ private struct ExerciseLoggerSection: View {
 
             ForEach(Array(orderedSets.enumerated()), id: \.element.id) { index, setLog in
                 SetRowView(
+                    session: session,
+                    isCompletedWorkout: isCompletedWorkout,
                     setLog: setLog,
-                    didMutate: persistValueMutation,
-                    deleteAction: { delete(setLog) },
-                    reportPersistenceError: reportPersistenceError,
-                    onCompleted: onSetCompleted
+                    didMutate: { transaction in
+                        persistValueMutation(transaction: transaction)
+                    },
+                    deleteAction: { delete(setLog) }
                 )
                     .transition(AppMotion.rowInsertRemoveTransition(reduceMotion: reduceMotion))
                     .destructiveSwipeAction {
@@ -1880,13 +1884,18 @@ private struct ExerciseLoggerSection: View {
 
     private var targetText: String {
         guard exerciseLog.targetSets > 0 else { return "No target set" }
-        return "Target: \(exerciseLog.targetSets) sets x \(exerciseLog.minReps)-\(exerciseLog.maxReps) reps"
+        return "Target: \(PeaklineText.count(exerciseLog.targetSets, singular: "set")) x \(exerciseLog.minReps)-\(exerciseLog.maxReps) reps"
     }
 
     private var setProgressText: String {
-        let completedWorkingSets = orderedSets.filter { $0.completed && !$0.isWarmup }.count
-        let target = max(exerciseLog.targetSets, orderedSets.count)
-        return "\(completedWorkingSets) of \(PeaklineText.count(target, singular: "working set")) logged"
+        let workingSets = orderedSets.filter { !$0.isWarmup }
+        let isHistorical = isCompletedWorkout || session.completed
+        let enteredWorkingSets = workingSets.filter {
+            isHistorical ? $0.completed : ($0.weight > 0 || $0.reps > 0 || $0.rpe != nil)
+        }.count
+        let target = max(exerciseLog.targetSets, workingSets.count)
+        let status = isHistorical ? "logged" : "entered"
+        return "\(enteredWorkingSets) of \(PeaklineText.count(target, singular: "working set")) \(status)"
     }
 
     private var noteLabel: String {
@@ -1914,6 +1923,7 @@ private struct ExerciseLoggerSection: View {
     }
 
     private func addSet(copyPrevious: Bool) {
+        let transaction = WorkoutLoggerPersistenceTransaction(session: session)
         let previous = orderedSets.last
         let previousSessionSet = previousPerformance?.workingSets[safe: orderedSets.count] ?? previousPerformance?.workingSets.last
         let set = SetLog(
@@ -1928,7 +1938,7 @@ private struct ExerciseLoggerSection: View {
 
         set.exerciseLog = exerciseLog
         exerciseLog.setLogs.append(set)
-        persistMutation()
+        persistMutation(transaction: transaction)
     }
 
     private func setWeight(copyPrevious: Bool, currentPrevious: SetLog?, sessionPrevious: PreviousSetSnapshot?) -> Double {
@@ -1949,28 +1959,22 @@ private struct ExerciseLoggerSection: View {
 
     private func delete(_ setLog: SetLog) {
         let originalSets = orderedSets
-        var saveError: Error?
+        let transaction = WorkoutLoggerPersistenceTransaction(session: session)
         withAnimation(AppMotion.rowCollapse(reduceMotion: reduceMotion)) {
             exerciseLog.setLogs.removeAll { $0.id == setLog.id }
-            modelContext.delete(setLog)
 
             for (index, set) in orderedSets.filter({ $0.id != setLog.id }).enumerated() {
                 set.setNumber = index + 1
             }
-
-            do {
-                try modelContext.save()
-            } catch {
-                saveError = error
-            }
+            modelContext.delete(setLog)
         }
 
-        if saveError == nil {
+        do {
+            try transaction.perform(in: modelContext) {}
             if isCompletedWorkout {
                 WorkoutWarmStartInvalidation.shared.invalidate(reason: .completedWorkoutSetEdited)
             }
-        } else {
-            modelContext.rollback()
+        } catch {
             AppMotion.withoutAnimation {
                 exerciseLog.setLogs = originalSets
                 for (index, set) in originalSets.enumerated() {
@@ -1983,12 +1987,7 @@ private struct ExerciseLoggerSection: View {
     }
 
     private func removeExerciseFromSession() {
-        guard let session = exerciseLog.workoutSession else {
-            modelContext.delete(exerciseLog)
-            persistMutation()
-            return
-        }
-
+        let transaction = WorkoutLoggerPersistenceTransaction(session: session)
         session.exerciseLogs.removeAll { $0.id == exerciseLog.id }
         modelContext.delete(exerciseLog)
 
@@ -1996,12 +1995,12 @@ private struct ExerciseLoggerSection: View {
             log.orderIndex = index
         }
 
-        persistMutation()
+        persistMutation(transaction: transaction)
     }
 
-    private func persistMutation() {
+    private func persistMutation(transaction: WorkoutLoggerPersistenceTransaction) {
         do {
-            try modelContext.save()
+            try transaction.perform(in: modelContext) {}
             if isCompletedWorkout {
                 WorkoutWarmStartInvalidation.shared.invalidate(reason: .completedWorkoutSetEdited)
             }
@@ -2010,28 +2009,31 @@ private struct ExerciseLoggerSection: View {
         }
     }
 
-    private func persistValueMutation() {
+    private func persistValueMutation(transaction: WorkoutSetPersistenceTransaction?) {
         guard isCompletedWorkout else { return }
-        persistMutation()
+        do {
+            if let transaction {
+                try transaction.perform(in: modelContext) {}
+            } else {
+                try modelContext.save()
+            }
+            WorkoutWarmStartInvalidation.shared.invalidate(reason: .completedWorkoutSetEdited)
+        } catch {
+            reportPersistenceError("Peakline could not save this set change. Please try again.")
+        }
     }
 
 }
 
 private struct SetRowView: View {
     @Environment(\.appTheme) private var appTheme
-    @Environment(\.modelContext) private var modelContext
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let session: WorkoutSession
+    let isCompletedWorkout: Bool
     @Bindable var setLog: SetLog
-    let didMutate: () -> Void
+    let didMutate: (WorkoutSetPersistenceTransaction?) -> Void
     let deleteAction: () -> Void
-    let reportPersistenceError: (String) -> Void
-    let onCompleted: ((SetLog) -> Void)?
 
     @State private var activeSheet: SetRowSheet?
-    @State private var completionInFlight = false
-    @State private var completionFlashVisible = false
-    @State private var checkmarkProgress: CGFloat = 1
-    @State private var completionFlashTask: Task<Void, Never>?
 
     private var effort: EffortLevel? {
         EffortLevel(rpe: setLog.rpe)
@@ -2059,8 +2061,7 @@ private struct SetRowView: View {
                     SetStatusChip(
                         title: "Logged",
                         systemImage: "checkmark.circle.fill",
-                        color: appTheme.successColor,
-                        checkmarkProgress: checkmarkProgress
+                        color: appTheme.successColor
                     )
                 }
             }
@@ -2104,26 +2105,11 @@ private struct SetRowView: View {
                 }
                 .buttonStyle(.borderless)
 
-                if !setLog.completed {
-                    Button {
-                        completeSet()
-                    } label: {
-                        Label("Complete Set", systemImage: "checkmark.circle")
-                            .font(AppTypography.chip)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(appTheme.colors.accent)
-                    .disabled(!hasLoggedData || completionInFlight)
-                    .accessibilityIdentifier("workout-logger-complete-set-\(setLog.id.uuidString)")
-                }
-
                 Spacer()
 
                 Menu {
                     Button {
-                        setLog.isWarmup.toggle()
+                        toggleWarmup()
                     } label: {
                         Label(setLog.isWarmup ? "Remove Warm-up" : "Mark Warm-up", systemImage: "flame")
                     }
@@ -2157,20 +2143,8 @@ private struct SetRowView: View {
             }
         }
         .padding(.vertical, 8)
-        .background {
-            RoundedRectangle(cornerRadius: appTheme.metrics.radius14, style: .continuous)
-                .fill(completionFlashVisible ? appTheme.colors.accentSurface.opacity(0.72) : .clear)
-        }
-        .animation(
-            AppMotion.animation(for: .snappy, reduceMotion: reduceMotion, policy: .opacity),
-            value: completionFlashVisible
-        )
         .onAppear {
             syncCompletedState()
-        }
-        .onChange(of: setLog.isWarmup) { _, _ in
-            syncCompletedState()
-            didMutate()
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
@@ -2192,9 +2166,10 @@ private struct SetRowView: View {
                 .sheetContentEntrance()
             case .effort:
                 EffortPickerSheet(selectedRPE: setLog.rpe) { rpe in
+                    let transaction = persistenceTransaction()
                     setLog.rpe = rpe
                     syncCompletedState()
-                    didMutate()
+                    didMutate(transaction)
                     activeSheet = nil
                 }
                 .sheetContentEntrance()
@@ -2205,75 +2180,36 @@ private struct SetRowView: View {
                 .sheetContentEntrance()
             }
         }
-        .onDisappear {
-            completionFlashTask?.cancel()
-            completionFlashTask = nil
-        }
     }
 
     private func format(_ weight: Double) -> String {
         weight.formatted(.number.precision(.fractionLength(weight.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1)))
     }
 
-    private func completeSet() {
-        guard hasLoggedData, !setLog.completed, !completionInFlight else { return }
-
-        completionInFlight = true
-        let previousCompletionState = setLog.completed
-        setLog.completed = true
-
-        do {
-            try PerformanceTracer.trace(.motionSetCompletion) {
-                try modelContext.save()
-            }
-        } catch {
-            modelContext.rollback()
-            setLog.completed = previousCompletionState
-            completionInFlight = false
-            reportPersistenceError("Peakline could not save this set change. Please try again.")
-            return
-        }
-
-        if reduceMotion {
-            AppMotion.withoutAnimation {
-                checkmarkProgress = 1
-                completionFlashVisible = false
-            }
-        } else {
-            AppMotion.withoutAnimation {
-                checkmarkProgress = 0
-                completionFlashVisible = true
-            }
-            withAnimation(.easeOut(duration: AppMotion.setCheckmarkDuration)) {
-                checkmarkProgress = 1
-            }
-
-            completionFlashTask?.cancel()
-            completionFlashTask = Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(180))
-                guard !Task.isCancelled else { return }
-                withAnimation(AppMotion.animation(for: .snappy, reduceMotion: false, policy: .opacity)) {
-                    completionFlashVisible = false
-                }
-                completionFlashTask = nil
-            }
-        }
-
-        AppHaptics.success()
-        onCompleted?(setLog)
-        completionInFlight = false
-    }
-
     private func updateWeight(_ weight: Double) {
+        let transaction = persistenceTransaction()
         setLog.weight = max(0, weight)
         syncCompletedState()
-        didMutate()
+        didMutate(transaction)
     }
 
     private func updateReps(_ reps: Int) {
+        let transaction = persistenceTransaction()
         setLog.reps = max(0, reps)
         syncCompletedState()
-        didMutate()
+        didMutate(transaction)
+    }
+
+    private func toggleWarmup() {
+        let transaction = persistenceTransaction()
+        setLog.isWarmup.toggle()
+        syncCompletedState()
+        didMutate(transaction)
+    }
+
+    private func persistenceTransaction() -> WorkoutSetPersistenceTransaction? {
+        guard session.completed || isCompletedWorkout else { return nil }
+        return WorkoutSetPersistenceTransaction(set: setLog)
     }
 
     private func syncCompletedState() {

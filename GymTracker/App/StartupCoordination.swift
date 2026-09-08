@@ -4,7 +4,11 @@ import UIKit
 
 enum StartupPresentationState: Equatable {
     case animating
+    case waitingForAnimation
+    case waitingForCriticalReady
     case holdingSlow
+    case holdingSlowForAnimation
+    case holdingSlowForCriticalReady
     case revealing
     case hidden
     case interrupted
@@ -12,6 +16,7 @@ enum StartupPresentationState: Equatable {
 
 enum StartupPresentationEvent {
     case start
+    case animationFinished
     case slowThresholdReached
     case criticalReady
     case interrupted
@@ -26,11 +31,43 @@ enum StartupPresentationReducer {
     ) -> StartupPresentationState {
         switch event {
         case .start:
-            return state == .hidden ? .hidden : .animating
+            // Startup is one-shot. Interaction retries resume with a settled
+            // presentation instead of replaying the cold launch animation.
+            return state == .hidden ? .hidden : state
+        case .animationFinished:
+            switch state {
+            case .animating:
+                return .waitingForCriticalReady
+            case .waitingForAnimation, .holdingSlowForAnimation:
+                return .revealing
+            case .holdingSlow:
+                return .holdingSlowForCriticalReady
+            case .holdingSlowForCriticalReady, .waitingForCriticalReady,
+                 .revealing, .hidden, .interrupted:
+                return state
+            }
         case .slowThresholdReached:
-            return state == .animating ? .holdingSlow : state
+            switch state {
+            case .animating, .waitingForCriticalReady:
+                return state == .animating ? .holdingSlow : .holdingSlowForCriticalReady
+            case .waitingForAnimation:
+                return .holdingSlowForAnimation
+            case .holdingSlow, .holdingSlowForAnimation, .holdingSlowForCriticalReady,
+                 .revealing, .hidden, .interrupted:
+                return state
+            }
         case .criticalReady:
-            return state == .animating || state == .holdingSlow ? .revealing : state
+            switch state {
+            case .animating:
+                return .waitingForAnimation
+            case .waitingForCriticalReady, .holdingSlowForCriticalReady:
+                return .revealing
+            case .holdingSlow:
+                return .holdingSlowForAnimation
+            case .waitingForAnimation, .holdingSlowForAnimation,
+                 .revealing, .hidden, .interrupted:
+                return state
+            }
         case .interrupted:
             return state == .hidden ? .hidden : .interrupted
         case .revealFinished:
@@ -80,15 +117,28 @@ final class StartupPresentationCoordinator: ObservableObject {
     private var didStart = false
 
     var isOverlayMounted: Bool {
-        state == .animating || state == .holdingSlow || state == .revealing
+        switch state {
+        case .animating, .waitingForAnimation, .waitingForCriticalReady,
+             .holdingSlow, .holdingSlowForAnimation, .holdingSlowForCriticalReady,
+             .revealing:
+            return true
+        case .hidden, .interrupted:
+            return false
+        }
     }
 
     var animatesWordmark: Bool {
-        state == .animating
+        state == .animating || state == .waitingForAnimation
     }
 
     var showsSlowProgress: Bool {
         state == .holdingSlow
+            || state == .holdingSlowForAnimation
+            || state == .holdingSlowForCriticalReady
+    }
+
+    var isRevealing: Bool {
+        state == .revealing
     }
 
     var isRevealComplete: Bool {
@@ -105,22 +155,25 @@ final class StartupPresentationCoordinator: ObservableObject {
             .startupPresentationStart,
             "maximum=\(Int(maximumDuration * 1_000))ms"
         )
+        // The ceiling only exposes truthful slow-progress state. The splash
+        // completes through its animation callback or an explicit settle.
         slowThresholdTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(maximumDuration))
-            guard !Task.isCancelled, let self, self.state == .animating else { return }
+            guard !Task.isCancelled, let self else { return }
+            guard self.state == .animating
+                    || self.state == .waitingForAnimation
+                    || self.state == .waitingForCriticalReady else { return }
             self.transition(.slowThresholdReached)
             PerformanceTracer.mark(.startupPresentationSlow, "animation_settled")
         }
     }
 
-    @discardableResult
-    func beginReveal() -> Bool {
-        guard state == .animating || state == .holdingSlow else { return false }
-        let route = state == .animating ? "ready_before_5s" : "ready_after_5s"
-        slowThresholdTask?.cancel()
+    func markCriticalReady() {
         transition(.criticalReady)
-        PerformanceTracer.mark(.startupRevealStart, route)
-        return true
+    }
+
+    func markAnimationFinished() {
+        transition(.animationFinished)
     }
 
     func finishReveal() {
@@ -143,7 +196,14 @@ final class StartupPresentationCoordinator: ObservableObject {
     }
 
     private func transition(_ event: StartupPresentationEvent) {
+        let previousState = state
+        let wasSlow = showsSlowProgress
         state = StartupPresentationReducer.reduce(state, event: event)
+
+        guard previousState != .revealing, state == .revealing else { return }
+        slowThresholdTask?.cancel()
+        let route = wasSlow ? "ready_after_5s" : "ready_before_5s"
+        PerformanceTracer.mark(.startupRevealStart, route)
     }
 }
 

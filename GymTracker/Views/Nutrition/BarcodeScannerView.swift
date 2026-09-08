@@ -28,31 +28,36 @@ struct BarcodeScannerView: View {
             subtitle: "Check saved foods first, then import nutrition data.",
             systemImage: "barcode.viewfinder"
         ) {
-            switch authorizationStatus {
-            case .authorized:
-                if cameraAvailable {
-                    scannerContent
-                } else {
+            if case .idle = lookupState {
+                switch authorizationStatus {
+                case .authorized:
+                    if cameraAvailable {
+                        scannerContent
+                    } else {
+                        scannerUnavailableCard(
+                            title: "Camera unavailable",
+                            message: "This device cannot open a barcode scanner. Enter a barcode manually to use the same local-first lookup flow.",
+                            systemImage: "camera.fill"
+                        )
+                    }
+                case .notDetermined:
+                    permissionRequestCard
+                case .denied, .restricted:
+                    scannerUnavailableCard(
+                        title: "Camera access needed",
+                        message: "Enable camera access to scan barcodes, or enter a barcode manually.",
+                        systemImage: "camera.fill"
+                    )
+                @unknown default:
                     scannerUnavailableCard(
                         title: "Camera unavailable",
-                        message: "This device cannot open a barcode scanner. Enter a barcode manually to use the same local-first lookup flow.",
+                        message: "Enter a barcode manually to use the same local-first lookup flow.",
                         systemImage: "camera.fill"
                     )
                 }
-            case .notDetermined:
-                permissionRequestCard
-            case .denied, .restricted:
-                scannerUnavailableCard(
-                    title: "Camera access needed",
-                    message: "Enable camera access to scan barcodes, or enter a barcode manually.",
-                    systemImage: "camera.fill"
-                )
-            @unknown default:
-                scannerUnavailableCard(
-                    title: "Camera unavailable",
-                    message: "Enter a barcode manually to use the same local-first lookup flow.",
-                    systemImage: "camera.fill"
-                )
+            } else {
+                // Manual lookup works without camera hardware or permission.
+                lookupStateContent
             }
         }
         .navigationTitle("Scan Barcode")
@@ -198,6 +203,14 @@ struct BarcodeScannerView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(PrimaryFitnessButtonStyle())
+
+                Button {
+                    isManualEntryPresented = true
+                } label: {
+                    Label("Enter Barcode Manually", systemImage: "keyboard")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(SecondaryFitnessButtonStyle())
             }
         }
     }
@@ -476,6 +489,14 @@ struct BarcodeScannerView: View {
             lookupState = .localFound(local)
             return
         }
+
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-UITestInMemoryStore"),
+           ProcessInfo.processInfo.arguments.contains("-UITestUnknownBarcodeFixture") {
+            lookupState = .notFound(barcode: normalizedBarcode)
+            return
+        }
+#endif
 
         lookupTask = Task { @MainActor in
             lookupState = .fetchingRemote(normalizedBarcode)

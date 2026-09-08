@@ -1,5 +1,10 @@
 import XCTest
+import SwiftData
 @testable import GymTracker
+
+private enum WorkoutLoggerInjectedSaveFailure: Error, Equatable {
+    case expected
+}
 
 @MainActor
 final class WorkoutReliabilityTests: XCTestCase {
@@ -227,6 +232,45 @@ final class WorkoutReliabilityTests: XCTestCase {
         XCTAssertEqual(WorkoutPreviewOrderReducer.move(original, sourceID: second, destinationID: second), original)
         XCTAssertEqual(WorkoutPreviewOrderReducer.move(original, sourceID: missing, destinationID: second), original)
         XCTAssertEqual(WorkoutPreviewOrderReducer.move(original, sourceID: second, destinationID: missing), original)
+    }
+
+    func testWorkoutPreviewDropTargetIgnoresSourceRowAndUsesDirectionCorrectEdge() {
+        let first = UUID(uuidString: "21000000-0000-0000-0000-000000000001")!
+        let second = UUID(uuidString: "21000000-0000-0000-0000-000000000002")!
+        let third = UUID(uuidString: "21000000-0000-0000-0000-000000000003")!
+        let orderedIDs = [first, second, third]
+        let frames = [
+            first: CGRect(x: 0, y: 0, width: 320, height: 80),
+            second: CGRect(x: 0, y: 96, width: 320, height: 80),
+            third: CGRect(x: 0, y: 192, width: 320, height: 80)
+        ]
+
+        XCTAssertNil(
+            WorkoutPreviewExerciseDropTarget.resolve(
+                location: CGPoint(x: 160, y: 40),
+                sourceID: first,
+                selectedExerciseIds: orderedIDs,
+                rowFrames: frames
+            )
+        )
+        XCTAssertEqual(
+            WorkoutPreviewExerciseDropTarget.resolve(
+                location: CGPoint(x: 160, y: 136),
+                sourceID: first,
+                selectedExerciseIds: orderedIDs,
+                rowFrames: frames
+            ),
+            WorkoutPreviewExerciseDropTarget(exerciseID: second, edge: .after)
+        )
+        XCTAssertEqual(
+            WorkoutPreviewExerciseDropTarget.resolve(
+                location: CGPoint(x: 160, y: 40),
+                sourceID: third,
+                selectedExerciseIds: orderedIDs,
+                rowFrames: frames
+            ),
+            WorkoutPreviewExerciseDropTarget(exerciseID: first, edge: .before)
+        )
     }
 
     func testWorkoutLaunchDraftUsesReducerOrderForLoggerExerciseLogs() {
@@ -565,7 +609,7 @@ final class WorkoutReliabilityTests: XCTestCase {
         )
 
         XCTAssertEqual(call.recommendedSplitName, "Legs")
-        XCTAssertTrue(call.sourceSignals.contains(decision.reason))
+        XCTAssertEqual(call.sourceSignals.first, call.reason)
         XCTAssertEqual(call.confidence, .medium)
     }
 
@@ -586,25 +630,24 @@ final class WorkoutReliabilityTests: XCTestCase {
             title: "Push today",
             reason: "Progression target is available."
         )
+        let suggestion = TargetSuggestion(
+            exerciseName: "Bench Press",
+            lastBestSetDescription: "100kg x 10",
+            lastBestWeight: 100,
+            lastBestReps: 10,
+            suggestedWeight: 102.5,
+            suggestedReps: 8,
+            recommendationType: .increaseLoad,
+            reason: "Increase the load next session.",
+            confidence: 0.85
+        )
         let call = TrainingCallSnapshotBuilder().make(
             decision: decision,
             activeSplits: splits,
             completedSessions: sessions,
             readiness: readiness(confidence: .low, category: .peak, value: 88),
             fatigueRisk: fatigue(level: .low, confidence: .low),
-            targetSuggestions: [
-                TargetSuggestion(
-                    exerciseName: "Bench Press",
-                    lastBestSetDescription: "100kg x 10",
-                    lastBestWeight: 100,
-                    lastBestReps: 10,
-                    suggestedWeight: 102.5,
-                    suggestedReps: 8,
-                    recommendationType: .increaseLoad,
-                    reason: "Top of the range is available.",
-                    confidence: 0.85
-                )
-            ]
+            targetSuggestions: [suggestion]
         )
 
         XCTAssertEqual(call.action, .repeatTarget)
@@ -612,6 +655,32 @@ final class WorkoutReliabilityTests: XCTestCase {
         XCTAssertTrue(call.isConservative)
         XCTAssertTrue(call.guardrailNotes.contains { $0.localizedCaseInsensitiveContains("low confidence") })
         XCTAssertTrue(call.targetSummary?.localizedCaseInsensitiveContains("repeat") == true)
+        XCTAssertEqual(call.sourceSignals.first, call.reason)
+        XCTAssertFalse(call.sourceSignals.first?.localizedCaseInsensitiveContains("progression") == true)
+        XCTAssertTrue(call.sourceSignals.contains("Primary lift: Bench Press — last best 100kg x 10."))
+        XCTAssertFalse(call.sourceSignals.contains { $0.contains("Increase the load") })
+
+        let planner = WorkoutModePlanner()
+        for mode in WorkoutMode.allCases {
+            let adjusted = planner.modeAdjustedSuggestion(suggestion, mode: mode, trainingCall: call)
+            XCTAssertEqual(adjusted.recommendationType, .repeatTarget)
+            XCTAssertEqual(adjusted.suggestedWeight, 100)
+            XCTAssertEqual(adjusted.suggestedReps, 10)
+        }
+
+        let confidentCall = TrainingCallSnapshotBuilder().make(
+            decision: decision,
+            activeSplits: splits,
+            completedSessions: sessions,
+            readiness: readiness(confidence: .high, category: .peak, value: 88),
+            fatigueRisk: fatigue(level: .low, confidence: .high),
+            targetSuggestions: [suggestion]
+        )
+        XCTAssertFalse(confidentCall.isConservative)
+        XCTAssertEqual(
+            planner.modeAdjustedSuggestion(suggestion, mode: .heavy, trainingCall: confidentCall),
+            suggestion
+        )
     }
 
     func testTrainingCallSnapshotLetsFatigueOverrideLoadPush() {
@@ -646,7 +715,7 @@ final class WorkoutReliabilityTests: XCTestCase {
                     suggestedWeight: 102.5,
                     suggestedReps: 8,
                     recommendationType: .increaseLoad,
-                    reason: "Top of the range is available.",
+                    reason: "Increase the load next session.",
                     confidence: 0.85
                 )
             ]
@@ -656,6 +725,10 @@ final class WorkoutReliabilityTests: XCTestCase {
         XCTAssertEqual(call.recommendedMode, .recovery)
         XCTAssertTrue(call.isConservative)
         XCTAssertTrue(call.guardrailNotes.contains { $0.localizedCaseInsensitiveContains("fatigue") })
+        XCTAssertEqual(call.sourceSignals.first, call.reason)
+        XCTAssertFalse(call.sourceSignals.first?.localizedCaseInsensitiveContains("progression") == true)
+        XCTAssertTrue(call.sourceSignals.contains("Primary lift: Bench Press — last best 100kg x 10."))
+        XCTAssertFalse(call.sourceSignals.contains { $0.contains("Increase the load") })
     }
 
     func testWeeklyBalanceDoesNotSilentlyOverridePPLRotation() {
@@ -745,6 +818,27 @@ final class WorkoutReliabilityTests: XCTestCase {
         XCTAssertEqual(session.date, startedAt)
     }
 
+    func testCompletedDateRepairInvalidatesWarmDataOnlyWhenDatesChange() throws {
+        let container = try makeHistoryContainer()
+        let context = container.mainContext
+        let startedAt = date(day: 8, hour: 23, minute: 45)
+        let session = WorkoutSession(
+            date: date(day: 9, hour: 0, minute: 10),
+            startedAt: startedAt,
+            completed: true
+        )
+        context.insert(session)
+        try context.save()
+        let initialRevision = WorkoutWarmStartInvalidation.shared.revision
+
+        XCTAssertEqual(try WorkoutSessionDateService.repairCompletedSessionDates(in: context), 1)
+        XCTAssertEqual(session.date, startedAt)
+        XCTAssertEqual(WorkoutWarmStartInvalidation.shared.revision, initialRevision + 1)
+
+        XCTAssertEqual(try WorkoutSessionDateService.repairCompletedSessionDates(in: context), 0)
+        XCTAssertEqual(WorkoutWarmStartInvalidation.shared.revision, initialRevision + 1)
+    }
+
     func testHistorySnapshotBuilderFiltersValueDataAndAggregatesCalendarDays() {
         let push = workout(
             date: date(day: 8, hour: 12),
@@ -780,7 +874,7 @@ final class WorkoutReliabilityTests: XCTestCase {
             workouts: snapshots,
             filters: filters,
             trainingDaysPerWeek: 4,
-            now: date(day: 10, hour: 12),
+            selectedMonth: date(day: 10, hour: 12),
             calendar: Calendar(identifier: .gregorian)
         )
 
@@ -818,7 +912,7 @@ final class WorkoutReliabilityTests: XCTestCase {
             return HistoryDisplaySnapshotBuilder.build(
                 workouts: [],
                 trainingDaysPerWeek: 4,
-                now: now,
+                selectedMonth: now,
                 calendar: calendar
             ).overview.monthlyTarget
         }
@@ -830,11 +924,107 @@ final class WorkoutReliabilityTests: XCTestCase {
 
         let missingGoal = HistoryDisplaySnapshotBuilder.build(
             workouts: [],
-            now: date(day: 10, hour: 12),
+            selectedMonth: date(day: 10, hour: 12),
             calendar: calendar
         ).overview
         XCTAssertNil(missingGoal.monthlyTarget)
         XCTAssertNil(missingGoal.goalSourceText)
+    }
+
+    func testHistoryOverviewFollowsSelectedMonthAndImmediatePreviousMonthAcrossYearBoundary() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+
+        func fixtureDate(year: Int, month: Int, day: Int, hour: Int = 12) -> Date {
+            calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour))!
+        }
+
+        let augustThird = workout(
+            date: fixtureDate(year: 2026, month: 8, day: 3),
+            splitName: "Push",
+            weight: 100,
+            reps: 8,
+            durationSeconds: 3_600,
+            rating: 4
+        )
+        let augustSecond = workout(
+            date: fixtureDate(year: 2026, month: 8, day: 18),
+            splitName: "Pull",
+            weight: 80,
+            reps: 10,
+            durationSeconds: 7_200,
+            rating: 3
+        )
+        let augustStart = workout(
+            date: fixtureDate(year: 2026, month: 8, day: 1, hour: 0),
+            splitName: "Upper",
+            weight: 70,
+            reps: 10,
+            durationSeconds: 1_800,
+            rating: 3
+        )
+        let july = workout(
+            date: fixtureDate(year: 2026, month: 7, day: 28),
+            splitName: "Legs",
+            weight: 120,
+            reps: 5,
+            durationSeconds: 2_700,
+            rating: 4
+        )
+        let septemberStart = workout(
+            date: fixtureDate(year: 2026, month: 9, day: 1, hour: 0),
+            splitName: "Lower",
+            weight: 90,
+            reps: 6,
+            durationSeconds: 3_600,
+            rating: 4
+        )
+        let december = workout(
+            date: fixtureDate(year: 2026, month: 12, day: 31),
+            splitName: "Upper",
+            weight: 70,
+            reps: 10,
+            durationSeconds: 1_800,
+            rating: 3
+        )
+        let snapshots = [
+            HistoryWorkoutSnapshot(augustThird),
+            HistoryWorkoutSnapshot(augustSecond),
+            HistoryWorkoutSnapshot(augustStart),
+            HistoryWorkoutSnapshot(july),
+            HistoryWorkoutSnapshot(septemberStart),
+            HistoryWorkoutSnapshot(december)
+        ]
+
+        let augustOverview = HistoryDisplaySnapshotBuilder.build(
+            workouts: snapshots,
+            trainingDaysPerWeek: 4,
+            selectedMonth: fixtureDate(year: 2026, month: 8, day: 10),
+            calendar: calendar
+        ).overview
+
+        XCTAssertEqual(augustOverview.monthTitle, "August 2026")
+        XCTAssertEqual(augustOverview.currentVisitCount, 3)
+        XCTAssertEqual(augustOverview.currentDurationText, "3 hr 30 min")
+        XCTAssertEqual(augustOverview.monthlyTarget, 18)
+        XCTAssertEqual(augustOverview.progress, 3.0 / 18.0, accuracy: 0.0001)
+        XCTAssertEqual(augustOverview.previousVisitCount, 1)
+        XCTAssertEqual(augustOverview.previousDurationText, "45 min")
+
+        let januaryOverview = HistoryDisplaySnapshotBuilder.build(
+            workouts: snapshots,
+            trainingDaysPerWeek: 4,
+            selectedMonth: fixtureDate(year: 2027, month: 1, day: 10),
+            calendar: calendar
+        ).overview
+
+        XCTAssertEqual(januaryOverview.monthTitle, "January 2027")
+        XCTAssertEqual(januaryOverview.currentVisitCount, 0)
+        XCTAssertEqual(januaryOverview.currentDurationText, "No duration")
+        XCTAssertEqual(januaryOverview.monthlyTarget, 18)
+        XCTAssertEqual(januaryOverview.progress, 0)
+        XCTAssertEqual(januaryOverview.previousVisitCount, 1)
+        XCTAssertEqual(januaryOverview.previousDurationText, "30 min")
     }
 
     func testHistoryCountsMultipleCompletedWorkoutsOnOneDayAsOneVisit() {
@@ -843,7 +1033,7 @@ final class WorkoutReliabilityTests: XCTestCase {
         let overview = HistoryDisplaySnapshotBuilder.build(
             workouts: [HistoryWorkoutSnapshot(first), HistoryWorkoutSnapshot(second)],
             trainingDaysPerWeek: 3,
-            now: date(day: 10, hour: 12),
+            selectedMonth: date(day: 10, hour: 12),
             calendar: Calendar(identifier: .gregorian)
         ).overview
 
@@ -876,7 +1066,7 @@ final class WorkoutReliabilityTests: XCTestCase {
         let display = HistoryDisplaySnapshotBuilder.build(
             workouts: [HistoryWorkoutSnapshot(included), HistoryWorkoutSnapshot(excluded)],
             filters: filters,
-            now: date(day: 12, hour: 12),
+            selectedMonth: date(day: 12, hour: 12),
             calendar: calendar
         )
 
@@ -898,12 +1088,91 @@ final class WorkoutReliabilityTests: XCTestCase {
 
         let display = HistoryDisplaySnapshotBuilder.build(
             workouts: [HistoryWorkoutSnapshot(session)],
-            now: date(day: 10, hour: 12),
+            selectedMonth: date(day: 10, hour: 12),
             calendar: calendar
         )
 
         XCTAssertEqual(display.sessionRows.first?.durationText, "1 hr 30 min")
         XCTAssertEqual(display.overview.currentDurationText, "1 hr 30 min")
+    }
+
+    func testHistoryMonthFetchFindsOlderRecordsBeyondRecent120Workouts() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let selectedMonth = calendar.date(from: DateComponents(year: 2026, month: 1, day: 10, hour: 12))!
+        let previousMonthWorkoutDate = calendar.date(from: DateComponents(year: 2025, month: 12, day: 28, hour: 12))!
+        let currentMonthWorkoutDates = [
+            calendar.date(from: DateComponents(year: 2026, month: 1, day: 3, hour: 12))!,
+            calendar.date(from: DateComponents(year: 2026, month: 1, day: 20, hour: 12))!
+        ]
+        let container = try makeHistoryContainer()
+        let context = container.mainContext
+
+        for index in 0..<121 {
+            let date = calendar.date(
+                byAdding: .day,
+                value: index,
+                to: calendar.date(from: DateComponents(year: 2027, month: 1, day: 1, hour: 12))!
+            )!
+            context.insert(
+                WorkoutSession(
+                    date: date,
+                    splitNameSnapshot: "Recent",
+                    durationSeconds: 1_800,
+                    completed: true
+                )
+            )
+        }
+
+        context.insert(
+            WorkoutSession(
+                date: previousMonthWorkoutDate,
+                splitNameSnapshot: "Previous",
+                durationSeconds: 1_800,
+                completed: true
+            )
+        )
+        for date in currentMonthWorkoutDates {
+            context.insert(
+                WorkoutSession(
+                    date: date,
+                    splitNameSnapshot: "Current",
+                    durationSeconds: 2_700,
+                    completed: true
+                )
+            )
+        }
+        try context.save()
+
+        var recentDescriptor = FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate<WorkoutSession> { $0.completed },
+            sortBy: [SortDescriptor(\WorkoutSession.date, order: .reverse)]
+        )
+        recentDescriptor.fetchLimit = 120
+        let recentSessions = try context.fetch(recentDescriptor)
+        XCTAssertEqual(recentSessions.count, 120)
+        XCTAssertTrue(recentSessions.allSatisfy { $0.splitNameSnapshot == "Recent" })
+
+        let monthDescriptor = try XCTUnwrap(
+            HistoryFilterService.completedSessionsDescriptor(
+                for: selectedMonth,
+                calendar: calendar
+            )
+        )
+        let monthSessions = try context.fetch(monthDescriptor)
+        XCTAssertEqual(monthSessions.count, 3)
+        XCTAssertEqual(Set(monthSessions.map(\WorkoutSession.splitNameSnapshot)), Set(["Current", "Previous"]))
+
+        let display = HistoryDisplaySnapshotBuilder.build(
+            workouts: monthSessions.map(HistoryWorkoutSnapshot.init),
+            selectedMonth: selectedMonth,
+            calendar: calendar
+        )
+        XCTAssertEqual(display.overview.currentVisitCount, 2)
+        XCTAssertEqual(display.overview.currentDurationText, "1 hr 30 min")
+        XCTAssertEqual(display.overview.previousVisitCount, 1)
+        XCTAssertEqual(display.overview.previousDurationText, "30 min")
+        XCTAssertEqual(display.calendarDaySummaries.count, 3)
     }
 
     func testWorkoutDurationCorrectionSynchronizesStoredFieldsAndEndTime() {
@@ -985,6 +1254,143 @@ final class WorkoutReliabilityTests: XCTestCase {
         XCTAssertFalse(session.completed)
     }
 
+    func testWorkoutLoggerTransactionRestoresTouchedStateAfterInjectedSaveFailure() throws {
+        let container = try PeaklineModelStore.makeContainer(isStoredInMemoryOnly: true)
+        let context = container.mainContext
+        let startedAt = date(day: 8, hour: 12)
+        let set = SetLog(setNumber: 1, weight: 100, reps: 8, completed: false)
+        let log = ExerciseLog(
+            workoutSessionId: UUID(),
+            exerciseId: exerciseId,
+            exerciseNameSnapshot: "Bench Press",
+            orderIndex: 0,
+            notes: "Keep the setup consistent.",
+            setLogs: [set]
+        )
+        let session = WorkoutSession(
+            date: startedAt,
+            splitNameSnapshot: "Push",
+            startedAt: startedAt,
+            exerciseLogs: [log]
+        )
+        log.workoutSession = session
+        set.exerciseLog = log
+        context.insert(session)
+        try context.save()
+
+        let unrelatedPendingSession = WorkoutSession(
+            splitNameSnapshot: "Unrelated pending edit",
+            notes: "Keep this pending change.",
+            completed: false
+        )
+        context.insert(unrelatedPendingSession)
+
+        let transaction = WorkoutLoggerPersistenceTransaction(
+            session: session,
+            saveContext: { _ in
+                throw WorkoutLoggerInjectedSaveFailure.expected
+            }
+        )
+
+        XCTAssertThrowsError(
+            try transaction.perform(in: context) {
+                session.endedAt = startedAt.addingTimeInterval(3_600)
+                session.completed = true
+                session.perceivedDifficulty = 5
+                log.notes = "Changed during completion."
+                set.completed = true
+            }
+        ) { error in
+            XCTAssertEqual(error as? WorkoutLoggerInjectedSaveFailure, .expected)
+        }
+
+        XCTAssertFalse(session.completed)
+        XCTAssertNil(session.endedAt)
+        XCTAssertNil(session.perceivedDifficulty)
+        XCTAssertEqual(log.notes, "Keep the setup consistent.")
+        XCTAssertFalse(set.completed)
+        XCTAssertEqual(set.weight, 100)
+        XCTAssertEqual(set.reps, 8)
+        XCTAssertTrue(context.hasChanges, "The unrelated pending insert must remain dirty after logger recovery")
+
+        try context.save()
+        let sessions = try context.fetch(FetchDescriptor<WorkoutSession>())
+        XCTAssertNotNil(sessions.first(where: { $0.id == unrelatedPendingSession.id }))
+        let persistedSession = try XCTUnwrap(sessions.first(where: { $0.id == session.id }))
+        XCTAssertFalse(persistedSession.completed)
+        XCTAssertEqual(persistedSession.exerciseLogs.first?.setLogs.first?.weight, 100)
+        XCTAssertEqual(persistedSession.exerciseLogs.first?.setLogs.first?.reps, 8)
+    }
+
+    func testWorkoutLoggerStructuralFailurePreservesSetsAfterSaveAndReload() throws {
+        let container = try PeaklineModelStore.makeContainer(isStoredInMemoryOnly: true)
+        let context = container.mainContext
+        context.autosaveEnabled = false
+        let originalSet = SetLog(setNumber: 1, weight: 90, reps: 7, completed: true)
+        let originalLog = ExerciseLog(
+            workoutSessionId: UUID(),
+            exerciseId: exerciseId,
+            exerciseNameSnapshot: "Bench Press",
+            orderIndex: 0,
+            setLogs: [originalSet]
+        )
+        let session = WorkoutSession(splitNameSnapshot: "Push", exerciseLogs: [originalLog])
+        originalLog.workoutSession = session
+        originalSet.exerciseLog = originalLog
+        context.insert(session)
+        try context.save()
+        let sessionID = session.id
+        let originalLogID = originalLog.id
+        let originalSetID = originalSet.id
+
+        let transaction = WorkoutLoggerPersistenceTransaction(session: session) { _ in
+            throw WorkoutLoggerInjectedSaveFailure.expected
+        }
+        XCTAssertThrowsError(try transaction.perform(in: context) {
+            session.exerciseLogs.removeAll { $0.id == originalLogID }
+            context.delete(originalLog)
+            let replacementSet = SetLog(setNumber: 1, weight: 15, reps: 12)
+            let replacement = ExerciseLog(
+                workoutSessionId: sessionID,
+                exerciseId: UUID(),
+                exerciseNameSnapshot: "Failed replacement",
+                orderIndex: 0,
+                setLogs: [replacementSet]
+            )
+            replacementSet.exerciseLog = replacement
+            replacement.workoutSession = session
+            session.exerciseLogs.append(replacement)
+        })
+        try context.save()
+
+        let reloadedContext = ModelContext(container)
+        let reloaded = try XCTUnwrap(reloadedContext.fetch(FetchDescriptor<WorkoutSession>()).first {
+            $0.id == sessionID
+        })
+        XCTAssertEqual(reloaded.exerciseLogs.map(\.id), [originalLogID])
+        let reloadedSet = try XCTUnwrap(reloaded.exerciseLogs.first?.setLogs.first)
+        XCTAssertEqual(reloadedSet.id, originalSetID)
+        XCTAssertEqual(reloadedSet.weight, 90)
+        XCTAssertEqual(reloadedSet.reps, 7)
+        XCTAssertTrue(reloadedSet.completed)
+        XCTAssertEqual(try reloadedContext.fetchCount(FetchDescriptor<SetLog>()), 1,
+                       "A failed replacement must not leave orphaned sets")
+
+        let restoredLog = try XCTUnwrap(session.exerciseLogs.first)
+        let addSetTransaction = WorkoutLoggerPersistenceTransaction(session: session) { _ in
+            throw WorkoutLoggerInjectedSaveFailure.expected
+        }
+        XCTAssertThrowsError(try addSetTransaction.perform(in: context) {
+            let extraSet = SetLog(setNumber: 2, weight: 95, reps: 6)
+            extraSet.exerciseLog = restoredLog
+            restoredLog.setLogs.append(extraSet)
+        })
+        try context.save()
+        let finalContext = ModelContext(container)
+        XCTAssertEqual(try finalContext.fetchCount(FetchDescriptor<SetLog>()), 1,
+                       "A failed Add Set must remain absent after a later successful save")
+    }
+
     func testWorkoutDurationCalibrationRejectsFourHourSampleAtMinimumSampleCount() {
         let now = date(day: 20, hour: 12)
         let validSamples = [
@@ -1050,13 +1456,20 @@ final class WorkoutReliabilityTests: XCTestCase {
 
     func testBaselineConfidenceDoesNotResetAOneSessionRotation() {
         let rotation = rotationSnapshots(["Push", "Pull", "Legs", "Upper", "Lower"])
+        let sessions = [rotationSession(for: rotation[2])]
         let decision = TrainingDecisionService().decision(
             activeSplits: rotation,
-            completedSessions: [rotationSession(for: rotation[2])]
+            completedSessions: sessions
+        )
+        let call = TrainingCallSnapshotBuilder().make(
+            decision: decision,
+            activeSplits: rotation,
+            completedSessions: sessions
         )
 
         XCTAssertEqual(decision.action, .buildBaseline)
         XCTAssertEqual(decision.recommendedSplitName, "Upper")
+        XCTAssertEqual(call.sourceSignals.first, call.reason)
     }
 
     func testRotationUsesIDAfterRenameAndLegacyNameOnlyWhenUnique() {
@@ -1266,6 +1679,16 @@ final class WorkoutReliabilityTests: XCTestCase {
             maxReps: 10,
             setLogs: setLogs
         )
+    }
+
+    private func makeHistoryContainer() throws -> ModelContainer {
+        let schema = Schema([
+            WorkoutSession.self,
+            ExerciseLog.self,
+            SetLog.self
+        ])
+        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        return try ModelContainer(for: schema, configurations: [configuration])
     }
 
     private func date(day: Int, hour: Int, minute: Int = 0) -> Date {

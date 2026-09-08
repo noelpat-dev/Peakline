@@ -25,8 +25,13 @@ struct RestTimerView: View {
                         }
                     }
                     .transition(.opacity)
-                    .onChange(of: remaining) { _, newValue in
-                        guard newValue == 0, !state.isComplete else { return }
+                    .onChange(of: remaining, initial: true) { _, newValue in
+                        guard
+                            newValue == 0,
+                            !state.isComplete,
+                            let endDate = state.endDate,
+                            timeline.date >= endDate
+                        else { return }
                         complete(at: timeline.date)
                     }
                 }

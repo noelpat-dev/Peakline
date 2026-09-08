@@ -205,8 +205,13 @@ struct WorkoutModePlanner {
         return lower...max(estimatedUpper, lower + 10)
     }
 
-    func modeAdjustedSuggestion(_ suggestion: TargetSuggestion, mode: WorkoutMode) -> TargetSuggestion {
-        guard mode == .recovery else { return suggestion }
+    func modeAdjustedSuggestion(
+        _ suggestion: TargetSuggestion,
+        mode: WorkoutMode,
+        trainingCall: TrainingCallSnapshot? = nil
+    ) -> TargetSuggestion {
+        let conservativeReason = trainingCall.flatMap { $0.isConservative ? $0.reason : nil }
+        guard mode == .recovery || conservativeReason != nil else { return suggestion }
 
         switch suggestion.recommendationType {
         case .increaseLoad, .addReps:
@@ -218,7 +223,9 @@ struct WorkoutModePlanner {
                 suggestedWeight: suggestion.lastBestWeight ?? suggestion.suggestedWeight,
                 suggestedReps: suggestion.lastBestReps ?? suggestion.suggestedReps,
                 recommendationType: .repeatTarget,
-                reason: "Recovery mode: keep this lighter and repeat the target with clean reps.",
+                reason: mode == .recovery
+                    ? "Recovery mode: keep this lighter and repeat the target with clean reps."
+                    : conservativeReason ?? suggestion.reason,
                 confidence: min(suggestion.confidence, 0.7)
             )
         default:

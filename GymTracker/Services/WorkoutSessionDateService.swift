@@ -26,6 +26,7 @@ enum WorkoutSessionDateService {
 
         if repairedCount > 0 {
             try context.save()
+            WorkoutWarmStartInvalidation.shared.invalidate(reason: .completedWorkoutEdited)
         }
         return repairedCount
     }

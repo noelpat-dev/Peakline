@@ -657,7 +657,7 @@ struct TodayMetricCard: View {
     let detail: String
     let footer: String?
     let isMetric: Bool
-    let highlightValue: Bool
+    let isEnabled: Bool
     let action: () -> Void
 
     init(
@@ -667,7 +667,7 @@ struct TodayMetricCard: View {
         detail: String,
         footer: String? = nil,
         isMetric: Bool = false,
-        highlightValue: Bool = false,
+        isEnabled: Bool = true,
         action: @escaping () -> Void
     ) {
         self.title = title
@@ -676,7 +676,7 @@ struct TodayMetricCard: View {
         self.detail = detail
         self.footer = footer
         self.isMetric = isMetric
-        self.highlightValue = highlightValue
+        self.isEnabled = isEnabled
         self.action = action
     }
 
@@ -705,7 +705,7 @@ struct TodayMetricCard: View {
 
                     Text(value)
                         .font(valueFont)
-                        .foregroundStyle(valueColor)
+                        .foregroundStyle(appTheme.colors.textPrimary)
                         .lineLimit(nil)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -755,18 +755,20 @@ struct TodayMetricCard: View {
             }
         }
         .buttonStyle(PressableCardButtonStyle())
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.6)
         .accessibilityElement(children: .combine)
-        .accessibilityHint(detail)
+        .accessibilityHint(
+            isEnabled
+                ? "Opens \(title)"
+                : "Unavailable until a workout plan is available"
+        )
     }
 
     private var valueFont: Font {
         isMetric
             ? AppTypography.largeMetric
             : AppTypography.compactCardTitle
-    }
-
-    private var valueColor: Color {
-        highlightValue ? appTheme.colors.success : appTheme.colors.textPrimary
     }
 }
 
@@ -815,7 +817,7 @@ struct TodayWeeklyActivityCard: View {
                 HStack(alignment: .firstTextBaseline, spacing: appTheme.metrics.spacing6) {
                     Text("\(completedCount)/\(dayCount)")
                         .font(AppTypography.workoutLargeNumber)
-                        .foregroundStyle(appTheme.colors.success)
+                        .foregroundStyle(appTheme.colors.textPrimary)
 
                     Text("days")
                         .font(AppTypography.body)
@@ -871,7 +873,7 @@ struct TodayWeeklyActivityCard: View {
         HStack(spacing: appTheme.metrics.spacing6) {
             ForEach(Array(completedDays.enumerated()), id: \.offset) { _, isComplete in
                 Circle()
-                    .fill(isComplete ? appTheme.colors.success : appTheme.colors.cardBackgroundElevated)
+                    .fill(isComplete ? appTheme.colors.accent : appTheme.colors.cardBackgroundElevated)
                     .frame(
                         width: dynamicTypeSize.isAccessibilitySize
                             ? appTheme.metrics.spacing14
@@ -884,7 +886,7 @@ struct TodayWeeklyActivityCard: View {
                         Circle()
                             .stroke(
                                 isComplete
-                                    ? appTheme.colors.success.opacity(0.16)
+                                    ? appTheme.colors.accent.opacity(0.16)
                                     : appTheme.colors.cardBorder,
                                 lineWidth: 0.75
                             )
@@ -929,6 +931,12 @@ struct TodayPlanButton: View {
         }
         .buttonStyle(NeutralFitnessButtonStyle())
         .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.6)
+        .accessibilityHint(
+            isEnabled
+                ? "Opens your prepared workout preview"
+                : "Unavailable until an active split is available"
+        )
         .accessibilityIdentifier("today-review-plan")
     }
 }

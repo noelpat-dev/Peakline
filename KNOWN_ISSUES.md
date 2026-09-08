@@ -2,6 +2,29 @@
 
 Current file: `KNOWN_ISSUES.md`
 
+## Deferred Cold-Entry Performance — 8 September 2026
+
+Noel explicitly deferred this work and authorized delivery of the current UI/UX changes to `main` on 8 September. The performance gate is **not passing**; successful builds and functional tests do not close it.
+
+Cold entry here means the first visit to a route after launching the app. These are Debug, large-history measurements on the iPhone 17 simulator, timed by the app from the navigation request to its stable-frame callback. They are not physical-iPhone timings or later warm visits.
+
+| Route | Last recorded time | Limit | Follow-up |
+| --- | ---: | ---: | --- |
+| Coach / Readiness | 513 ms | 500 ms | First tap opened Coach after removing unnecessary test swipes; profile remaining first-frame work. |
+| Workout Preview | 484 ms | 300 ms | Prepared cache hit, zero on-appear refreshes; profile rendering cost. |
+| Nutrition | 308 ms | 300 ms | Earlier isolated result; remeasure against the delivered code. |
+| Progress | 520 ms | 500 ms | Earlier isolated result; remeasure against the delivered code. |
+| Hydration | 385 ms | 300 ms | Earlier isolated result; remeasure against the delivered code. |
+
+Resume with these steps:
+
+1. Reproduce the five isolated `testPerformanceAcceptanceDataRich*Route` tests in `GymTrackerUITests/CoachWorkoutPreviewUITests.swift`, using only iPhone 17 and one simulator destination at a time. Preserve the existing limits.
+2. Profile before changing rendering or query ownership. Previous extra main-queue delays and broad lazy/type-erasure experiments did not establish reliable improvements. The native sampling attempts did not capture a route entry and are not profiling evidence.
+3. Fix measured bottlenecks, then run `Scripts/verify_performance_acceptance.sh` in full. Keep functional checks separate from performance acceptance.
+4. Complete on-device interaction and instrumented route-timing checks on Noel's iPhone, then update this record and the handoff with actual results.
+
+Evidence retained locally under `/private/tmp/peakline-ui-ux-20260907/`: `readiness-without-preswipes`, `preview-consistency-cold`, and `nutrition-query-removal` logs/result bundles. This table preserves the outcomes even if those temporary artifacts are removed. The 208-unit-test run passed before the final logger-only changes; the latest logger set-entry, entered-counter, manual-timer, Finish, and History UI test and signed iPhone build passed. The latest build was installed and launched on Noel's iPhone. Full performance acceptance remains deferred.
+
 ## Xcode / Device Install
 
 - Free Apple ID installs on a real iPhone usually expire after about 7 days.
@@ -25,7 +48,7 @@ Current file: `KNOWN_ISSUES.md`
 
 ## Nutrition Scanner And Imports
 
-- 5 September UI consistency follow-up: Nutrition now uses one startup-seeded dashboard with no temporary screen replacement or arrival replay. The focused data-rich route timing gate remains unresolved: the pre-change sample was 1,086 ms and the implementation sample was 1,517 ms against 300 ms; startup also varied from 2,621 to 8,594 ms. These simulator samples do not establish a speed improvement. Functional navigation, Workout mode selection, Summary completion, and 72 badge contrast combinations passed; physical-device timing and the full performance verifier remain outstanding.
+- 8 September UI/UX follow-up: Nutrition refreshes on re-entry, resolves only its three displayed recent foods, and avoids republishing identical snapshot content. Functional date navigation, scanner entry, saved-food deletion, and save-recovery checks pass. The cold-route budget remains open: after removing its redundant workout query and covering deletion/date-repair invalidation, the latest isolated large-history sample was 308 ms against 300 ms (earlier samples were 441 ms and 316 ms). The date-repair regression and focused History/Nutrition navigation checks pass; these variable timing results do not establish consistent acceptance.
 
 - Protect the Today-to-Nutrition scanner route: Today quick actions to Nutrition, Add Food, Scan Label, Scan Barcode, review, save, and return-to-log.
 - Barcode, Open Food Facts, OCR, parser, and source-comparison values must remain editable and explicitly saved before becoming local truth.
@@ -46,7 +69,8 @@ Current file: `KNOWN_ISSUES.md`
 
 ## Coach And Recovery
 
-- 5 September Today/Coach validation: startup/cache regression tests and Coach/Weekly Review background retention pass, and direct tracing confirms unchanged Coach inputs skip all four refresh calculations. Performance acceptance is not fully cleared: data-rich XCUI routes exceeded the 500 ms Coach and 300 ms Nutrition budgets, and an automated readiness tap intermittently failed to navigate. A final direct data-rich Coach sample measured 616 ms on first entry and 284 ms on re-entry. Check cold entry and repeated taps on Noel’s iPhone before calling the transition consistently smooth; the full verifier and physical-device pass have not been run for this change.
+- 8 September Today/Coach validation: the Debug build, the 208-test unit run, Coach/Weekly Review background retention, and Preview cancel/apply/reset/start-original flow pass. Coach now owns and cancels its post-Preview catch-up task on disappearance. A clean route journey passed at Today-to-Coach 341 ms, Coach-to-Preview 221 ms, and Workout-tab return 165 ms. The full cold-route gate remains open: the last isolated large-history samples before the target-consistency follow-up were Coach 614/500 ms, Progress 520/500 ms, Hydration 385/300 ms, and Preview 470/300 ms (measured/limit). The automated first readiness tap failed after unnecessary preparatory swipes; skipping those when the target is already hittable allowed first-tap navigation in the follow-up cold run. Direct centered first-tap navigation also passed with the same large-history data. The 8 September build is installed and launched on Noel’s iPhone, and Noel confirmed that the Preview row follows the finger smoothly. Instrumented physical-device route timings remain unmeasured.
+- Coach target-consistency follow-up: prepared and live Coach now share primary-target ranking and conservative numeric-target adjustment; cached Preview modes preserve their plans while applying those target guardrails. Evidence uses the final reason and recorded lift history. Four focused target tests, Preview mode-switch acceptance (291/300 ms), and drag-to-reorder through Logger pass. All 208 unit tests pass after this follow-up. The signed update, including removal of the logger’s separate Complete Set button and the live entered-working-set counter, is installed and launched on Noel’s iPhone. The focused set-entry, live-counter, manual-timer, finish, and History test passes. The follow-up cold Coach route opened on its first tap but measured 513/500 ms; cold Preview measured 484/300 ms with a warm-cache hit and zero on-appear refreshes. Performance acceptance remains open; the full cold-route gate has not been rerun.
 
 - Coaching is deterministic and still evolving.
 - Fatigue, plateau, deload, and recovery recommendations should not overstate certainty.

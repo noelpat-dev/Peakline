@@ -90,6 +90,28 @@ final class HistoryUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["history-screen"].waitForExistence(timeout: 8))
     }
 
+    func testHistoryMonthNavigationKeepsOverviewAlignedAfterRapidSwitching() throws {
+        XCTAssertTrue(
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
+            "Expected Today to be ready after launch"
+        )
+
+        tapTab(at: 3, expectedTitle: "History")
+        let selectedMonthTitle = app.staticTexts["history-selected-month-title"]
+        let overviewMonthTitle = app.staticTexts["history-overview-month-title"]
+        XCTAssertTrue(selectedMonthTitle.waitForExistence(timeout: 10))
+        XCTAssertTrue(overviewMonthTitle.waitForExistence(timeout: 10))
+
+        let previousMonthButton = app.buttons["Previous month"]
+        XCTAssertTrue(previousMonthButton.waitForExistence(timeout: 5))
+        previousMonthButton.tap()
+        previousMonthButton.tap()
+
+        XCTAssertTrue(selectedMonthTitle.waitForExistence(timeout: 5))
+        XCTAssertTrue(overviewMonthTitle.waitForExistence(timeout: 5))
+        XCTAssertEqual(overviewMonthTitle.label, "\(selectedMonthTitle.label) attendance")
+    }
+
     private func tapTab(at index: Int, expectedTitle: String) {
         let tabBar = app.tabBars.firstMatch
         XCTAssertTrue(tabBar.waitForExistence(timeout: 5), "Expected tab bar to exist")

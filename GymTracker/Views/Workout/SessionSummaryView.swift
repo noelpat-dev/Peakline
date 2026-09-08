@@ -80,6 +80,102 @@ struct SessionSummaryRenderSnapshot: Equatable, Sendable {
     }
 }
 
+struct SessionSummarySplitPersistenceSnapshot {
+    struct SplitExerciseSnapshot {
+        let exercise: SplitExercise
+        let splitId: UUID
+        let exerciseId: UUID
+        let exerciseNameSnapshot: String
+        let orderIndex: Int
+        let targetSets: Int
+        let minReps: Int
+        let maxReps: Int
+        let restSeconds: Int?
+        let notes: String?
+
+        init(_ exercise: SplitExercise) {
+            self.exercise = exercise
+            splitId = exercise.splitId
+            exerciseId = exercise.exerciseId
+            exerciseNameSnapshot = exercise.exerciseNameSnapshot
+            orderIndex = exercise.orderIndex
+            targetSets = exercise.targetSets
+            minReps = exercise.minReps
+            maxReps = exercise.maxReps
+            restSeconds = exercise.restSeconds
+            notes = exercise.notes
+        }
+
+        func restore() {
+            exercise.splitId = splitId
+            exercise.exerciseId = exerciseId
+            exercise.exerciseNameSnapshot = exerciseNameSnapshot
+            exercise.orderIndex = orderIndex
+            exercise.targetSets = targetSets
+            exercise.minReps = minReps
+            exercise.maxReps = maxReps
+            exercise.restSeconds = restSeconds
+            exercise.notes = notes
+        }
+    }
+
+    let splitUpdatedAt: Date
+    let originalExerciseIDs: Set<UUID>
+    let existingExercises: [SplitExerciseSnapshot]
+
+    init(split: TrainingSplit) {
+        splitUpdatedAt = split.updatedAt
+        originalExerciseIDs = Set(split.exercises.map(\.id))
+        existingExercises = split.exercises.map(SplitExerciseSnapshot.init)
+    }
+
+    func restore(on split: TrainingSplit, in context: ModelContext) {
+        for existingExercise in existingExercises {
+            existingExercise.restore()
+        }
+
+        let insertedExercises = split.exercises.filter {
+            !originalExerciseIDs.contains($0.id)
+        }
+        if !insertedExercises.isEmpty {
+            let insertedIDs = Set(insertedExercises.map(\.id))
+            split.exercises.removeAll { insertedIDs.contains($0.id) }
+            for exercise in insertedExercises {
+                context.delete(exercise)
+            }
+        }
+        split.updatedAt = splitUpdatedAt
+    }
+}
+
+struct SessionSummarySplitPersistence {
+    private let saveContext: (ModelContext) throws -> Void
+
+    init(saveContext: @escaping (ModelContext) throws -> Void = { context in
+        try context.save()
+    }) {
+        self.saveContext = saveContext
+    }
+
+    func update(
+        _ split: TrainingSplit,
+        with session: WorkoutSession,
+        in context: ModelContext
+    ) throws {
+        let snapshot = SessionSummarySplitPersistenceSnapshot(
+            split: split
+        )
+        SplitTemplateUpdateService().replaceOrder(of: split, with: session)
+
+        do {
+            try saveContext(context)
+        } catch {
+            snapshot.restore(on: split, in: context)
+            throw error
+        }
+    }
+}
+
 struct SessionSummaryView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
@@ -90,12 +186,13 @@ struct SessionSummaryView: View {
     @State private var reopenedSession: WorkoutSession?
     @State private var showingUpdateSplitConfirmation = false
     @State private var persistenceErrorMessage: String?
+    @State private var retryReopen = false
 
     let session: WorkoutSession
     let snapshot: SessionSummaryRenderSnapshot
     let onDone: (() -> Void)?
     private let reopenService = WorkoutSessionReopenService()
-    private let splitUpdateService = SplitTemplateUpdateService()
+    private let splitPersistence = SessionSummarySplitPersistence()
 
     init(
         session: WorkoutSession,
@@ -332,6 +429,13 @@ struct SessionSummaryView: View {
             get: { persistenceErrorMessage != nil },
             set: { if !$0 { persistenceErrorMessage = nil } }
         )) {
+            Button("Retry") {
+                if retryReopen {
+                    reopenWorkout()
+                } else {
+                    updateMatchingSplit()
+                }
+            }
             Button("OK", role: .cancel) {}
         } message: {
             Text(persistenceErrorMessage ?? "Try again.")
@@ -383,6 +487,7 @@ struct SessionSummaryView: View {
     }
 
     private func reopenWorkout() {
+        retryReopen = true
         let originalState = WorkoutSessionCompletionState(session)
         reopenService.reopen(session)
         do {
@@ -396,13 +501,27 @@ struct SessionSummaryView: View {
     }
 
     private func updateMatchingSplit() {
+        retryReopen = false
         guard let matchingSplitID = snapshot.matchingSplitID else { return }
         let descriptor = FetchDescriptor<TrainingSplit>(
             predicate: #Predicate { $0.id == matchingSplitID }
         )
-        guard let matchingSplit = try? modelContext.fetch(descriptor).first else { return }
-        splitUpdateService.replaceOrder(of: matchingSplit, with: session)
-        try? modelContext.save()
+
+        do {
+            guard let matchingSplit = try modelContext.fetch(descriptor).first else {
+                persistenceErrorMessage = "Could not find the matching split template locally. Try again."
+                return
+            }
+
+            do {
+                try splitPersistence.update(matchingSplit, with: session, in: modelContext)
+                persistenceErrorMessage = nil
+            } catch {
+                persistenceErrorMessage = "Could not update the split template locally: \(error.localizedDescription)"
+            }
+        } catch {
+            persistenceErrorMessage = "Could not read the split template locally: \(error.localizedDescription)"
+        }
     }
 }
 

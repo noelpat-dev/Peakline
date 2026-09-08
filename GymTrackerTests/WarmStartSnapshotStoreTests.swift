@@ -43,6 +43,68 @@ final class WarmStartSnapshotStoreTests: XCTestCase {
         XCTAssertEqual(changed.trainingInputSignature, "prepared-training")
     }
 
+    func testPreparedRecoveryCoachTargetUsesLastBestRepeatTarget() throws {
+        let rawTarget = TargetSuggestion(
+            exerciseName: "Bench Press",
+            lastBestSetDescription: "100kg x 10",
+            lastBestWeight: 100,
+            lastBestReps: 10,
+            suggestedWeight: 102.5,
+            suggestedReps: 6,
+            recommendationType: .increaseLoad,
+            reason: "You reached the top of the rep range. Add a small load jump.",
+            confidence: 0.78
+        )
+        let baselineTarget = TargetSuggestion(
+            exerciseName: "Chest Fly",
+            lastBestSetDescription: nil,
+            lastBestWeight: nil,
+            lastBestReps: nil,
+            suggestedWeight: nil,
+            suggestedReps: 10,
+            recommendationType: .baseline,
+            reason: "Build a baseline.",
+            confidence: 0.45
+        )
+        let derivedMetrics = CoachDerivedMetrics(
+            summary: CoachDerivedMetrics.placeholder.summary,
+            recentPRs: [],
+            targetSuggestions: [baselineTarget, rawTarget],
+            weeklyWorkoutCount: 0,
+            weeklyWorkingSetCount: 0,
+            progressOpportunityInsights: []
+        )
+        let recoveryCall = TrainingCallSnapshot(
+            recommendedSplitName: "Push",
+            recommendedMode: .recovery,
+            action: .recover,
+            title: "Recovery mode makes sense",
+            reason: "Recovery signals keep today's plan lighter.",
+            confidence: .high,
+            targetSummary: "Bench Press: keep this controlled rather than chasing progression.",
+            sourceSignals: [],
+            missingOrStaleInputs: [],
+            guardrailNotes: [],
+            isConservative: true
+        )
+
+        let prepared = CoachRouteRenderSnapshot(
+            intelligence: CoachIntelligenceService.emptySnapshot(),
+            weeklyReview: nil,
+            derivedMetrics: derivedMetrics,
+            sleepAnalytics: SleepAnalyticsService.emptySnapshot(),
+            trainingCall: recoveryCall
+        )
+
+        let target = try XCTUnwrap(prepared.dailyDecision.primaryTarget)
+        XCTAssertEqual(target.exerciseName, "Bench Press")
+        XCTAssertEqual(target.suggestedWeight, 100)
+        XCTAssertEqual(target.suggestedReps, 10)
+        XCTAssertEqual(target.recommendationType, .repeatTarget)
+        XCTAssertEqual(prepared.derivedMetrics.targetSuggestions.last?.suggestedWeight, 102.5)
+        XCTAssertEqual(prepared.derivedMetrics.targetSuggestions.last?.recommendationType, .increaseLoad)
+    }
+
     func testCoachRoutePublicationKeepsFreshReadinessCallAndSplitInOneGeneration() {
         let store = CoachRouteSnapshotStore.shared
         store.resetForTesting()
@@ -624,7 +686,7 @@ final class WarmStartSnapshotStoreTests: XCTestCase {
                     maxReps: planned.maxReps,
                     completedSessions: completedSnapshots
                 )
-                let expectedTarget = planner.modeAdjustedSuggestion(baseTarget, mode: mode)
+                let expectedTarget = planner.modeAdjustedSuggestion(baseTarget, mode: mode, trainingCall: snapshot.trainingCall)
                 XCTAssertEqual(snapshot.suggestions[planned.id], expectedTarget, "Target changed for \(planned.name) in \(mode)")
 
                 let expectedCandidates = substitutionService.candidates(
@@ -648,8 +710,9 @@ final class WarmStartSnapshotStoreTests: XCTestCase {
 
         let fullSnapshot = try XCTUnwrap(snapshotsByMode[.full])
         let inclinePlan = try XCTUnwrap(fullSnapshot.plannedExercises.first { $0.exerciseId == inclinePress.id })
-        XCTAssertEqual(fullSnapshot.suggestions[inclinePlan.id]?.recommendationType, .increaseLoad)
-        XCTAssertEqual(fullSnapshot.suggestions[inclinePlan.id]?.suggestedWeight, 62.5)
+        XCTAssertTrue(fullSnapshot.trainingCall.isConservative)
+        XCTAssertEqual(fullSnapshot.suggestions[inclinePlan.id]?.recommendationType, .repeatTarget)
+        XCTAssertEqual(fullSnapshot.suggestions[inclinePlan.id]?.suggestedWeight, 60)
         XCTAssertEqual(
             fullSnapshot.substitutionCandidates[inclinePlan.id]?.map(\.exerciseId),
             [chestPress.id, benchPress.id, chestFly.id, shoulderPress.id, core.id]

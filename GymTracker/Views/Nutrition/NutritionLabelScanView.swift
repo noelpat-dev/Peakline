@@ -10,6 +10,7 @@ struct NutritionLabelScanView: View {
     @State private var isCameraPresented = false
     @State private var isManualEntryPresented = false
     @State private var pendingCameraImage: UIImage?
+    @State private var photoLoadingTask: Task<Void, Never>?
     @State private var deferredImageProcessingTask: Task<Void, Never>?
 
     let initialBarcode: String?
@@ -68,8 +69,14 @@ struct NutritionLabelScanView: View {
             ManualFoodEntryView()
         }
         .onChange(of: selectedPhoto) { _, item in
+            photoLoadingTask?.cancel()
+            photoLoadingTask = nil
             guard let item else { return }
-            Task { await loadPhoto(item) }
+            photoLoadingTask = Task { @MainActor in
+                await loadPhoto(item)
+                guard !Task.isCancelled else { return }
+                photoLoadingTask = nil
+            }
         }
         .onChange(of: isCameraPresented) { _, isPresented in
             guard !isPresented, let image = pendingCameraImage else { return }
@@ -77,7 +84,10 @@ struct NutritionLabelScanView: View {
             processImageAfterPickerDismissal(image)
         }
         .onDisappear {
+            photoLoadingTask?.cancel()
+            photoLoadingTask = nil
             deferredImageProcessingTask?.cancel()
+            deferredImageProcessingTask = nil
         }
     }
 
@@ -375,16 +385,20 @@ struct NutritionLabelScanView: View {
     private func loadPhoto(_ item: PhotosPickerItem) async {
         do {
             guard
+                !Task.isCancelled,
                 let data = try await item.loadTransferable(type: Data.self),
                 let image = UIImage(data: data)
             else {
+                guard !Task.isCancelled else { return }
                 viewModel.imageSelectionFailed()
                 return
             }
 
+            guard !Task.isCancelled else { return }
             selectedPhoto = nil
             processImageAfterPickerDismissal(image)
         } catch {
+            guard !Task.isCancelled else { return }
             viewModel.imageSelectionFailed()
         }
     }

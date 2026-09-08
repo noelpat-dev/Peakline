@@ -1033,6 +1033,9 @@ struct StartWorkoutContentView: View {
                             .textCase(.uppercase)
                         Text(session.splitNameSnapshot)
                             .font(AppTypography.largeMetric)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .layoutPriority(1)
                     }
 
                     Spacer(minLength: 8)

@@ -1,5 +1,8 @@
 import XCTest
+import SwiftData
 @testable import GymTracker
+
+private struct HydrationPersistenceSaveError: Error {}
 
 @MainActor
 final class NutritionExportReliabilityTests: XCTestCase {
@@ -140,6 +143,47 @@ final class NutritionExportReliabilityTests: XCTestCase {
         XCTAssertEqual(summary.status, .behind)
         XCTAssertEqual(summary.remainingML, 1_250)
         XCTAssertEqual(summary.progress, 0.5, accuracy: 0.001)
+    }
+
+    func testHydrationPersistencePreservesPendingChangesWhenSaveFails() throws {
+        let schema = Schema([HydrationEntry.self])
+        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: schema, configurations: [configuration])
+        let context = ModelContext(container)
+
+        let targetID = UUID()
+        let unrelatedID = UUID()
+        let target = HydrationEntry(id: targetID, amountML: 500)
+        let unrelated = HydrationEntry(id: unrelatedID, amountML: 250)
+        context.insert(target)
+        context.insert(unrelated)
+        try context.save()
+        unrelated.amountML = 750
+
+        let failingDeletePersistence = HydrationPersistence { _ in
+            throw HydrationPersistenceSaveError()
+        }
+        XCTAssertThrowsError(try failingDeletePersistence.delete(target, in: context))
+        try context.save()
+
+        let deleteReloadedContext = ModelContext(container)
+        let afterDeleteFailure = try deleteReloadedContext.fetch(FetchDescriptor<HydrationEntry>())
+        XCTAssertEqual(afterDeleteFailure.count, 2)
+        XCTAssertEqual(try XCTUnwrap(afterDeleteFailure.first { $0.id == targetID }?.amountML), 500)
+        XCTAssertEqual(try XCTUnwrap(afterDeleteFailure.first { $0.id == unrelatedID }?.amountML), 750)
+
+        let failedInsertID = UUID()
+        let failingInsertPersistence = HydrationPersistence { _ in
+            throw HydrationPersistenceSaveError()
+        }
+        let failedInsert = HydrationEntry(id: failedInsertID, amountML: 1_000)
+        XCTAssertThrowsError(try failingInsertPersistence.insert(failedInsert, in: context))
+        try context.save()
+
+        let insertReloadedContext = ModelContext(container)
+        let afterInsertFailure = try insertReloadedContext.fetch(FetchDescriptor<HydrationEntry>())
+        XCTAssertEqual(afterInsertFailure.count, 2)
+        XCTAssertFalse(afterInsertFailure.contains { $0.id == failedInsertID })
     }
 
     func testNutritionComparisonFlagsMajorDifferencesWithoutGuessingFinalValue() throws {

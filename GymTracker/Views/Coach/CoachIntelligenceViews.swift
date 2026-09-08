@@ -166,74 +166,146 @@ struct CoachBriefCard: View {
 
 struct TrainingCallAuditCard: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let snapshot: TrainingCallSnapshot
     var title: String = "Why this call?"
+    var isExpandable = false
+    var showsReason = true
+
+    @Binding private var isExpanded: Bool
+
+    init(
+        snapshot: TrainingCallSnapshot,
+        title: String = "Why this call?",
+        isExpandable: Bool = false,
+        showsReason: Bool = true,
+        expanded: Binding<Bool>? = nil
+    ) {
+        self.snapshot = snapshot
+        self.title = title
+        self.isExpandable = isExpandable
+        self.showsReason = showsReason
+        _isExpanded = expanded ?? .constant(!isExpandable)
+    }
 
     var body: some View {
-        FitnessCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 12) {
-                    FitnessIconBadge(
-                        systemImage: snapshot.recommendedMode.systemImage,
-                        size: 42,
-                        tint: accent,
-                        background: accent.opacity(0.14)
-                    )
-
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(title)
-                            .font(AppTypography.sectionTitle)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-
-                        Text("\(snapshot.headline) - \(snapshot.confidence.displayName)")
-                            .font(AppTypography.bodyEmphasis)
-                            .foregroundStyle(accent)
-                            .fixedSize(horizontal: false, vertical: true)
+        if isExpandable {
+            VStack(alignment: .leading, spacing: 12) {
+                Button {
+                    AppHaptics.selection()
+                    withAnimation(AppMotion.animation(for: .secondaryAction, reduceMotion: reduceMotion)) {
+                        isExpanded.toggle()
                     }
-
-                    Spacer(minLength: 8)
-
-                    CoachBadgeView(state: badgeState)
-                        .fixedSize(horizontal: true, vertical: false)
+                } label: {
+                    FitnessCard { headerContent }
                 }
+                .buttonStyle(PressableCardButtonStyle())
+                .accessibilityLabel(title)
+                .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+                .accessibilityHint(isExpanded ? "Double tap to hide coaching evidence." : "Double tap to show coaching evidence.")
+                .accessibilityIdentifier("coach-why-this-toggle")
 
+                if isExpanded {
+                    FitnessCard { details }
+                        .accessibilityElement(children: .contain)
+                }
+            }
+            .accessibilityElement(children: .contain)
+        } else {
+            FitnessCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    headerContent
+                    details
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(title). \(snapshot.headline). \(snapshot.reason)")
+        }
+    }
+
+    private var headerContent: some View {
+        HStack(alignment: .top, spacing: 12) {
+            FitnessIconBadge(
+                systemImage: snapshot.recommendedMode.systemImage,
+                size: 42,
+                tint: accent,
+                background: accent.opacity(0.14)
+            )
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title)
+                    .font(AppTypography.sectionTitle)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+
+                if isExpandable {
+                    Text(snapshot.confidence.displayName)
+                        .font(AppTypography.metadataEmphasis)
+                        .foregroundStyle(accent)
+                } else {
+                    Text("\(snapshot.headline) - \(snapshot.confidence.displayName)")
+                        .font(AppTypography.bodyEmphasis)
+                        .foregroundStyle(accent)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            if isExpandable {
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    .font(AppTypography.metadataEmphasis)
+                    .foregroundStyle(appTheme.colors.textTertiary)
+                    .frame(width: 44, height: 44)
+            } else {
+                CoachBadgeView(state: badgeState)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+        }
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if showsReason {
                 Text(snapshot.reason)
                     .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
 
-                if let targetSummary = snapshot.targetSummary {
-                    Label(targetSummary, systemImage: "target")
+            if let targetSummary = snapshot.targetSummary {
+                Label(targetSummary, systemImage: "target")
+                    .font(AppTypography.metadataEmphasis)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !snapshot.auditSignals.isEmpty {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("Signals used")
                         .font(AppTypography.metadataEmphasis)
-                        .foregroundStyle(appTheme.colors.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                        .foregroundStyle(appTheme.colors.textTertiary)
+                        .textCase(.uppercase)
 
-                if !snapshot.auditSignals.isEmpty {
-                    VStack(alignment: .leading, spacing: 7) {
-                        ForEach(snapshot.auditSignals, id: \.self) { signal in
-                            TrainingCallAuditLine(text: signal, systemImage: "checkmark.circle")
-                        }
+                    ForEach(snapshot.auditSignals, id: \.self) { signal in
+                        TrainingCallAuditLine(text: signal, systemImage: "checkmark.circle")
                     }
                 }
+            }
 
-                if !snapshot.missingOrStaleInputs.isEmpty {
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text("Inputs to improve")
-                            .font(AppTypography.metadataEmphasis)
-                            .foregroundStyle(appTheme.colors.textTertiary)
-                            .textCase(.uppercase)
+            if !snapshot.missingOrStaleInputs.isEmpty {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("What would improve this call")
+                        .font(AppTypography.metadataEmphasis)
+                        .foregroundStyle(appTheme.colors.textTertiary)
+                        .textCase(.uppercase)
 
-                        ForEach(snapshot.missingOrStaleInputs, id: \.self) { input in
-                            TrainingCallAuditLine(text: input, systemImage: "exclamationmark.circle")
-                        }
+                    ForEach(snapshot.missingOrStaleInputs, id: \.self) { input in
+                        TrainingCallAuditLine(text: input, systemImage: "exclamationmark.circle")
                     }
                 }
             }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(title). \(snapshot.headline). \(snapshot.reason)")
     }
 
     private var accent: Color {
