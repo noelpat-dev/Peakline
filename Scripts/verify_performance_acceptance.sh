@@ -68,6 +68,7 @@ run_performance_ui_test performance_data_rich_readiness testPerformanceAcceptanc
 run_performance_ui_test performance_data_rich_sleep testPerformanceAcceptanceDataRichSleepRoute
 run_performance_ui_test performance_data_rich_nutrition testPerformanceAcceptanceDataRichNutritionRoute
 run_performance_ui_test performance_data_rich_progress testPerformanceAcceptanceDataRichProgressRoute
+run_performance_ui_test performance_data_rich_progress_detail testPerformanceAcceptanceDataRichExerciseProgressDetailAndPointSelection
 run_performance_ui_test performance_data_rich_hydration testPerformanceAcceptanceDataRichHydrationRoute
 run_performance_ui_test performance_data_rich_preview testPerformanceAcceptanceDataRichPreviewRoute
 
@@ -140,15 +141,23 @@ for match in re.finditer(
 if "navigation.interaction duplicate_mutation" in text:
     fail("Navigation produced a duplicate route mutation")
 
-history_scroll_active = False
+# History scroll protection is read from the in-app acceptance summary: app-side
+# print output is not reliably captured in `xcodebuild test` logs. The attachment
+# count proves the observer bound to the real History scroll view, and the app
+# records `performance_acceptance=FAIL` if a display snapshot is rebuilt while
+# History is scrolling or decelerating (asserted below).
+observer_attachments = [
+    int(value) for value in re.findall(r"historyScrollObserverAttachments=(\d+)", text)
+]
+if not observer_attachments:
+    fail("History acceptance summary never reported historyScrollObserverAttachments")
+elif max(observer_attachments) < 1:
+    fail("History scroll instrumentation never attached to the History scroll view")
+
 for line in lines:
-    if "history.scroll begin" in line:
-        history_scroll_active = True
+    if "PERF_ACCEPTANCE_UI_SUMMARY" not in line:
         continue
-    if "history.scroll end" in line:
-        history_scroll_active = False
-        continue
-    if history_scroll_active and "history.display_snapshot" in line:
+    if "performance_acceptance=FAIL" in line and "history.display_snapshot" in line:
         fail("History rebuilt its display snapshot during an active scroll")
 
 preview_mounted = False

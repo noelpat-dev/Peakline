@@ -240,6 +240,75 @@ final class NutritionScannerNavigationUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 5), .completed)
     }
 
+    func testHydrationRowKeepsSwipeDeleteHiddenUntilDeliberateSwipe() throws {
+        launch()
+        tapElement(identifier: "quick-action-hydration", maxSwipes: 4)
+        let progress = app.progressIndicators["Hydration progress"]
+        XCTAssertTrue(progress.waitForExistence(timeout: 5))
+
+        tapAccessibilityButton(named: "Add 250 millilitres of water", maxSwipes: 4)
+
+        let rowAmount = app.staticTexts["250 mL"]
+        XCTAssertTrue(rowAmount.waitForExistence(timeout: 5), "Expected the 250 mL hydration row")
+        let deleteAction = app.buttons["Delete 250 mL hydration entry"]
+        XCTAssertFalse(
+            deleteAction.exists,
+            "A closed row must not expose its destructive action"
+        )
+
+        // A diagonal drag belongs to the scrolling list, so the row must not
+        // claim the gesture or expose its destructive action.
+        dragRow(rowAmount, startX: 300, dx: -26, dy: -70)
+        XCTAssertFalse(
+            deleteAction.exists,
+            "A diagonal scroll must not reveal the hidden destructive action"
+        )
+        XCTAssertTrue(rowAmount.exists, "Expected the home row to survive a diagonal scroll")
+
+        // A deliberate horizontal swipe commits the row to reveal the action.
+        dragRow(rowAmount, startX: 300, dx: -110, dy: 0)
+        XCTAssertTrue(deleteAction.waitForExistence(timeout: 3), "Expected the revealed delete action")
+        XCTAssertTrue(deleteAction.isHittable, "Expected the revealed delete action to be hittable")
+
+        // A reverse swipe starts inside the slid row and settles it closed again.
+        dragRow(rowAmount, startX: 150, dx: 110, dy: 0)
+        XCTAssertTrue(
+            deleteAction.waitForNonExistence(timeout: 2),
+            "A reverse swipe must settle the row closed"
+        )
+
+        dragRow(rowAmount, startX: 300, dx: -110, dy: 0)
+        XCTAssertTrue(deleteAction.waitForExistence(timeout: 3), "Expected the re-revealed delete action")
+        deleteAction.tap()
+
+        XCTAssertTrue(
+            rowAmount.waitForNonExistence(timeout: 5),
+            "Expected the deleted hydration row to collapse"
+        )
+        let removed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value BEGINSWITH %@", "0 mL out of"),
+            object: progress
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [removed], timeout: 5),
+            .completed,
+            "Expected the deleted entry to leave the daily total"
+        )
+    }
+
+    /// Drags from a fixed point inside the row. The horizontal start is chosen
+    /// so the gesture still lands on the row content after the card slides left.
+    private func dragRow(_ element: XCUIElement, startX: CGFloat, dx: CGFloat, dy: CGFloat) {
+        let frame = app.frame
+        let start = app.coordinate(
+            withNormalizedOffset: CGVector(
+                dx: startX / frame.width,
+                dy: element.frame.midY / frame.height
+            )
+        )
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: dx, dy: dy)))
+    }
+
     private func openSavedFoods() {
         XCTAssertTrue(
             app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),

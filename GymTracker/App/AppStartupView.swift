@@ -39,7 +39,8 @@ struct AppStartupView: View {
                 .scaleEffect(splashScale)
                 .zIndex(10)
                 .contentShape(Rectangle())
-                .allowsHitTesting(true)
+                .allowsHitTesting(!presentation.isRevealing)
+                .accessibilityHidden(presentation.isRevealing)
             }
         }
         .accessibilityElement(children: .contain)

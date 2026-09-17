@@ -27,7 +27,9 @@ GymTracker/GoogleService-Info.plist
 AGENTS.md
 Agents/
 .agents/
-Docs/
+docs/AUDIT_INDEX.md
+docs/Archive/
+docs/investigations/
 Prompts/
 NEXT_TASK.md
 NEXT_CODEX_CHAT.md

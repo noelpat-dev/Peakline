@@ -6,17 +6,20 @@ struct StepperValueControl: View {
 
     let label: String
     let valueText: String
+    let numericValue: Double
     let unitSuffix: String?
     let canDecrement: Bool
     let decrement: () -> Void
     let increment: () -> Void
     let edit: () -> Void
 
-    @State private var direction: ValueDirection = .neutral
+    @State private var direction: StepperValueDirection = .neutral
+    @State private var renderedValueText: String
 
     init(
         label: String,
         valueText: String,
+        numericValue: Double,
         unitSuffix: String? = nil,
         canDecrement: Bool = true,
         decrement: @escaping () -> Void,
@@ -25,11 +28,13 @@ struct StepperValueControl: View {
     ) {
         self.label = label
         self.valueText = valueText
+        self.numericValue = numericValue
         self.unitSuffix = unitSuffix
         self.canDecrement = canDecrement
         self.decrement = decrement
         self.increment = increment
         self.edit = edit
+        _renderedValueText = State(initialValue: valueText)
     }
 
     var body: some View {
@@ -40,7 +45,6 @@ struct StepperValueControl: View {
 
             HStack(spacing: 0) {
                 Button {
-                    direction = .decrement
                     decrement()
                 } label: {
                     Image(systemName: "minus")
@@ -56,21 +60,12 @@ struct StepperValueControl: View {
                     edit()
                 } label: {
                     HStack(spacing: 3) {
-                        Text(valueText)
+                        Text(renderedValueText)
                             .font(AppTypography.workoutNumber)
                             .lineLimit(1)
                             .minimumScaleFactor(0.78)
-                            .contentTransition(
-                                reduceMotion
-                                    ? .opacity
-                                    : .numericText(countsDown: direction == .decrement)
-                            )
-                            .animation(
-                                reduceMotion
-                                    ? AppMotion.reducedMotionAnimation(policy: .immediate)
-                                    : .easeInOut(duration: AppMotion.stepperRollDuration),
-                                value: valueText
-                            )
+                            .contentTransition(transition.contentTransition)
+                            .animation(transition.animation, value: renderedValueText)
 
                         if let unitSuffix {
                             Text(unitSuffix)
@@ -88,7 +83,6 @@ struct StepperValueControl: View {
                 .accessibilityIdentifier("stepper-\(identifierBase)-edit")
 
                 Button {
-                    direction = .increment
                     increment()
                 } label: {
                     Image(systemName: "plus")
@@ -107,6 +101,21 @@ struct StepperValueControl: View {
                     .stroke(appTheme.colors.cardBorder, lineWidth: 1)
             )
         }
+        .onChange(of: displayInput) { oldValue, newValue in
+            direction = StepperValueDirection.derived(
+                from: oldValue.numericValue,
+                to: newValue.numericValue
+            )
+            renderedValueText = newValue.text
+        }
+    }
+
+    private var transition: StepperValueTransition {
+        StepperValueTransition.resolve(reduceMotion: reduceMotion, direction: direction)
+    }
+
+    private var displayInput: DisplayInput {
+        DisplayInput(numericValue: numericValue, text: valueText)
     }
 
     private var identifierBase: String {
@@ -122,9 +131,60 @@ struct StepperValueControl: View {
         return valueText
     }
 
-    private enum ValueDirection {
-        case neutral
-        case increment
-        case decrement
+    private struct DisplayInput: Equatable {
+        let numericValue: Double
+        let text: String
+    }
+}
+
+/// Direction of the last typed or stepped change, derived from the numeric
+/// values rather than from the most recently tapped button.
+enum StepperValueDirection: Equatable {
+    case neutral
+    case increment
+    case decrement
+
+    static func derived(from previousValue: Double, to newValue: Double) -> StepperValueDirection {
+        if newValue > previousValue {
+            return .increment
+        }
+
+        if newValue < previousValue {
+            return .decrement
+        }
+
+        return .neutral
+    }
+}
+
+/// Numeric roll vs. Reduce Motion direct-state behaviour for the stepper value.
+enum StepperValueTransition: Equatable {
+    case immediate
+    case numericRoll(direction: StepperValueDirection)
+
+    static func resolve(reduceMotion: Bool, direction: StepperValueDirection) -> StepperValueTransition {
+        guard !reduceMotion, direction != .neutral else {
+            return .immediate
+        }
+
+        return .numericRoll(direction: direction)
+    }
+
+    var contentTransition: ContentTransition {
+        switch self {
+        case .immediate:
+            return .opacity
+        case .numericRoll(let direction):
+            return .numericText(countsDown: direction == .decrement)
+        }
+    }
+
+    var animation: Animation {
+        switch self {
+        case .immediate:
+            return AppMotion.reducedMotionAnimation(policy: .immediate)
+        case .numericRoll:
+            return .easeInOut(duration: AppMotion.stepperRollDuration)
+        }
     }
 }

@@ -4,10 +4,8 @@ import UIKit
 
 enum StartupPresentationState: Equatable {
     case animating
-    case waitingForAnimation
     case waitingForCriticalReady
     case holdingSlow
-    case holdingSlowForAnimation
     case holdingSlowForCriticalReady
     case revealing
     case hidden
@@ -38,8 +36,6 @@ enum StartupPresentationReducer {
             switch state {
             case .animating:
                 return .waitingForCriticalReady
-            case .waitingForAnimation, .holdingSlowForAnimation:
-                return .revealing
             case .holdingSlow:
                 return .holdingSlowForCriticalReady
             case .holdingSlowForCriticalReady, .waitingForCriticalReady,
@@ -50,22 +46,16 @@ enum StartupPresentationReducer {
             switch state {
             case .animating, .waitingForCriticalReady:
                 return state == .animating ? .holdingSlow : .holdingSlowForCriticalReady
-            case .waitingForAnimation:
-                return .holdingSlowForAnimation
-            case .holdingSlow, .holdingSlowForAnimation, .holdingSlowForCriticalReady,
+            case .holdingSlow, .holdingSlowForCriticalReady,
                  .revealing, .hidden, .interrupted:
                 return state
             }
         case .criticalReady:
             switch state {
-            case .animating:
-                return .waitingForAnimation
-            case .waitingForCriticalReady, .holdingSlowForCriticalReady:
+            case .animating, .waitingForCriticalReady, .holdingSlow,
+                 .holdingSlowForCriticalReady:
                 return .revealing
-            case .holdingSlow:
-                return .holdingSlowForAnimation
-            case .waitingForAnimation, .holdingSlowForAnimation,
-                 .revealing, .hidden, .interrupted:
+            case .revealing, .hidden, .interrupted:
                 return state
             }
         case .interrupted:
@@ -118,8 +108,8 @@ final class StartupPresentationCoordinator: ObservableObject {
 
     var isOverlayMounted: Bool {
         switch state {
-        case .animating, .waitingForAnimation, .waitingForCriticalReady,
-             .holdingSlow, .holdingSlowForAnimation, .holdingSlowForCriticalReady,
+        case .animating, .waitingForCriticalReady,
+             .holdingSlow, .holdingSlowForCriticalReady,
              .revealing:
             return true
         case .hidden, .interrupted:
@@ -128,12 +118,11 @@ final class StartupPresentationCoordinator: ObservableObject {
     }
 
     var animatesWordmark: Bool {
-        state == .animating || state == .waitingForAnimation
+        state == .animating
     }
 
     var showsSlowProgress: Bool {
         state == .holdingSlow
-            || state == .holdingSlowForAnimation
             || state == .holdingSlowForCriticalReady
     }
 
@@ -142,7 +131,7 @@ final class StartupPresentationCoordinator: ObservableObject {
     }
 
     var isRevealComplete: Bool {
-        state == .hidden
+        state == .revealing || state == .hidden
     }
 
     func start() {
@@ -161,7 +150,6 @@ final class StartupPresentationCoordinator: ObservableObject {
             try? await Task.sleep(for: .seconds(maximumDuration))
             guard !Task.isCancelled, let self else { return }
             guard self.state == .animating
-                    || self.state == .waitingForAnimation
                     || self.state == .waitingForCriticalReady else { return }
             self.transition(.slowThresholdReached)
             PerformanceTracer.mark(.startupPresentationSlow, "animation_settled")

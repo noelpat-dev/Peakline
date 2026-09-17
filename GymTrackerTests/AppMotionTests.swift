@@ -53,6 +53,5 @@ final class AppMotionTests: XCTestCase {
         XCTAssertEqual(AppMotion.reduceMotionPolicy(for: .swipeSnap), .immediate)
         XCTAssertEqual(AppMotion.reduceMotionPolicy(for: .celebration), .immediate)
         XCTAssertEqual(AppMotion.sheetInnerContentOffset, 12, accuracy: 0.0001)
-        XCTAssertEqual(AppMotion.sheetInnerContentRevealDelay, 70_000_000)
     }
 }

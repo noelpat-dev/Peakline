@@ -8,19 +8,22 @@ struct RestTimerState: Equatable {
     var exerciseName: String?
     var nextSetNumber: Int?
     var completionDate: Date?
+    private(set) var runID: UUID?
 
     init(
         startDate: Date? = nil,
         endDate: Date? = nil,
         exerciseName: String? = nil,
         nextSetNumber: Int? = nil,
-        completionDate: Date? = nil
+        completionDate: Date? = nil,
+        runID: UUID? = nil
     ) {
         self.startDate = startDate
         self.endDate = endDate
         self.exerciseName = exerciseName
         self.nextSetNumber = nextSetNumber
         self.completionDate = completionDate
+        self.runID = runID
     }
 
     var isRunning: Bool {
@@ -60,6 +63,7 @@ struct RestTimerState: Equatable {
         self.exerciseName = exerciseName
         self.nextSetNumber = nextSetNumber
         completionDate = nil
+        runID = UUID()
     }
 
     mutating func extend(by seconds: Int, now: Date = .now) {
@@ -74,5 +78,10 @@ struct RestTimerState: Equatable {
 
     mutating func reset() {
         self = RestTimerState()
+    }
+
+    mutating func reset(ifMatching expectedRunID: UUID) {
+        guard runID == expectedRunID else { return }
+        reset()
     }
 }

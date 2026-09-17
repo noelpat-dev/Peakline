@@ -161,8 +161,14 @@ enum PerformanceTracer {
 
 #if DEBUG
 enum PerformanceAcceptanceState {
+    /// Unit tests run inside the app host without the acceptance launch
+    /// argument, so they opt in explicitly here; production launches never set
+    /// this and keep the launch-argument/environment gate.
+    static var isEnabledForTesting = false
+
     static var isEnabled: Bool {
-        ProcessInfo.processInfo.arguments.contains("-PerformanceAcceptanceMode") ||
+        if isEnabledForTesting { return true }
+        return ProcessInfo.processInfo.arguments.contains("-PerformanceAcceptanceMode") ||
             ProcessInfo.processInfo.environment["PERFORMANCE_ACCEPTANCE_MODE"] == "1"
     }
 
@@ -192,6 +198,7 @@ enum PerformanceAcceptanceState {
             "routeTimings=\(routeTimingText)",
             "previewWarmCacheHits=\(workoutPreviewWarmCacheHits)",
             "previewOnAppearRefreshes=\(workoutPreviewOnAppearRefreshes)",
+            "historyScrollObserverAttachments=\(historyScrollObserverAttachments)",
             "failures=\(failureText)"
         ].joined(separator: " | ")
     }
@@ -277,6 +284,17 @@ enum PerformanceAcceptanceState {
                     )
                 }
             }
+        // These marks come from the real History scroll view observer, so the
+        // summary proves the protected interval is live and that no display
+        // snapshot was rebuilt while History was scrolling or decelerating.
+        case .historyScroll where message.contains("observer_attached"):
+            historyScrollObserverAttachments += 1
+        case .historyScroll where message.contains("begin"):
+            historyScrollActive = true
+        case .historyScroll where message.contains("end"):
+            historyScrollActive = false
+        case .historyDisplaySnapshot where historyScrollActive:
+            addFailureLocked("history.display_snapshot rebuilt during active History scroll")
         default:
             break
         }
@@ -303,9 +321,35 @@ enum PerformanceAcceptanceState {
             if value > 50 {
                 addFailureLocked("root.notification.refresh completed in \(value)ms")
             }
+        case .historyDisplaySnapshot where historyScrollActive:
+            addFailureLocked("history.display_snapshot rebuilt during active History scroll")
         default:
             break
         }
+    }
+
+    /// Clears every recorded measurement so a new window starts clean. The
+    /// enablement gate is deliberately left alone.
+    static func reset() {
+        lock.lock()
+        defer { lock.unlock() }
+
+        failures = []
+        failureSet = []
+        startupLocalMaxMilliseconds = 0
+        startupSnapshotMaxMilliseconds = 0
+        todayCoachMaxMilliseconds = 0
+        coachPreviewMaxMilliseconds = 0
+        rootTabMaxMilliseconds = 0
+        rootTabMaxMillisecondsByName = [:]
+        rootNotificationMaxMilliseconds = 0
+        workoutPreviewWarmCacheHits = 0
+        workoutPreviewOnAppearRefreshes = 0
+        navigationRouteMaxMilliseconds = [:]
+        pendingWorkoutCoachAppend = false
+        pendingCheckInPresentation = false
+        historyScrollObserverAttachments = 0
+        historyScrollActive = false
     }
 
     private static let lock = NSLock()
@@ -323,6 +367,8 @@ enum PerformanceAcceptanceState {
     private static var navigationRouteMaxMilliseconds: [String: Int] = [:]
     private static var pendingWorkoutCoachAppend = false
     private static var pendingCheckInPresentation = false
+    private static var historyScrollObserverAttachments = 0
+    private static var historyScrollActive = false
 
     private static let failureStrings = [
         "Potential Structural Swift Concurrency Issue: unsafeForcedSync",

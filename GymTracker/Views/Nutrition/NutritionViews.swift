@@ -496,6 +496,7 @@ struct NutritionDashboardView: View {
             modelContext.rollback()
             AppHaptics.error()
             self.pendingDeleteLogEntryID = nil
+            activeFoodLogSwipeID = nil
             deleteErrorText = "Could not remove the food log locally. Try again."
         }
     }
@@ -777,7 +778,6 @@ struct AddFoodHubView: View {
         }
         .sheet(isPresented: $showingManualEntry) {
             ManualFoodEntryView()
-                .sheetContentEntrance()
         }
     }
 
@@ -961,11 +961,9 @@ struct FoodDatabaseView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingManualEntry) {
             ManualFoodEntryView(onSave: applySavedFood)
-                .sheetContentEntrance()
         }
         .sheet(item: $editingFood) { food in
             ManualFoodEntryView(foodSnapshot: food, onSave: applySavedFood)
-                .sheetContentEntrance()
         }
         .alert("Delete food?", isPresented: deleteAlertBinding) {
             Button("Cancel", role: .cancel) {

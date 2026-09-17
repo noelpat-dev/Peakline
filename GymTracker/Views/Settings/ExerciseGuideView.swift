@@ -180,7 +180,8 @@ struct ExerciseGuideDetailView: View {
     }
 }
 
-/// A lightweight three-pose sequence. Playback never drives model or persistence updates.
+/// A lightweight three-pose sequence that loops while the preview is visible.
+/// Playback never drives model or persistence updates.
 struct ExercisePosePreview: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -199,6 +200,11 @@ struct ExercisePosePreview: View {
                 .frame(height: 240)
                 .frame(maxWidth: .infinity)
                 .accessibilityLabel("\(entry.name), pose \(selectedFrame) of 3")
+                .accessibilityHint(
+                    reduceMotion
+                        ? "Poses stay still while Reduce Motion is enabled"
+                        : "Poses loop automatically while this screen is open"
+                )
                 .accessibilityIdentifier("exercise-guide-illustration")
 
             HStack(spacing: 12) {

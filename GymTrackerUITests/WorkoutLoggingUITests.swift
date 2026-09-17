@@ -79,6 +79,10 @@ final class WorkoutLoggingUITests: XCTestCase {
         }
 
         XCTAssertTrue(app.staticTexts["How did it go?"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            waitUntil(timeout: 3) { !self.app.buttons["workout-logger-finish"].exists },
+            "Expected the rating overlay to isolate the logger controls behind it"
+        )
         for rating in 1...5 {
             let ratingControl = tappableElement(identifier: "workout-rating-\(rating)")
             XCTAssertTrue(ratingControl.waitForExistence(timeout: 2), "Expected rating \(rating) to be visible")
@@ -87,17 +91,10 @@ final class WorkoutLoggingUITests: XCTestCase {
 
         tapModalElement(identifier: "workout-rating-3")
 
-        let celebrationPrimary = app.buttons["workout-celebration-primary"]
-        let celebrationDone = app.buttons["Done"]
-        if celebrationPrimary.waitForExistence(timeout: 6) {
-            XCTAssertTrue(celebrationPrimary.isHittable, "Expected the completion action to remain responsive after an incomplete workout")
-            celebrationPrimary.tap()
-        } else if celebrationDone.waitForExistence(timeout: 4) {
-            XCTAssertTrue(celebrationDone.isHittable, "Expected Done to remain responsive after an incomplete workout")
-            celebrationDone.tap()
-        } else {
-            XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 5), "Expected completion overlay or Summary after rating")
-        }
+        XCTAssertFalse(
+            app.buttons["workout-celebration-primary"].waitForExistence(timeout: 2),
+            "Routine non-PR completion must navigate directly to Summary"
+        )
         XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 10))
         let summaryStatus = app.staticTexts["session-summary-status"]
         XCTAssertTrue(summaryStatus.waitForExistence(timeout: 5))
@@ -105,6 +102,12 @@ final class WorkoutLoggingUITests: XCTestCase {
         XCTAssertFalse(
             app.buttons["workout-celebration-primary"].waitForExistence(timeout: 2),
             "Expected the completion overlay to retire after Summary reaches its first stable frame"
+        )
+
+        tapElement(identifier: "session-summary-done", maxSwipes: 12)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["workout-screen"].waitForExistence(timeout: 8),
+            "Expected returning from Summary to retire the completed logger"
         )
 
         tapTab(at: 3, expectedTitle: "History")
@@ -144,6 +147,10 @@ final class WorkoutLoggingUITests: XCTestCase {
         let completionCopy = completion.value as? String ?? completion.label
         XCTAssertTrue(completionCopy.contains("New bests unlocked."))
         XCTAssertTrue(completionCopy.contains("PRs on Incline Chest Press (Smith)."))
+        XCTAssertFalse(
+            app.buttons["workout-logger-finish"].exists,
+            "Expected the PR completion overlay to isolate the logger controls behind it"
+        )
 
         let done = app.buttons["workout-celebration-primary"]
         XCTAssertTrue(done.waitForExistence(timeout: 2))
@@ -182,7 +189,7 @@ final class WorkoutLoggingUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["workout-substitution-sheet"].waitForExistence(timeout: 5))
     }
 
-    func testContinueShowsFreshTransitionCopyAcrossTwoExerciseChanges() throws {
+    func testContinueAdvancesImmediatelyWithNonblockingFeedback() throws {
         launch()
         XCTAssertTrue(
             app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
@@ -195,41 +202,34 @@ final class WorkoutLoggingUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["workout-logger-screen"].waitForExistence(timeout: 10))
 
         tapElement(identifier: "workout-logger-continue", maxSwipes: 14)
-        var transitionCopy = app.descendants(matching: .any)["workout-transition-copy"]
+        var transitionCopy = app.descendants(matching: .any)["workout-transition-feedback"]
         XCTAssertTrue(transitionCopy.waitForExistence(timeout: 5))
         let firstCopy = transitionCopy.value as? String ?? transitionCopy.label
         XCTAssertFalse(firstCopy.isEmpty)
-
-        let nextExercise = app.buttons["workout-celebration-primary"]
-        XCTAssertTrue(nextExercise.waitForExistence(timeout: 5))
-        XCTAssertTrue(nextExercise.isHittable)
-        nextExercise.tap()
+        XCTAssertFalse(app.buttons["workout-celebration-primary"].exists)
         XCTAssertTrue(
             waitUntil(timeout: 5) {
                 let position = self.app.descendants(matching: .any)["workout-logger-current-position"]
                 return position.exists && position.label.contains("2 of")
             },
-            "Expected one overlay action to advance to exercise two"
+            "Expected Continue to advance directly to exercise two"
         )
 
         tapElement(identifier: "workout-logger-continue", maxSwipes: 10)
-        transitionCopy = app.descendants(matching: .any)["workout-transition-copy"]
+        transitionCopy = app.descendants(matching: .any)["workout-transition-feedback"]
         XCTAssertTrue(transitionCopy.waitForExistence(timeout: 5))
         let secondCopy = transitionCopy.value as? String ?? transitionCopy.label
 
         XCTAssertFalse(secondCopy.isEmpty)
         XCTAssertNotEqual(firstCopy, secondCopy)
 
-        let secondNextExercise = app.buttons["workout-celebration-primary"]
-        XCTAssertTrue(secondNextExercise.waitForExistence(timeout: 5))
-        XCTAssertTrue(secondNextExercise.isHittable)
-        secondNextExercise.tap()
+        XCTAssertFalse(app.buttons["workout-celebration-primary"].exists)
         XCTAssertTrue(
             waitUntil(timeout: 5) {
                 let position = self.app.descendants(matching: .any)["workout-logger-current-position"]
                 return position.exists && position.label.contains("3 of")
             },
-            "Expected the second overlay action to advance to exercise three"
+            "Expected the second Continue to advance directly to exercise three"
         )
     }
 

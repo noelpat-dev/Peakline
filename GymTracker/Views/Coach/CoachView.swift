@@ -120,6 +120,11 @@ struct CoachContentView: View {
     @State private var liveObservationActivationTask: Task<Void, Never>?
     @State private var previewResumeTask: Task<Void, Never>?
     @State private var isCoachVisible = false
+    /// The supporting dashboard sits below the first screenful. Mounting it one
+    /// main-run-loop turn after the route's first committed frame keeps the
+    /// native push budget for the visible Coach content instead of measuring
+    /// off-screen sections, and the user still sees the same screen.
+    @State private var isSupportingDashboardMounted = false
     @State private var hydrationTargetML = 2_500
     @State private var nutritionGoal = NutritionGoal.empty
 
@@ -468,7 +473,7 @@ struct CoachContentView: View {
                 .accessibilityIdentifier("coach-why-this-section")
             }
 
-            if previewRoute == nil {
+            if previewRoute == nil, isSupportingDashboardMounted {
                 CoachSupportingDashboard {
                     DashboardSection(title: "Main Target") {
                         if let primaryTarget = dailyDecision.primaryTarget {
@@ -862,6 +867,7 @@ struct CoachContentView: View {
                 scheduleLiveObservationActivationIfNeeded()
             }
             PerformanceTracer.mark(.todayCoachDestinationAppear, "CoachContentView onAppear end")
+            scheduleSupportingDashboardMountIfNeeded()
         }
         .onChange(of: liveQueriesEnabled) { queriesWereEnabled, queriesAreEnabled in
             guard !queriesWereEnabled, queriesAreEnabled else { return }
@@ -921,6 +927,18 @@ struct CoachContentView: View {
         sleepSettings = sleepSettingsStore.load()
         hydrationTargetML = hydrationSettingsStore.dailyTargetML()
         nutritionGoal = nutritionGoalStore.loadGoal()
+    }
+
+    /// Mounts the below-the-fold Coach sections after the route's first committed
+    /// frame. The visible Coach content (today's call and the evidence section) is
+    /// unchanged; the push no longer pays to build off-screen sections before the
+    /// user can see anything.
+    private func scheduleSupportingDashboardMountIfNeeded() {
+        guard !isSupportingDashboardMounted else { return }
+        DispatchQueue.main.async {
+            guard isCoachVisible else { return }
+            isSupportingDashboardMounted = true
+        }
     }
 
     private func scheduleLiveObservationActivationIfNeeded() {

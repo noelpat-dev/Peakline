@@ -434,11 +434,10 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
 
+        // The redesigned Today dashboard routes the Next Lift card straight to
+        // the prepared Preview; the Workout tab keeps its own Preview entry.
         tapElement(identifier: "quick-action-workout", maxSwipes: 5)
-        XCTAssertTrue(waitForWorkoutScreen(), "Expected Quick Actions -> Start Workout to open Workout")
-
-        tapElement(identifier: "workout-recommended-preview", maxSwipes: 8)
-        XCTAssertTrue(waitForPreviewScreen(), "Expected Quick Actions -> Start Workout -> Preview to open")
+        XCTAssertTrue(waitForPreviewScreen(), "Expected the Next Lift quick action to open its prepared Preview")
 
         XCTAssertTrue(app.descendants(matching: .any)["workout-preview-hydrated-content"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["workout-preview-start"].waitForExistence(timeout: 3))
@@ -449,7 +448,10 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Coach details are preparing."].exists)
 
         tapBackButton(from: "Preview")
-        XCTAssertTrue(waitForWorkoutScreen(), "Expected back navigation from Preview to return to Workout")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 12),
+            "Expected back navigation from the prepared Preview to return to Today"
+        )
         assertPerformanceAcceptancePassed()
     }
 
@@ -614,6 +616,74 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         XCTAssertTrue(moveFirstExerciseDown.waitForExistence(timeout: 5))
         XCTAssertEqual(moveSecondExerciseUp.label, "Move \(secondExercise) up")
         XCTAssertEqual(moveFirstExerciseDown.label, "Move \(firstExercise) down")
+    }
+
+    func testWorkoutPreviewEdgeAutoscrollReordersOffScreenExerciseToTop() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
+        openWorkoutPreview()
+
+        // Bottom-to-top: keep the drag held near the top edge so the sustained
+        // autoscroll keeps earlier exercises arriving under the finger.
+        let exercise = "Triceps Pushdown"
+        let handle = previewReorderHandleInViewport(named: exercise)
+        XCTAssertTrue(
+            handle.isHittable,
+            "Expected \(exercise)'s reorder handle to be reachable before the edge drag"
+        )
+        XCTAssertGreaterThan(
+            reorderPosition(of: handle),
+            1,
+            "Expected a mid-list exercise to drag towards the top"
+        )
+
+        handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(
+                forDuration: 0.25,
+                thenDragTo: previewReorderEdgeCoordinate(atTop: true),
+                withVelocity: .slow,
+                thenHoldForDuration: 3.2
+            )
+
+        XCTAssertTrue(
+            waitUntil(timeout: 8) {
+                self.reorderPosition(of: self.previewReorderHandle(named: exercise)) == 1
+            },
+            "Expected sustained top-edge autoscroll to move \(exercise) to position 1, found \(reorderPosition(of: previewReorderHandle(named: exercise)))"
+        )
+    }
+
+    func testWorkoutPreviewEdgeAutoscrollReordersOffScreenExerciseToBottom() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+
+        openWorkoutPreview()
+
+        // Top-to-bottom: the same held-edge behaviour must reveal later exercises
+        // and land the dragged row at the end of the route-local order.
+        let exercise = "Incline Chest Press (Smith)"
+        let handle = previewReorderHandleInViewport(named: exercise)
+        XCTAssertTrue(
+            handle.isHittable,
+            "Expected \(exercise)'s reorder handle to be reachable before the edge drag"
+        )
+        let total = reorderTotal(of: handle)
+        XCTAssertGreaterThan(total, 2, "Expected a populated exercise order")
+        XCTAssertLessThan(reorderPosition(of: handle), total, "Expected an exercise that is not already last")
+
+        handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(
+                forDuration: 0.25,
+                thenDragTo: previewReorderEdgeCoordinate(atTop: false),
+                withVelocity: .slow,
+                thenHoldForDuration: 7.2
+            )
+
+        XCTAssertTrue(
+            waitUntil(timeout: 10) {
+                self.reorderPosition(of: self.previewReorderHandle(named: exercise)) == total
+            },
+            "Expected sustained bottom-edge autoscroll to move \(exercise) last, found \(reorderPosition(of: previewReorderHandle(named: exercise))) of \(total)"
+        )
     }
 
     func testWorkoutPreviewOptionalExerciseMenuSelectsAndAddsExercise() throws {
@@ -952,6 +1022,60 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         assertPerformanceAcceptancePassed()
     }
 
+    func testPerformanceAcceptanceDataRichExerciseProgressDetailAndPointSelection() throws {
+        launch(arguments: ["-UITestLargeHistoryFixture"], performance: true)
+
+        prepareDataRichPerformanceRoute()
+        measurePrimaryQuickAction(
+            identifier: "quick-action-progress",
+            routeIdentifier: "progress-screen",
+            route: "progress",
+            actionable: {
+                self.app.buttons.matching(
+                    NSPredicate(format: "identifier BEGINSWITH %@", "progress-exercise-row-")
+                ).firstMatch.exists
+            }
+        )
+
+        let exerciseRow = app.buttons.matching(
+            NSCompoundPredicate(andPredicateWithSubpredicates: [
+                NSPredicate(format: "identifier BEGINSWITH %@", "progress-exercise-row-"),
+                NSPredicate(format: "label CONTAINS[c] %@", "Bench Press")
+            ])
+        ).firstMatch
+        XCTAssertTrue(exerciseRow.waitForExistence(timeout: 5))
+        tapElement(identifier: exerciseRow.identifier, maxSwipes: 8)
+        XCTAssertTrue(app.descendants(matching: .any)["progress-exercise-detail"].waitForExistence(timeout: 8))
+
+        let picker = app.descendants(matching: .any)["progress-chart-point-picker"]
+        XCTAssertTrue(
+            picker.waitForExistence(timeout: 8),
+            "Expected the drill-down to prepare its dated chart points"
+        )
+        XCTAssertFalse(
+            app.staticTexts["Loading exercise data"].exists,
+            "Expected prepared content instead of the drill-down loading card"
+        )
+
+        tapElement(identifier: "progress-chart-point-picker", maxSwipes: 8)
+        let historicalPoint = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] %@", "kilograms")
+        ).firstMatch
+        XCTAssertTrue(historicalPoint.waitForExistence(timeout: 3))
+        historicalPoint.tap()
+
+        XCTAssertTrue(
+            waitUntil(timeout: 2) {
+                (picker.value as? String)?.localizedCaseInsensitiveContains("kilograms") == true
+            },
+            "Expected the chosen historical chart point to become accessible"
+        )
+        edgeSwipeBack()
+        XCTAssertTrue(app.descendants(matching: .any)["progress-screen"].waitForExistence(timeout: 8))
+        assertProgressDrillDownRouteMeasurement()
+        assertPerformanceAcceptancePassed()
+    }
+
     func testPerformanceAcceptanceDataRichHydrationRoute() throws {
         launch(arguments: ["-UITestCoachFatigueFixture", "-UITestLargeHistoryFixture", "-UITestSavedFoodsFixture"], performance: true)
 
@@ -1044,19 +1168,27 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         tapBackButton(from: "Hydration")
 
         scrollTodayToTop()
-        tapElement(identifier: "quick-action-workout", maxSwipes: 8)
-        XCTAssertTrue(waitForWorkoutScreen(), "Expected the Workout quick action to open Start Workout")
-        let previewButton = tappableElement(identifier: "workout-recommended-preview")
-        XCTAssertTrue(previewButton.waitForExistence(timeout: 8))
+        // Next Lift opens its prepared Preview directly; the Workout tab keeps
+        // its own Start Workout -> Preview entry.
+        let nextLift = tappableElement(identifier: "quick-action-workout")
+        XCTAssertTrue(nextLift.waitForExistence(timeout: 8), "Expected the Next Lift quick action to exist")
+        XCTAssertTrue(nextLift.isHittable, "Expected the Next Lift quick action to be tappable")
         let startedAt = Date()
-        previewButton.tap()
-        XCTAssertTrue(waitForPreviewScreen(), "Expected Workout Preview to open")
+        nextLift.tap()
+        XCTAssertTrue(waitForPreviewScreen(), "Expected Next Lift to open its prepared Preview directly")
         let hydrated = app.descendants(matching: .any)["workout-preview-hydrated-content"]
         XCTAssertTrue(hydrated.waitForExistence(timeout: 5), "Expected Preview's actionable hydrated content")
+        XCTAssertTrue(
+            app.buttons["workout-preview-start"].waitForExistence(timeout: 3),
+            "Expected Preview's prepared start action"
+        )
         let previewMilliseconds = Int(Date().timeIntervalSince(startedAt) * 1_000)
         print("PRIMARY_QUICK_ACTION_UI_METRIC route=preview elapsed_ms=\(previewMilliseconds)")
         tapBackButton(from: "Preview")
-        tapBackButton(from: "Workout")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 12),
+            "Expected back navigation from the prepared Preview to return to Today"
+        )
 
     }
 
@@ -1532,6 +1664,109 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
             .firstMatch
     }
 
+    /// The order position reported by a Preview reorder handle ("Position 4 of 9").
+    private func reorderPosition(of handle: XCUIElement) -> Int {
+        guard
+            let value = handle.value as? String,
+            let position = value.split(separator: " ").dropFirst().first
+        else { return 0 }
+        return Int(position) ?? 0
+    }
+
+    /// The route-local exercise count reported by a Preview reorder handle.
+    private func reorderTotal(of handle: XCUIElement) -> Int {
+        guard
+            let value = handle.value as? String,
+            let total = value.split(separator: " ").last
+        else { return 0 }
+        return Int(total) ?? 0
+    }
+
+    /// A point inside the Preview list's edge-autoscroll zone. The scroll view
+    /// frame is used when XCTest exposes it, with a window-relative fallback.
+    private func previewReorderEdgeCoordinate(atTop: Bool) -> XCUICoordinate {
+        let scrollView = app.scrollViews.firstMatch
+        if scrollView.exists, scrollView.frame.height > 200 {
+            return scrollView.coordinate(
+                withNormalizedOffset: CGVector(dx: 0.5, dy: atTop ? 0.06 : 0.94)
+            )
+        }
+
+        let window = app.windows.firstMatch
+        return window.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: atTop ? 0.18 : 0.86)
+        )
+    }
+
+    /// Scrolls the Preview list until the named reorder handle sits in a clear
+    /// band of the viewport, away from the navigation bar and the tab bar.
+    ///
+    /// The row title anchors the search direction because a row that has been
+    /// scrolled fully off screen can stop exposing its handle, which previously
+    /// sent the scroll search in the wrong direction. An unexposed row keeps the
+    /// current direction for a few attempts before the search probes the other
+    /// way, so the helper cannot oscillate between the two.
+    private func previewReorderHandleInViewport(
+        named exerciseName: String,
+        maxSwipes: Int = 14
+    ) -> XCUIElement {
+        var handle = previewReorderHandle(named: exerciseName)
+        var swipes = 0
+        var prefersDownwardScroll = false
+        var unproductiveSwipes = 0
+        let window = app.windows.firstMatch.frame
+
+        while swipes < maxSwipes {
+            if handle.exists, handle.isHittable, isPreviewHandleClearOfChrome(handle) {
+                return handle
+            }
+
+            let anchor = previewRowAnchorFrame(named: exerciseName, handle: handle)
+            if let anchor, anchor.midY < window.minY + 220 {
+                prefersDownwardScroll = true
+                unproductiveSwipes = 0
+            } else if let anchor, anchor.midY > window.maxY - 200 {
+                prefersDownwardScroll = false
+                unproductiveSwipes = 0
+            } else {
+                // Either the row is in the clear band without a usable handle,
+                // or it is not exposed at all yet.
+                unproductiveSwipes += 1
+                if unproductiveSwipes >= 3 {
+                    prefersDownwardScroll.toggle()
+                    unproductiveSwipes = 0
+                }
+            }
+
+            if prefersDownwardScroll {
+                app.swipeDown()
+            } else {
+                app.swipeUp()
+            }
+            swipes += 1
+            handle = previewReorderHandle(named: exerciseName)
+        }
+
+        return handle
+    }
+
+    /// The most trustworthy anchor for a Preview exercise row. The row title
+    /// stays queryable while the reorder handle is scrolled out of view.
+    private func previewRowAnchorFrame(named exerciseName: String, handle: XCUIElement) -> CGRect? {
+        let title = app.staticTexts["workout-preview-exercise-name-\(exerciseName)"]
+        if title.exists, title.frame.height > 0 {
+            return title.frame
+        }
+
+        return handle.exists && handle.frame.height > 0 ? handle.frame : nil
+    }
+
+    private func isPreviewHandleClearOfChrome(_ handle: XCUIElement) -> Bool {
+        let frame = handle.frame
+        let window = app.windows.firstMatch.frame
+        return frame.midY > 220 && frame.midY < window.maxY - 200
+    }
+
     private func tapButton(containing title: String, maxSwipes: Int = 6) {
         var button = buttonContaining(title)
         var swipes = 0
@@ -1586,7 +1821,11 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     private func waitForPreviewScreen() -> Bool {
-        app.navigationBars["Preview"].waitForExistence(timeout: 15) ||
+        // The prepared Preview root is the strongest signal that the route has
+        // mounted with its content: Today pushes it straight from the Next Lift
+        // card, where the navigation bar title can lag behind the content.
+        app.descendants(matching: .any)["workout-preview-hydrated-content"].waitForExistence(timeout: 15) ||
+            app.navigationBars["Preview"].waitForExistence(timeout: 15) ||
             app.staticTexts["Preview"].waitForExistence(timeout: 15) ||
             app.buttons["workout-preview-start"].waitForExistence(timeout: 15)
     }
@@ -1600,6 +1839,43 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.25))
         } while Date() < deadline
         return condition()
+    }
+
+    /// The in-app acceptance summary carries the production route timings, so a
+    /// drill-down that never recorded its own deep route cannot pass silently.
+    private func assertProgressDrillDownRouteMeasurement(thresholdMilliseconds: Int = 500) {
+        let summaryElement = app.descendants(matching: .any)["startup-critical-ready"]
+        XCTAssertTrue(
+            summaryElement.waitForExistence(timeout: 5),
+            "Expected the acceptance summary root to exist"
+        )
+
+        var summary = summaryElement.value as? String ?? ""
+        let deadline = Date().addingTimeInterval(3)
+        while !summary.contains("progress.exercise."), Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+            summary = summaryElement.value as? String ?? ""
+        }
+
+        let routeTimings = summary
+            .components(separatedBy: "|")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { $0.hasPrefix("routeTimings=") }?
+            .replacingOccurrences(of: "routeTimings=", with: "")
+            .components(separatedBy: ",") ?? []
+
+        let drillDown = routeTimings.first { $0.hasPrefix("progress.exercise.") }
+        guard let drillDown,
+              let milliseconds = drillDown.components(separatedBy: ":").last.flatMap(Int.init) else {
+            XCTFail("Expected a measured progress.exercise route timing in: \(summary)")
+            return
+        }
+
+        XCTAssertLessThanOrEqual(
+            milliseconds,
+            thresholdMilliseconds,
+            "Progress drill-down exceeded \(thresholdMilliseconds)ms: \(drillDown)"
+        )
     }
 
     private func assertPerformanceAcceptancePassed() {

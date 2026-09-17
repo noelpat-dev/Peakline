@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UIKit
 
 struct HistoryWorkoutSnapshot: Hashable, Sendable {
     struct Exercise: Hashable, Sendable {
@@ -68,63 +69,15 @@ struct HistoryMonthDisplaySnapshot: Sendable {
     let overview: HistoryOverviewSnapshot
 }
 
-/// Presents the already-built startup value projection for the first root-tab
-/// frame, then attaches the live SwiftData-backed History view. The prepared
-/// frame contains the real overview and recent rows, so deferring the live
-/// query does not move the stable marker ahead of meaningful content.
+/// Presents the already-built startup value projection in the same view that
+/// owns the live SwiftData query. The prepared frame contains the real
+/// overview, recent rows, and working actions, so the stable marker never
+/// moves ahead of meaningful content and the presentation never swaps shells.
 struct DeferredHistoryTabHost: View {
     let startupSnapshot: HistoryWarmSnapshot
 
-    @State private var isLiveHistoryMounted = false
-    @State private var isVisible = false
-    @State private var revealedAttendanceGeneration: String?
-
     var body: some View {
-        Group {
-            if isLiveHistoryMounted {
-                HistoryView(startupSnapshot: startupSnapshot)
-            } else {
-                NavigationStack {
-                    HistoryLazyScreen {
-                        HistoryOverviewCard(
-                            snapshot: startupSnapshot.display.overview,
-                            revealedAttendanceGeneration: $revealedAttendanceGeneration,
-                            editGoal: {}
-                        )
-
-                        if startupSnapshot.display.sessionRows.isEmpty {
-                            DashboardEmptyStateCard(
-                                title: "No workouts logged yet",
-                                message: "Start a workout to build your training history.",
-                                systemImage: "clock"
-                            )
-                        } else {
-                            ForEach(startupSnapshot.display.sessionRows.prefix(3)) { row in
-                                HistoryScrollRowSurface {
-                                    HistorySessionRowCard(row: row)
-                                }
-                            }
-                        }
-                    }
-                    .accessibilityIdentifier("history-screen")
-                    .navigationTitle("History")
-                    .navigationBarTitleDisplayMode(.inline)
-                }
-            }
-        }
-        .onAppear {
-            isVisible = true
-            guard !isLiveHistoryMounted else { return }
-            DispatchQueue.main.async {
-                DispatchQueue.main.async {
-                    guard isVisible else { return }
-                    isLiveHistoryMounted = true
-                }
-            }
-        }
-        .onDisappear {
-            isVisible = false
-        }
+        HistoryView(startupSnapshot: startupSnapshot)
     }
 }
 
@@ -132,9 +85,14 @@ struct DeferredHistoryTabHost: View {
 private struct HistoryLazyScreen<Content: View>: View {
     @Environment(\.appTheme) private var appTheme
 
+    let onScrollActivityChanged: (Bool) -> Void
     let content: () -> Content
 
-    init(@ViewBuilder content: @escaping () -> Content) {
+    init(
+        onScrollActivityChanged: @escaping (Bool) -> Void = { _ in },
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.onScrollActivityChanged = onScrollActivityChanged
         self.content = content
     }
 
@@ -146,12 +104,214 @@ private struct HistoryLazyScreen<Content: View>: View {
             ) {
                 content()
             }
+            .background {
+                HistoryScrollActivityObserver(onActivityChanged: onScrollActivityChanged)
+                    .frame(width: 0, height: 0)
+            }
             .padding(appTheme.metrics.screenPadding)
             .padding(.bottom, appTheme.metrics.screenBottomPadding)
         }
         .scrollDismissesKeyboard(.interactively)
         .submitLabel(.done)
         .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
+    }
+}
+
+/// Observes the enclosing vertical `UIScrollView` without replacing SwiftUI's
+/// delegate. Offset changes continue throughout deceleration and programmatic
+/// scrolling, so expensive History snapshot publication stays suspended until
+/// the scroll view has genuinely settled.
+private struct HistoryScrollActivityObserver: UIViewRepresentable {
+    let onActivityChanged: (Bool) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onActivityChanged: onActivityChanged)
+    }
+
+    func makeUIView(context: Context) -> AttachmentView {
+        let view = AttachmentView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        view.onWindowChange = { [weak coordinator = context.coordinator] view in
+            coordinator?.hostViewDidMoveToWindow(view)
+        }
+        context.coordinator.hostDidUpdate(view)
+        return view
+    }
+
+    func updateUIView(_ uiView: AttachmentView, context: Context) {
+        context.coordinator.onActivityChanged = onActivityChanged
+        context.coordinator.hostDidUpdate(uiView)
+    }
+
+    static func dismantleUIView(_ uiView: AttachmentView, coordinator: Coordinator) {
+        coordinator.stop()
+    }
+
+    /// Reports entering a window so attachment does not depend on a single
+    /// deferred attempt landing after SwiftUI has built the enclosing scroll
+    /// view.
+    final class AttachmentView: UIView {
+        var onWindowChange: ((AttachmentView) -> Void)?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window != nil else { return }
+            onWindowChange?(self)
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        /// Bounded so an unexpected hierarchy can never leave a repeating retry.
+        private static let maximumAttachmentAttempts = 25
+        private static let attachmentRetryInterval: TimeInterval = 0.02
+
+        var onActivityChanged: (Bool) -> Void
+
+        private weak var hostView: UIView?
+        private weak var observedScrollView: UIScrollView?
+        private var contentOffsetObservation: NSKeyValueObservation?
+        private var idleWorkItem: DispatchWorkItem?
+        private var attachmentWorkItem: DispatchWorkItem?
+        private var attachmentAttempts = 0
+        private var didReportAttachment = false
+        private var didReportRetryExhaustion = false
+        private var isActive = false
+
+        init(onActivityChanged: @escaping (Bool) -> Void) {
+            self.onActivityChanged = onActivityChanged
+        }
+
+        func hostDidUpdate(_ view: UIView) {
+            if hostView !== view {
+                hostView = view
+                attachmentAttempts = 0
+            }
+            resolveAttachment()
+        }
+
+        func hostViewDidMoveToWindow(_ view: UIView) {
+            hostView = view
+            attachmentAttempts = 0
+            resolveAttachment()
+        }
+
+        func stop() {
+            attachmentWorkItem?.cancel()
+            attachmentWorkItem = nil
+            idleWorkItem?.cancel()
+            idleWorkItem = nil
+            contentOffsetObservation?.invalidate()
+            contentOffsetObservation = nil
+            observedScrollView = nil
+            hostView = nil
+            if isActive {
+                isActive = false
+                onActivityChanged(false)
+            }
+        }
+
+        private func resolveAttachment() {
+            attachmentWorkItem?.cancel()
+            attachmentWorkItem = nil
+
+            guard let hostView else { return }
+
+            if let scrollView = Self.enclosingScrollView(of: hostView) {
+                observe(scrollView)
+                return
+            }
+
+            guard attachmentAttempts < Self.maximumAttachmentAttempts else {
+                guard !didReportRetryExhaustion else { return }
+                didReportRetryExhaustion = true
+                PerformanceTracer.mark(.historyScroll, "observer_retry_exhausted")
+                return
+            }
+
+            attachmentAttempts += 1
+            let workItem = DispatchWorkItem { [weak self, weak hostView] in
+                guard let self, let hostView, self.hostView === hostView else { return }
+                self.attachmentWorkItem = nil
+                self.resolveAttachment()
+            }
+            attachmentWorkItem = workItem
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + Self.attachmentRetryInterval,
+                execute: workItem
+            )
+        }
+
+        private func observe(_ scrollView: UIScrollView) {
+            attachmentWorkItem?.cancel()
+            attachmentWorkItem = nil
+            attachmentAttempts = 0
+
+            if observedScrollView === scrollView, contentOffsetObservation != nil {
+                reportAttachment()
+                return
+            }
+
+            contentOffsetObservation?.invalidate()
+            contentOffsetObservation = nil
+            observedScrollView = scrollView
+            contentOffsetObservation = scrollView.observe(
+                \.contentOffset,
+                options: [.old, .new]
+            ) { [weak self] _, change in
+                guard change.oldValue != change.newValue else { return }
+                guard let self else { return }
+                // UIKit reports offset changes on the main thread, including
+                // deceleration; call straight through so per-frame scrolling does
+                // not allocate a task.
+                if Thread.isMainThread {
+                    MainActor.assumeIsolated {
+                        self.recordOffsetChange()
+                    }
+                } else {
+                    DispatchQueue.main.async {
+                        self.recordOffsetChange()
+                    }
+                }
+            }
+            reportAttachment()
+        }
+
+        /// The verifier requires this marker, so a History run that never finds
+        /// its scroll view can never look like a successful protected interval.
+        private func reportAttachment() {
+            guard !didReportAttachment else { return }
+            didReportAttachment = true
+            PerformanceTracer.mark(.historyScroll, "observer_attached")
+        }
+
+        private static func enclosingScrollView(of view: UIView) -> UIScrollView? {
+            var ancestor = view.superview
+            while let current = ancestor {
+                if let scrollView = current as? UIScrollView {
+                    return scrollView
+                }
+                ancestor = current.superview
+            }
+            return nil
+        }
+
+        private func recordOffsetChange() {
+            if !isActive {
+                isActive = true
+                onActivityChanged(true)
+            }
+
+            idleWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self, self.isActive else { return }
+                self.isActive = false
+                self.onActivityChanged(false)
+                self.idleWorkItem = nil
+            }
+            idleWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: workItem)
+        }
     }
 }
 
@@ -190,12 +350,10 @@ struct HistoryView: View {
     @State private var didRequestInitialRefresh = false
     @State private var displaySnapshotReady = false
     @State private var historyScrollActive = false
-    @GestureState private var isHistoryDragActive = false
     @State private var historyRefreshPending = false
     @State private var isWorkoutCompletionPresentationActive = false
     @State private var isHistoryVisible = false
-    @State private var isCalendarVisible = false
-    @State private var calendarRevealTask: Task<Void, Never>?
+    @State private var isSupplementaryContentMounted = false
     @State private var sourceSnapshotRefreshTask: Task<Void, Never>?
     @State private var monthSnapshotRefreshTask: Task<Void, Never>?
     @State private var monthWorkoutSnapshots: [HistoryWorkoutSnapshot] = []
@@ -303,97 +461,41 @@ struct HistoryView: View {
     }
 
     var body: some View {
+        historyNavigation
+            .onAppear(perform: handleHistoryAppear)
+            .onChange(of: sessionGenerationForObservation) { _, generation in
+                handleSessionGenerationChange(generation)
+            }
+            .onChange(of: selectedWorkoutDetailRoute) { oldRoute, newRoute in
+                handleDetailRouteChange(from: oldRoute, to: newRoute)
+            }
+            .onChange(of: filters) { _, _ in
+                refreshDisplaySnapshot()
+            }
+            .onChange(of: displayedMonth) { _, _ in
+                scheduleMonthSnapshotRefresh()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                handleScenePhaseChange(phase)
+            }
+            .onChange(of: profileGoalGeneration) { _, _ in
+                refreshDisplaySnapshot()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .workoutCompletionPresentationBegan)) { _ in
+                handleWorkoutCompletionPresentationBegan()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .workoutCompletionPresentationEnded)) { _ in
+                handleWorkoutCompletionPresentationEnded()
+            }
+            .onDisappear(perform: handleHistoryDisappear)
+    }
+
+    private var historyNavigation: some View {
         NavigationStack {
-            HistoryLazyScreen {
-                HistoryMonthNavigationRow(
-                    displayedMonth: $displayedMonth,
-                    selectedDate: $selectedCalendarDate
-                )
-
-                if monthLoadState == .loaded {
-                    HistoryOverviewCard(
-                        snapshot: currentDisplaySnapshot.overview,
-                        revealedAttendanceGeneration: $revealedAttendanceGeneration,
-                        editGoal: openGoalEditor
-                    )
-                    if monthLoadError != nil {
-                        HistoryMonthRetryCard(action: retryMonthSnapshotRefresh)
-                    }
-                } else {
-                    HistoryMonthStatusCard(
-                        title: monthLoadState == .loading ? "Loading month" : "History unavailable",
-                        message: monthLoadState == .loading
-                            ? "Loading workouts for the selected month."
-                            : "The selected month could not be loaded.",
-                        systemImage: monthLoadState == .loading ? "hourglass" : "exclamationmark.triangle",
-                        action: monthLoadState == .failed ? retryMonthSnapshotRefresh : nil
-                    )
-                }
-
-                if isCalendarVisible, monthLoadState == .loaded {
-                    FitnessCard(style: .compact, padding: 12) {
-                        WorkoutCalendarView(
-                            displayedMonth: $displayedMonth,
-                            selectedDate: $selectedCalendarDate,
-                            daySummaries: calendarDaySummaries
-                        )
-                    }
-                    .accessibilityIdentifier("history-calendar-card")
-                }
-
-                filterChips
-
-                if sessionRows.isEmpty {
-                    DashboardEmptyStateCard(
-                        title: displaySnapshotReady ? (sessions.isEmpty ? "No workouts logged yet" : "No matching workouts") : "Loading history",
-                        message: displaySnapshotReady ? (sessions.isEmpty ? "Start Push, Pull, or Legs to build your first training history." : "Adjust filters to see more sessions.") : "Preparing recent sessions and filters.",
-                        systemImage: displaySnapshotReady ? "clock" : "hourglass"
-                    )
-                } else {
-                    Text("Recent Workouts")
-                        .font(AppTypography.sectionTitle)
-                        .foregroundStyle(appTheme.colors.textPrimary)
-
-                    ForEach(sessionRows) { row in
-                        Button {
-                            PerformanceTracer.mark(.motionHistoryRowOpen, "session=\(row.id.uuidString)")
-                            NavigationInteraction.perform(
-                                key: "history.session.\(row.id.uuidString)",
-                                destinationClass: .deep,
-                                haptic: .selection
-                            ) {
-                                selectedWorkoutDetailRoute = HistoryWorkoutDetailRoute(sessionID: row.id)
-                            }
-                        } label: {
-                            HistoryScrollRowSurface {
-                                HistorySessionRowCard(row: row)
-                            }
-                        }
-                        .buttonStyle(HistoryScrollRowButtonStyle())
-                        .accessibilityIdentifier("history-session-row")
-                        .transition(.opacity)
-                    }
-                    .animation(
-                        AppMotion.gentleFade(reduceMotion: reduceMotion),
-                        value: lastSessionGeneration
-                    )
-                }
+            HistoryLazyScreen(onScrollActivityChanged: setHistoryScrollActivity) {
+                historyScreenContent
             }
             .accessibilityIdentifier("history-screen")
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 2)
-                    .updating($isHistoryDragActive) { _, isActive, _ in
-                        isActive = true
-                    }
-                    .onChanged { _ in
-                        guard !historyScrollActive else { return }
-                        historyScrollActive = true
-                        PerformanceTracer.mark(.historyScroll, "begin")
-                    }
-                    .onEnded { _ in
-                        finishHistoryScroll()
-                    }
-            )
             .navigationTitle("History")
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showingFilters) {
@@ -413,79 +515,212 @@ struct HistoryView: View {
                     }
             }
         }
-        .onAppear {
-            isHistoryVisible = true
-            calendarRevealTask?.cancel()
-            calendarRevealTask = Task { @MainActor in
-                // Let the root tab's insertion turn and stable-frame marker
-                // finish before mounting the calendar's date grid.
-                await Task.yield()
-                await Task.yield()
-                await Task.yield()
-                guard !Task.isCancelled, isHistoryVisible else { return }
-                isCalendarVisible = true
-                calendarRevealTask = nil
+    }
+
+    private func handleHistoryAppear() {
+        isHistoryVisible = true
+        scheduleSupplementaryContentReveal()
+        let shouldForceRefresh = !didRequestInitialRefresh
+        didRequestInitialRefresh = true
+        scheduleSourceSnapshotRefresh(force: shouldForceRefresh && initialWarmSnapshot == nil)
+    }
+
+    /// Mounts the month navigation, calendar grid, and filters once the root
+    /// tab's insertion turn and stable-frame marker have finished. The overview
+    /// and recent rows are already on screen at that point, so the stable
+    /// marker still lands on meaningful content. The supplementary views stay
+    /// mounted afterwards, so returning to the tab never reinserts the grid.
+    private func scheduleSupplementaryContentReveal() {
+        guard !isSupplementaryContentMounted else { return }
+        DispatchQueue.main.async {
+            DispatchQueue.main.async {
+                guard isHistoryVisible else { return }
+                isSupplementaryContentMounted = true
             }
-            let shouldForceRefresh = !didRequestInitialRefresh
-            didRequestInitialRefresh = true
-            scheduleSourceSnapshotRefresh(force: shouldForceRefresh && initialWarmSnapshot == nil)
         }
-        .onChange(of: sessionGenerationForObservation) { _, generation in
-            guard generation != nil else { return }
-            scheduleSourceSnapshotRefresh()
+    }
+
+    private func handleSessionGenerationChange(_ generation: String?) {
+        guard generation != nil else { return }
+        scheduleSourceSnapshotRefresh()
+    }
+
+    private func handleDetailRouteChange(
+        from oldRoute: HistoryWorkoutDetailRoute?,
+        to newRoute: HistoryWorkoutDetailRoute?
+    ) {
+        guard oldRoute != nil, newRoute == nil else { return }
+        scheduleSourceSnapshotRefresh(force: true)
+    }
+
+    private func handleScenePhaseChange(_ phase: ScenePhase) {
+        guard phase == .active else {
+            finishHistoryScroll(replayPending: false)
+            return
         }
-        .onChange(of: selectedWorkoutDetailRoute) { oldRoute, newRoute in
-            guard oldRoute != nil, newRoute == nil else { return }
+
+        if historyRefreshPending {
+            historyRefreshPending = false
             scheduleSourceSnapshotRefresh(force: true)
         }
-        .onChange(of: filters) { _, _ in
-            refreshDisplaySnapshot()
-        }
-        .onChange(of: displayedMonth) { _, _ in
-            scheduleMonthSnapshotRefresh()
-        }
-        .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else {
-                finishHistoryScroll(replayPending: false)
-                return
-            }
-
-            if historyRefreshPending {
-                historyRefreshPending = false
-                scheduleSourceSnapshotRefresh()
-            }
-            if monthRefreshPending {
-                monthRefreshPending = false
-                scheduleMonthSnapshotRefresh(force: true)
-            }
-        }
-        .onChange(of: isHistoryDragActive) { _, isActive in
-            if !isActive { finishHistoryScroll() }
-        }
-        .onChange(of: profileGoalGeneration) { _, _ in
-            refreshDisplaySnapshot()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .workoutCompletionPresentationBegan)) { _ in
-            isWorkoutCompletionPresentationActive = true
-            PerformanceTracer.mark(.workoutLoggerFinish, "history_refresh_suspended")
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .workoutCompletionPresentationEnded)) { _ in
-            isWorkoutCompletionPresentationActive = false
-            PerformanceTracer.mark(.workoutLoggerFinish, "history_refresh_resumed")
-        }
-        .onDisappear {
-            isHistoryVisible = false
-            calendarRevealTask?.cancel()
-            calendarRevealTask = nil
-            isCalendarVisible = false
-            sourceSnapshotRefreshTask?.cancel()
-            sourceSnapshotRefreshTask = nil
-            monthSnapshotRefreshTask?.cancel()
-            monthSnapshotRefreshTask = nil
-            monthLoadGeneration += 1
-            finishHistoryScroll(replayPending: false)
-            historyRefreshPending = false
+        if monthRefreshPending {
             monthRefreshPending = false
+            scheduleMonthSnapshotRefresh(force: true)
+        }
+    }
+
+    private func handleWorkoutCompletionPresentationBegan() {
+        isWorkoutCompletionPresentationActive = true
+        PerformanceTracer.mark(.workoutLoggerFinish, "history_refresh_suspended")
+    }
+
+    private func handleWorkoutCompletionPresentationEnded() {
+        isWorkoutCompletionPresentationActive = false
+        PerformanceTracer.mark(.workoutLoggerFinish, "history_refresh_resumed")
+    }
+
+    private func handleHistoryDisappear() {
+        isHistoryVisible = false
+        sourceSnapshotRefreshTask?.cancel()
+        sourceSnapshotRefreshTask = nil
+        monthSnapshotRefreshTask?.cancel()
+        monthSnapshotRefreshTask = nil
+        monthLoadGeneration += 1
+        finishHistoryScroll(replayPending: false)
+        historyRefreshPending = false
+        monthRefreshPending = false
+    }
+
+    @ViewBuilder
+    private var historyScreenContent: some View {
+        if isSupplementaryContentMounted {
+            HistoryMonthNavigationRow(
+                displayedMonth: $displayedMonth,
+                selectedDate: $selectedCalendarDate
+            )
+        }
+        historyMonthOverviewSection
+        if isSupplementaryContentMounted {
+            historyCalendarSection
+            filterChips
+        }
+        historyWorkoutListSection
+    }
+
+    @ViewBuilder
+    private var historyMonthOverviewSection: some View {
+        if monthLoadState == .loaded {
+            HistoryOverviewCard(
+                snapshot: currentDisplaySnapshot.overview,
+                revealedAttendanceGeneration: $revealedAttendanceGeneration,
+                editGoal: openGoalEditor
+            )
+            if monthLoadError != nil {
+                HistoryMonthRetryCard(action: retryMonthSnapshotRefresh)
+            }
+        } else {
+            historyMonthStatusCard
+        }
+    }
+
+    /// The calendar stays mounted for as long as its month data is loaded, so
+    /// returning to the tab never tears down or reinserts the date grid.
+    @ViewBuilder
+    private var historyCalendarSection: some View {
+        if monthLoadState == .loaded {
+            FitnessCard(style: .compact, padding: 12) {
+                WorkoutCalendarView(
+                    displayedMonth: $displayedMonth,
+                    selectedDate: $selectedCalendarDate,
+                    daySummaries: calendarDaySummaries
+                )
+            }
+            .accessibilityIdentifier("history-calendar-card")
+        }
+    }
+
+    @ViewBuilder
+    private var historyWorkoutListSection: some View {
+        if sessionRows.isEmpty {
+            historyEmptyStateCard
+        } else {
+            Text("Recent Workouts")
+                .font(AppTypography.sectionTitle)
+                .foregroundStyle(appTheme.colors.textPrimary)
+
+            ForEach(sessionRows) { row in
+                historySessionButton(row)
+            }
+            .animation(
+                AppMotion.gentleFade(reduceMotion: reduceMotion),
+                value: lastSessionGeneration
+            )
+        }
+    }
+
+    private var historyMonthStatusCard: HistoryMonthStatusCard {
+        let isLoading = monthLoadState == .loading
+        var retryAction: (() -> Void)?
+        if monthLoadState == .failed {
+            retryAction = retryMonthSnapshotRefresh
+        }
+        return HistoryMonthStatusCard(
+            title: isLoading ? "Loading month" : "History unavailable",
+            message: isLoading
+                ? "Loading workouts for the selected month."
+                : "The selected month could not be loaded.",
+            systemImage: isLoading ? "hourglass" : "exclamationmark.triangle",
+            action: retryAction
+        )
+    }
+
+    private var historyEmptyStateCard: DashboardEmptyStateCard {
+        DashboardEmptyStateCard(
+            title: emptyStateTitle,
+            message: emptyStateMessage,
+            systemImage: displaySnapshotReady ? "clock" : "hourglass"
+        )
+    }
+
+    private var emptyStateTitle: String {
+        guard displaySnapshotReady else { return "Loading history" }
+        return sessions.isEmpty ? "No workouts logged yet" : "No matching workouts"
+    }
+
+    private var emptyStateMessage: String {
+        guard displaySnapshotReady else { return "Preparing recent sessions and filters." }
+        return sessions.isEmpty
+            ? "Start Push, Pull, or Legs to build your first training history."
+            : "Adjust filters to see more sessions."
+    }
+
+    private func historySessionButton(_ row: HistorySessionRowSnapshot) -> some View {
+        Button {
+            PerformanceTracer.mark(.motionHistoryRowOpen, "session=\(row.id.uuidString)")
+            NavigationInteraction.perform(
+                key: "history.session.\(row.id.uuidString)",
+                destinationClass: .deep,
+                haptic: .selection
+            ) {
+                selectedWorkoutDetailRoute = HistoryWorkoutDetailRoute(sessionID: row.id)
+            }
+        } label: {
+            HistoryScrollRowSurface {
+                HistorySessionRowCard(row: row)
+            }
+        }
+        .buttonStyle(HistoryScrollRowButtonStyle())
+        .accessibilityIdentifier("history-session-row")
+        .transition(.opacity)
+    }
+
+    private func setHistoryScrollActivity(_ isActive: Bool) {
+        if isActive {
+            guard !historyScrollActive else { return }
+            historyScrollActive = true
+            PerformanceTracer.mark(.historyScroll, "begin")
+        } else {
+            finishHistoryScroll()
         }
     }
 
@@ -496,7 +731,7 @@ struct HistoryView: View {
         guard replayPending, isHistoryVisible, scenePhase == .active else { return }
         if historyRefreshPending {
             historyRefreshPending = false
-            scheduleSourceSnapshotRefresh()
+            scheduleSourceSnapshotRefresh(force: true)
         }
         if monthRefreshPending {
             monthRefreshPending = false
@@ -609,6 +844,10 @@ struct HistoryView: View {
     }
 
     private func refreshMonthDisplaySnapshot() {
+        guard !historyScrollActive else {
+            monthRefreshPending = true
+            return
+        }
         guard monthLoadState == .loaded else { return }
         let monthDisplay = PerformanceTracer.trace(.historyDisplaySnapshot) {
             HistoryDisplaySnapshotBuilder.buildMonthDisplay(
@@ -663,6 +902,10 @@ struct HistoryView: View {
     }
 
     private func refreshDisplaySnapshot() {
+        guard !historyScrollActive else {
+            historyRefreshPending = true
+            return
+        }
         let nextSnapshot = PerformanceTracer.trace(.historyDisplaySnapshot) {
             HistoryDisplaySnapshotBuilder.build(
                 workouts: workoutSnapshots,
@@ -792,7 +1035,6 @@ struct HistoryView: View {
                     }
             }
             .padding()
-            .sheetContentEntrance()
         }
             .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
             .peaklineKeyboardDismissal()
@@ -1367,7 +1609,6 @@ private struct HistoryTrainingGoalSheet: View {
                         .accessibilityIdentifier("history-training-goal-stepper")
                     }
                 }
-                .sheetContentEntrance()
             }
             .navigationTitle("Gym Visit Goal")
             .navigationBarTitleDisplayMode(.inline)
@@ -1484,6 +1725,9 @@ private struct WorkoutCalendarView: View {
     let daySummaries: [HistoryCalendarDaySummary]
 
     @State private var isMonthExpanded = false
+    /// A day carried over by month navigation is not a day the user picked, so the
+    /// filled day token is reserved for a day tapped in the month on screen.
+    @State private var hasExplicitDaySelection = false
 
     private let calendar = Calendar.current
     private let columns = Array(repeating: GridItem(.flexible(minimum: 30), spacing: 4), count: 7)
@@ -1497,6 +1741,17 @@ private struct WorkoutCalendarView: View {
 
     private var monthTitle: String {
         displayedMonth.formatted(.dateTime.month(.wide).year())
+    }
+
+    private var isDisplayingCurrentMonth: Bool {
+        calendar.isDate(displayedMonth, equalTo: Date(), toGranularity: .month)
+    }
+
+    /// Current-day treatment requires the cell's own day, month, and year to match
+    /// today while the calendar is showing the current month, so the same day
+    /// number is never treated as today in a previous or future month.
+    private func isCurrentDay(_ date: Date) -> Bool {
+        isDisplayingCurrentMonth && calendar.isDate(date, inSameDayAs: Date())
     }
 
     private var monthWorkoutCount: Int {
@@ -1587,11 +1842,13 @@ private struct WorkoutCalendarView: View {
                 LazyVGrid(columns: columns, spacing: appTheme.metrics.spacing8) {
                     ForEach(Array(visibleDays.enumerated()), id: \.offset) { _, date in
                         if let date {
+                            let isSelectedDay = calendar.isDate(date.date, inSameDayAs: selectedDate)
                             CalendarDayCell(
                                 date: date.date,
                                 summary: date.summary,
-                                isSelected: calendar.isDate(date.date, inSameDayAs: selectedDate),
-                                isToday: calendar.isDateInToday(date.date)
+                                isSelected: isSelectedDay,
+                                isToday: isCurrentDay(date.date),
+                                isUserSelected: isSelectedDay && hasExplicitDaySelection
                             ) {
                                 select(date.date)
                             }
@@ -1612,6 +1869,9 @@ private struct WorkoutCalendarView: View {
             HistorySelectedDaySummaryView(date: selectedDate, summary: selectedDaySummary)
         }
         .padding(.vertical, 2)
+        .onChange(of: displayedMonth) { _, _ in
+            hasExplicitDaySelection = false
+        }
     }
 
     private var calendarHeader: some View {
@@ -1666,6 +1926,7 @@ private struct WorkoutCalendarView: View {
         AppHaptics.selection()
         withAnimation(AppMotion.chipSelect(reduceMotion: reduceMotion)) {
             selectedDate = calendar.startOfDay(for: date)
+            hasExplicitDaySelection = true
         }
     }
 
@@ -1687,6 +1948,7 @@ private struct CalendarDayCell: View {
     let summary: HistoryCalendarDaySummary?
     let isSelected: Bool
     let isToday: Bool
+    let isUserSelected: Bool
     let onSelect: () -> Void
 
     private var dayNumber: String {
@@ -1698,7 +1960,7 @@ private struct CalendarDayCell: View {
     }
 
     private var isFilledSelection: Bool {
-        isSelected && !isToday
+        isUserSelected && !isToday
     }
 
     private var tokenSize: CGFloat {

@@ -123,12 +123,10 @@ enum AppMotion {
     static let staggerStep: TimeInterval = 0.035
     static let staggerItemCap = 8
     static let sheetInnerContentOffset: CGFloat = 12
-    static let sheetInnerContentRevealDelay: UInt64 = AppMotion.popupContentRevealDelay
 
     static let popupMountDelay: UInt64 = 16_000_000
     static let popupExitDuration: UInt64 = 200_000_000
     static let ratingSelectionDelay: UInt64 = 90_000_000
-    static let popupContentRevealDelay: UInt64 = 70_000_000
     static let popupSecondaryRevealDelay: UInt64 = 80_000_000
     static let celebrationIconPulseDuration: TimeInterval = 0.58
     static let prCelebrationSparkDuration: TimeInterval = 0.74
@@ -569,23 +567,10 @@ enum AppMotion {
         animation(for: .rowRemove, reduceMotion: reduceMotion)
     }
 
-    static func sheetInnerContent(reduceMotion: Bool) -> Animation {
-        animation(for: Role.sheetPresent, reduceMotion: reduceMotion)
-    }
-
     static func sheetInnerContentTransition(reduceMotion: Bool) -> AnyTransition {
         reduceMotion
             ? .opacity
             : .opacity.combined(with: .offset(y: sheetInnerContentOffset))
-    }
-
-    static func sheetInnerContentRevealReady() async -> Bool {
-        do {
-            try await Task.sleep(nanoseconds: sheetInnerContentRevealDelay)
-            return !Task.isCancelled
-        } catch {
-            return false
-        }
     }
 
     static func cardTransition(reduceMotion: Bool) -> AnyTransition {
@@ -895,47 +880,6 @@ private struct SmoothPopupCardMotion: ViewModifier {
     }
 }
 
-private struct SheetInnerContentMotionModifier: ViewModifier {
-    let isVisible: Bool
-    let reduceMotion: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .opacity(isVisible || reduceMotion ? 1 : 0.88)
-            .offset(y: reduceMotion || isVisible ? 0 : AppMotion.sheetInnerContentOffset)
-            .animation(AppMotion.sheetInnerContent(reduceMotion: reduceMotion), value: isVisible)
-    }
-}
-
-private struct SheetContentEntranceModifier: ViewModifier {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isVisible = false
-    @State private var revealTask: Task<Void, Never>?
-
-    func body(content: Content) -> some View {
-        content
-            .sheetInnerContentMotion(isVisible: reduceMotion || isVisible, reduceMotion: reduceMotion)
-            .onAppear {
-                revealTask?.cancel()
-                guard !reduceMotion else {
-                    isVisible = true
-                    return
-                }
-
-                revealTask = Task { @MainActor in
-                    guard await AppMotion.sheetInnerContentRevealReady() else { return }
-                    isVisible = true
-                    revealTask = nil
-                }
-            }
-            .onDisappear {
-                revealTask?.cancel()
-                revealTask = nil
-                isVisible = false
-            }
-    }
-}
-
 struct AnimatedMetricNumber: View, Animatable {
     var value: Double
     let fractionDigits: Int
@@ -1058,22 +1002,6 @@ extension View {
                 anchor: anchor
             )
         )
-    }
-
-    func sheetInnerContentMotion(
-        isVisible: Bool,
-        reduceMotion: Bool
-    ) -> some View {
-        modifier(
-            SheetInnerContentMotionModifier(
-                isVisible: isVisible,
-                reduceMotion: reduceMotion
-            )
-        )
-    }
-
-    func sheetContentEntrance() -> some View {
-        modifier(SheetContentEntranceModifier())
     }
 
     func peaklineSelectionMotion(

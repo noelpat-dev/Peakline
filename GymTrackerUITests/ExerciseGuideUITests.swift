@@ -8,7 +8,9 @@ final class ExerciseGuideUITests: XCTestCase {
         app = XCUIApplication()
     }
 
-    func testPosePlaybackRepeatsAndContinuesAfterSelection() {
+    /// The pose preview has no playback control: it loops on its own while the
+    /// detail is visible, and Reduce Motion is handled by the view's own gate.
+    func testPosesLoopAutomaticallyWithoutPlaybackControl() {
         launch(appearance: "dark", theme: "black")
         openGuide()
         let search = app.searchFields.firstMatch
@@ -16,7 +18,7 @@ final class ExerciseGuideUITests: XCTestCase {
         search.tap()
         search.typeText("Weighted Crunch")
         tap("exercise-guide-row-weighted-crunch")
-        XCTAssertFalse(app.buttons["exercise-preview-playback"].exists)
+        XCTAssertFalse(app.buttons["exercise-guide-pose-playback"].exists)
         let illustration = app.images["exercise-guide-illustration"]
         app.buttons["exercise-guide-pose-1"].tap()
         var observed = [1]
@@ -28,12 +30,18 @@ final class ExerciseGuideUITests: XCTestCase {
             }
             Thread.sleep(forTimeInterval: 0.1)
         }
-        XCTAssertEqual(observed, [1, 2, 3, 2, 1, 2, 3, 2, 1])
+        XCTAssertEqual(
+            observed,
+            [1, 2, 3, 2, 1, 2, 3, 2, 1],
+            "Expected the poses to keep looping with no playback control"
+        )
+
         app.buttons["exercise-guide-pose-3"].tap()
         XCTAssertTrue(app.buttons["exercise-guide-pose-3"].isSelected)
         let returnsToMiddle = NSPredicate(format: "label CONTAINS %@", "pose 2 of 3")
         expectation(for: returnsToMiddle, evaluatedWith: illustration)
         waitForExpectations(timeout: 2)
+
         XCUIDevice.shared.press(.home)
         app.activate()
         var resumedLabels = Set<String>()

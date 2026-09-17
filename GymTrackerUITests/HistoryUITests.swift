@@ -8,7 +8,8 @@ final class HistoryUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments = [
             "-UITestInMemoryStore",
-            "-UITestLargeHistoryFixture"
+            "-UITestLargeHistoryFixture",
+            "-PerformanceAcceptanceMode"
         ]
         app.launch()
     }
@@ -112,6 +113,99 @@ final class HistoryUITests: XCTestCase {
         XCTAssertEqual(overviewMonthTitle.label, "\(selectedMonthTitle.label) attendance")
     }
 
+    /// History must stay mounted and interactive when the tab is left and
+    /// re-entered, and a fast fling must not leave it suspended while a source
+    /// refresh is pending.
+    func testHistoryStaysMountedAndInteractiveAcrossTabReentry() throws {
+        XCTAssertTrue(
+            app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
+            "Expected Today to be ready after launch"
+        )
+
+        tapTab(at: 3, expectedTitle: "History")
+        let calendarCard = app.descendants(matching: .any)["history-calendar-card"]
+        let overviewCard = app.descendants(matching: .any)["history-overview-card"]
+        XCTAssertTrue(calendarCard.waitForExistence(timeout: 10))
+        XCTAssertTrue(overviewCard.waitForExistence(timeout: 5))
+
+        let monthTitle = app.staticTexts["history-selected-month-title"]
+        XCTAssertTrue(monthTitle.waitForExistence(timeout: 5))
+        let previousMonth = app.buttons["Previous month"]
+        XCTAssertTrue(previousMonth.waitForExistence(timeout: 5))
+        previousMonth.tap()
+        let selectedMonth = monthTitle.label
+
+        // Leaving and returning must keep the calendar mounted instead of
+        // tearing it down and reinserting it behind a delay, and must keep the
+        // selected month.
+        tapTab(at: 0, expectedTitle: "Today")
+        tapTab(at: 3, expectedTitle: "History")
+        XCTAssertTrue(
+            calendarCard.waitForExistence(timeout: 5),
+            "Expected the History calendar to stay mounted across tab re-entry"
+        )
+        XCTAssertTrue(monthTitle.waitForExistence(timeout: 5))
+        XCTAssertEqual(
+            monthTitle.label,
+            selectedMonth,
+            "Expected the selected month to survive tab re-entry"
+        )
+
+        // Fling while the re-entry refresh is still pending. Protected scrolling
+        // defers the rebuild instead of competing with deceleration, and the list
+        // must be usable once it settles.
+        app.swipeUp(velocity: .fast)
+        app.swipeUp(velocity: .fast)
+        XCTAssertTrue(app.descendants(matching: .any)["history-screen"].waitForExistence(timeout: 5))
+
+        scrollToHistoryTop(previousMonth)
+        XCTAssertTrue(previousMonth.isHittable, "Expected History to settle at the top after a fast fling")
+
+        let settledRow = firstSessionRow()
+        XCTAssertTrue(settledRow.waitForExistence(timeout: 8), "Expected History rows after the fling settled")
+        scrollIntoHittableRegion(settledRow)
+        XCTAssertTrue(settledRow.isHittable, "Expected a History row to be tappable after the fling settled")
+
+        // The in-app acceptance summary is the reliable channel for the History
+        // scroll instrumentation: app-side print output is not captured in
+        // `xcodebuild test` logs. Attachment proves the observer bound to the
+        // real History scroll view, and the summary fails if a display snapshot
+        // was rebuilt while History was scrolling or decelerating.
+        let summaryRoot = app.descendants(matching: .any)["startup-critical-ready"]
+        XCTAssertTrue(
+            summaryRoot.waitForExistence(timeout: 5),
+            "Expected the Debug acceptance summary to stay mounted for the History journey"
+        )
+        var summary = summaryRoot.value as? String ?? ""
+        let attachmentDeadline = Date().addingTimeInterval(5)
+        while historyScrollObserverAttachments(in: summary) < 1, Date() < attachmentDeadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+            summary = summaryRoot.value as? String ?? ""
+        }
+        print("PERF_ACCEPTANCE_UI_SUMMARY \(summary)")
+        XCTAssertGreaterThanOrEqual(
+            historyScrollObserverAttachments(in: summary),
+            1,
+            "Expected the History scroll observer to attach; got \(summary)"
+        )
+        XCTAssertFalse(
+            summary.contains("history.display_snapshot"),
+            "Expected no History display snapshot rebuild during scrolling; got \(summary)"
+        )
+
+        settledRow.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["history-detail-hero"].waitForExistence(timeout: 8),
+            "Expected a settled History row to open the workout detail"
+        )
+        tapBackButton()
+        XCTAssertTrue(app.descendants(matching: .any)["history-screen"].waitForExistence(timeout: 8))
+        XCTAssertTrue(
+            firstSessionRow().waitForExistence(timeout: 5),
+            "Expected History rows to remain available after closing a workout"
+        )
+    }
+
     private func tapTab(at index: Int, expectedTitle: String) {
         let tabBar = app.tabBars.firstMatch
         XCTAssertTrue(tabBar.waitForExistence(timeout: 5), "Expected tab bar to exist")
@@ -120,21 +214,52 @@ final class HistoryUITests: XCTestCase {
         XCTAssertTrue(tab.waitForExistence(timeout: 5), "Expected tab \(index) to exist")
         tab.tap()
         XCTAssertTrue(
-            app.navigationBars[expectedTitle].waitForExistence(timeout: 8) ||
-                app.staticTexts[expectedTitle].waitForExistence(timeout: 8) ||
-                app.descendants(matching: .any)["history-screen"].waitForExistence(timeout: 8),
+            app.descendants(matching: .any)[rootScreenIdentifier(for: expectedTitle)]
+                .waitForExistence(timeout: 8),
             "Expected \(expectedTitle) tab to be visible"
         )
+    }
+
+    private func rootScreenIdentifier(for title: String) -> String {
+        switch title {
+        case "Today":
+            return "today-screen"
+        case "Workout":
+            return "workout-screen"
+        case "Splits":
+            return "splits-screen"
+        case "History":
+            return "history-screen"
+        default:
+            return title
+        }
     }
 
     private func firstSessionRow() -> XCUIElement {
         app.buttons.matching(identifier: "history-session-row").firstMatch
     }
 
+    private func historyScrollObserverAttachments(in summary: String) -> Int {
+        let field = summary
+            .components(separatedBy: "|")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { $0.hasPrefix("historyScrollObserverAttachments=") }
+        guard let field else { return 0 }
+        return Int(field.replacingOccurrences(of: "historyScrollObserverAttachments=", with: "")) ?? 0
+    }
+
     private func scrollIntoHittableRegion(_ element: XCUIElement, maxSwipes: Int = 8) {
         var swipes = 0
         while element.exists && !element.isHittable && swipes < maxSwipes {
             app.swipeUp()
+            swipes += 1
+        }
+    }
+
+    private func scrollToHistoryTop(_ element: XCUIElement, maxSwipes: Int = 12) {
+        var swipes = 0
+        while !element.isHittable && swipes < maxSwipes {
+            app.swipeDown(velocity: .fast)
             swipes += 1
         }
     }

@@ -147,6 +147,8 @@
 		0010000000000000000000AA /* AppMotionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000AA /* AppMotionTests.swift */; };
 		0010000000000000000000AC /* ThemeContrastTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000AC /* ThemeContrastTests.swift */; };
 		0010000000000000000000AB /* MotionBlueprintTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000AB /* MotionBlueprintTests.swift */; };
+		0010000000000000000000AD /* InteractionQualityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000AD /* InteractionQualityTests.swift */; };
+		0010000000000000000000AE /* PerformanceAcceptanceStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000AE /* PerformanceAcceptanceStateTests.swift */; };
 		0010000000000000000000B1 /* CoachWorkoutPreviewUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B1 /* CoachWorkoutPreviewUITests.swift */; };
 		0010000000000000000000B2 /* WorkoutLoggingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B2 /* WorkoutLoggingUITests.swift */; };
 		0010000000000000000000B3 /* NutritionScannerNavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000000B3 /* NutritionScannerNavigationUITests.swift */; };
@@ -364,6 +366,8 @@
 		0020000000000000000000AA /* AppMotionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMotionTests.swift; sourceTree = "<group>"; };
 		0020000000000000000000AC /* ThemeContrastTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeContrastTests.swift; sourceTree = "<group>"; };
 		0020000000000000000000AB /* MotionBlueprintTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionBlueprintTests.swift; sourceTree = "<group>"; };
+		0020000000000000000000AD /* InteractionQualityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractionQualityTests.swift; sourceTree = "<group>"; };
+		0020000000000000000000AE /* PerformanceAcceptanceStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceAcceptanceStateTests.swift; sourceTree = "<group>"; };
 		0020000000000000000000A4 /* NutritionExportReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionExportReliabilityTests.swift; sourceTree = "<group>"; };
 		0020000000000000000000A5 /* WarmStartSnapshotStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WarmStartSnapshotStoreTests.swift; sourceTree = "<group>"; };
 		0020000000000000000000A6 /* BackupRestoreReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupRestoreReliabilityTests.swift; sourceTree = "<group>"; };
@@ -748,6 +752,8 @@
 				0020000000000000000000A5 /* WarmStartSnapshotStoreTests.swift */,
 				0020000000000000000000A6 /* BackupRestoreReliabilityTests.swift */,
 				0020000000000000000000A7 /* FullAppBackupReliabilityTests.swift */,
+				0020000000000000000000AD /* InteractionQualityTests.swift */,
+				0020000000000000000000AE /* PerformanceAcceptanceStateTests.swift */,
 			);
 			path = GymTrackerTests;
 			sourceTree = "<group>";
@@ -1105,6 +1111,8 @@
 				0010000000000000000000A5 /* WarmStartSnapshotStoreTests.swift in Sources */,
 				0010000000000000000000A6 /* BackupRestoreReliabilityTests.swift in Sources */,
 				0010000000000000000000A7 /* FullAppBackupReliabilityTests.swift in Sources */,
+				0010000000000000000000AD /* InteractionQualityTests.swift in Sources */,
+				0010000000000000000000AE /* PerformanceAcceptanceStateTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

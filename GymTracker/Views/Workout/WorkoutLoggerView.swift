@@ -20,7 +20,8 @@ struct WorkoutLoggerView: View {
     @State private var overlayVisible = false
     @State private var celebrationPresentation = WorkoutCelebrationPresentation.initial
     @State private var motivationRotation: WorkoutMotivationRotation
-    @State private var pendingExerciseIndex: Int?
+    @State private var transitionFeedback: WorkoutTransitionMessage?
+    @State private var transitionFeedbackDismissTask: Task<Void, Never>?
     @State private var summaryRoute: WorkoutSummaryRoute?
     @State private var summaryRenderSnapshot: SessionSummaryRenderSnapshot?
     @State private var restTimerState = RestTimerState()
@@ -52,6 +53,7 @@ struct WorkoutLoggerView: View {
     @State private var completionDurationOverrideSeconds: Int?
     @State private var showingDurationOutlierConfirmation = false
     @State private var showingDurationCorrectionSheet = false
+    @AccessibilityFocusState private var isFinishControlFocused: Bool
 
     private let skippedReasonService = SkippedExerciseReasonService()
     private let substitutionService = ExerciseSubstitutionService()
@@ -98,13 +100,20 @@ struct WorkoutLoggerView: View {
 
     var body: some View {
         ZStack {
-            if isCompletionCommitted {
-                appTheme.colors.backgroundPrimary
-                    .ignoresSafeArea()
-            } else {
-                workoutList
-                    .allowsHitTesting(!isPopupMounted)
+            Group {
+                if isCompletionCommitted {
+                    appTheme.colors.backgroundPrimary
+                        .ignoresSafeArea()
+                } else {
+                    workoutList
+                        .allowsHitTesting(!isPopupMounted)
+                }
             }
+            // A mounted custom overlay owns the screen. Hiding the list itself
+            // is not enough: SwiftUI's list keeps its rows in the accessibility
+            // tree, so the isolation has to sit on the container that holds the
+            // whole background surface.
+            .accessibilityHidden(isPopupMounted)
 
             if overlayPhase.showsCelebration {
                 motivationOverlay
@@ -118,9 +127,21 @@ struct WorkoutLoggerView: View {
                 .zIndex(20)
             }
         }
+        .overlay(alignment: .top) {
+            if let transitionFeedback {
+                transitionFeedbackBanner(transitionFeedback)
+                    .padding(.horizontal, appTheme.metrics.spacing16)
+                    .padding(.top, appTheme.metrics.spacing8)
+                    .transition(.opacity)
+                    .accessibilityHidden(isPopupMounted)
+            }
+        }
         .peaklineKeyboardDismissal()
         .navigationTitle(session.splitNameSnapshot)
         .navigationBarTitleDisplayMode(.inline)
+        // A mounted custom overlay owns the screen, so the navigation bar must
+        // not stay reachable behind it.
+        .navigationBarBackButtonHidden(isPopupMounted)
         .navigationDestination(item: $summaryRoute) { route in
             if route.sessionID == session.id, let summaryRenderSnapshot {
                 SessionSummaryView(session: session, snapshot: summaryRenderSnapshot) {
@@ -168,7 +189,6 @@ struct WorkoutLoggerView: View {
                     pendingFinishAfterModal = true
                 }
             )
-            .sheetContentEntrance()
         }
         .sheet(item: $substitutionRequest) { request in
             SubstitutionPickerSheet(
@@ -177,7 +197,6 @@ struct WorkoutLoggerView: View {
             ) { candidate in
                 applySubstitution(request: request, candidate: candidate)
             }
-            .sheetContentEntrance()
         }
         .confirmationDialog(
             "Check workout duration",
@@ -220,7 +239,6 @@ struct WorkoutLoggerView: View {
                 pendingOutlierDurationSeconds = nil
                 finishWorkout()
             }
-            .sheetContentEntrance()
             .presentationDetents([.medium])
         }
         .alert("Finish with skipped exercises?", isPresented: $showingSkippedExerciseConfirmation) {
@@ -246,6 +264,18 @@ struct WorkoutLoggerView: View {
                 showingSkippedReasonSheet = true
             } else {
                 consumePendingFinishAfterModal()
+            }
+        }
+        .onChange(of: isPopupMounted) { wasMounted, isMounted in
+            guard wasMounted, !isMounted, summaryRoute == nil else { return }
+
+            // The overlay retired while the Logger stayed on screen, so return
+            // VoiceOver to the control that invoked it. A Summary push keeps the
+            // new screen's own focus instead.
+            Task { @MainActor in
+                await Task.yield()
+                guard summaryRoute == nil else { return }
+                isFinishControlFocused = true
             }
         }
         .onChange(of: orderedExerciseLogs.count) { _, _ in
@@ -281,6 +311,10 @@ struct WorkoutLoggerView: View {
         .onChange(of: templateNotesInputSignature) { _, _ in
             guard !isCompletionCommitted else { return }
             refreshTemplateNotesCache()
+        }
+        .onDisappear {
+            transitionFeedbackDismissTask?.cancel()
+            transitionFeedbackDismissTask = nil
         }
     }
 
@@ -389,7 +423,8 @@ struct WorkoutLoggerView: View {
                 currentExerciseIndex: currentExerciseIndex,
                 totalExercises: orderedExerciseLogs.count,
                 togglePause: togglePause,
-                finish: requestFinishWorkout
+                finish: requestFinishWorkout,
+                finishFocusState: $isFinishControlFocused
             )
         }
 
@@ -720,25 +755,12 @@ struct WorkoutLoggerView: View {
             return
         }
 
-        pendingExerciseIndex = currentExerciseIndex + 1
         AppHaptics.lightImpact()
         let transitionMessage = motivationRotation.next()
-        configureCelebration(
-            .nextExercise(
-                title: transitionMessage.title,
-                message: transitionMessage.detail
-            )
-        )
-        presentOverlay(.nextExercise)
-    }
-
-    private func advanceAfterExerciseCelebration() {
-        if let pendingExerciseIndex {
-            withExerciseChangeAnimation {
-                currentExerciseIndex = min(pendingExerciseIndex, max(orderedExerciseLogs.count - 1, 0))
-            }
-            self.pendingExerciseIndex = nil
+        withExerciseChangeAnimation {
+            currentExerciseIndex = min(currentExerciseIndex + 1, max(orderedExerciseLogs.count - 1, 0))
         }
+        showTransitionFeedback(transitionMessage)
     }
 
     private func dismissMotivationOverlay() {
@@ -783,9 +805,54 @@ struct WorkoutLoggerView: View {
                     overlayPhase = .idle
                     overlayActionInFlight = false
                 }
-                advanceAfterExerciseCelebration()
             }
         }
+    }
+
+    private func showTransitionFeedback(_ message: WorkoutTransitionMessage) {
+        transitionFeedbackDismissTask?.cancel()
+        withAnimation(AppMotion.gentleFade(reduceMotion: reduceMotion)) {
+            transitionFeedback = message
+        }
+        transitionFeedbackDismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled, transitionFeedback?.id == message.id else { return }
+            withAnimation(AppMotion.gentleFade(reduceMotion: reduceMotion)) {
+                transitionFeedback = nil
+            }
+            transitionFeedbackDismissTask = nil
+        }
+    }
+
+    private func transitionFeedbackBanner(_ message: WorkoutTransitionMessage) -> some View {
+        Label {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(message.title)
+                    .font(AppTypography.bodyEmphasis)
+                Text(message.detail)
+                    .font(AppTypography.metadata)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+            }
+        } icon: {
+            Image(systemName: "arrow.right.circle.fill")
+                .foregroundStyle(appTheme.colors.accent)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(appTheme.metrics.spacing12)
+        .background(
+            appTheme.colors.cardBackground,
+            in: RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: appTheme.metrics.radius16, style: .continuous)
+                .stroke(appTheme.colors.cardBorder, lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(message.title)
+        .accessibilityValue(message.detail)
+        .accessibilityIdentifier("workout-transition-feedback")
+        .allowsHitTesting(false)
     }
 
     private var summaryNavigationKey: String {
@@ -937,21 +1004,31 @@ struct WorkoutLoggerView: View {
                 completedSessions: summarySessions,
                 activeSplits: activeSplits
             )
-            configureCelebration(
-                .completion(
-                    rating: rating,
-                    durationText: durationText(seconds: activeSeconds),
-                    prs: summaryRenderSnapshot?.sessionPRs ?? []
-                )
-            )
-            AppMotion.withoutAnimation {
-                overlayPhase = .completion
-                overlayVisible = true
-                overlayActionInFlight = false
-            }
             AppHaptics.success()
-            PerformanceTracer.mark(.workoutLoggerFinish, "completion_overlay_requested")
             pendingSkippedReasonSelections = [:]
+            let prs = summaryRenderSnapshot?.sessionPRs ?? []
+            if prs.isEmpty {
+                AppMotion.withoutAnimation {
+                    overlayPhase = .idle
+                    overlayVisible = false
+                }
+                requestSummaryAfterSuccessfulSave()
+                PerformanceTracer.mark(.workoutLoggerFinish, "routine_summary_requested")
+            } else {
+                configureCelebration(
+                    .completion(
+                        rating: rating,
+                        durationText: durationText(seconds: activeSeconds),
+                        prs: prs
+                    )
+                )
+                AppMotion.withoutAnimation {
+                    overlayPhase = .completion
+                    overlayVisible = true
+                    overlayActionInFlight = false
+                }
+                PerformanceTracer.mark(.workoutLoggerFinish, "pr_completion_overlay_requested")
+            }
         } catch {
             finishCompletionPresentation()
             isCompletionCommitted = false
@@ -962,6 +1039,28 @@ struct WorkoutLoggerView: View {
             withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
                 overlayVisible = true
             }
+        }
+    }
+
+    private func requestSummaryAfterSuccessfulSave() {
+        guard summaryRenderSnapshot != nil else {
+            overlayActionInFlight = false
+            isCompletionCommitted = false
+            finishCompletionPresentation()
+            completionErrorMessage = "Peakline could not prepare the workout summary. Please try again."
+            return
+        }
+
+        let route = WorkoutSummaryRoute(sessionID: session.id)
+        let didRequestNavigation = NavigationInteraction.perform(
+            key: summaryNavigationKey,
+            destinationClass: .warm,
+            haptic: .none
+        ) {
+            summaryRoute = route
+        }
+        if !didRequestNavigation {
+            overlayActionInFlight = false
         }
     }
 
@@ -1408,6 +1507,7 @@ private struct WorkoutRatingOverlay: View {
 
     @State private var selectedRating: WorkoutRating?
     @State private var isTransitioning = false
+    @AccessibilityFocusState private var focusedRatingID: Int?
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -1415,28 +1515,32 @@ private struct WorkoutRatingOverlay: View {
                 .ignoresSafeArea()
 
             PeaklinePopupCard(cornerRadius: 32, padding: 22) {
-                VStack(alignment: .leading, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text("How did it go?")
-                            .font(.system(.title, design: .rounded).weight(.bold))
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                            .minimumScaleFactor(0.82)
+                ScrollView(.vertical) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text("How did it go?")
+                                .font(.system(.title, design: .rounded).weight(.bold))
+                                .foregroundStyle(appTheme.colors.textPrimary)
+                                .minimumScaleFactor(0.82)
 
-                        Text("Rate the workout so Peakline remembers how the session felt, not just what you lifted.")
-                            .font(AppTypography.bodyEmphasis)
+                            Text("Rate the workout so Peakline remembers how the session felt, not just what you lifted.")
+                                .font(AppTypography.bodyEmphasis)
+                                .foregroundStyle(appTheme.colors.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        ratingOptions
+
+                        Text("Saved with this workout and used for the completion message.")
+                            .font(AppTypography.metadataEmphasis)
                             .foregroundStyle(appTheme.colors.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-
-                    ratingOptions
-
-                    Text("Saved with this workout and used for the completion message.")
-                        .font(AppTypography.metadataEmphasis)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .scrollBounceBehavior(.basedOnSize)
             }
             .frame(maxWidth: 460)
+            .frame(maxHeight: 620)
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
             .smoothPopupCardMotion(
@@ -1446,6 +1550,18 @@ private struct WorkoutRatingOverlay: View {
                 hiddenOffset: 30,
                 anchor: .bottom
             )
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
+        .onChange(of: isVisible, initial: true) { _, visible in
+            guard visible else {
+                focusedRatingID = nil
+                return
+            }
+            Task { @MainActor in
+                await Task.yield()
+                focusedRatingID = WorkoutRating.options.first?.id
+            }
         }
     }
 
@@ -1511,6 +1627,7 @@ private struct WorkoutRatingOverlay: View {
         .buttonStyle(.plain)
         .disabled(selectedRating != nil || isTransitioning)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityFocused($focusedRatingID, equals: rating.id)
     }
 
     private func choose(_ rating: WorkoutRating) {
@@ -2070,6 +2187,7 @@ private struct SetRowView: View {
                 StepperValueControl(
                     label: "Weight",
                     valueText: format(setLog.weight),
+                    numericValue: setLog.weight,
                     unitSuffix: "kg",
                     canDecrement: setLog.weight > 0,
                     decrement: { updateWeight(max(0, setLog.weight - 2.5)) },
@@ -2080,6 +2198,7 @@ private struct SetRowView: View {
                 StepperValueControl(
                     label: "Reps",
                     valueText: "\(setLog.reps)",
+                    numericValue: Double(setLog.reps),
                     unitSuffix: "reps",
                     canDecrement: setLog.reps > 0,
                     decrement: { updateReps(max(0, setLog.reps - 1)) },
@@ -2155,7 +2274,6 @@ private struct SetRowView: View {
                     keyboardType: .decimalPad,
                     save: { updateWeight(Double($0) ?? setLog.weight) }
                 )
-                .sheetContentEntrance()
             case .reps:
                 NumericEntrySheet(
                     title: "Edit Reps",
@@ -2163,7 +2281,6 @@ private struct SetRowView: View {
                     keyboardType: .numberPad,
                     save: { updateReps(Int($0) ?? setLog.reps) }
                 )
-                .sheetContentEntrance()
             case .effort:
                 EffortPickerSheet(selectedRPE: setLog.rpe) { rpe in
                     let transaction = persistenceTransaction()
@@ -2172,12 +2289,10 @@ private struct SetRowView: View {
                     didMutate(transaction)
                     activeSheet = nil
                 }
-                .sheetContentEntrance()
             case .plates:
                 NavigationStack {
                     PlateCalculatorView(targetWeight: setLog.weight)
                 }
-                .sheetContentEntrance()
             }
         }
     }

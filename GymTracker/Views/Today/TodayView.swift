@@ -606,7 +606,6 @@ struct TodayView: View {
             }
             .sheet(item: $checkInDraft) { draft in
                 DailyCheckInSheet(draft: draft)
-                    .sheetContentEntrance()
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
@@ -2124,6 +2123,7 @@ struct HydrationView: View {
             }
         } else {
             AppHaptics.error()
+            activeHydrationSwipeID = nil
             errorText = "Could not delete that water entry."
         }
     }

@@ -138,7 +138,7 @@ struct SwipeRevealRow<ID: Hashable, Content: View, Action: View>: View {
 
     @State private var horizontalOffset: CGFloat = 0
     @State private var dragStartOffset: CGFloat = 0
-    @State private var isHorizontalDrag = false
+    @State private var dragIntent = SwipeDragIntent.undecided
 
     init(
         id: ID,
@@ -156,10 +156,15 @@ struct SwipeRevealRow<ID: Hashable, Content: View, Action: View>: View {
 
     var body: some View {
         ZStack(alignment: .trailing) {
-            if isEnabled {
+            // The action is only mounted once the row has moved, so a closed row
+            // cannot expose or hit-test a destructive control.
+            if isEnabled, horizontalOffset != 0 {
                 action
                     .padding(.trailing, appTheme.metrics.swipeRevealActionTrailingPadding)
                     .opacity(revealProgress)
+                    .allowsHitTesting(revealProgress > 0.05)
+                    .accessibilityHidden(revealProgress <= 0.05)
+                    .transition(.opacity)
             }
 
             content
@@ -174,6 +179,9 @@ struct SwipeRevealRow<ID: Hashable, Content: View, Action: View>: View {
             guard newValue != id, horizontalOffset != 0 else { return }
             close(updateActiveID: false)
         }
+        .onChange(of: isEnabled) { _, enabled in
+            if !enabled { close() }
+        }
     }
 
     private var revealWidth: CGFloat { appTheme.metrics.swipeRevealWidth }
@@ -183,32 +191,38 @@ struct SwipeRevealRow<ID: Hashable, Content: View, Action: View>: View {
     }
 
     private var swipeGesture: some Gesture {
-        DragGesture(minimumDistance: 12, coordinateSpace: .local)
+        DragGesture(minimumDistance: SwipeRevealGesturePolicy.minimumTranslation, coordinateSpace: .local)
             .onChanged { value in
-                if !isHorizontalDrag {
-                    guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                    isHorizontalDrag = true
+                if dragIntent == .undecided {
+                    let resolvedIntent = SwipeRevealGesturePolicy.intent(for: value.translation)
+                    guard resolvedIntent != .undecided else { return }
+                    dragIntent = resolvedIntent
+                    guard resolvedIntent == .horizontal else { return }
                     dragStartOffset = horizontalOffset
                     if activeID != id {
                         activeID = id
                     }
                 }
 
-                guard isHorizontalDrag else { return }
-                horizontalOffset = clamped(dragStartOffset + value.translation.width)
+                guard dragIntent == .horizontal else { return }
+                horizontalOffset = SwipeRevealGesturePolicy.clampedOffset(
+                    dragStartOffset + value.translation.width,
+                    revealWidth: revealWidth
+                )
             }
             .onEnded { value in
                 defer {
-                    isHorizontalDrag = false
+                    dragIntent = .undecided
                     dragStartOffset = horizontalOffset
                 }
 
-                guard abs(value.translation.width) > abs(value.translation.height) else {
-                    close()
-                    return
-                }
-                let projectedOffset = dragStartOffset + value.predictedEndTranslation.width
-                let shouldOpen = projectedOffset < -(revealWidth * 0.45) || value.translation.width < -36
+                guard dragIntent == .horizontal else { return }
+                let shouldOpen = SwipeRevealGesturePolicy.shouldOpen(
+                    translation: value.translation,
+                    predictedEndTranslation: value.predictedEndTranslation,
+                    dragStartOffset: dragStartOffset,
+                    revealWidth: revealWidth
+                )
 
                 withAnimation(AppMotion.swipeRevealSnap(reduceMotion: reduceMotion)) {
                     horizontalOffset = shouldOpen ? -revealWidth : 0
@@ -221,10 +235,6 @@ struct SwipeRevealRow<ID: Hashable, Content: View, Action: View>: View {
             }
     }
 
-    private func clamped(_ offset: CGFloat) -> CGFloat {
-        min(0, max(-revealWidth, offset))
-    }
-
     private func close(updateActiveID: Bool = true) {
         withAnimation(AppMotion.swipeRevealSnap(reduceMotion: reduceMotion)) {
             horizontalOffset = 0
@@ -232,6 +242,53 @@ struct SwipeRevealRow<ID: Hashable, Content: View, Action: View>: View {
         if updateActiveID, activeID == id {
             activeID = nil
         }
+    }
+}
+
+enum SwipeDragIntent {
+    case undecided
+    case horizontal
+    case vertical
+}
+
+/// Deterministic gesture decisions for `SwipeRevealRow`.
+///
+/// The row keeps one direct offset and commits to a single direction as soon as
+/// intent is established, so a diagonal scroll cannot half-open a row and a
+/// reverse swipe settles back to the closed state.
+enum SwipeRevealGesturePolicy {
+    /// Movement below this distance keeps the intent undecided, so a tap or a
+    /// scroll start cannot claim the row.
+    static let minimumTranslation: CGFloat = 12
+    /// Horizontal dominance required before the row claims the gesture, so a
+    /// near-diagonal drag stays with the scrolling list instead of half-opening
+    /// the row while the list scrolls underneath it.
+    static let horizontalDominanceRatio: CGFloat = 1.25
+    /// Finger travel that opens the row even without much release velocity.
+    static let openDistance: CGFloat = 36
+    /// Fraction of the reveal width the projected offset must pass to open.
+    static let openProjectedFraction: CGFloat = 0.45
+
+    static func intent(for translation: CGSize) -> SwipeDragIntent {
+        let horizontal = abs(translation.width)
+        let vertical = abs(translation.height)
+        guard max(horizontal, vertical) >= minimumTranslation else { return .undecided }
+        return horizontal > vertical * horizontalDominanceRatio ? .horizontal : .vertical
+    }
+
+    static func clampedOffset(_ offset: CGFloat, revealWidth: CGFloat) -> CGFloat {
+        min(0, max(-revealWidth, offset))
+    }
+
+    static func shouldOpen(
+        translation: CGSize,
+        predictedEndTranslation: CGSize,
+        dragStartOffset: CGFloat,
+        revealWidth: CGFloat
+    ) -> Bool {
+        let projectedOffset = dragStartOffset + predictedEndTranslation.width
+        return projectedOffset < -(revealWidth * openProjectedFraction)
+            || translation.width < -openDistance
     }
 }
 
@@ -698,6 +755,11 @@ struct FilterChip: View {
             action()
         } label: {
             HStack(spacing: 6) {
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(AppTypography.metadataEmphasis)
+                        .accessibilityHidden(true)
+                }
                 if let systemImage {
                     Image(systemName: systemImage)
                         .font(AppTypography.metadataEmphasis)
@@ -717,6 +779,7 @@ struct FilterChip: View {
             .peaklineSelectionMotion(isSelected: isSelected, reduceMotion: reduceMotion, scale: 1.01)
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var selectedForeground: Color {

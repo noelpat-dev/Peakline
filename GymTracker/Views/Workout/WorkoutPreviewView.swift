@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UIKit
 
 private struct WorkoutPreviewExerciseRowFrameCollector: ViewModifier {
     let isEnabled: Bool
@@ -17,6 +18,247 @@ private struct WorkoutPreviewExerciseRowFrameCollector: ViewModifier {
     }
 }
 
+/// One sustained edge-autoscroll request for the mounted Preview order list.
+///
+/// The generation changes whenever a drag starts or stops, so a scroll loop can
+/// never outlive the gesture that asked for it.
+private struct WorkoutPreviewEdgeAutoscrollRequest: Equatable {
+    let generation: Int
+    let pointsPerSecond: CGFloat
+}
+
+/// Advances the enclosing `UIScrollView` for as long as a Preview row drag is
+/// held inside an edge zone.
+///
+/// `ScrollViewReader` can only jump between anchors, so a held drag needs direct
+/// offset control to keep scrolling smoothly. Row frames keep publishing through
+/// the named coordinate space as the offset changes, which keeps the landing
+/// edge and insertion cue accurate while the list is moving.
+private struct WorkoutPreviewEdgeAutoscrollDriver: UIViewRepresentable {
+    let request: WorkoutPreviewEdgeAutoscrollRequest?
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIView(context: Context) -> AttachmentView {
+        let view = AttachmentView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        view.onWindowChange = { [weak coordinator = context.coordinator] view in
+            coordinator?.hostViewDidMoveToWindow(view)
+        }
+        context.coordinator.hostDidUpdate(view)
+        return view
+    }
+
+    func updateUIView(_ uiView: AttachmentView, context: Context) {
+        context.coordinator.hostDidUpdate(uiView)
+        context.coordinator.apply(request: request)
+    }
+
+    static func dismantleUIView(_ uiView: AttachmentView, coordinator: Coordinator) {
+        coordinator.stop()
+    }
+
+    final class AttachmentView: UIView {
+        var onWindowChange: ((AttachmentView) -> Void)?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window != nil else { return }
+            onWindowChange?(self)
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        /// Bounded so an unexpected hierarchy can never leave a repeating retry.
+        private static let maximumAttachmentAttempts = 25
+        private static let attachmentRetryInterval: TimeInterval = 0.02
+        private static let rampUpDuration: CFTimeInterval = 0.16
+        private static let maximumFrameDuration: CFTimeInterval = 1.0 / 30.0
+        private static let minimumMovement: CGFloat = 0.5
+
+        private weak var hostView: UIView?
+        private weak var observedScrollView: UIScrollView?
+        private var attachmentWorkItem: DispatchWorkItem?
+        private var attachmentAttempts = 0
+        private var displayLink: CADisplayLink?
+        private var displayLinkTarget: DisplayLinkTarget?
+        private var request: WorkoutPreviewEdgeAutoscrollRequest?
+        private var lastTimestamp: CFTimeInterval = 0
+        private var elapsedInZone: CFTimeInterval = 0
+
+        func hostDidUpdate(_ view: UIView) {
+            let isNewHost = hostView !== view
+            if isNewHost {
+                hostView = view
+                attachmentAttempts = 0
+            }
+            // Updates arrive on every scrolled frame, so an attached driver does
+            // not re-walk the view hierarchy unless the host actually changed.
+            guard isNewHost || observedScrollView == nil else { return }
+            resolveAttachment()
+        }
+
+        func hostViewDidMoveToWindow(_ view: UIView) {
+            hostView = view
+            attachmentAttempts = 0
+            resolveAttachment()
+        }
+
+        func apply(request: WorkoutPreviewEdgeAutoscrollRequest?) {
+            // Speed changes within the same drag keep the ramp, so a finger
+            // that drifts inside the edge zone accelerates continuously instead
+            // of stalling back to the ramp start on every drag update.
+            let isContinuedRequest = Self.sameGenerationAndDirection(self.request, request)
+            self.request = request
+
+            guard request != nil else {
+                elapsedInZone = 0
+                stopDisplayLink()
+                return
+            }
+
+            if !isContinuedRequest {
+                elapsedInZone = 0
+            }
+            resolveAttachment(resetsAttempts: true)
+            startDisplayLinkIfNeeded()
+        }
+
+        private static func sameGenerationAndDirection(
+            _ lhs: WorkoutPreviewEdgeAutoscrollRequest?,
+            _ rhs: WorkoutPreviewEdgeAutoscrollRequest?
+        ) -> Bool {
+            guard let lhs, let rhs, lhs.generation == rhs.generation else { return false }
+            return (lhs.pointsPerSecond < 0) == (rhs.pointsPerSecond < 0)
+        }
+
+        func stop() {
+            attachmentWorkItem?.cancel()
+            attachmentWorkItem = nil
+            request = nil
+            elapsedInZone = 0
+            stopDisplayLink()
+            observedScrollView = nil
+            hostView = nil
+        }
+
+        fileprivate func step(_ link: CADisplayLink) {
+            guard let request, let scrollView = observedScrollView else {
+                stopDisplayLink()
+                return
+            }
+
+            let delta = lastTimestamp == 0
+                ? max(link.targetTimestamp - link.timestamp, 0)
+                : max(link.timestamp - lastTimestamp, 0)
+            lastTimestamp = link.timestamp
+            guard delta > 0 else { return }
+
+            let frameDuration = min(delta, Self.maximumFrameDuration)
+            elapsedInZone += frameDuration
+            let rampUp = CGFloat(min(1, elapsedInZone / Self.rampUpDuration))
+            let minimumY = -scrollView.adjustedContentInset.top
+            let maximumY = max(
+                minimumY,
+                scrollView.contentSize.height
+                    + scrollView.adjustedContentInset.bottom
+                    - scrollView.bounds.height
+            )
+            let proposed = scrollView.contentOffset.y
+                + request.pointsPerSecond * rampUp * CGFloat(frameDuration)
+            let clamped = min(max(proposed, minimumY), maximumY)
+            guard abs(clamped - scrollView.contentOffset.y) > Self.minimumMovement else { return }
+
+            scrollView.contentOffset.y = clamped
+        }
+
+        private func resolveAttachment(resetsAttempts: Bool = false) {
+            if resetsAttempts {
+                attachmentAttempts = 0
+            }
+            attachmentWorkItem?.cancel()
+            attachmentWorkItem = nil
+
+            guard let hostView else { return }
+
+            if let scrollView = Self.enclosingScrollView(of: hostView) {
+                observe(scrollView)
+                return
+            }
+
+            guard request != nil, attachmentAttempts < Self.maximumAttachmentAttempts else { return }
+
+            attachmentAttempts += 1
+            let workItem = DispatchWorkItem { [weak self, weak hostView] in
+                guard let self, let hostView, self.hostView === hostView else { return }
+                self.attachmentWorkItem = nil
+                self.resolveAttachment()
+            }
+            attachmentWorkItem = workItem
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + Self.attachmentRetryInterval,
+                execute: workItem
+            )
+        }
+
+        private func observe(_ scrollView: UIScrollView) {
+            attachmentWorkItem?.cancel()
+            attachmentWorkItem = nil
+            attachmentAttempts = 0
+            observedScrollView = scrollView
+
+            guard request != nil else { return }
+            startDisplayLinkIfNeeded()
+        }
+
+        private func startDisplayLinkIfNeeded() {
+            guard displayLink == nil, request != nil, observedScrollView != nil else { return }
+
+            let target = DisplayLinkTarget(coordinator: self)
+            let link = CADisplayLink(target: target, selector: #selector(DisplayLinkTarget.step(_:)))
+            link.add(to: .main, forMode: .common)
+            displayLinkTarget = target
+            displayLink = link
+            lastTimestamp = 0
+        }
+
+        private func stopDisplayLink() {
+            displayLink?.invalidate()
+            displayLink = nil
+            displayLinkTarget = nil
+            lastTimestamp = 0
+        }
+
+        private static func enclosingScrollView(of view: UIView) -> UIScrollView? {
+            var ancestor = view.superview
+            while let current = ancestor {
+                if let scrollView = current as? UIScrollView {
+                    return scrollView
+                }
+                ancestor = current.superview
+            }
+            return nil
+        }
+    }
+
+    /// Breaks the `CADisplayLink` retain of its target.
+    @MainActor
+    private final class DisplayLinkTarget: NSObject {
+        weak var coordinator: Coordinator?
+
+        init(coordinator: Coordinator) {
+            self.coordinator = coordinator
+        }
+
+        @objc func step(_ link: CADisplayLink) {
+            coordinator?.step(link)
+        }
+    }
+}
+
 struct WorkoutPreviewExerciseDropTarget: Equatable {
     let exerciseID: UUID
     let edge: WorkoutPreviewExerciseDropEdge
@@ -27,26 +269,42 @@ struct WorkoutPreviewExerciseDropTarget: Equatable {
         selectedExerciseIds: [UUID],
         rowFrames: [UUID: CGRect]
     ) -> Self? {
-        guard
-            let sourceIndex = selectedExerciseIds.firstIndex(of: sourceID),
-            let destination = (
-                rowFrames
-                    .filter { id, frame in
-                        id != sourceID && frame.contains(location)
-                    }
-                    .min { lhs, rhs in
-                        abs(lhs.value.midY - location.y) < abs(rhs.value.midY - location.y)
-                    }
-            ),
-            let destinationIndex = selectedExerciseIds.firstIndex(of: destination.key)
-        else {
-            return nil
+        guard let sourceIndex = selectedExerciseIds.firstIndex(of: sourceID) else { return nil }
+
+        if let destination = (
+            rowFrames
+                .filter { id, frame in
+                    id != sourceID && frame.contains(location)
+                }
+                .min { lhs, rhs in
+                    abs(lhs.value.midY - location.y) < abs(rhs.value.midY - location.y)
+                }
+        ),
+           let destinationIndex = selectedExerciseIds.firstIndex(of: destination.key) {
+            return Self(
+                exerciseID: destination.key,
+                edge: sourceIndex < destinationIndex ? .after : .before
+            )
         }
 
-        return Self(
-            exerciseID: destination.key,
-            edge: sourceIndex < destinationIndex ? .after : .before
-        )
+        // Dragging past either end of the list still has an unambiguous landing
+        // edge. Without this, a finger held at the viewport edge of a list whose
+        // last row cannot physically reach the finger would commit nothing.
+        if let firstID = selectedExerciseIds.first,
+           let firstFrame = rowFrames[firstID],
+           firstID != sourceID,
+           location.y <= firstFrame.minY {
+            return Self(exerciseID: firstID, edge: .before)
+        }
+
+        if let lastID = selectedExerciseIds.last,
+           let lastFrame = rowFrames[lastID],
+           lastID != sourceID,
+           location.y >= lastFrame.maxY {
+            return Self(exerciseID: lastID, edge: .after)
+        }
+
+        return nil
     }
 }
 
@@ -64,7 +322,6 @@ private struct WorkoutPreviewCoachActionsCard: View {
                 Label("Coach Actions", systemImage: "slider.horizontal.3")
                     .font(AppTypography.sectionTitle)
                     .foregroundStyle(appTheme.colors.textPrimary)
-                    .accessibilityIdentifier("workout-preview-guidance-chips")
 
                 if let appliedTitle {
                     HStack(spacing: 8) {
@@ -136,9 +393,14 @@ struct WorkoutPreviewView: View {
     @State private var didMarkStartButtonVisible = false
     @State private var didMarkExerciseRowsVisible = false
     @State private var didMarkFullContentVisible = false
-    @State private var exerciseOrderMounted = false
     @State private var exerciseRowFrames: [UUID: CGRect] = [:]
     @State private var gestureDropTarget: WorkoutPreviewExerciseDropTarget?
+    @State private var previewViewportHeight: CGFloat = 0
+    @State private var edgeAutoscrollRequest: WorkoutPreviewEdgeAutoscrollRequest?
+    @State private var gestureLocation: CGPoint?
+    @State private var gestureSourceID: UUID?
+    @State private var reorderGestureGeneration = 0
+    @State private var isCoachDetailExpanded = false
 
     let split: WorkoutPreviewSplit
     let preparedRoute: WorkoutPreviewPreparedRoute
@@ -152,6 +414,11 @@ struct WorkoutPreviewView: View {
     private let deloadReviewService = CoachDeloadCalendarReviewService()
     private let modePlanner = WorkoutModePlanner()
     private let substitutionService = ExerciseSubstitutionService()
+
+    /// Distance from the viewport edge that starts autoscrolling a held drag.
+    private static let edgeAutoscrollThreshold: CGFloat = 96
+    private static let minimumAutoscrollSpeed: CGFloat = 120
+    private static let maximumAutoscrollSpeed: CGFloat = 640
 
     init(
         preparedRoute: WorkoutPreviewPreparedRoute,
@@ -258,6 +525,7 @@ struct WorkoutPreviewView: View {
                 cancelGestureDrop()
             }
         )
+        .id(exercise.id)
     }
 
     var body: some View {
@@ -339,6 +607,11 @@ struct WorkoutPreviewView: View {
         .onChange(of: appliedWorkoutAdjustment?.id) { _, _ in
             rebuildLocalSnapshot()
         }
+        .onDisappear {
+            // Leaving the route must not leave a sustained autoscroll loop or a
+            // stale insertion cue behind.
+            endGesturePresentation()
+        }
     }
 
     private func previewContent(snapshot: WorkoutPreviewPreparedSnapshot) -> some View {
@@ -356,189 +629,200 @@ struct WorkoutPreviewView: View {
             contentLayout: .eager,
             locksHorizontalScrolling: true
         ) {
-            DashboardSection(title: "Mode") {
-                FitnessCard {
-                    WorkoutModePicker(selection: $selectedMode)
-                }
+        DashboardSection(title: "Mode") {
+            FitnessCard {
+                WorkoutModePicker(selection: $selectedMode)
             }
+        }
+        .background {
+            // Attached inside the scroll content so the driver can reach the
+            // enclosing vertical scroll view rather than the screen wrapper.
+            WorkoutPreviewEdgeAutoscrollDriver(request: edgeAutoscrollRequest)
+                .frame(width: 0, height: 0)
+        }
 
-            DashboardSection(title: "Session Snapshot") {
-                planReadinessCard(snapshot: snapshot)
-            }
+        DashboardSection(title: "Session Snapshot") {
+            planReadinessCard(snapshot: snapshot)
+        }
 
-            DashboardSection(title: "Coach Brief") {
-                FitnessCard(style: .compact) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(alignment: .top, spacing: 12) {
-                            Text(snapshot.coachSummaryText)
-                                .font(AppTypography.body)
-                                .foregroundStyle(appTheme.mutedText)
-                                .fixedSize(horizontal: false, vertical: true)
+        DashboardSection(title: "Coach Brief") {
+            FitnessCard(style: .compact) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .top, spacing: 12) {
+                        Text(snapshot.coachSummaryText)
+                            .font(AppTypography.body)
+                            .foregroundStyle(appTheme.mutedText)
+                            .fixedSize(horizontal: false, vertical: true)
 
-                            Spacer(minLength: 8)
+                        Spacer(minLength: 8)
 
-                            CoachBadgeView(state: snapshot.coachSummaryBadge)
-                        }
-
-                        if selectedMode != snapshot.trainingCall.recommendedMode {
-                            Text("\(selectedMode.displayName) mode is selected. Coach recommends \(snapshot.trainingCall.recommendedMode.displayName.lowercased()) based on current signals.")
-                                .font(AppTypography.metadata)
-                                .foregroundStyle(appTheme.mutedText)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                        CoachBadgeView(state: snapshot.coachSummaryBadge)
                     }
+
                 }
                 .accessibilityIdentifier("workout-preview-training-call-audit")
-
-                WorkoutPreviewCoachActionsCard(
-                    recommendations: snapshot.actionRecommendations,
-                    appliedTitle: appliedWorkoutAdjustment?.title,
-                    resetAction: resetCoachAdjustment,
-                    requestAction: { action in
-                        requestCoachAction(action, preparedSnapshot: snapshot)
-                    }
-                )
-
-                if appliedWorkoutAdjustment != nil {
-                    originalPlanShortcut(snapshot: snapshot)
-                }
             }
+            // The Coach summary is the always-visible guidance surface, so the
+            // marker survives collapsed secondary detail.
+            .accessibilityIdentifier("workout-preview-guidance-chips")
 
-            if exerciseOrderMounted {
-                DashboardSection(title: "Exercise Order") {
-                HStack {
-                    Spacer()
-                    Button("Select All") {
-                        AppMotion.withoutAnimation {
-                            selectedExerciseIds = snapshot.orderedExercises.map(\.id)
-                        }
-                    }
-                    .font(AppTypography.bodyEmphasis)
-                    .tint(appTheme.actionColor)
-                }
-
-                if snapshot.plannedExercises.isEmpty {
-                    DashboardEmptyStateCard(
-                        title: "No exercises selected",
-                        message: "Choose at least one exercise before starting.",
-                        systemImage: "list.bullet"
-                    )
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(Array(snapshot.plannedExercises.enumerated()), id: \.element.id) { index, exercise in
-                            previewExerciseCard(
-                                exercise: exercise,
-                                position: index,
-                                totalCount: snapshot.plannedExercises.count,
-                                previousExerciseID: index > 0 ? snapshot.plannedExercises[index - 1].id : nil,
-                                nextExerciseID: index < snapshot.plannedExercises.count - 1 ? snapshot.plannedExercises[index + 1].id : nil,
-                                suggestions: snapshot.suggestions
-                            )
-
-                            if index < snapshot.plannedExercises.count - 1 {
-                                Divider()
-                                    .padding(.leading, 72)
-                            }
-                        }
-                    }
-                    .background(
-                        appTheme.cardBackground,
-                        in: RoundedRectangle(
-                            cornerRadius: appTheme.metrics.standardCardRadius,
-                            style: .continuous
-                        )
-                    )
-                    .overlay {
-                        RoundedRectangle(
-                            cornerRadius: appTheme.metrics.standardCardRadius,
-                            style: .continuous
-                        )
-                        .stroke(appTheme.cardBorder.opacity(0.62), lineWidth: 1)
-                    }
-                    .accessibilityIdentifier("workout-preview-basic-exercise-rows")
-                    .onAppear {
-                        markExerciseRowsVisibleIfNeeded(count: snapshot.plannedExercises.count, source: "hydrated")
-                    }
-                }
-                }
-                .onAppear {
-                    markFullContentVisibleIfNeeded(snapshot: snapshot)
-                }
-
-                LazyVStack(alignment: .leading, spacing: appTheme.metrics.screenContentSpacing) {
-                DashboardSection(title: "Add Exercise") {
-                    FitnessCard {
-                        VStack(alignment: .leading, spacing: 12) {
-                            optionalExerciseMenu(snapshot: snapshot)
-
-                            HStack {
-                                Button {
-                                    addOptionalExercise()
-                                } label: {
-                                    Label("Add Selected", systemImage: "plus.circle")
-                                }
-                                .disabled(optionalExerciseId == nil)
-                                .accessibilityIdentifier("workout-preview-add-selected-exercise")
-
-                                Spacer()
-
-                                if let coreExercise = snapshot.coreExercise {
-                                    Button {
-                                        addExercise(coreExercise, targetSets: 2, minReps: 8, maxReps: 15, notes: "Optional core work.")
-                                    } label: {
-                                        Label("Add Core", systemImage: "figure.core.training")
-                                    }
-                                    .disabled(snapshot.selectedExerciseIDSet.contains(coreExercise.id))
-                                }
-                            }
-                            .buttonStyle(.borderless)
-                        }
-                    }
-                }
-
-                DashboardSection(title: "Start") {
-                    FitnessInformationalActionCard(style: .standard) {
-                        Text(startHint)
-                            .font(.footnote)
+            DisclosureGroup("Coach details", isExpanded: $isCoachDetailExpanded) {
+                VStack(alignment: .leading, spacing: 12) {
+                    if selectedMode != snapshot.trainingCall.recommendedMode {
+                        Text("\(selectedMode.displayName) mode is selected. Coach recommends \(snapshot.trainingCall.recommendedMode.displayName.lowercased()) based on current signals.")
+                            .font(AppTypography.metadata)
                             .foregroundStyle(appTheme.mutedText)
-                    } action: {
-                        VStack(spacing: 10) {
-                            startWorkoutButton(snapshot: snapshot, identifier: "workout-preview-start-footer")
-
-                            if appliedWorkoutAdjustment != nil {
-                                startOriginalPlanButton(snapshot: snapshot, identifier: "workout-preview-start-original-footer")
-                            }
-                        }
+                            .fixedSize(horizontal: false, vertical: true)
                     }
+
+                    WorkoutPreviewCoachActionsCard(
+                        recommendations: snapshot.actionRecommendations,
+                        appliedTitle: appliedWorkoutAdjustment?.title,
+                        resetAction: resetCoachAdjustment,
+                        requestAction: { action in
+                            requestCoachAction(action, preparedSnapshot: snapshot)
+                        }
+                    )
                 }
+                .padding(.top, 10)
+            }
+            .font(AppTypography.bodyEmphasis)
+            .tint(appTheme.actionColor)
+            .accessibilityIdentifier("workout-preview-coach-details")
+
+            if appliedWorkoutAdjustment != nil {
+                originalPlanShortcut(snapshot: snapshot)
+            }
+        }
+
+        DashboardSection(title: "Exercise Order") {
+        HStack {
+            Spacer()
+            Button("Select All") {
+                AppMotion.withoutAnimation {
+                    selectedExerciseIds = snapshot.orderedExercises.map(\.id)
                 }
             }
+            .font(AppTypography.bodyEmphasis)
+            .tint(appTheme.actionColor)
+        }
+
+        if snapshot.plannedExercises.isEmpty {
+            DashboardEmptyStateCard(
+                title: "No exercises selected",
+                message: "Choose at least one exercise before starting.",
+                systemImage: "list.bullet"
+            )
+        } else {
+            VStack(spacing: 0) {
+                ForEach(Array(snapshot.plannedExercises.enumerated()), id: \.element.id) { index, exercise in
+                    previewExerciseCard(
+                        exercise: exercise,
+                        position: index,
+                        totalCount: snapshot.plannedExercises.count,
+                        previousExerciseID: index > 0 ? snapshot.plannedExercises[index - 1].id : nil,
+                        nextExerciseID: index < snapshot.plannedExercises.count - 1 ? snapshot.plannedExercises[index + 1].id : nil,
+                        suggestions: snapshot.suggestions
+                    )
+
+                    if index < snapshot.plannedExercises.count - 1 {
+                        Divider()
+                            .padding(.leading, 72)
+                    }
+                }
+            }
+            .background(
+                appTheme.cardBackground,
+                in: RoundedRectangle(
+                    cornerRadius: appTheme.metrics.standardCardRadius,
+                    style: .continuous
+                )
+            )
+            .overlay {
+                RoundedRectangle(
+                    cornerRadius: appTheme.metrics.standardCardRadius,
+                    style: .continuous
+                )
+                .stroke(appTheme.cardBorder.opacity(0.62), lineWidth: 1)
+            }
+            .accessibilityIdentifier("workout-preview-basic-exercise-rows")
+            .onAppear {
+                markExerciseRowsVisibleIfNeeded(count: snapshot.plannedExercises.count, source: "hydrated")
+            }
+        }
+        }
+        .onAppear {
+            markFullContentVisibleIfNeeded(snapshot: snapshot)
+        }
+
+        LazyVStack(alignment: .leading, spacing: appTheme.metrics.screenContentSpacing) {
+        DashboardSection(title: "Add Exercise") {
+            FitnessCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    optionalExerciseMenu(snapshot: snapshot)
+
+                    HStack {
+                        Button {
+                            addOptionalExercise()
+                        } label: {
+                            Label("Add Selected", systemImage: "plus.circle")
+                        }
+                        .disabled(optionalExerciseId == nil)
+                        .accessibilityIdentifier("workout-preview-add-selected-exercise")
+
+                        Spacer()
+
+                        if let coreExercise = snapshot.coreExercise {
+                            Button {
+                                addExercise(coreExercise, targetSets: 2, minReps: 8, maxReps: 15, notes: "Optional core work.")
+                            } label: {
+                                Label("Add Core", systemImage: "figure.core.training")
+                            }
+                            .disabled(snapshot.selectedExerciseIDSet.contains(coreExercise.id))
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+        }
+
+        DashboardSection(title: "Start") {
+            FitnessInformationalActionCard(style: .standard) {
+                Text(startHint)
+                    .font(.footnote)
+                    .foregroundStyle(appTheme.mutedText)
+            } action: {
+                VStack(spacing: 10) {
+                    startWorkoutButton(snapshot: snapshot, identifier: "workout-preview-start-footer")
+
+                    if appliedWorkoutAdjustment != nil {
+                        startOriginalPlanButton(snapshot: snapshot, identifier: "workout-preview-start-original-footer")
+                    }
+                }
+            }
+        }
+        }
         }
         .onAppear {
             markInitialPreviewContentIfNeeded()
-            scheduleExerciseOrderMountIfNeeded()
         }
         .coordinateSpace(name: WorkoutPreviewExerciseOrderCoordinateSpace.name)
+        .background {
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { previewViewportHeight = proxy.size.height }
+                    .onChange(of: proxy.size.height) { _, height in
+                        previewViewportHeight = height
+                    }
+            }
+        }
         .modifier(
             WorkoutPreviewExerciseRowFrameCollector(isEnabled: tracksReorderFrames) { frames in
-                if exerciseRowFrames != frames {
-                    exerciseRowFrames = frames
-                }
+                refreshReorderGeometry(frames)
             }
         )
         .environment(\.fitnessCardShadowsEnabled, false)
         .accessibilityIdentifier("workout-preview-hydrated-content")
-    }
-
-    private func scheduleExerciseOrderMountIfNeeded() {
-        guard !exerciseOrderMounted else { return }
-
-        // The prepared session summary, Coach Brief, and primary Start action
-        // form the first real frame. The one full-detail eager order follows on
-        // the next rendered frame without introducing a duplicate or shell.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            exerciseOrderMounted = true
-        }
     }
 
     private func optionalExerciseMenu(snapshot: WorkoutPreviewPreparedSnapshot) -> some View {
@@ -563,7 +847,6 @@ struct WorkoutPreviewView: View {
                         Text(exercise.name)
                     }
                 }
-                .accessibilityIdentifier("workout-preview-optional-exercise-option-\(exercise.name)")
             }
         } label: {
             HStack(spacing: 10) {
@@ -954,13 +1237,72 @@ struct WorkoutPreviewView: View {
         reorderExercise(exercise.id, relativeTo: destinationID)
     }
 
-    private func updateGestureDropTarget(sourceID: UUID, location: CGPoint) {
+    private func updateGestureDropTarget(
+        sourceID: UUID,
+        location: CGPoint
+    ) {
         guard tracksReorderFrames else {
             requestReorderFrameTracking()
             return
         }
 
+        if gestureSourceID != sourceID {
+            gestureSourceID = sourceID
+            reorderGestureGeneration += 1
+        }
+        gestureLocation = location
+        applyGestureDropTarget(
+            at: location,
+            sourceID: sourceID,
+            rowFrames: exerciseRowFrames
+        )
+        updateEdgeAutoscroll(location: location)
+    }
+
+    /// Autoscrolling moves rows under a held finger without any new drag event,
+    /// so the landing edge and the autoscroll bound follow the fresh geometry.
+    private func refreshReorderGeometry(_ frames: [UUID: CGRect]) {
+        if exerciseRowFrames != frames {
+            exerciseRowFrames = frames
+        }
+
+        guard let sourceID = gestureSourceID, let location = gestureLocation else { return }
+        applyGestureDropTarget(at: location, sourceID: sourceID, rowFrames: frames)
+        updateEdgeAutoscroll(location: location, rowFrames: frames)
+    }
+
+    private func finishGestureDrop(sourceID: UUID, location: CGPoint) {
         let destination = gestureDestination(at: location, sourceID: sourceID)
+        endGesturePresentation()
+        guard let destination else { return }
+        reorderExercise(
+            sourceID,
+            relativeTo: destination.exerciseID,
+            animatesMutation: false
+        )
+    }
+
+    private func cancelGestureDrop() {
+        endGesturePresentation()
+    }
+
+    /// Clears every piece of live drag state, including the sustained
+    /// autoscroll loop, so a cancelled or finished gesture cannot keep moving
+    /// the list or leak an insertion cue.
+    private func endGesturePresentation() {
+        gestureDropTarget = nil
+        gestureLocation = nil
+        gestureSourceID = nil
+        edgeAutoscrollRequest = nil
+        reorderGestureGeneration += 1
+    }
+
+    private func applyGestureDropTarget(
+        at location: CGPoint,
+        sourceID: UUID,
+        rowFrames: [UUID: CGRect]
+    ) {
+        let destination = gestureDestination(at: location, sourceID: sourceID, rowFrames: rowFrames)
         guard gestureDropTarget != destination else { return }
 
         withAnimation(AppMotion.previewReorderTarget(reduceMotion: reduceMotion)) {
@@ -971,30 +1313,88 @@ struct WorkoutPreviewView: View {
         }
     }
 
-    private func finishGestureDrop(sourceID: UUID, location: CGPoint) {
-        let destination = gestureDestination(at: location, sourceID: sourceID)
-        gestureDropTarget = nil
-        guard let destination else { return }
-        reorderExercise(
-            sourceID,
-            relativeTo: destination.exerciseID,
-            animatesMutation: false
+    /// Sustained autoscroll: the request stays active until the finger leaves the
+    /// edge zone, runs out of exercises to reveal, the drag ends, or the Preview
+    /// disappears. Scroll speed rises with how far the finger has travelled past
+    /// the edge threshold.
+    private func updateEdgeAutoscroll(
+        location: CGPoint,
+        rowFrames: [UUID: CGRect]? = nil
+    ) {
+        guard gestureSourceID != nil, previewViewportHeight > 0 else {
+            edgeAutoscrollRequest = nil
+            return
+        }
+
+        let frames = rowFrames ?? exerciseRowFrames
+        let threshold = min(Self.edgeAutoscrollThreshold, previewViewportHeight / 3)
+        let direction: CGFloat
+        let depth: CGFloat
+        if location.y < threshold {
+            guard hasEarlierRow(toRevealAt: location.y, rowFrames: frames) else {
+                edgeAutoscrollRequest = nil
+                return
+            }
+            direction = -1
+            depth = threshold - location.y
+        } else if location.y > previewViewportHeight - threshold {
+            guard hasLaterRow(toRevealAt: location.y, rowFrames: frames) else {
+                edgeAutoscrollRequest = nil
+                return
+            }
+            direction = 1
+            depth = location.y - (previewViewportHeight - threshold)
+        } else {
+            edgeAutoscrollRequest = nil
+            return
+        }
+
+        let intensity = min(max(depth / threshold, 0), 1)
+        let pointsPerSecond = direction * Self.autoscrollSpeed(for: intensity)
+        let request = WorkoutPreviewEdgeAutoscrollRequest(
+            generation: reorderGestureGeneration,
+            pointsPerSecond: pointsPerSecond
         )
+        guard edgeAutoscrollRequest != request else { return }
+        edgeAutoscrollRequest = request
     }
 
-    private func cancelGestureDrop() {
-        gestureDropTarget = nil
+    /// Rows move down the viewport as the list scrolls up, so a finger held near
+    /// the top edge keeps receiving earlier exercises until the first row
+    /// reaches it. Nothing earlier exists beyond that point.
+    private func hasEarlierRow(toRevealAt y: CGFloat, rowFrames: [UUID: CGRect]) -> Bool {
+        guard
+            let firstID = selectedExerciseIds.first,
+            let firstFrame = rowFrames[firstID]
+        else { return true }
+        return firstFrame.maxY <= y
+    }
+
+    /// The mirrored bound: rows move up the viewport as the list scrolls down,
+    /// so autoscroll stops when the last exercise arrives under the finger.
+    private func hasLaterRow(toRevealAt y: CGFloat, rowFrames: [UUID: CGRect]) -> Bool {
+        guard
+            let lastID = selectedExerciseIds.last,
+            let lastFrame = rowFrames[lastID]
+        else { return true }
+        return lastFrame.minY > y
+    }
+
+    private static func autoscrollSpeed(for intensity: CGFloat) -> CGFloat {
+        Self.minimumAutoscrollSpeed
+            + (Self.maximumAutoscrollSpeed - Self.minimumAutoscrollSpeed) * intensity
     }
 
     private func gestureDestination(
         at location: CGPoint,
-        sourceID: UUID
+        sourceID: UUID,
+        rowFrames: [UUID: CGRect]? = nil
     ) -> WorkoutPreviewExerciseDropTarget? {
         WorkoutPreviewExerciseDropTarget.resolve(
             location: location,
             sourceID: sourceID,
             selectedExerciseIds: selectedExerciseIds,
-            rowFrames: exerciseRowFrames
+            rowFrames: rowFrames ?? exerciseRowFrames
         )
     }
 
@@ -1194,7 +1594,7 @@ private final class WorkoutPreviewRoutePresentationState: ObservableObject {
 
 struct WorkoutPreviewRouteView: View {
     @StateObject private var presentationState: WorkoutPreviewRoutePresentationState
-    @State private var tracksReorderFrames = false
+    @State private var tracksReorderFrames = true
 
     let preparedRoute: WorkoutPreviewPreparedRoute
     let onWorkoutFinished: (() -> Void)?
@@ -1228,13 +1628,6 @@ struct WorkoutPreviewRouteView: View {
                 "route_mounted cache=\(preparedRoute.cacheToken)"
             )
 
-            // Publish every eager row's frame before the first possible user drag.
-            // Deferring this until the handle's first onChanged event leaves that
-            // gesture without destinations and makes the visible lift a no-op.
-            guard !tracksReorderFrames else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) {
-                tracksReorderFrames = true
-            }
         }
         .onDisappear {
             PerformanceTracer.mark(

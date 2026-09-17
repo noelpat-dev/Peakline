@@ -275,11 +275,9 @@ struct SleepDashboardView: View {
                 refreshSleepAnalytics(force: true)
                 refreshReadinessScore(force: true)
             }
-            .sheetContentEntrance()
         }
         .sheet(isPresented: $showingSettings) {
             SleepSettingsView(settings: $settings)
-                .sheetContentEntrance()
         }
         .sheet(item: $activeStartSheet) { sheet in
             Group {
@@ -294,7 +292,6 @@ struct SleepDashboardView: View {
                     SleepSessionEditorView(mode: .manual)
                 }
             }
-            .sheetContentEntrance()
         }
         .alert("Discard active sleep?", isPresented: discardAlertBinding) {
             Button("Cancel", role: .cancel) {

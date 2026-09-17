@@ -72,7 +72,6 @@ struct SleepModeView: View {
             }
             .navigationTitle("Sleep Mode")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
@@ -351,4 +350,3 @@ private struct SleepModeActionButton: View {
         }
     }
 }
-

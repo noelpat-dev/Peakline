@@ -38,7 +38,22 @@ struct WorkoutModePicker: View {
                     .background(selection == mode ? appTheme.colors.accentSurfaceStrong : appTheme.elevatedCardBackground)
                     .overlay {
                         RoundedRectangle(cornerRadius: appTheme.metrics.compactCardRadius, style: .continuous)
-                            .stroke(selection == mode ? appTheme.colors.accent.opacity(0.38) : appTheme.cardBorder, lineWidth: 1)
+                            .stroke(
+                                selection == mode ? appTheme.colors.accent.opacity(0.55) : appTheme.cardBorder,
+                                lineWidth: selection == mode ? 2 : 1
+                            )
+                    }
+                    // The checkmark is an overlay so the selected state costs no
+                    // horizontal text width and mode names stay on one line.
+                    .overlay(alignment: .topTrailing) {
+                        if selection == mode {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(AppTypography.metadataEmphasis)
+                                .foregroundStyle(appTheme.colors.accent)
+                                .padding(.top, 6)
+                                .padding(.trailing, 8)
+                                .accessibilityHidden(true)
+                        }
                     }
                     .clipShape(RoundedRectangle(cornerRadius: appTheme.metrics.compactCardRadius, style: .continuous))
                     .peaklineSelectionMotion(
@@ -49,6 +64,8 @@ struct WorkoutModePicker: View {
                     )
                 }
                 .buttonStyle(PressableCardButtonStyle())
+                .accessibilityAddTraits(selection == mode ? .isSelected : [])
+                .accessibilityValue(selection == mode ? "Selected" : "Not selected")
             }
         }
     }

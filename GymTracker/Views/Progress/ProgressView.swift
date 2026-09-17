@@ -167,6 +167,7 @@ struct ProgressContentView: View {
                                 }
                             }
                             .buttonStyle(PressableCardButtonStyle())
+                            .accessibilityIdentifier("progress-exercise-row-\(exercise.id.uuidString)")
                         }
                     }
                 }
@@ -656,30 +657,27 @@ private struct ProgressActionCard: View {
     @State private var lastEntriesSignature: String?
     @State private var entriesLoaded = false
     @State private var didRevealTrendChart = false
+    @State private var entriesTask: Task<Void, Never>?
 
     init(exercise: ProgressExerciseRowSnapshot) {
         self.exercise = exercise
         _sessions = Query(Self.completedSessionsDescriptor)
     }
 
+    /// Hard bound on the live relationship traversal performed for this route.
+    private static let sessionScanLimit = 160
+
     private static var completedSessionsDescriptor: FetchDescriptor<WorkoutSession> {
         var descriptor = FetchDescriptor<WorkoutSession>(
             predicate: #Predicate<WorkoutSession> { $0.completed },
             sortBy: [SortDescriptor(\.date, order: .reverse)]
         )
-        descriptor.fetchLimit = 160
+        descriptor.fetchLimit = sessionScanLimit
         return descriptor
     }
 
-    private var entriesSignature: String {
-        let input = ProgressAnalyticsInputSignature(
-            sessions: Array(sessions.prefix(160)),
-            exerciseIDs: [exercise.id]
-        )
-        return "\(workoutWarmStartInvalidation.revision)||\(input.rawValue)"
-    }
-
-    private func makeEntries() -> [ExerciseProgressEntry] {
+    @MainActor
+    private func makeEntryInputs() -> [ExerciseProgressSessionInput] {
         sessions.compactMap { session in
             guard let exerciseLog = session.exerciseLogs.first(where: { $0.exerciseId == exercise.id }) else {
                 return nil
@@ -688,9 +686,20 @@ private struct ProgressActionCard: View {
             let sets = exerciseLog.setLogs
                 .filter { $0.completed && !$0.isWarmup }
                 .sorted { $0.setNumber < $1.setNumber }
+                .map {
+                    ExerciseProgressSetInput(
+                        setNumber: $0.setNumber,
+                        weight: $0.weight,
+                        reps: $0.reps
+                    )
+                }
 
             guard !sets.isEmpty else { return nil }
-            return ExerciseProgressEntry(session: session, sets: sets)
+            return ExerciseProgressSessionInput(
+                id: session.id,
+                date: session.date,
+                sets: sets
+            )
         }
     }
 
@@ -750,7 +759,7 @@ private struct ProgressActionCard: View {
                         ForEach(entries) { entry in
                             FitnessCard(padding: 16) {
                                 VStack(alignment: .leading, spacing: 5) {
-                                    Text(entry.session.date.formatted(date: .abbreviated, time: .omitted))
+                                    Text(entry.date.formatted(date: .abbreviated, time: .omitted))
                                         .font(AppTypography.sectionTitle)
                                     Text(entry.setsText)
                                         .font(AppTypography.body)
@@ -767,11 +776,16 @@ private struct ProgressActionCard: View {
             }
         }
         .navigationTitle(exercise.name)
+        .accessibilityIdentifier("progress-exercise-detail")
         .onAppear {
             refreshEntries()
         }
-        .onChange(of: entriesSignature) { _, _ in
+        .onChange(of: workoutWarmStartInvalidation.revision) { _, _ in
             refreshEntries()
+        }
+        .onDisappear {
+            entriesTask?.cancel()
+            entriesTask = nil
         }
     }
 
@@ -789,17 +803,43 @@ private struct ProgressActionCard: View {
     }
 
     private func refreshEntries() {
-        let signature = entriesSignature
-        guard signature != lastEntriesSignature else { return }
+        let revision = workoutWarmStartInvalidation.revision
+        entriesTask?.cancel()
+        entriesTask = Task { @MainActor in
+            let prepared = await PerformanceTracer.traceAsync(.exerciseProgressEntries) {
+                await prepareEntries(revision: revision)
+            }
+            guard !Task.isCancelled, let prepared else { return }
+            AppMotion.withoutAnimation {
+                entries = prepared.entries
+                lastEntriesSignature = prepared.signature
+                entriesLoaded = true
+            }
+        }
+    }
 
-        let nextEntries = PerformanceTracer.trace(.exerciseProgressEntries) {
-            makeEntries()
-        }
-        AppMotion.withoutAnimation {
-            entries = nextEntries
-            lastEntriesSignature = signature
-            entriesLoaded = true
-        }
+    /// Bounded, value-only preparation for the drill-down push.
+    ///
+    /// SwiftData relationships stay on the main actor, while the pure value
+    /// mapping runs detached. The caller measures both halves as one
+    /// preparation interval so the trace covers the real push cost.
+    @MainActor
+    private func prepareEntries(revision: Int) async -> PreparedExerciseEntries? {
+        let inputs = makeEntryInputs()
+        let signature = ExerciseProgressSessionInput.signature(revision: revision, inputs: inputs)
+        guard signature != lastEntriesSignature else { return nil }
+
+        let entries = await Task.detached(priority: .userInitiated) {
+            inputs.map(ExerciseProgressEntry.init)
+        }.value
+
+        guard !Task.isCancelled else { return nil }
+        return PreparedExerciseEntries(signature: signature, entries: entries)
+    }
+
+    private struct PreparedExerciseEntries {
+        let signature: String
+        let entries: [ExerciseProgressEntry]
     }
 }
 
@@ -868,94 +908,232 @@ private struct ExerciseTrendChart: View {
     let markRevealed: () -> Void
 
     @State private var revealProgress = 0.0
+    @State private var selectedDate: Date?
+
+    private var orderedEntries: [ExerciseProgressEntry] {
+        Array(entries)
+    }
+
+    /// Newest first so the most recent dated values are the first the picker offers.
+    private var pickerEntries: [ExerciseProgressEntry] {
+        orderedEntries.reversed()
+    }
+
+    private var selectedEntry: ExerciseProgressEntry? {
+        guard let selectedDate,
+              let index = ExerciseTrendPointSelector.nearestIndex(
+                to: selectedDate,
+                in: orderedEntries.map(\.date)
+              ) else { return nil }
+        return orderedEntries[index]
+    }
 
     var body: some View {
-        Chart(Array(entries)) { entry in
-            LineMark(
-                x: .value("Date", entry.session.date),
-                y: .value("Estimated 1RM", entry.estimatedOneRepMax)
-            )
-            .foregroundStyle(appTheme.colors.textAccent)
+        VStack(alignment: .leading, spacing: 10) {
+            Menu {
+                ForEach(pickerEntries) { entry in
+                    Button {
+                        selectedDate = entry.date
+                    } label: {
+                        Text(pointDescription(entry))
+                    }
+                }
+            } label: {
+                Label(
+                    selectedEntry.map(pointDescription) ?? "Inspect a point",
+                    systemImage: "scope"
+                )
+                .font(AppTypography.metadataEmphasis)
+                .foregroundStyle(appTheme.colors.textPrimary)
+            }
+            .accessibilityLabel("Inspect historical progress points")
+            .accessibilityValue(selectedEntry.map(pointDescription) ?? "No point selected")
+            .accessibilityIdentifier("progress-chart-point-picker")
 
-            PointMark(
-                x: .value("Date", entry.session.date),
-                y: .value("Estimated 1RM", entry.estimatedOneRepMax)
-            )
+            Chart(orderedEntries) { entry in
+                LineMark(
+                    x: .value("Date", entry.date),
+                    y: .value("Estimated 1RM", entry.estimatedOneRepMax)
+                )
                 .foregroundStyle(appTheme.colors.textAccent)
-        }
-        .chartPlotStyle { plotArea in
-            plotArea.mask(alignment: .leading) {
-                GeometryReader { proxy in
-                    Rectangle()
-                        .frame(width: reduceMotion ? proxy.size.width : proxy.size.width * revealProgress)
+
+                PointMark(
+                    x: .value("Date", entry.date),
+                    y: .value("Estimated 1RM", entry.estimatedOneRepMax)
+                )
+                    .foregroundStyle(appTheme.colors.textAccent)
+
+                if selectedEntry?.id == entry.id {
+                    RuleMark(x: .value("Selected date", entry.date))
+                        .foregroundStyle(appTheme.colors.accent.opacity(0.55))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    PointMark(
+                        x: .value("Selected date", entry.date),
+                        y: .value("Selected estimated 1RM", entry.estimatedOneRepMax)
+                    )
+                    .symbolSize(72)
+                    .foregroundStyle(appTheme.colors.accent)
                 }
             }
-        }
-        .chartYAxisLabel("Est. 1RM kg")
-        .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-                AxisGridLine()
-                    .foregroundStyle(appTheme.colors.cardBorder)
-                AxisTick()
-                    .foregroundStyle(appTheme.colors.cardBorder)
-                AxisValueLabel()
-                    .foregroundStyle(appTheme.colors.textSecondary)
+            // A tap only inspects a dated point; vertical panning stays with the
+            // parent scroll view instead of being claimed by a chart-select gesture.
+            .chartOverlay { proxy in
+                GeometryReader { geometry in
+                    Rectangle()
+                        .fill(.clear)
+                        .contentShape(Rectangle())
+                        .gesture(
+                            SpatialTapGesture()
+                                .onEnded { event in
+                                    guard let plotFrame = proxy.plotFrame else { return }
+                                    let plotOrigin = geometry[plotFrame].origin
+                                    guard let tappedDate = proxy.value(
+                                        atX: event.location.x - plotOrigin.x,
+                                        as: Date.self
+                                    ) else { return }
+                                    selectedDate = ExerciseTrendPointSelector.nearestDate(
+                                        to: tappedDate,
+                                        in: orderedEntries.map(\.date)
+                                    ) ?? tappedDate
+                                }
+                        )
+                }
             }
-        }
-        .chartYAxis {
-            AxisMarks { _ in
-                AxisGridLine()
-                    .foregroundStyle(appTheme.colors.cardBorder)
-                AxisTick()
-                    .foregroundStyle(appTheme.colors.cardBorder)
-                AxisValueLabel()
-                    .foregroundStyle(appTheme.colors.textSecondary)
+            .chartPlotStyle { plotArea in
+                plotArea.mask(alignment: .leading) {
+                    GeometryReader { proxy in
+                        Rectangle()
+                            .frame(width: reduceMotion ? proxy.size.width : proxy.size.width * revealProgress)
+                    }
+                }
             }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Estimated 1RM trend")
-        .accessibilityValue(accessibilityValue)
-        .onAppear {
-            guard revealOnAppear else {
-                revealProgress = 1
-                return
+            .chartYAxisLabel("Est. 1RM kg")
+            .chartXAxis {
+                AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                    AxisGridLine()
+                        .foregroundStyle(appTheme.colors.cardBorder)
+                    AxisTick()
+                        .foregroundStyle(appTheme.colors.cardBorder)
+                    AxisValueLabel()
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                }
             }
+            .chartYAxis {
+                AxisMarks { _ in
+                    AxisGridLine()
+                        .foregroundStyle(appTheme.colors.cardBorder)
+                    AxisTick()
+                        .foregroundStyle(appTheme.colors.cardBorder)
+                    AxisValueLabel()
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Estimated 1RM trend")
+            .accessibilityValue(accessibilityValue)
+            .onAppear {
+                guard revealOnAppear else {
+                    revealProgress = 1
+                    return
+                }
 
-            if reduceMotion {
-                revealProgress = 1
+                if reduceMotion {
+                    revealProgress = 1
+                    markRevealed()
+                    return
+                }
+
+                revealProgress = 0
+                withAnimation(AppMotion.chartDrawIn(reduceMotion: false)) {
+                    revealProgress = 1
+                }
                 markRevealed()
-                return
             }
-
-            revealProgress = 0
-            withAnimation(AppMotion.chartDrawIn(reduceMotion: false)) {
-                revealProgress = 1
-            }
-            markRevealed()
         }
     }
 
     private var accessibilityValue: String {
-        guard let latest = Array(entries).last else {
+        if let selectedEntry {
+            return "Selected \(pointDescription(selectedEntry))"
+        }
+        guard let latest = orderedEntries.last else {
             return "No trend data"
         }
         return "Latest estimated 1RM \(latest.estimatedOneRepMax.formatted(.number.precision(.fractionLength(0...1)))) kilograms"
     }
+
+    private func pointDescription(_ entry: ExerciseProgressEntry) -> String {
+        let value = entry.estimatedOneRepMax.formatted(.number.precision(.fractionLength(0...1)))
+        return "\(entry.date.formatted(date: .abbreviated, time: .omitted)), \(value) kilograms"
+    }
 }
 
-private struct ExerciseProgressEntry: Identifiable {
-    let session: WorkoutSession
-    let sets: [SetLog]
+/// Deterministic dated-point resolution for `ExerciseTrendChart`.
+///
+/// Ties keep the earlier (older) point so repeated taps on the same location
+/// always inspect the same dated value.
+enum ExerciseTrendPointSelector {
+    static func nearestIndex(to target: Date, in dates: [Date]) -> Int? {
+        guard !dates.isEmpty else { return nil }
 
-    var id: UUID {
-        session.id
+        var bestIndex = 0
+        var bestDistance = abs(dates[0].timeIntervalSince(target))
+
+        for index in dates.indices.dropFirst() {
+            let distance = abs(dates[index].timeIntervalSince(target))
+            if distance < bestDistance {
+                bestIndex = index
+                bestDistance = distance
+            }
+        }
+
+        return bestIndex
+    }
+
+    static func nearestDate(to target: Date, in dates: [Date]) -> Date? {
+        guard let index = nearestIndex(to: target, in: dates) else { return nil }
+        return dates[index]
+    }
+}
+
+private struct ExerciseProgressSetInput: Sendable {
+    let setNumber: Int
+    let weight: Double
+    let reps: Int
+}
+
+private struct ExerciseProgressSessionInput: Identifiable, Sendable {
+    let id: UUID
+    let date: Date
+    let sets: [ExerciseProgressSetInput]
+
+    static func signature(revision: Int, inputs: [Self]) -> String {
+        let values = inputs.map { input in
+            let setValues = input.sets.map {
+                "\($0.setNumber):\($0.weight):\($0.reps)"
+            }.joined(separator: ",")
+            return "\(input.id.uuidString):\(input.date.timeIntervalSince1970):\(setValues)"
+        }.joined(separator: "|")
+        return "\(revision)||\(values)"
+    }
+}
+
+private struct ExerciseProgressEntry: Identifiable, Sendable {
+    let id: UUID
+    let date: Date
+    let sets: [ExerciseProgressSetInput]
+
+    init(_ input: ExerciseProgressSessionInput) {
+        id = input.id
+        date = input.date
+        sets = input.sets
     }
 
     var completedSets: Int {
         sets.count
     }
 
-    var bestSet: SetLog {
+    var bestSet: ExerciseProgressSetInput {
         sets.max { estimatedOneRepMax(for: $0) < estimatedOneRepMax(for: $1) } ?? sets[0]
     }
 
@@ -983,7 +1161,7 @@ private struct ExerciseProgressEntry: Identifiable {
         sets.map { PeaklineText.loadReps(weight: format($0.weight), reps: $0.reps) }.joined(separator: ", ")
     }
 
-    private func estimatedOneRepMax(for set: SetLog) -> Double {
+    private func estimatedOneRepMax(for set: ExerciseProgressSetInput) -> Double {
         set.weight * (1 + Double(set.reps) / 30)
     }
 

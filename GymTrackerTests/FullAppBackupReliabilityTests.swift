@@ -586,12 +586,9 @@ final class FullAppBackupReliabilityTests: XCTestCase {
 private struct InjectedBackupFailure: Error {}
 
 final class StartupPresentationReducerTests: XCTestCase {
-    func testCriticalReadyWaitsForAnimationCompletion() {
+    func testCriticalReadyRevealsWithoutWaitingForBrandAnimation() {
         var state = StartupPresentationState.animating
         state = StartupPresentationReducer.reduce(state, event: .criticalReady)
-        XCTAssertEqual(state, .waitingForAnimation)
-
-        state = StartupPresentationReducer.reduce(state, event: .animationFinished)
         XCTAssertEqual(state, .revealing)
 
         state = StartupPresentationReducer.reduce(state, event: .revealFinished)
@@ -607,15 +604,12 @@ final class StartupPresentationReducerTests: XCTestCase {
         XCTAssertEqual(state, .revealing)
     }
 
-    func testSlowThresholdThenCriticalReadyStillWaitsForAnimationCompletion() {
+    func testSlowThresholdThenCriticalReadyRevealsImmediately() {
         var state = StartupPresentationState.animating
         state = StartupPresentationReducer.reduce(state, event: .slowThresholdReached)
         XCTAssertEqual(state, .holdingSlow)
 
         state = StartupPresentationReducer.reduce(state, event: .criticalReady)
-        XCTAssertEqual(state, .holdingSlowForAnimation)
-
-        state = StartupPresentationReducer.reduce(state, event: .animationFinished)
         XCTAssertEqual(state, .revealing)
     }
 

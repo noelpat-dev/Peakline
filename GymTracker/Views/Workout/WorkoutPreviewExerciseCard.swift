@@ -111,13 +111,14 @@ private struct WorkoutPreviewExerciseDragStyle: ViewModifier {
             // Keep the live finger offset outside the lift animation. The
             // pickup can settle visually without making the lifted row lag
             // behind the next drag update.
-            .offset(y: reduceMotion ? 0 : verticalOffset)
+            .offset(y: verticalOffset)
     }
 }
 
 struct WorkoutPreviewExerciseCard: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var guideEntry: ExerciseGuideEntry?
     @State private var isGestureDragging = false
@@ -144,31 +145,88 @@ struct WorkoutPreviewExerciseCard: View {
     let cancelGestureDrop: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            ExerciseIconView(
-                iconKey: ExerciseIconMapper.iconKey(forName: exercise.exerciseNameSnapshot),
-                size: 56,
-                showBackground: true,
-                isDecorative: true
-            )
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .top, spacing: 12) {
+                        exerciseIcon
+                        exerciseTitle
+                    }
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top, spacing: 8) {
-                    Text(exercise.exerciseNameSnapshot)
-                        .font(AppTypography.sectionTitle)
-                        .foregroundStyle(appTheme.colors.textPrimary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("workout-preview-exercise-name-\(exercise.exerciseNameSnapshot)")
+                    HStack(spacing: 8) {
+                        Spacer(minLength: 0)
+                        reorderHandle
+                        actionsButton
+                    }
 
-                    Spacer(minLength: 8)
-
-                    reorderHandle
-
-                    actionsButton
+                    exerciseDetails
                 }
+            } else {
+                HStack(alignment: .top, spacing: 12) {
+                    exerciseIcon
 
-                CoachBadgeView(recommendationType: suggestion.recommendationType)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .top, spacing: 8) {
+                            exerciseTitle
+
+                            Spacer(minLength: 8)
+
+                            reorderHandle
+
+                            actionsButton
+                        }
+
+                        exerciseDetails
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .modifier(
+            WorkoutPreviewExerciseRowFramePublisher(
+                exerciseID: exercise.id,
+                isEnabled: tracksReorderFrame
+            )
+        )
+        .modifier(WorkoutPreviewExerciseDropTargetStyle(edge: gestureDropEdge))
+        .modifier(
+            WorkoutPreviewExerciseDragStyle(
+                isDragging: isGestureDragging,
+                verticalOffset: gestureVerticalOffset
+            )
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("workout-preview-exercise-row-\(exercise.exerciseNameSnapshot)")
+        .sheet(item: $guideEntry) { entry in
+            ExerciseGuideSheet(entry: entry)
+        }
+    }
+
+    private var exerciseIcon: some View {
+        ExerciseIconView(
+            iconKey: ExerciseIconMapper.iconKey(forName: exercise.exerciseNameSnapshot),
+            size: dynamicTypeSize.isAccessibilitySize ? 48 : 56,
+            showBackground: true,
+            isDecorative: true
+        )
+    }
+
+    private var exerciseTitle: some View {
+        Text(exercise.exerciseNameSnapshot)
+            .font(AppTypography.sectionTitle)
+            .foregroundStyle(appTheme.colors.textPrimary)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("workout-preview-exercise-name-\(exercise.exerciseNameSnapshot)")
+    }
+
+    private var exerciseDetails: some View {
+        VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top, spacing: 8) {
+                    CoachBadgeView(recommendationType: suggestion.recommendationType)
+                }
 
                 Text(
                     PeaklineText.setRepSummary(
@@ -195,28 +253,6 @@ struct WorkoutPreviewExerciseCard: View {
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .modifier(
-            WorkoutPreviewExerciseRowFramePublisher(
-                exerciseID: exercise.id,
-                isEnabled: tracksReorderFrame
-            )
-        )
-        .modifier(WorkoutPreviewExerciseDropTargetStyle(edge: gestureDropEdge))
-        .modifier(
-            WorkoutPreviewExerciseDragStyle(
-                isDragging: isGestureDragging,
-                verticalOffset: gestureVerticalOffset
-            )
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("workout-preview-exercise-row-\(exercise.exerciseNameSnapshot)")
-        .sheet(item: $guideEntry) { entry in
-            ExerciseGuideSheet(entry: entry)
         }
     }
 

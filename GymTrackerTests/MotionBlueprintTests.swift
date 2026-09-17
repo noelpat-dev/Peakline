@@ -23,6 +23,7 @@ final class MotionBlueprintTests: XCTestCase {
         let start = Date(timeIntervalSince1970: 10_000)
         var state = RestTimerState()
         state.start(durationSeconds: 90, exerciseName: "Bench Press", nextSetNumber: 3, now: start)
+        let completedRunID = try! XCTUnwrap(state.runID)
 
         XCTAssertEqual(state.remainingSeconds(at: start.addingTimeInterval(80)), 10)
         XCTAssertEqual(state.remainingSeconds(at: start.addingTimeInterval(81)), 9)
@@ -38,9 +39,34 @@ final class MotionBlueprintTests: XCTestCase {
         XCTAssertEqual(state.completionDate, start.addingTimeInterval(90))
         XCTAssertFalse(state.isRunning)
 
+        // A stale completion dismissal must not reset a timer started from a
+        // second presentation of the shared state.
+        state.start(durationSeconds: 90, now: start.addingTimeInterval(90.1))
+        let restartedRunID = state.runID
+        state.reset(ifMatching: completedRunID)
+        XCTAssertEqual(state.runID, restartedRunID)
+        XCTAssertEqual(state.remainingSeconds(at: start.addingTimeInterval(90.1)), 90)
+
         state.reset()
         XCTAssertFalse(state.isComplete)
         XCTAssertEqual(state.remainingSeconds(at: start), 0)
+    }
+
+    func testRestTimerSkipExtensionAndRestartKeepRunIdentityConsistent() throws {
+        let start = Date(timeIntervalSince1970: 12_000)
+        var state = RestTimerState()
+        state.start(durationSeconds: 60, now: start)
+        let firstRunID = try XCTUnwrap(state.runID)
+
+        state.extend(by: 30, now: start.addingTimeInterval(20))
+        XCTAssertEqual(state.remainingSeconds(at: start.addingTimeInterval(20)), 70)
+        XCTAssertEqual(state.runID, firstRunID)
+
+        state.reset()
+        XCTAssertNil(state.runID)
+        state.start(durationSeconds: 180, now: start.addingTimeInterval(21))
+        XCTAssertNotEqual(state.runID, firstRunID)
+        XCTAssertEqual(state.remainingSeconds(at: start.addingTimeInterval(21)), 180)
     }
 
     func testRestTimerRemainingSecondsCeilsFractionalDeadlineAndExtension() {

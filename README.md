@@ -1,7 +1,7 @@
 # Peakline
 
 [![iOS CI](https://github.com/noelpat-dev/Peakline/actions/workflows/ios-ci.yml/badge.svg?branch=main)](https://github.com/noelpat-dev/Peakline/actions/workflows/ios-ci.yml)
-![Validation targets](https://img.shields.io/badge/validation-iPhone%2017%20simulator%20%2B%20Noel%27s%20iPhone-111827)
+![Platform](https://img.shields.io/badge/platform-iOS%2017%2B-111827)
 ![Built with](https://img.shields.io/badge/built%20with-SwiftUI%20%2B%20SwiftData-F05138)
 
 Peakline is a local-first iOS lifting coach I am building to make the training loop clearer and more useful:
@@ -15,6 +15,14 @@ Peakline is a local-first iOS lifting coach I am building to make the training l
 The product is designed for the gym rather than for a social feed. It keeps the core workout path fast, makes coaching explainable, and treats personal training data as local source-of-truth data.
 
 > Peakline is an active portfolio project by [Noel](https://github.com/noelpat-dev). It is being developed as a production-minded app, with particular attention to SwiftUI responsiveness, persistence safety, accessibility, and honest product boundaries.
+
+## Product tour
+
+| Decide | Preview | Log | Review |
+| --- | --- | --- | --- |
+| ![Peakline Today dashboard in Dark appearance](docs/media/peakline-today-dark.png) | ![Prepared workout Preview in Dark appearance](docs/media/peakline-preview-dark.png) | ![Live workout Logger in Dark appearance](docs/media/peakline-logger-dark.png) | ![Monthly workout History in Dark appearance](docs/media/peakline-history-dark.png) |
+
+[Watch the compact Decide → Preview → Log → Review simulator demonstration](docs/media/peakline-demo.mp4). All media uses Peakline's synthetic UI-test store.
 
 ## What Peakline does
 
@@ -57,7 +65,7 @@ The product is designed for the gym rather than for a social feed. It keeps the 
 
 | Area | Choice |
 | --- | --- |
-| Validation targets | iPhone 17 simulator and Noel's iPhone only |
+| Platform baseline | iOS 17.0 |
 | UI | SwiftUI |
 | Persistence | SwiftData |
 | Charts | Swift Charts |
@@ -81,24 +89,20 @@ Prepared value snapshots
 Shared theme, motion, accessibility, and performance utilities
 ```
 
-The main implementation boundaries are documented in [ARCHITECTURE.md](ARCHITECTURE.md). The current product surface is summarised in [FEATURE_SUMMARY.md](FEATURE_SUMMARY.md), and the active priorities are in [ROADMAP.md](ROADMAP.md).
+The feature overview above is the canonical product summary. Deeper implementation boundaries are documented in [Architecture](docs/architecture.md), with active priorities in the [Roadmap](docs/roadmap.md).
 
 ## Current status
 
-The main lifting loop is implemented end to end and the app is in an active quality and acceptance phase. The current focus is validation on the iPhone 17 simulator and Noel's iPhone across Light and Dark appearance, large Dynamic Type, VoiceOver, Reduce Motion, Reduce Transparency, Firebase restore, and the most performance-sensitive workout routes.
+The main lifting loop is implemented end to end and the app is in an active reliability and accessibility phase. Startup is readiness-led, routine logging transitions are nonblocking, History keeps one stable interactive hierarchy, Preview supports direct long-list reordering, and trend charts expose inspectable historical values.
 
-The 21 August 2026 warm-route architecture pass built successfully and passed all 180 unit/reliability tests. The final boot-isolated iPhone 17 simulator verifier kept the unchanged 300 ms warm/root and 500 ms deep-route budgets: default Today-to-Coach measured 219 ms, Coach-to-Preview 283 ms, the root maximum 147 ms, and data-rich Sleep/Nutrition/Progress/Hydration/Preview paths measured 46/113/178/296/387 ms. These are engineering samples, not a promise that every device will produce identical timing; physical-device memory and first-frame validation remains outstanding.
-
-Peakline now uses one role-based motion system built on `snappy`, `smooth`, and `expressive` presets. Dashboard arrivals, meaningful metric changes, set completion, rest urgency, directional steppers, committed deletion collapse, sheet content, charts, and Today re-entry cues share bounded motion and explicit Reduce Motion fallbacks; saves, logging, dismissal, tab changes, and native navigation remain immediate.
-
-The 22 August 2026 motion validation passed the Debug build, strict-concurrency build lane, all 186 unit/reliability tests, the focused Logger flow, and cached-History UI coverage. The final canonical UI run measured Today-to-Coach at 178 ms, Coach-to-Preview at 209 ms, a warmed root transition at 186 ms, and the dedicated root-tab sequence at 290 ms, with two Preview warm-cache hits and zero mounted Preview refreshes. These simulator figures are dated engineering samples rather than device guarantees.
+The dated [verification record](docs/verification-2026-09-17.md) is the single source for the tested working tree, test totals, route samples, simulator configuration, and outstanding physical-device checks. Historical measurements are retained only where they explain a current risk.
 
 ## Run locally
 
 Requirements:
 
-- macOS with Xcode installed.
-- The iPhone 17 simulator for focused simulator validation and Noel's signed iPhone for physical-device validation.
+- macOS with Xcode. The current repository was verified with Xcode 26.5.
+- An iOS 17.0-or-newer simulator or device. The repeatable acceptance configuration uses the iPhone 17 simulator.
 - A Firebase `GoogleService-Info.plist` only if account backup is being exercised. It is intentionally ignored by Git.
 
 Open the project:
@@ -107,7 +111,7 @@ Open the project:
 open GymTracker.xcodeproj
 ```
 
-Then select the `GymTracker` scheme and either the iPhone 17 simulator or Noel's connected iPhone.
+Then select the `GymTracker` scheme and an iOS 17-or-newer destination.
 
 Command-line build:
 
@@ -120,6 +124,8 @@ xcodebuild \
   build
 ```
 
+For Noel's personal-device install, the opt-in [Peakline Auto Refresh](Scripts/PeaklineAutoRefresh/README.md) LaunchAgent can renew a near-expiry development build from the command line without opening Xcode. It performs only same-identity in-place installs and never uninstalls the app.
+
 Performance-sensitive validation:
 
 ```bash
@@ -130,13 +136,13 @@ The product and repository are branded **Peakline**. Existing Xcode project, sch
 
 ## Repository guide
 
-- [FEATURE_SUMMARY.md](FEATURE_SUMMARY.md) — implemented product and feature state.
-- [ARCHITECTURE.md](ARCHITECTURE.md) — implementation map and architectural guardrails.
-- [UI_STYLE_GUIDE.md](UI_STYLE_GUIDE.md) — visual, interaction, accessibility, and motion standards.
-- [KNOWN_ISSUES.md](KNOWN_ISSUES.md) — known risks and regression boundaries.
-- [PERFORMANCE_ACCEPTANCE_GOAL.md](PERFORMANCE_ACCEPTANCE_GOAL.md) — acceptance thresholds and verifier workflow.
-- [ROADMAP.md](ROADMAP.md) — near-term priorities and longer-term ideas.
-- [ENGINEERING_DECISIONS.md](ENGINEERING_DECISIONS.md) — concise first-person decisions behind the implementation.
+- [Architecture](docs/architecture.md) — implementation map and architectural guardrails.
+- [Design system](docs/design-system.md) — visual, interaction, accessibility, and motion standards.
+- [Known issues](docs/known-issues.md) — known risks and regression boundaries.
+- [Performance](docs/performance.md) — acceptance thresholds and verifier workflow.
+- [Roadmap](docs/roadmap.md) — near-term priorities and longer-term ideas.
+- [Engineering decisions](docs/engineering-decisions.md) — concise first-person decisions behind the implementation.
+- [Verification record](docs/verification-2026-09-17.md) — dated build, test, interaction, and performance evidence.
 - [SECURITY.md](SECURITY.md) — responsible reporting and release-safety boundaries.
 
 The public tree is intentionally limited to the product source, tests, CI, canonical documentation, and portfolio-facing engineering notes needed to understand and run Peakline.
@@ -145,4 +151,4 @@ The public tree is intentionally limited to the product source, tests, CI, canon
 
 Peakline is intentionally more than a collection of screens. The repository shows how I approach a growing SwiftUI product: establish clear ownership boundaries, keep persistence local and recoverable, measure hot paths, make uncertainty visible, and keep the experience usable under real gym conditions.
 
-The next meaningful milestone is a complete Noel's iPhone acceptance pass, followed by continued reliability work around encrypted restore, nutrition imports, and safe SwiftData evolution.
+The next meaningful milestone is a focused physical-device acceptance pass, followed by continued reliability work around encrypted restore, nutrition imports, and safe SwiftData evolution.

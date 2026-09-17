@@ -23,49 +23,53 @@ struct WorkoutCelebrationOverlay: View {
 
     @State private var prBurstActive = false
     @State private var hasPlayedPRBurst = false
+    @AccessibilityFocusState private var isPrimaryActionFocused: Bool
 
     var body: some View {
         ZStack {
             backdrop
 
-            VStack(spacing: 18) {
-                celebrationIcon
-
+            ScrollView(.vertical) {
                 VStack(spacing: 18) {
-                    VStack(spacing: 8) {
-                        Text(title)
-                            .font(AppTypography.heroTitle)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(3)
-                            .minimumScaleFactor(0.75)
+                    celebrationIcon
 
-                        Text(message)
-                            .font(AppTypography.bodyEmphasis)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .multilineTextAlignment(.center)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    VStack(spacing: 18) {
+                        VStack(spacing: 8) {
+                            Text(title)
+                                .font(AppTypography.heroTitle)
+                                .foregroundStyle(appTheme.colors.textPrimary)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
 
-                    Button {
-                        primaryAction()
-                    } label: {
-                        Label {
-                            Text(primaryActionTitle)
-                        } icon: {
-                            if let primaryActionIcon {
-                                Image(systemName: primaryActionIcon)
-                            }
+                            Text(message)
+                                .font(AppTypography.bodyEmphasis)
+                                .foregroundStyle(appTheme.colors.textSecondary)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                        .frame(maxWidth: .infinity)
+
+                        Button {
+                            primaryAction()
+                        } label: {
+                            Label {
+                                Text(primaryActionTitle)
+                            } icon: {
+                                if let primaryActionIcon {
+                                    Image(systemName: primaryActionIcon)
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(PrimaryFitnessButtonStyle())
+                        .disabled(isPrimaryActionDisabled)
+                        .accessibilityLabel(primaryActionTitle)
+                        .accessibilityIdentifier("workout-celebration-primary")
+                        .accessibilityFocused($isPrimaryActionFocused)
                     }
-                    .buttonStyle(PrimaryFitnessButtonStyle())
-                    .disabled(isPrimaryActionDisabled)
-                    .accessibilityLabel(primaryActionTitle)
-                    .accessibilityIdentifier("workout-celebration-primary")
                 }
+                .padding(appTheme.metrics.spacing24)
             }
-            .padding(appTheme.metrics.spacing24)
+            .scrollBounceBehavior(.basedOnSize)
             .frame(maxWidth: .infinity)
             .background(
                 appTheme.colors.cardBackground,
@@ -77,6 +81,7 @@ struct WorkoutCelebrationOverlay: View {
                     .allowsHitTesting(false)
             }
             .frame(maxWidth: 430)
+            .frame(maxHeight: 680)
             .padding(.horizontal, 20)
             .smoothPopupCardMotion(
                 isVisible: isVisible,
@@ -86,6 +91,18 @@ struct WorkoutCelebrationOverlay: View {
             )
         }
         .ignoresSafeArea()
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
+        .onChange(of: isVisible, initial: true) { _, visible in
+            guard visible else {
+                isPrimaryActionFocused = false
+                return
+            }
+            Task { @MainActor in
+                await Task.yield()
+                isPrimaryActionFocused = true
+            }
+        }
         .task(id: isVisible) {
             if !isVisible {
                 AppMotion.withoutAnimation {

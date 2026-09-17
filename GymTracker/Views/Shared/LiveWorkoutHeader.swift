@@ -11,6 +11,9 @@ struct LiveWorkoutHeader: View {
     let totalExercises: Int
     let togglePause: () -> Void
     let finish: () -> Void
+    /// Lets the presenter return VoiceOver focus to the control that opened a
+    /// custom overlay once that overlay has been dismissed.
+    let finishFocusState: AccessibilityFocusState<Bool>.Binding
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { timeline in
@@ -78,6 +81,7 @@ struct LiveWorkoutHeader: View {
         }
         .buttonStyle(PrimaryFitnessButtonStyle())
         .accessibilityIdentifier("workout-logger-finish")
+        .accessibilityFocused(finishFocusState)
     }
 
     private func elapsedText(at date: Date) -> String {

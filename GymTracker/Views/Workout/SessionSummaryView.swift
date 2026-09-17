@@ -464,6 +464,7 @@ struct SessionSummaryView: View {
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(PrimaryFitnessButtonStyle())
+        .accessibilityIdentifier("session-summary-done")
     }
 
     private var saveTemplateButton: some View {

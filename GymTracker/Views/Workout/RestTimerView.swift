@@ -6,8 +6,6 @@ struct RestTimerView: View {
     @Binding var state: RestTimerState
     var showsActiveTimer = true
 
-    @State private var completionDismissTask: Task<Void, Never>?
-
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if showsActiveTimer, state.endDate != nil {
@@ -50,10 +48,6 @@ struct RestTimerView: View {
             }
         }
         .tint(appTheme.colors.accent)
-        .onDisappear {
-            completionDismissTask?.cancel()
-            completionDismissTask = nil
-        }
     }
 
     @ViewBuilder
@@ -169,12 +163,6 @@ struct RestTimerView: View {
             state.markComplete(at: date)
         }
 
-        completionDismissTask?.cancel()
-        completionDismissTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(1_200))
-            guard !Task.isCancelled else { return }
-            resetTimer()
-        }
     }
 
     private func resetTimer() {
@@ -187,8 +175,6 @@ struct RestTimerView: View {
         ) {
             state.reset()
         }
-        completionDismissTask?.cancel()
-        completionDismissTask = nil
     }
 
     private func nextSetText(exerciseName: String) -> String {
