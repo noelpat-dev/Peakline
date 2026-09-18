@@ -10,6 +10,29 @@ private enum WorkoutLoggerInjectedSaveFailure: Error, Equatable {
 final class WorkoutReliabilityTests: XCTestCase {
     private let exerciseId = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
 
+    func testSubstitutionKeepsSelectedSlotAndEnteredSets() {
+        let logs = (0..<4).map { index in
+            ExerciseLog(exerciseId: UUID(), exerciseNameSnapshot: "Exercise \(index)", orderIndex: index)
+        }
+        let session = WorkoutSession(exerciseLogs: logs)
+        let selected = logs[1]
+        let set = SetLog(exerciseLogId: selected.id, setNumber: 1, weight: 30, reps: 8, completed: true)
+        selected.setLogs = [set]
+        let replacement = Exercise(name: "Replacement", primaryMuscleGroup: .chest, movementPattern: .push, equipment: .machine, isCompound: true)
+        let originalIDs = logs.map(\.id)
+
+        ExerciseSubstitutionService().replace(selected, with: replacement)
+
+        XCTAssertEqual(session.exerciseLogs.sorted { $0.orderIndex < $1.orderIndex }.map(\.id), originalIDs)
+        XCTAssertEqual(session.exerciseLogs.count, 4)
+        XCTAssertEqual(selected.orderIndex, 1)
+        XCTAssertEqual(selected.exerciseId, replacement.id)
+        XCTAssertEqual(selected.exerciseNameSnapshot, "Replacement")
+        XCTAssertEqual(selected.setLogs.map(\.id), [set.id])
+        XCTAssertEqual(set.weight, 30)
+        XCTAssertTrue(set.completed)
+    }
+
     override func tearDown() {
         NavigationInteraction.resetForTesting()
         super.tearDown()

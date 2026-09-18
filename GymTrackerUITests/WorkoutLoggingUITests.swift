@@ -14,7 +14,7 @@ final class WorkoutLoggingUITests: XCTestCase {
     }
 
     func testSeededWorkoutCanLogSetPauseFinishAndReachHistory() throws {
-        launch()
+        launch(arguments: ["-UITestAppearance", "dark"])
         XCTAssertTrue(
             app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),
             "Expected Today to be ready after launch"
@@ -26,6 +26,18 @@ final class WorkoutLoggingUITests: XCTestCase {
 
         tapElement(identifier: "workout-preview-start", maxSwipes: 4)
         XCTAssertTrue(app.staticTexts["Workout Order"].waitForExistence(timeout: 10))
+
+        let exerciseName = app.staticTexts["workout-logger-current-exercise-name"]
+        for _ in 0..<6 where !exerciseName.isHittable { app.swipeUp() }
+        app.swipeUp()
+        exerciseName.swipeLeft()
+        let remove = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Remove ")).firstMatch
+        XCTAssertTrue(remove.waitForExistence(timeout: 3))
+        let removeScreenshot = XCTAttachment(screenshot: app.screenshot())
+        removeScreenshot.name = "workout-remove-action"
+        removeScreenshot.lifetime = .keepAlways
+        add(removeScreenshot)
+        exerciseName.swipeRight()
 
         tapElement(identifier: "workout-logger-add-set", maxSwipes: 8)
         XCTAssertTrue(app.descendants(matching: .any)["set-row-1"].waitForExistence(timeout: 5))
@@ -79,9 +91,13 @@ final class WorkoutLoggingUITests: XCTestCase {
         }
 
         XCTAssertTrue(app.staticTexts["How did it go?"].waitForExistence(timeout: 5))
+        let ratingScreenshot = XCTAttachment(screenshot: app.screenshot())
+        ratingScreenshot.name = "workout-compact-rating"
+        ratingScreenshot.lifetime = .keepAlways
+        add(ratingScreenshot)
         XCTAssertTrue(
-            waitUntil(timeout: 3) { !self.app.buttons["workout-logger-finish"].exists },
-            "Expected the rating overlay to isolate the logger controls behind it"
+            waitUntil(timeout: 3) { !self.app.buttons["workout-logger-finish"].isHittable },
+            "Expected the rating overlay to block interaction with the logger controls behind it"
         )
         for rating in 1...5 {
             let ratingControl = tappableElement(identifier: "workout-rating-\(rating)")

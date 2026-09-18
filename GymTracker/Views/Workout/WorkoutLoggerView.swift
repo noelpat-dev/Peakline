@@ -1125,28 +1125,8 @@ struct WorkoutLoggerView: View {
         let transaction = WorkoutLoggerPersistenceTransaction(session: session)
         do {
             try transaction.perform(in: modelContext) {
-                if exerciseLog.setLogs.contains(where: { $0.completed || $0.weight > 0 || $0.reps > 0 || $0.rpe != nil }) {
-                    appendSubstitutionNote(note, to: exerciseLog)
-                    let replacement = ExerciseLog(
-                        workoutSessionId: session.id,
-                        exerciseId: exercise.id,
-                        exerciseNameSnapshot: exercise.name,
-                        orderIndex: exerciseLog.orderIndex + 1,
-                        targetSets: exerciseLog.targetSets,
-                        minReps: exerciseLog.minReps,
-                        maxReps: exerciseLog.maxReps,
-                        notes: note
-                    )
-                    replacement.workoutSession = session
-                    session.exerciseLogs.append(replacement)
-                    for (index, log) in session.exerciseLogs.sorted(by: { $0.orderIndex < $1.orderIndex }).enumerated() {
-                        log.orderIndex = index
-                    }
-                } else {
-                    exerciseLog.exerciseId = exercise.id
-                    exerciseLog.exerciseNameSnapshot = exercise.name
-                    appendSubstitutionNote(note, to: exerciseLog)
-                }
+                substitutionService.replace(exerciseLog, with: exercise)
+                appendSubstitutionNote(note, to: exerciseLog)
             }
 
             refreshOrderedExerciseLogsCache(force: true)
@@ -1515,32 +1495,15 @@ private struct WorkoutRatingOverlay: View {
                 .ignoresSafeArea()
 
             PeaklinePopupCard(cornerRadius: 32, padding: 22) {
-                ScrollView(.vertical) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        VStack(alignment: .leading, spacing: 7) {
-                            Text("How did it go?")
-                                .font(.system(.title, design: .rounded).weight(.bold))
-                                .foregroundStyle(appTheme.colors.textPrimary)
-                                .minimumScaleFactor(0.82)
-
-                            Text("Rate the workout so Peakline remembers how the session felt, not just what you lifted.")
-                                .font(AppTypography.bodyEmphasis)
-                                .foregroundStyle(appTheme.colors.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-
-                        ratingOptions
-
-                        Text("Saved with this workout and used for the completion message.")
-                            .font(AppTypography.metadataEmphasis)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                ViewThatFits(in: .vertical) {
+                    ratingContent
+                    ScrollView(.vertical) {
+                        ratingContent
                     }
+                    .scrollBounceBehavior(.basedOnSize)
                 }
-                .scrollBounceBehavior(.basedOnSize)
             }
             .frame(maxWidth: 460)
-            .frame(maxHeight: 620)
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
             .smoothPopupCardMotion(
@@ -1563,6 +1526,30 @@ private struct WorkoutRatingOverlay: View {
                 focusedRatingID = WorkoutRating.options.first?.id
             }
         }
+    }
+
+    private var ratingContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 7) {
+                Text("How did it go?")
+                    .font(.system(.title, design: .rounded).weight(.bold))
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .minimumScaleFactor(0.82)
+
+                Text("Rate the workout so Peakline remembers how the session felt, not just what you lifted.")
+                    .font(AppTypography.bodyEmphasis)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            ratingOptions
+
+            Text("Saved with this workout and used for the completion message.")
+                .font(AppTypography.metadataEmphasis)
+                .foregroundStyle(appTheme.colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder
@@ -1601,7 +1588,7 @@ private struct WorkoutRatingOverlay: View {
             .contentShape(RoundedRectangle(cornerRadius: appTheme.metrics.radius20, style: .continuous))
             .foregroundStyle(appTheme.colors.textPrimary)
             .padding(.vertical, 12)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 4)
             .background {
                 RoundedRectangle(cornerRadius: appTheme.metrics.radius20, style: .continuous)
                     .fill(appTheme.colors.cardBackgroundElevated)
@@ -1967,8 +1954,15 @@ private struct ExerciseLoggerSection: View {
                 }
             }
             .padding(.vertical, 6)
-            .destructiveSwipeAction("Remove") {
-                removeExerciseFromSession()
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button(role: .destructive) {
+                    AppHaptics.warning()
+                    removeExerciseFromSession()
+                } label: {
+                    Label("Remove", systemImage: "trash.fill")
+                }
+                .tint(appTheme.colors.danger)
+                .accessibilityLabel("Remove \(exerciseLog.exerciseNameSnapshot)")
             }
 
             ForEach(Array(orderedSets.enumerated()), id: \.element.id) { index, setLog in

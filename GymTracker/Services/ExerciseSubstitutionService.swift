@@ -38,6 +38,12 @@ struct ExerciseSubstitutionCandidate: Identifiable, Equatable {
 }
 
 struct ExerciseSubstitutionService {
+    /// Keep the selected workout slot and its entered data when changing exercise.
+    func replace(_ log: ExerciseLog, with exercise: Exercise) {
+        log.exerciseId = exercise.id
+        log.exerciseNameSnapshot = exercise.name
+    }
+
     func alternatives(for exerciseId: UUID, in exercises: [Exercise], limit: Int = 6) -> [Exercise] {
         candidates(for: exerciseId, in: exercises, usedExerciseIDs: [], reason: nil, limit: limit)
             .compactMap { candidate in
