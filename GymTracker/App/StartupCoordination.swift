@@ -130,7 +130,7 @@ final class StartupPresentationCoordinator: ObservableObject {
         state == .animating || state == .waitingForAnimation
     }
 
-    var showsSlowProgress: Bool {
+    var isHoldingAfterAnimationCeiling: Bool {
         state == .holdingSlow
             || state == .holdingSlowForCriticalReady
     }
@@ -195,7 +195,7 @@ final class StartupPresentationCoordinator: ObservableObject {
 
     private func transition(_ event: StartupPresentationEvent) {
         let previousState = state
-        let wasSlow = showsSlowProgress
+        let wasSlow = isHoldingAfterAnimationCeiling
         state = StartupPresentationReducer.reduce(state, event: event)
 
         guard previousState != .revealing, state == .revealing else { return }
@@ -457,7 +457,6 @@ enum OverallReadinessInputSignature {
 @MainActor
 final class AppStartupCoordinator: ObservableObject {
     @Published private(set) var phase: AppStartupPhase = .branding
-    @Published private(set) var stageText = "Preparing your training"
     @Published var restoreError: String?
 
     private let accountService = FirebaseAccountService()
@@ -531,7 +530,6 @@ final class AppStartupCoordinator: ObservableObject {
     }
 
     private func evaluateAccountAndRestore(in context: ModelContext) async {
-        stageText = "Checking your local data"
         phase = .checkingAccount
 
         let canPromptRestore: Bool
@@ -572,7 +570,6 @@ final class AppStartupCoordinator: ObservableObject {
             return
         }
 
-        stageText = "Checking for a saved backup"
         phase = .checkingBackup
         let metadataOutcome = await PerformanceTracer.traceAsync(.startupBackupMetadata) {
             await backupCoordinator.latestMetadata()
@@ -590,7 +587,6 @@ final class AppStartupCoordinator: ObservableObject {
 
     private func prepareLocalData(in context: ModelContext, forceDateRepair: Bool) async {
         phase = .preparingLocalData
-        stageText = "Preparing your programme"
         await Task.yield()
 
         do {
@@ -602,7 +598,6 @@ final class AppStartupCoordinator: ObservableObject {
                 )
 
                 phase = .warmingScreens
-                stageText = "Preparing your dashboards"
                 return try StartupSnapshotBuilder.materialize(
                     in: context,
                     deferSleepSnapshots: true

@@ -30,19 +30,18 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 5))
     }
 
-    func testBrandedStartupSlowPathSettlesAndShowsTruthfulProgress() throws {
+    func testBrandedStartupSlowPathKeepsBrandingWithoutLoadingUI() throws {
         // Hold actual preparation long enough for XCTest to attach and inspect
-        // the slow state; this uses the existing debug-only preparation delay.
+        // the slow state; the branded animation remains visible without adding
+        // a progress indicator or stage text.
         launch(arguments: ["-UITestCoachFatigueFixture", "-UITestStartupAnimationMaxMS", "250", "-UITestStartupPreparationDelayMS", "12000"])
 
         let splash = app.descendants(matching: .any)["startup-brand-screen"]
         XCTAssertTrue(splash.waitForExistence(timeout: 3))
-
-        let slowStatusExpectation = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value CONTAINS[c] %@", "Preparing"),
-            object: splash
+        XCTAssertFalse(
+            app.descendants(matching: .any)["startup-slow-status"].exists,
+            "Startup branding should not present a loading indicator or stage text"
         )
-        XCTAssertEqual(XCTWaiter.wait(for: [slowStatusExpectation], timeout: 2), .completed)
         let criticalReady = app.descendants(matching: .any)["startup-critical-ready"]
         XCTAssertFalse(criticalReady.isHittable)
 

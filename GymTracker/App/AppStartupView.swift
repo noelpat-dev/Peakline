@@ -30,8 +30,6 @@ struct AppStartupView: View {
 
             if presentation.isOverlayMounted {
                 PeaklineSplashView(
-                    stageText: coordinator.stageText,
-                    showsProgress: presentation.showsSlowProgress,
                     animatesWordmark: presentation.animatesWordmark && !reduceMotion,
                     onAnimationFinished: { presentation.markAnimationFinished() }
                 )

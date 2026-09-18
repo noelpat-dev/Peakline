@@ -1,13 +1,9 @@
-import SwiftData
 import SwiftUI
 import UIKit
 
 struct PeaklineSplashView: View {
     @Environment(\.appTheme) private var appTheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    let stageText: String
-    let showsProgress: Bool
     let animatesWordmark: Bool
     let onAnimationFinished: () -> Void
 
@@ -18,44 +14,25 @@ struct PeaklineSplashView: View {
 
             PeaklineAnimatedWordmark(
                 color: appTheme.colors.textPrimary,
-                accentColor: appTheme.colors.accent,
                 isAnimating: animatesWordmark,
                 onAnimationFinished: onAnimationFinished
             )
                 .frame(height: 58)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .accessibilityIdentifier("startup-wordmark")
-
-            if showsProgress {
-                VStack(spacing: 10) {
-                    SwiftUI.ProgressView()
-                        .tint(appTheme.colors.accent)
-                    Text(stageText)
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                .offset(y: 70)
-                .accessibilityIdentifier("startup-slow-status")
-                .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
-            }
         }
         .ignoresSafeArea()
-        // Keep the splash itself as one stable accessibility element. Combining
-        // child semantics can replace the explicitly published slow-stage value
-        // while the progress view is being mounted or removed.
+        // Keep the splash itself as one stable accessibility element while the
+        // animated wordmark is mounted and removed.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Peakline")
-        .accessibilityValue(showsProgress ? stageText : "Loading")
+        .accessibilityValue("Brand animation")
         .accessibilityIdentifier("startup-brand-screen")
     }
 }
 
 private struct PeaklineAnimatedWordmark: UIViewRepresentable {
     let color: Color
-    let accentColor: Color
     let isAnimating: Bool
     let onAnimationFinished: () -> Void
 
@@ -66,7 +43,6 @@ private struct PeaklineAnimatedWordmark: UIViewRepresentable {
     func updateUIView(_ uiView: PeaklineWordmarkView, context: Context) {
         uiView.update(
             color: UIColor(color),
-            accentColor: UIColor(accentColor),
             isAnimating: isAnimating,
             onAnimationFinished: onAnimationFinished
         )
@@ -76,7 +52,6 @@ private struct PeaklineAnimatedWordmark: UIViewRepresentable {
 private final class PeaklineWordmarkView: UIView {
     private let word = "Peakline"
     private let stack = UIStackView()
-    private let accentSweep = CAShapeLayer()
     private var letterLabels: [UILabel] = []
     private var hasStartedAnimation = false
     private var hasScheduledAnimation = false
@@ -95,12 +70,6 @@ private final class PeaklineWordmarkView: UIView {
         stack.spacing = 0
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
-
-        accentSweep.fillColor = nil
-        accentSweep.lineWidth = 2.5
-        accentSweep.lineCap = .round
-        accentSweep.opacity = 0
-        layer.addSublayer(accentSweep)
 
         NSLayoutConstraint.activate([
             stack.centerXAnchor.constraint(equalTo: centerXAnchor),
@@ -123,26 +92,12 @@ private final class PeaklineWordmarkView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        let path = UIBezierPath()
-        path.move(to: CGPoint(x: bounds.midX - 46, y: bounds.midY + 47))
-        path.addLine(to: CGPoint(x: bounds.midX + 46, y: bounds.midY + 47))
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        accentSweep.frame = bounds
-        accentSweep.path = path.cgPath
-        CATransaction.commit()
-    }
-
     func update(
         color: UIColor,
-        accentColor: UIColor,
         isAnimating: Bool,
         onAnimationFinished: @escaping () -> Void
     ) {
         letterLabels.forEach { $0.textColor = color }
-        accentSweep.strokeColor = accentColor.cgColor
         self.onAnimationFinished = onAnimationFinished
         wantsAnimation = isAnimating
 
@@ -172,7 +127,7 @@ private final class PeaklineWordmarkView: UIView {
         let start = CACurrentMediaTime() + 0.08
         let stagger = 0.09
         let riseDuration = 1.10
-        let waveDuration = riseDuration + Double(letterLabels.count - 1) * stagger
+        let wordmarkDuration = riseDuration + Double(letterLabels.count - 1) * stagger
 
         for (index, label) in letterLabels.enumerated() {
             let primary = CAAnimationGroup()
@@ -185,23 +140,13 @@ private final class PeaklineWordmarkView: UIView {
             label.layer.add(primary, forKey: "peakline-primary-rise")
         }
 
-        let sweep = CAAnimationGroup()
-        sweep.animations = [
-            keyframes("strokeStart", values: [0, 0, 0.7, 1], keyTimes: [0, 0.18, 0.82, 1]),
-            keyframes("strokeEnd", values: [0, 0.3, 1, 1], keyTimes: [0, 0.18, 0.82, 1]),
-            keyframes("opacity", values: [0, 0.85, 0.85, 0], keyTimes: [0, 0.18, 0.82, 1])
-        ]
-        sweep.duration = waveDuration
-        sweep.beginTime = start + 0.16
-        accentSweep.add(sweep, forKey: "peakline-accent-sweep")
-
         let settle = keyframes(
             "transform.scale",
             values: [1, 1.012, 1],
             keyTimes: [0, 0.48, 1]
         )
         settle.duration = 0.45
-        settle.beginTime = start + waveDuration
+        settle.beginTime = start + wordmarkDuration
 
         let completionDelegate = AnimationCompletionDelegate { [weak self] in
             self?.notifyAnimationFinished()
@@ -227,7 +172,6 @@ private final class PeaklineWordmarkView: UIView {
         }
         stack.layer.removeAllAnimations()
         stack.layer.transform = CATransform3DIdentity
-        accentSweep.removeAllAnimations()
         notifyAnimationFinished()
     }
 
