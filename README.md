@@ -22,7 +22,7 @@ The product is designed for the gym rather than for a social feed. It keeps the 
 | --- | --- | --- | --- |
 | ![Peakline Today dashboard in Dark appearance](docs/media/peakline-today-dark.png) | ![Prepared workout Preview in Dark appearance](docs/media/peakline-preview-dark.png) | ![Live workout Logger in Dark appearance](docs/media/peakline-logger-dark.png) | ![Monthly workout History in Dark appearance](docs/media/peakline-history-dark.png) |
 
-[Watch the compact Decide → Preview → Log → Review simulator demonstration](docs/media/peakline-demo.mp4). All media uses Peakline's synthetic UI-test store.
+[Watch the Peakline feature walkthrough](docs/media/peakline-demo.mp4), covering readiness, recovery, nutrition, coaching, workout planning and logging, the Exercise Guide, Splits, and History. All media uses Peakline's synthetic UI-test store.
 
 ## What Peakline does
 
