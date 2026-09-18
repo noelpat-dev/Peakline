@@ -546,6 +546,7 @@ struct NutritionTargetsView: View {
             FitnessCard {
                 VStack(alignment: .leading, spacing: 14) {
                     Toggle("Enable targets", isOn: $isEnabled)
+                        .toggleStyle(AppSwitchToggleStyle())
                         .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
 

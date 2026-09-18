@@ -1022,7 +1022,7 @@ struct HistoryView: View {
                     FitnessCard {
                         VStack(alignment: .leading, spacing: 12) {
                             Toggle("Date range", isOn: $useDateRange)
-                                .tint(appTheme.colors.accent)
+                                .toggleStyle(AppSwitchToggleStyle())
                                 .onChange(of: useDateRange) { _, enabled in
                                     updateDateRange(enabled: enabled)
                                 }

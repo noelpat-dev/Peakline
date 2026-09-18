@@ -159,6 +159,7 @@ struct ExerciseLibraryView: View {
 
             Section {
                 Toggle("Show archived", isOn: $showingArchived)
+                    .toggleStyle(AppSwitchToggleStyle())
             }
 
             Section("Exercises") {
@@ -615,6 +616,7 @@ private struct ExerciseForm: View {
                     ForEach(MuscleGroup.allCases) { group in
                         if group != primaryMuscleGroup {
                             Toggle(group.displayName, isOn: secondaryMuscleBinding(for: group))
+                                .toggleStyle(AppSwitchToggleStyle())
                         }
                     }
                 }
@@ -632,6 +634,7 @@ private struct ExerciseForm: View {
                 }
 
                 Toggle("Compound lift", isOn: $isCompound)
+                    .toggleStyle(AppSwitchToggleStyle())
 
                 if
                     let coachRole,
@@ -670,6 +673,7 @@ private struct ExerciseForm: View {
             if let isArchived {
                 Section("Library") {
                     Toggle("Archived", isOn: isArchived)
+                        .toggleStyle(AppSwitchToggleStyle())
                 }
             }
         }
@@ -760,6 +764,7 @@ private struct BulkCoachMetadataEditorView: View {
                             scopeControls
 
                             Toggle("Overwrite existing coach metadata", isOn: $overwriteExisting)
+                                .toggleStyle(AppSwitchToggleStyle())
                         }
                     }
 
@@ -793,6 +798,7 @@ private struct BulkCoachMetadataEditorView: View {
                                 DisclosureGroup("Choose muscles") {
                                     ForEach(MuscleGroup.allCases) { group in
                                         Toggle(group.displayName, isOn: secondaryMuscleBinding(for: group))
+                                            .toggleStyle(AppSwitchToggleStyle())
                                     }
                                 }
                             }
@@ -872,6 +878,7 @@ private struct BulkCoachMetadataEditorView: View {
             DisclosureGroup("Selected exercises (\(selectedExerciseIds.count))") {
                 ForEach(exercises.prefix(50)) { exercise in
                     Toggle(exercise.name, isOn: selectedBinding(for: exercise.id))
+                        .toggleStyle(AppSwitchToggleStyle())
                 }
             }
         case .muscleGroup:
@@ -1017,6 +1024,7 @@ private struct BulkCoachMetadataEditorView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Toggle(title, isOn: isOn)
+                .toggleStyle(AppSwitchToggleStyle())
             if isOn.wrappedValue {
                 content()
             }

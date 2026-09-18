@@ -1201,6 +1201,7 @@ struct CoachPreferencesView: View {
                         preferencePicker("Recommendation frequency", selection: $snapshot.recommendationFrequency, options: CoachRecommendationFrequency.allCases)
 
                         Toggle("Show diagnostics", isOn: $snapshot.showDiagnostics)
+                            .toggleStyle(AppSwitchToggleStyle())
                             .accessibilityIdentifier("coach-preferences-diagnostics")
                     }
                 }
@@ -1364,7 +1365,9 @@ struct CoachSplitMetadataEditorView: View {
                         splitPicker("Adjustment style", selection: $snapshot.preferredAdjustmentStyle, options: CoachPreferredAdjustmentStyle.allCases)
 
                         Toggle("Protect compounds", isOn: $snapshot.protectCompounds)
+                            .toggleStyle(AppSwitchToggleStyle())
                         Toggle("Accessories flexible", isOn: $snapshot.accessoriesFlexible)
+                            .toggleStyle(AppSwitchToggleStyle())
 
                         TextField("Coach note", text: $note, axis: .vertical)
                             .lineLimit(2...4)

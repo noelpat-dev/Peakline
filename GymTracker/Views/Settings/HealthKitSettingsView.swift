@@ -562,6 +562,7 @@ private struct HealthKitToggleRow: View {
             }
             .padding(.trailing, 8)
         }
+        .toggleStyle(AppSwitchToggleStyle())
         .padding(.horizontal, 8)
         .padding(.vertical, 12)
     }

@@ -726,6 +726,7 @@ struct FilterChip: View {
     let systemImage: String?
     let isSelected: Bool
     let style: Style
+    let expandsToFill: Bool
     let action: () -> Void
 
     init(
@@ -733,12 +734,14 @@ struct FilterChip: View {
         systemImage: String? = nil,
         isSelected: Bool,
         style: Style = .standard,
+        expandsToFill: Bool = false,
         action: @escaping () -> Void
     ) {
         self.title = title
         self.systemImage = systemImage
         self.isSelected = isSelected
         self.style = style
+        self.expandsToFill = expandsToFill
         self.action = action
     }
 
@@ -769,7 +772,7 @@ struct FilterChip: View {
             }
             .padding(.horizontal, appTheme.metrics.chipHorizontalPadding)
             .padding(.vertical, appTheme.metrics.chipVerticalPadding)
-            .frame(minHeight: appTheme.metrics.minimumHitTarget)
+            .frame(maxWidth: expandsToFill ? .infinity : nil, minHeight: appTheme.metrics.minimumHitTarget)
             .foregroundStyle(selectedForeground)
             .background(selectedBackground, in: shape)
             .overlay {

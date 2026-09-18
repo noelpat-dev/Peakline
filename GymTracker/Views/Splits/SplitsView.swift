@@ -880,6 +880,7 @@ private struct AddSplitView: View {
 
                     Stepper("Days per week: \(daysPerWeek)", value: $daysPerWeek, in: 1...7)
                     Toggle("Add to active rotation", isOn: $addToActiveRotation)
+                        .toggleStyle(AppSwitchToggleStyle())
                 }
             }
             .peaklineGroupedContent()
@@ -1076,6 +1077,7 @@ private struct SplitEditorView: View {
 
                 Stepper("Days per week: \(split.daysPerWeek)", value: $split.daysPerWeek, in: 1...7)
                 Toggle("In Active Rotation", isOn: activeRotationBinding)
+                    .toggleStyle(AppSwitchToggleStyle())
             }
 
             Section("Add Exercise") {

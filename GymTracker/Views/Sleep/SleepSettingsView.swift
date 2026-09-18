@@ -4,6 +4,7 @@ import SwiftUI
 struct SleepSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.appTheme) private var appTheme
+    @ScaledMetric(relativeTo: .subheadline) private var durationChipMinimumWidth = 90.0
     @ObservedObject private var healthKitExportStatus = SleepHealthKitExportStatusStore.shared
 
     @Binding var settings: SleepSettings
@@ -25,11 +26,14 @@ struct SleepSettingsView: View {
                             .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 82), spacing: 8)], spacing: 8) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: durationChipMinimumWidth), spacing: 8)], spacing: 8) {
                             ForEach(SleepSettings.windDownOptions, id: \.self) { minutes in
-                                FilterChip("\(minutes)m", systemImage: "timer", isSelected: settings.defaultWindDownMinutes == minutes) {
+                                let isSelected = settings.defaultWindDownMinutes == minutes
+                                FilterChip("\(minutes)m", systemImage: isSelected ? nil : "timer", isSelected: isSelected, expandsToFill: true) {
                                     settings.defaultWindDownMinutes = minutes
                                 }
+                                .lineLimit(1)
+                                .monospacedDigit()
                             }
                         }
 
@@ -37,11 +41,14 @@ struct SleepSettingsView: View {
                             .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 82), spacing: 8)], spacing: 8) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: durationChipMinimumWidth), spacing: 8)], spacing: 8) {
                             ForEach(SleepSettings.targetHourOptions, id: \.self) { hours in
-                                FilterChip("\(hours)h", systemImage: "target", isSelected: settings.targetSleepMinutes == hours * 60) {
+                                let isSelected = settings.targetSleepMinutes == hours * 60
+                                FilterChip("\(hours)h", systemImage: isSelected ? nil : "target", isSelected: isSelected, expandsToFill: true) {
                                     settings.targetSleepMinutes = hours * 60
                                 }
+                                .lineLimit(1)
+                                .monospacedDigit()
                             }
                         }
                     }
@@ -527,6 +534,7 @@ private struct SleepToggleRow: View {
                 }
             }
         }
+        .toggleStyle(AppSwitchToggleStyle())
         .padding(.horizontal, 8)
         .padding(.vertical, 12)
     }
@@ -541,4 +549,3 @@ private struct SleepSettingsDivider: View {
             .padding(.leading, 56)
     }
 }
-
