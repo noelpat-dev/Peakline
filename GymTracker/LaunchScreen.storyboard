@@ -16,38 +16,38 @@
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <stackView opaque="NO" userInteractionEnabled="NO" contentMode="scaleToFill" axis="horizontal" spacing="0.0" translatesAutoresizingMaskIntoConstraints="NO" id="8Ak-Li-YmX">
-                                <rect key="frame" x="125" y="404.5" width="143" height="43"/>
+                                <rect key="frame" x="101" y="397" width="191" height="58"/>
                                 <subviews>
                                     <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="P" textAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="PkL-Pe-a01">
-                                        <fontDescription key="fontDescription" type="system" weight="bold" pointSize="36"/>
+                                        <fontDescription key="fontDescription" type="system" weight="bold" pointSize="48"/>
                                         <color key="textColor" name="PeaklineLaunchText"/>
                                     </label>
                                     <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="e" textAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="PkL-Pe-a02">
-                                        <fontDescription key="fontDescription" type="system" weight="bold" pointSize="36"/>
+                                        <fontDescription key="fontDescription" type="system" weight="bold" pointSize="48"/>
                                         <color key="textColor" name="PeaklineLaunchText"/>
                                     </label>
                                     <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="a" textAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="PkL-Pe-a03">
-                                        <fontDescription key="fontDescription" type="system" weight="bold" pointSize="36"/>
+                                        <fontDescription key="fontDescription" type="system" weight="bold" pointSize="48"/>
                                         <color key="textColor" name="PeaklineLaunchText"/>
                                     </label>
                                     <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="k" textAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="PkL-Pe-a04">
-                                        <fontDescription key="fontDescription" type="system" weight="bold" pointSize="36"/>
+                                        <fontDescription key="fontDescription" type="system" weight="bold" pointSize="48"/>
                                         <color key="textColor" name="PeaklineLaunchText"/>
                                     </label>
                                     <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="l" textAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="PkL-Pe-a05">
-                                        <fontDescription key="fontDescription" type="system" weight="bold" pointSize="36"/>
+                                        <fontDescription key="fontDescription" type="system" weight="bold" pointSize="48"/>
                                         <color key="textColor" name="PeaklineLaunchText"/>
                                     </label>
                                     <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="i" textAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="PkL-Pe-a06">
-                                        <fontDescription key="fontDescription" type="system" weight="bold" pointSize="36"/>
+                                        <fontDescription key="fontDescription" type="system" weight="bold" pointSize="48"/>
                                         <color key="textColor" name="PeaklineLaunchText"/>
                                     </label>
                                     <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="n" textAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="PkL-Pe-a07">
-                                        <fontDescription key="fontDescription" type="system" weight="bold" pointSize="36"/>
+                                        <fontDescription key="fontDescription" type="system" weight="bold" pointSize="48"/>
                                         <color key="textColor" name="PeaklineLaunchText"/>
                                     </label>
                                     <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="e" textAlignment="center" translatesAutoresizingMaskIntoConstraints="NO" id="PkL-Pe-a08">
-                                        <fontDescription key="fontDescription" type="system" weight="bold" pointSize="36"/>
+                                        <fontDescription key="fontDescription" type="system" weight="bold" pointSize="48"/>
                                         <color key="textColor" name="PeaklineLaunchText"/>
                                     </label>
                                 </subviews>

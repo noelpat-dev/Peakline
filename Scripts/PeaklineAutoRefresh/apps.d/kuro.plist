@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>displayName</key>
+	<string>Kuro</string>
+	<key>projectRoot</key>
+	<string>/Users/noelpatricks/Documents/Japanese Language learning</string>
+	<key>projectFile</key>
+	<string>JapaneseLearning.xcodeproj</string>
+	<key>scheme</key>
+	<string>JapaneseLearning</string>
+	<key>configuration</key>
+	<string>Debug</string>
+	<key>bundleIdentifier</key>
+	<string>com.noelpatricks.japaneselearning</string>
+	<key>teamIdentifier</key>
+	<string>272AN3AJLF</string>
+	<key>buildDeviceUDID</key>
+	<string>00008130-0011256821A1001C</string>
+	<key>coreDeviceID</key>
+	<string>C35FCF83-A43B-5E6C-9D81-40A0DFA8B153</string>
+	<key>stateDirectoryName</key>
+	<string>KuroAutoRefresh</string>
+	<key>logDirectoryName</key>
+	<string>KuroAutoRefresh</string>
+	<key>derivedDataDirectoryName</key>
+	<string>KuroAutoRefresh</string>
+</dict>
+</plist>

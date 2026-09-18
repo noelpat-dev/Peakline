@@ -18,10 +18,11 @@ struct PeaklineSplashView: View {
 
             PeaklineAnimatedWordmark(
                 color: appTheme.colors.textPrimary,
+                accentColor: appTheme.colors.accent,
                 isAnimating: animatesWordmark,
                 onAnimationFinished: onAnimationFinished
             )
-                .frame(height: 43)
+                .frame(height: 58)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .accessibilityIdentifier("startup-wordmark")
 
@@ -54,6 +55,7 @@ struct PeaklineSplashView: View {
 
 private struct PeaklineAnimatedWordmark: UIViewRepresentable {
     let color: Color
+    let accentColor: Color
     let isAnimating: Bool
     let onAnimationFinished: () -> Void
 
@@ -64,6 +66,7 @@ private struct PeaklineAnimatedWordmark: UIViewRepresentable {
     func updateUIView(_ uiView: PeaklineWordmarkView, context: Context) {
         uiView.update(
             color: UIColor(color),
+            accentColor: UIColor(accentColor),
             isAnimating: isAnimating,
             onAnimationFinished: onAnimationFinished
         )
@@ -73,6 +76,7 @@ private struct PeaklineAnimatedWordmark: UIViewRepresentable {
 private final class PeaklineWordmarkView: UIView {
     private let word = "Peakline"
     private let stack = UIStackView()
+    private let accentSweep = CAShapeLayer()
     private var letterLabels: [UILabel] = []
     private var hasStartedAnimation = false
     private var hasScheduledAnimation = false
@@ -92,6 +96,12 @@ private final class PeaklineWordmarkView: UIView {
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
 
+        accentSweep.fillColor = nil
+        accentSweep.lineWidth = 2.5
+        accentSweep.lineCap = .round
+        accentSweep.opacity = 0
+        layer.addSublayer(accentSweep)
+
         NSLayoutConstraint.activate([
             stack.centerXAnchor.constraint(equalTo: centerXAnchor),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor)
@@ -100,7 +110,7 @@ private final class PeaklineWordmarkView: UIView {
         letterLabels = word.map { character in
             let label = UILabel()
             label.text = String(character)
-            label.font = .systemFont(ofSize: 36, weight: .bold)
+            label.font = .systemFont(ofSize: 48, weight: .bold)
             label.textAlignment = .center
             label.isAccessibilityElement = false
             stack.addArrangedSubview(label)
@@ -113,12 +123,26 @@ private final class PeaklineWordmarkView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let path = UIBezierPath()
+        path.move(to: CGPoint(x: bounds.midX - 46, y: bounds.midY + 47))
+        path.addLine(to: CGPoint(x: bounds.midX + 46, y: bounds.midY + 47))
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        accentSweep.frame = bounds
+        accentSweep.path = path.cgPath
+        CATransaction.commit()
+    }
+
     func update(
         color: UIColor,
+        accentColor: UIColor,
         isAnimating: Bool,
         onAnimationFinished: @escaping () -> Void
     ) {
         letterLabels.forEach { $0.textColor = color }
+        accentSweep.strokeColor = accentColor.cgColor
         self.onAnimationFinished = onAnimationFinished
         wantsAnimation = isAnimating
 
@@ -146,29 +170,38 @@ private final class PeaklineWordmarkView: UIView {
         }
 
         let start = CACurrentMediaTime() + 0.08
-        let stagger = 0.065
+        let stagger = 0.09
+        let riseDuration = 1.10
+        let waveDuration = riseDuration + Double(letterLabels.count - 1) * stagger
 
         for (index, label) in letterLabels.enumerated() {
             let primary = CAAnimationGroup()
             primary.animations = [
-                keyframes("transform.translation.y", values: [0, -5, 0], keyTimes: [0, 0.56, 1]),
-                keyframes("transform.scale", values: [1, 1.018, 1], keyTimes: [0, 0.56, 1]),
-                keyframes("opacity", values: [1, 0.94, 1], keyTimes: [0, 0.56, 1])
+                keyframes("transform.translation.y", values: [0, -9, 0], keyTimes: [0, 0.46, 1]),
+                keyframes("transform.scale", values: [1, 1.035, 1], keyTimes: [0, 0.46, 1])
             ]
-            primary.duration = 0.66
+            primary.duration = riseDuration
             primary.beginTime = start + (Double(index) * stagger)
-            primary.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             label.layer.add(primary, forKey: "peakline-primary-rise")
         }
 
+        let sweep = CAAnimationGroup()
+        sweep.animations = [
+            keyframes("strokeStart", values: [0, 0, 0.7, 1], keyTimes: [0, 0.18, 0.82, 1]),
+            keyframes("strokeEnd", values: [0, 0.3, 1, 1], keyTimes: [0, 0.18, 0.82, 1]),
+            keyframes("opacity", values: [0, 0.85, 0.85, 0], keyTimes: [0, 0.18, 0.82, 1])
+        ]
+        sweep.duration = waveDuration
+        sweep.beginTime = start + 0.16
+        accentSweep.add(sweep, forKey: "peakline-accent-sweep")
+
         let settle = keyframes(
             "transform.scale",
-            values: [1, 1.006, 1],
+            values: [1, 1.012, 1],
             keyTimes: [0, 0.48, 1]
         )
-        settle.duration = 0.36
-        settle.beginTime = start + 0.88
-        settle.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        settle.duration = 0.45
+        settle.beginTime = start + waveDuration
 
         let completionDelegate = AnimationCompletionDelegate { [weak self] in
             self?.notifyAnimationFinished()
@@ -194,6 +227,7 @@ private final class PeaklineWordmarkView: UIView {
         }
         stack.layer.removeAllAnimations()
         stack.layer.transform = CATransform3DIdentity
+        accentSweep.removeAllAnimations()
         notifyAnimationFinished()
     }
 
@@ -213,6 +247,9 @@ private final class PeaklineWordmarkView: UIView {
         let animation = CAKeyframeAnimation(keyPath: keyPath)
         animation.values = values
         animation.keyTimes = keyTimes
+        animation.timingFunctions = (1..<values.count).map { _ in
+            CAMediaTimingFunction(controlPoints: 0.4, 0, 0.2, 1)
+        }
         return animation
     }
 }

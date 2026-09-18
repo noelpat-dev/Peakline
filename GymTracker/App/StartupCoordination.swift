@@ -4,6 +4,7 @@ import UIKit
 
 enum StartupPresentationState: Equatable {
     case animating
+    case waitingForAnimation
     case waitingForCriticalReady
     case holdingSlow
     case holdingSlowForCriticalReady
@@ -36,6 +37,8 @@ enum StartupPresentationReducer {
             switch state {
             case .animating:
                 return .waitingForCriticalReady
+            case .waitingForAnimation:
+                return .revealing
             case .holdingSlow:
                 return .holdingSlowForCriticalReady
             case .holdingSlowForCriticalReady, .waitingForCriticalReady,
@@ -44,6 +47,8 @@ enum StartupPresentationReducer {
             }
         case .slowThresholdReached:
             switch state {
+            case .waitingForAnimation:
+                return .revealing
             case .animating, .waitingForCriticalReady:
                 return state == .animating ? .holdingSlow : .holdingSlowForCriticalReady
             case .holdingSlow, .holdingSlowForCriticalReady,
@@ -52,7 +57,11 @@ enum StartupPresentationReducer {
             }
         case .criticalReady:
             switch state {
-            case .animating, .waitingForCriticalReady, .holdingSlow,
+            case .animating:
+                return .waitingForAnimation
+            case .waitingForAnimation:
+                return state
+            case .waitingForCriticalReady, .holdingSlow,
                  .holdingSlowForCriticalReady:
                 return .revealing
             case .revealing, .hidden, .interrupted:
@@ -108,7 +117,7 @@ final class StartupPresentationCoordinator: ObservableObject {
 
     var isOverlayMounted: Bool {
         switch state {
-        case .animating, .waitingForCriticalReady,
+        case .animating, .waitingForAnimation, .waitingForCriticalReady,
              .holdingSlow, .holdingSlowForCriticalReady,
              .revealing:
             return true
@@ -118,7 +127,7 @@ final class StartupPresentationCoordinator: ObservableObject {
     }
 
     var animatesWordmark: Bool {
-        state == .animating
+        state == .animating || state == .waitingForAnimation
     }
 
     var showsSlowProgress: Bool {
@@ -144,12 +153,13 @@ final class StartupPresentationCoordinator: ObservableObject {
             .startupPresentationStart,
             "maximum=\(Int(maximumDuration * 1_000))ms"
         )
-        // The ceiling only exposes truthful slow-progress state. The splash
-        // completes through its animation callback or an explicit settle.
+        // Let the launch sequence finish even when preparation is quick. The
+        // ceiling also releases a ready root if an animation callback is lost.
         slowThresholdTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(maximumDuration))
             guard !Task.isCancelled, let self else { return }
             guard self.state == .animating
+                    || self.state == .waitingForAnimation
                     || self.state == .waitingForCriticalReady else { return }
             self.transition(.slowThresholdReached)
             PerformanceTracer.mark(.startupPresentationSlow, "animation_settled")

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>displayName</key>
+	<string>Peakline</string>
+	<key>projectRoot</key>
+	<string>/Users/noelpatricks/Developer/Peakline</string>
+	<key>projectFile</key>
+	<string>GymTracker.xcodeproj</string>
+	<key>scheme</key>
+	<string>GymTracker</string>
+	<key>configuration</key>
+	<string>Debug</string>
+	<key>bundleIdentifier</key>
+	<string>com.noel.GymTracker</string>
+	<key>teamIdentifier</key>
+	<string>272AN3AJLF</string>
+	<key>buildDeviceUDID</key>
+	<string>00008130-0011256821A1001C</string>
+	<key>coreDeviceID</key>
+	<string>C35FCF83-A43B-5E6C-9D81-40A0DFA8B153</string>
+	<key>stateDirectoryName</key>
+	<string>PeaklineAutoRefresh</string>
+	<key>logDirectoryName</key>
+	<string>PeaklineAutoRefresh</string>
+	<key>derivedDataDirectoryName</key>
+	<string>PeaklineAutoRefresh</string>
+</dict>
+</plist>

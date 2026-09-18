@@ -124,7 +124,7 @@ xcodebuild \
   build
 ```
 
-For Noel's personal-device install, the opt-in [Peakline Auto Refresh](Scripts/PeaklineAutoRefresh/README.md) LaunchAgent can renew a near-expiry development build from the command line without opening Xcode. It performs only same-identity in-place installs and never uninstalls the app.
+For Noel's personal-device installs, the opt-in [iOS Auto Refresh](Scripts/PeaklineAutoRefresh/README.md) LaunchAgent can renew near-expiry development builds for catalogued apps such as Peakline and Kuro from the command line without opening Xcode. It processes apps serially, performs only same-identity in-place installs, and never uninstalls an app.
 
 Performance-sensitive validation:
 

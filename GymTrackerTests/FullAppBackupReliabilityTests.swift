@@ -586,13 +586,36 @@ final class FullAppBackupReliabilityTests: XCTestCase {
 private struct InjectedBackupFailure: Error {}
 
 final class StartupPresentationReducerTests: XCTestCase {
-    func testCriticalReadyRevealsWithoutWaitingForBrandAnimation() {
+    func testCriticalReadyWaitsForFullBrandAnimation() {
         var state = StartupPresentationState.animating
         state = StartupPresentationReducer.reduce(state, event: .criticalReady)
+        XCTAssertEqual(state, .waitingForAnimation)
+
+        state = StartupPresentationReducer.reduce(state, event: .animationFinished)
         XCTAssertEqual(state, .revealing)
 
         state = StartupPresentationReducer.reduce(state, event: .revealFinished)
         XCTAssertEqual(state, .hidden)
+    }
+
+    func testReadyRootIsReleasedAtCeilingIfAnimationCallbackIsMissing() {
+        var state = StartupPresentationReducer.reduce(.animating, event: .criticalReady)
+        state = StartupPresentationReducer.reduce(state, event: .criticalReady)
+        XCTAssertEqual(state, .waitingForAnimation)
+
+        state = StartupPresentationReducer.reduce(state, event: .slowThresholdReached)
+        XCTAssertEqual(state, .revealing)
+        XCTAssertEqual(
+            StartupPresentationReducer.reduce(state, event: .animationFinished),
+            .revealing
+        )
+    }
+
+    func testInterruptionStillDismissesWhileWaitingForAnimation() {
+        XCTAssertEqual(
+            StartupPresentationReducer.reduce(.waitingForAnimation, event: .interrupted),
+            .interrupted
+        )
     }
 
     func testAnimationCompletionWaitsForCriticalReady() {

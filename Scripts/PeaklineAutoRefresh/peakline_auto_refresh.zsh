@@ -6,43 +6,198 @@ umask 077
 
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 
-readonly PROJECT_ROOT="${PEAKLINE_PROJECT_ROOT:-/Users/noelpatricks/Developer/Peakline}"
-readonly PROJECT_PATH="$PROJECT_ROOT/GymTracker.xcodeproj"
-readonly SCHEME="GymTracker"
-readonly CONFIGURATION="Debug"
-readonly BUNDLE_ID="com.noel.GymTracker"
-readonly TEAM_ID="272AN3AJLF"
-readonly BUILD_DEVICE_UDID="00008130-0011256821A1001C"
-readonly CORE_DEVICE_ID="C35FCF83-A43B-5E6C-9D81-40A0DFA8B153"
-readonly REFRESH_THRESHOLD_SECONDS="${PEAKLINE_REFRESH_THRESHOLD_SECONDS:-86400}"
-readonly DEVICE_PREFLIGHT_ATTEMPTS="${PEAKLINE_DEVICE_PREFLIGHT_ATTEMPTS:-3}"
-readonly DEVICE_PREFLIGHT_RETRY_DELAY_SECONDS="${PEAKLINE_DEVICE_PREFLIGHT_RETRY_DELAY_SECONDS:-5}"
+readonly SCRIPT_PATH="${0:A}"
+readonly SCRIPT_DIR="${SCRIPT_PATH:h}"
+readonly CATALOG_DIR="$SCRIPT_DIR/apps.d"
+readonly DEFAULT_APP_KEY="peakline"
 
-readonly STATE_DIR="$HOME/Library/Application Support/PeaklineAutoRefresh"
-readonly LOG_DIR="$HOME/Library/Logs/PeaklineAutoRefresh"
-readonly DERIVED_DATA_DIR="$HOME/Library/Developer/Xcode/DerivedData/PeaklineAutoRefresh"
-readonly STATE_PLIST="$STATE_DIR/state.plist"
-readonly LOCK_FILE="$STATE_DIR/run.lock"
-readonly PROFILE_BACKUP_DIR="$STATE_DIR/profile-backups"
-readonly LAST_RESULT_PLIST="$STATE_DIR/last-result.plist"
-readonly BUILD_LOG="$LOG_DIR/xcodebuild.log"
-readonly DEVICE_LOG="$LOG_DIR/devicectl.log"
-readonly NOTIFICATION_STAMP="$STATE_DIR/last-attention-notification-epoch"
-readonly DEVICE_APPS_JSON="$STATE_DIR/device-apps.json"
-readonly DEVICE_PROCESSES_JSON="$STATE_DIR/device-processes.json"
-readonly DECODED_PROFILE="$STATE_DIR/decoded-profile.plist"
-
+APP_KEY="$DEFAULT_APP_KEY"
+TARGET_SCOPE="single"
 MODE="run"
-case "${1:-}" in
-    "") ;;
-    --dry-run) MODE="dry-run" ;;
-    --force) MODE="force" ;;
-    --status) MODE="status" ;;
-    *)
-        print -u2 "Usage: $0 [--status|--dry-run|--force]"
-        exit 64
-        ;;
-esac
+TARGET_WAS_SET=0
+MODE_WAS_SET=0
+
+usage() {
+    print "Usage: $SCRIPT_PATH [--app <key>|--all] [--status|--dry-run|--force]"
+}
+
+while (( $# > 0 )); do
+    case "$1" in
+        --status|--dry-run|--force)
+            (( MODE_WAS_SET == 0 )) || {
+                print -u2 "Choose only one of --status, --dry-run, or --force."
+                usage
+                exit 64
+            }
+            MODE="${1#--}"
+            MODE_WAS_SET=1
+            shift
+            ;;
+        --app)
+            (( $# >= 2 )) || { print -u2 "--app requires a catalog key."; usage; exit 64; }
+            (( TARGET_WAS_SET == 0 )) || {
+                print -u2 "Choose either --app <key> or --all, not both."
+                usage
+                exit 64
+            }
+            APP_KEY="$2"
+            TARGET_SCOPE="single"
+            TARGET_WAS_SET=1
+            shift 2
+            ;;
+        --all)
+            (( TARGET_WAS_SET == 0 )) || {
+                print -u2 "Choose either --app <key> or --all, not both."
+                usage
+                exit 64
+            }
+            TARGET_SCOPE="all"
+            TARGET_WAS_SET=1
+            shift
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        *)
+            print -u2 "Unknown argument: $1"
+            usage
+            exit 64
+            ;;
+    esac
+done
+
+catalog_keys() {
+    local config key
+    for config in "$CATALOG_DIR"/*.plist(N); do
+        key="${config:t:r}"
+        print -r -- "$key"
+    done | /usr/bin/sort
+}
+
+load_app_config() {
+    local field value
+    APP_CONFIG="$CATALOG_DIR/$APP_KEY.plist"
+
+    case "$APP_KEY" in
+        ""|*[!A-Za-z0-9_-]*)
+            print -u2 "Invalid app catalog key: $APP_KEY"
+            return 64
+            ;;
+    esac
+    [[ -f "$APP_CONFIG" ]] || {
+        print -u2 "App catalog entry not found: $APP_CONFIG"
+        return 64
+    }
+    /usr/bin/plutil -lint "$APP_CONFIG" >/dev/null || {
+        print -u2 "Malformed app catalog entry: $APP_CONFIG"
+        return 64
+    }
+
+    for field in \
+        displayName projectRoot projectFile scheme configuration bundleIdentifier \
+        teamIdentifier buildDeviceUDID coreDeviceID \
+        stateDirectoryName logDirectoryName derivedDataDirectoryName; do
+        value="$(/usr/bin/plutil -extract "$field" raw "$APP_CONFIG" 2>/dev/null || true)"
+        if [[ -z "$value" || "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+            print -u2 "App catalog entry $APP_CONFIG has no valid string value for $field."
+            return 64
+        fi
+        typeset "$field=$value"
+    done
+
+    [[ "$projectRoot" == /* && "$projectFile" != /* ]] || {
+        print -u2 "App catalog entry $APP_CONFIG must use an absolute project root and relative project file."
+        return 64
+    }
+    for value in "$stateDirectoryName" "$logDirectoryName" "$derivedDataDirectoryName"; do
+        case "$value" in
+            "."|".."|*/*)
+                print -u2 "App catalog entry $APP_CONFIG has an invalid runtime directory name."
+                return 64
+                ;;
+        esac
+    done
+
+    APP_DISPLAY_NAME="$displayName"
+    PROJECT_ROOT="$projectRoot"
+    if [[ "$APP_KEY" == "$DEFAULT_APP_KEY" && -n "${PEAKLINE_PROJECT_ROOT:-}" ]]; then
+        PROJECT_ROOT="$PEAKLINE_PROJECT_ROOT"
+    fi
+    PROJECT_PATH="$PROJECT_ROOT/$projectFile"
+    SCHEME="$scheme"
+    CONFIGURATION="$configuration"
+    BUNDLE_ID="$bundleIdentifier"
+    TEAM_ID="$teamIdentifier"
+    BUILD_DEVICE_UDID="$buildDeviceUDID"
+    CORE_DEVICE_ID="$coreDeviceID"
+
+    if [[ "$APP_KEY" == "$DEFAULT_APP_KEY" ]]; then
+        REFRESH_THRESHOLD_SECONDS="${AUTO_REFRESH_THRESHOLD_SECONDS:-${PEAKLINE_REFRESH_THRESHOLD_SECONDS:-86400}}"
+        DEVICE_PREFLIGHT_ATTEMPTS="${AUTO_REFRESH_DEVICE_PREFLIGHT_ATTEMPTS:-${PEAKLINE_DEVICE_PREFLIGHT_ATTEMPTS:-3}}"
+        DEVICE_PREFLIGHT_RETRY_DELAY_SECONDS="${AUTO_REFRESH_DEVICE_PREFLIGHT_RETRY_DELAY_SECONDS:-${PEAKLINE_DEVICE_PREFLIGHT_RETRY_DELAY_SECONDS:-5}}"
+    else
+        REFRESH_THRESHOLD_SECONDS="${AUTO_REFRESH_THRESHOLD_SECONDS:-86400}"
+        DEVICE_PREFLIGHT_ATTEMPTS="${AUTO_REFRESH_DEVICE_PREFLIGHT_ATTEMPTS:-3}"
+        DEVICE_PREFLIGHT_RETRY_DELAY_SECONDS="${AUTO_REFRESH_DEVICE_PREFLIGHT_RETRY_DELAY_SECONDS:-5}"
+    fi
+
+    # These names intentionally retain Peakline's original paths while giving
+    # every catalog entry an isolated state, log, and DerivedData namespace.
+    STATE_DIR="$HOME/Library/Application Support/$stateDirectoryName"
+    LOG_DIR="$HOME/Library/Logs/$logDirectoryName"
+    DERIVED_DATA_DIR="$HOME/Library/Developer/Xcode/DerivedData/$derivedDataDirectoryName"
+    STATE_PLIST="$STATE_DIR/state.plist"
+    LOCK_FILE="$STATE_DIR/run.lock"
+    PROFILE_BACKUP_DIR="$STATE_DIR/profile-backups"
+    LAST_RESULT_PLIST="$STATE_DIR/last-result.plist"
+    BUILD_LOG="$LOG_DIR/xcodebuild.log"
+    DEVICE_LOG="$LOG_DIR/devicectl.log"
+    NOTIFICATION_STAMP="$STATE_DIR/last-attention-notification-epoch"
+    DEVICE_APPS_JSON="$STATE_DIR/device-apps.json"
+    DEVICE_PROCESSES_JSON="$STATE_DIR/device-processes.json"
+    DECODED_PROFILE="$STATE_DIR/decoded-profile.plist"
+    PRODUCT_DIR="$DERIVED_DATA_DIR/Build/Products/$CONFIGURATION-iphoneos"
+}
+
+run_all() {
+    local key child_status aggregate_status=0
+    local -a keys child_args
+    keys=("${(@f)$(catalog_keys)}")
+    (( ${#keys} > 0 )) || {
+        print -u2 "No app catalog entries found in $CATALOG_DIR."
+        return 64
+    }
+
+    # Validate every entry through the read-only path before any selected app
+    # can build, quarantine a profile, or contact the device.
+    for key in "${keys[@]}"; do
+        if ! /bin/zsh "$SCRIPT_PATH" --app "$key" --dry-run >/dev/null; then
+            print -u2 "Invalid app catalog entry: $CATALOG_DIR/$key.plist"
+            return 64
+        fi
+    done
+
+    for key in "${keys[@]}"; do
+        child_args=(--app "$key")
+        [[ "$MODE" == "run" ]] || child_args+=("--$MODE")
+        print "=== $key ==="
+        /bin/zsh "$SCRIPT_PATH" "${child_args[@]}"
+        child_status=$?
+        if (( child_status != 0 )); then
+            aggregate_status=1
+            print -u2 "$key refresh check failed with status $child_status; continuing to the next app."
+        fi
+    done
+    return "$aggregate_status"
+}
+
+if [[ "$TARGET_SCOPE" == "all" ]]; then
+    run_all
+    exit $?
+fi
+
+load_app_config || exit $?
 
 # This is deliberately a read-only health check. Xcode remains responsible for
 # account authentication, certificates, profiles, and any user-controlled
@@ -51,17 +206,17 @@ SIGNING_READINESS_AVAILABLE=0
 SIGNING_IDENTITY_COUNT=0
 
 [[ "$REFRESH_THRESHOLD_SECONDS" == <-> ]] || {
-    print -u2 "PEAKLINE_REFRESH_THRESHOLD_SECONDS must be a non-negative integer."
+    print -u2 "Refresh threshold must be a non-negative integer."
     exit 64
 }
 
 [[ "$DEVICE_PREFLIGHT_ATTEMPTS" == <-> && "$DEVICE_PREFLIGHT_ATTEMPTS" -ge 1 ]] || {
-    print -u2 "PEAKLINE_DEVICE_PREFLIGHT_ATTEMPTS must be a positive integer."
+    print -u2 "Device preflight attempts must be a positive integer."
     exit 64
 }
 
 [[ "$DEVICE_PREFLIGHT_RETRY_DELAY_SECONDS" == <-> ]] || {
-    print -u2 "PEAKLINE_DEVICE_PREFLIGHT_RETRY_DELAY_SECONDS must be a non-negative integer."
+    print -u2 "Device preflight retry delay must be a non-negative integer."
     exit 64
 }
 
@@ -114,13 +269,41 @@ notify_attention() {
 
     /usr/bin/osascript \
         -e 'on run argv' \
-        -e 'display notification (item 1 of argv) with title "Peakline Auto Refresh"' \
+        -e 'display notification (item 1 of argv) with title (item 2 of argv)' \
         -e 'end run' \
-        "$message" >/dev/null 2>&1 && print -r -- "$now" > "$NOTIFICATION_STAMP"
+        "$message" "$APP_DISPLAY_NAME Auto Refresh" >/dev/null 2>&1 && print -r -- "$now" > "$NOTIFICATION_STAMP"
 }
 
 iso_to_epoch() {
     /bin/date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$1" '+%s' 2>/dev/null
+}
+
+current_git_commit() {
+    local git_metadata="$PROJECT_ROOT/.git"
+    local git_dir="$git_metadata"
+    local head_value ref_path commit="unknown"
+
+    if [[ -f "$git_metadata" ]]; then
+        git_dir="$(/usr/bin/sed -n 's/^gitdir: //p' "$git_metadata" | /usr/bin/head -n 1)"
+        [[ "$git_dir" == /* ]] || git_dir="$PROJECT_ROOT/$git_dir"
+    fi
+
+    if [[ -f "$git_dir/HEAD" ]]; then
+        head_value="$(<"$git_dir/HEAD")"
+        if [[ "$head_value" == 'ref: '* ]]; then
+            ref_path="$git_dir/${head_value#ref: }"
+            [[ -f "$ref_path" ]] && commit="$(<"$ref_path")"
+        elif (( ${#head_value} >= 40 && ${#head_value} <= 64 )) && \
+             [[ "$head_value" != *[!0-9A-Fa-f]* ]]; then
+            commit="$head_value"
+        fi
+    fi
+
+    if (( ${#commit} < 40 || ${#commit} > 64 )) || \
+       [[ "$commit" == *[!0-9A-Fa-f]* ]]; then
+        commit="unknown"
+    fi
+    print -r -- "$commit"
 }
 
 state_expiration() {
@@ -152,6 +335,10 @@ show_signing_readiness() {
 }
 
 show_status() {
+    print "$APP_DISPLAY_NAME Auto Refresh ($APP_KEY)"
+    print "State directory: $STATE_DIR"
+    print "Log directory: $LOG_DIR"
+    print "DerivedData directory: $DERIVED_DATA_DIR"
     if [[ ! -f "$LAST_RESULT_PLIST" ]]; then
         print "Last attempt: none recorded."
     else
@@ -171,18 +358,18 @@ show_status() {
     show_signing_readiness
 
     if [[ ! -f "$STATE_PLIST" ]]; then
-        print "Peakline Auto Refresh has no recorded successful installation yet."
+        print "$APP_DISPLAY_NAME Auto Refresh has no recorded successful installation yet."
         return 0
     fi
 
     local expiration now_epoch expiration_epoch seconds_left
     expiration="$(state_expiration)" || {
-        print "Peakline Auto Refresh state is unreadable; the next check will refresh conservatively."
+        print "$APP_DISPLAY_NAME Auto Refresh state is unreadable; the next check will refresh conservatively."
         return 0
     }
     now_epoch="$(/bin/date -u '+%s')"
     expiration_epoch="$(iso_to_epoch "$expiration")" || {
-        print "Peakline Auto Refresh recorded an invalid expiration; the next check will refresh conservatively."
+        print "$APP_DISPLAY_NAME Auto Refresh recorded an invalid expiration; the next check will refresh conservatively."
         return 0
     }
     seconds_left=$(( expiration_epoch - now_epoch ))
@@ -205,18 +392,18 @@ if [[ "$MODE" == "dry-run" ]]; then
         due_epoch=$(( now_epoch + REFRESH_THRESHOLD_SECONDS ))
         recorded_expiration_epoch="$(iso_to_epoch "$recorded_expiration" || true)"
         if [[ "$recorded_expiration_epoch" == <-> ]] && (( recorded_expiration_epoch > due_epoch )); then
-            log "Dry run: Peakline is not due for refresh; recorded profile expires at $recorded_expiration."
+            log "Dry run: $APP_DISPLAY_NAME is not due for refresh; recorded profile expires at $recorded_expiration."
         else
-            log "Dry run: Peakline is due for refresh; recorded profile expires at $recorded_expiration."
+            log "Dry run: $APP_DISPLAY_NAME is due for refresh; recorded profile expires at $recorded_expiration."
         fi
     else
-        log "Dry run: no successful managed refresh is recorded, so Peakline would be refreshed now."
+        log "Dry run: no successful managed refresh is recorded, so $APP_DISPLAY_NAME would be refreshed now."
     fi
     exit 0
 fi
 
 if ! /bin/mkdir -p "$STATE_DIR" "$LOG_DIR" "$PROFILE_BACKUP_DIR" "$DERIVED_DATA_DIR"; then
-    print -u2 "Could not create Peakline Auto Refresh state directories."
+    print -u2 "Could not create $APP_DISPLAY_NAME Auto Refresh state directories."
     exit 1
 fi
 
@@ -302,6 +489,16 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' HUP TERM
 
+if [[ -f "$STATE_PLIST" ]]; then
+    recorded_bundle_id="$(/usr/bin/plutil -extract bundleIdentifier raw "$STATE_PLIST" 2>/dev/null || true)"
+    recorded_team_id="$(/usr/bin/plutil -extract teamIdentifier raw "$STATE_PLIST" 2>/dev/null || true)"
+    if [[ "$recorded_bundle_id" != "$BUNDLE_ID" || "$recorded_team_id" != "$TEAM_ID" ]]; then
+        log "$APP_DISPLAY_NAME managed state does not match the catalog bundle/team identity; refusing to build or install."
+        set_attempt_result "identity_mismatch" "Managed state does not match the catalog bundle/team identity; no build, profile quarantine, or installation was attempted."
+        exit 1
+    fi
+fi
+
 now_epoch="$(/bin/date -u '+%s')"
 due_epoch=$(( now_epoch + REFRESH_THRESHOLD_SECONDS ))
 recorded_expiration="$(state_expiration 2>/dev/null || true)"
@@ -309,7 +506,7 @@ recorded_expiration="$(state_expiration 2>/dev/null || true)"
 if [[ "$MODE" != "force" && -n "$recorded_expiration" ]]; then
     recorded_expiration_epoch="$(iso_to_epoch "$recorded_expiration" || true)"
     if [[ "$recorded_expiration_epoch" == <-> ]] && (( recorded_expiration_epoch > due_epoch )); then
-        log "Peakline is not due for refresh; profile expires at $recorded_expiration."
+        log "$APP_DISPLAY_NAME is not due for refresh; profile expires at $recorded_expiration."
         exit 0
     fi
 fi
@@ -348,11 +545,11 @@ done
 if (( preflight_succeeded == 0 )); then
     if (( SIGNING_READINESS_AVAILABLE == 0 )); then
         log "No usable connection to Noel's iPhone and signing readiness is blocked; leaving the installed app and signing profiles unchanged."
-        notify_attention "Peakline refresh blocked: reconnect Noel's iPhone and configure an Apple ID/signing identity in Xcode Settings > Accounts."
+        notify_attention "$APP_DISPLAY_NAME refresh blocked: reconnect Noel's iPhone and configure an Apple ID/signing identity in Xcode Settings > Accounts."
         set_attempt_result "prerequisites_blocked" "No usable connection to Noel's iPhone after $DEVICE_PREFLIGHT_ATTEMPTS bounded preflight attempts, and no valid code-signing identity was found; reconnect the iPhone and configure an Apple ID/signing identity in Xcode Settings > Accounts. The installed app and signing profiles were left unchanged."
     else
         log "No usable connection to Noel's iPhone; leaving the installed app and signing profiles unchanged."
-        notify_attention "Peakline needs refreshing, but Noel's iPhone is not reachable."
+        notify_attention "$APP_DISPLAY_NAME needs refreshing, but Noel's iPhone is not reachable."
         set_attempt_result "device_unreachable" "No usable connection to Noel's iPhone after $DEVICE_PREFLIGHT_ATTEMPTS bounded preflight attempts; the installed app and signing profiles were left unchanged."
     fi
     exit 1
@@ -360,8 +557,8 @@ fi
 
 installed_bundle_id="$(/usr/bin/plutil -extract result.apps.0.bundleIdentifier raw "$DEVICE_APPS_JSON" 2>/dev/null || true)"
 if [[ "$installed_bundle_id" != "$BUNDLE_ID" ]]; then
-    log "Peakline is not currently visible as an installed app; refusing a fresh install because data-preserving update semantics cannot be established."
-    set_attempt_result "app_missing" "Peakline is not currently visible as an installed app; refusing a fresh install because data-preserving update semantics cannot be established."
+    log "$APP_DISPLAY_NAME is not currently visible as an installed app; refusing a fresh install because data-preserving update semantics cannot be established."
+    set_attempt_result "app_missing" "$APP_DISPLAY_NAME is not currently visible as an installed app; refusing a fresh install because data-preserving update semantics cannot be established."
     exit 1
 fi
 
@@ -387,24 +584,30 @@ quarantine_due_profiles() {
             expiration="$(profile_value "$profile" 'ExpirationDate' || true)"
             expiration_epoch="$(iso_to_epoch "$expiration" || true)"
             [[ "$expiration_epoch" == <-> ]] || continue
-            (( expiration_epoch <= due_epoch )) || continue
+            if [[ "$MODE" != "force" ]] && (( expiration_epoch > due_epoch )); then
+                continue
+            fi
 
             count=$(( count + 1 ))
             backup="$PROFILE_BACKUP_DIR/$run_stamp-$count-${profile:t}"
             /bin/mv "$profile" "$backup" || return 1
             QUARANTINED_ORIGINALS+=("$profile")
             QUARANTINED_BACKUPS+=("$backup")
-            log "Temporarily quarantined Peakline's near-expiry cached provisioning profile."
+            if [[ "$MODE" == "force" ]]; then
+                log "Temporarily quarantined $APP_DISPLAY_NAME's cached provisioning profile for a forced refresh."
+            else
+                log "Temporarily quarantined $APP_DISPLAY_NAME's near-expiry cached provisioning profile."
+            fi
         done < <(/usr/bin/find "$profile_dir" -maxdepth 1 -type f \( -name '*.mobileprovision' -o -name '*.provisionprofile' \) -print)
     done
 }
 
 if ! quarantine_due_profiles; then
-    log "Could not safely quarantine Peakline's near-expiry profile; aborting before build."
+    log "Could not safely quarantine $APP_DISPLAY_NAME's near-expiry profile; aborting before build."
     exit 1
 fi
 
-log "Building a freshly signed Peakline app for Noel's iPhone."
+log "Building a freshly signed $APP_DISPLAY_NAME app for Noel's iPhone."
 if ! /usr/bin/xcodebuild \
     -project "$PROJECT_PATH" \
     -scheme "$SCHEME" \
@@ -417,33 +620,52 @@ if ! /usr/bin/xcodebuild \
     CODE_SIGN_STYLE=Automatic \
     DEVELOPMENT_TEAM="$TEAM_ID" \
     COMPILER_INDEX_STORE_ENABLE=NO >"$BUILD_LOG" 2>&1; then
-    log "Peakline build/signing failed; the previous app remains installed and the old cached profile will be restored. See $BUILD_LOG."
+    log "$APP_DISPLAY_NAME build/signing failed; the previous app remains installed and the old cached profile will be restored. See $BUILD_LOG."
     if /usr/bin/grep -Fq 'No Accounts: Add a new account in Accounts settings.' "$BUILD_LOG"; then
-        set_attempt_result "build_failed_no_account" "Peakline build/signing failed because no Xcode account is available; the previous app remains installed and the old cached profile will be restored. See $BUILD_LOG."
-        notify_attention "Peakline needs refreshing. Add your Apple ID in Xcode Settings > Accounts once, then the background retry can sign it."
+        set_attempt_result "build_failed_no_account" "$APP_DISPLAY_NAME build/signing failed because no Xcode account is available; the previous app remains installed and the old cached profile will be restored. See $BUILD_LOG."
+        notify_attention "$APP_DISPLAY_NAME needs refreshing. Add your Apple ID in Xcode Settings > Accounts once, then the background retry can sign it."
     else
-        set_attempt_result "build_failed" "Peakline build/signing failed; the previous app remains installed and the old cached profile will be restored. See $BUILD_LOG."
-        notify_attention "Peakline needs refreshing, but command-line signing failed. Check the refresh log on your Mac."
+        set_attempt_result "build_failed" "$APP_DISPLAY_NAME build/signing failed; the previous app remains installed and the old cached profile will be restored. See $BUILD_LOG."
+        notify_attention "$APP_DISPLAY_NAME needs refreshing, but command-line signing failed. Check the refresh log on your Mac."
     fi
     exit 1
 fi
 
-app_path="$DERIVED_DATA_DIR/Build/Products/$CONFIGURATION-iphoneos/GymTracker.app"
+typeset -a built_candidates
+built_candidates=()
+while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] || continue
+    candidate_bundle_id="$(/usr/bin/plutil -extract CFBundleIdentifier raw "$candidate/Info.plist" 2>/dev/null || true)"
+    [[ "$candidate_bundle_id" == "$BUNDLE_ID" ]] && built_candidates+=("$candidate")
+done < <(/usr/bin/find "$PRODUCT_DIR" -type d -name '*.app' -prune -print 2>/dev/null)
+
+if (( ${#built_candidates} != 1 )); then
+    log "The build produced ${#built_candidates} app bundles matching $BUNDLE_ID; refusing to install an ambiguous or missing build product."
+    exit 1
+fi
+
+app_path="${built_candidates[1]}"
 embedded_profile="$app_path/embedded.mobileprovision"
 
 [[ -d "$app_path" && -f "$embedded_profile" ]] || {
-    log "The build succeeded but the signed app/profile was not found at the expected path; refusing to install."
+    log "The build succeeded but the signed app/profile was not found in the matching app bundle; refusing to install."
     exit 1
 }
 
 built_bundle_id="$(/usr/bin/plutil -extract CFBundleIdentifier raw "$app_path/Info.plist" 2>/dev/null || true)"
+built_executable="$(/usr/bin/plutil -extract CFBundleExecutable raw "$app_path/Info.plist" 2>/dev/null || true)"
 built_application_id="$(profile_value "$embedded_profile" 'Entitlements.application-identifier' || true)"
 built_expiration="$(profile_value "$embedded_profile" 'ExpirationDate' || true)"
 built_expiration_epoch="$(iso_to_epoch "$built_expiration" || true)"
 built_profile_uuid="$(profile_value "$embedded_profile" 'UUID' || true)"
 
 if [[ "$built_bundle_id" != "$BUNDLE_ID" || "$built_application_id" != "$TEAM_ID.$BUNDLE_ID" ]]; then
-    log "The new app identity does not match the installed Peakline identity; refusing to install."
+    log "The new app identity does not match the catalog $APP_DISPLAY_NAME identity; refusing to install."
+    exit 1
+fi
+
+if [[ -z "$built_executable" || "$built_executable" == */* ]]; then
+    log "The matching build product has no safe executable name; refusing to install."
     exit 1
 fi
 
@@ -467,25 +689,26 @@ if ! /usr/bin/xcrun devicectl device info processes \
     --timeout 30 \
     --json-output "$DEVICE_PROCESSES_JSON" \
     --quiet >>"$DEVICE_LOG" 2>&1; then
-    log "Could not verify whether Peakline is running; refusing to interrupt the app and retrying later."
-    notify_attention "Peakline needs refreshing, but its running state could not be checked."
-    set_attempt_result "device_unreachable" "Could not verify whether Peakline is running; refusing to interrupt the app and retrying later."
+    log "Could not verify whether $APP_DISPLAY_NAME is running; refusing to interrupt the app and retrying later."
+    notify_attention "$APP_DISPLAY_NAME needs refreshing, but its running state could not be checked."
+    set_attempt_result "device_unreachable" "Could not verify whether $APP_DISPLAY_NAME is running; refusing to interrupt the app and retrying later."
     exit 1
 fi
 
-if /usr/bin/grep -Fq '/GymTracker.app/GymTracker' "$DEVICE_PROCESSES_JSON"; then
-    log "Peakline is currently running; leaving it uninterrupted and retrying the in-place update later."
-    set_attempt_result "app_running" "Peakline is currently running; leaving it uninterrupted and retrying the in-place update later."
+process_marker="/${app_path:t}/$built_executable"
+if /usr/bin/grep -Fq "$process_marker" "$DEVICE_PROCESSES_JSON"; then
+    log "$APP_DISPLAY_NAME is currently running; leaving it uninterrupted and retrying the in-place update later."
+    set_attempt_result "app_running" "$APP_DISPLAY_NAME is currently running; leaving it uninterrupted and retrying the in-place update later."
     exit 0
 fi
 
-log "Installing Peakline in place. The automation never issues an uninstall command."
+log "Installing $APP_DISPLAY_NAME in place. The automation never issues an uninstall command."
 if ! /usr/bin/xcrun devicectl device install app \
     --device "$CORE_DEVICE_ID" \
     --timeout 120 \
     "$app_path" >"$DEVICE_LOG" 2>&1; then
     log "Device installation failed; the previous installed app/data remain untouched. The signed build will be retried at the next scheduled check. See $DEVICE_LOG."
-    notify_attention "Peakline's fresh build is ready, but it could not be installed on the iPhone."
+    notify_attention "$APP_DISPLAY_NAME's fresh build is ready, but it could not be installed on the iPhone."
     set_attempt_result "install_failed" "Device installation failed; the previous installed app/data remain untouched. The signed build will be retried at the next scheduled check. See $DEVICE_LOG."
     exit 1
 fi
@@ -503,13 +726,12 @@ fi
 
 installed_bundle_id="$(/usr/bin/plutil -extract result.apps.0.bundleIdentifier raw "$DEVICE_APPS_JSON" 2>/dev/null || true)"
 [[ "$installed_bundle_id" == "$BUNDLE_ID" ]] || {
-    log "Install reported success, but Peakline was not visible afterward; leaving state due for retry."
-    set_attempt_result "install_failed" "Install reported success, but Peakline was not visible afterward; leaving state due for retry."
+    log "Install reported success, but $APP_DISPLAY_NAME was not visible afterward; leaving state due for retry."
+    set_attempt_result "install_failed" "Install reported success, but $APP_DISPLAY_NAME was not visible afterward; leaving state due for retry."
     exit 1
 }
-
 if ! state_tmp="$(/usr/bin/mktemp "$STATE_DIR/state.plist.XXXXXX")"; then
-    log "Peakline installed, but a temporary refresh state file could not be created; leaving the old profile available for recovery."
+    log "$APP_DISPLAY_NAME installed, but a temporary refresh state file could not be created; leaving the old profile available for recovery."
     exit 1
 fi
 if ! {
@@ -521,19 +743,19 @@ if ! {
     /usr/bin/plutil -insert profileUUID -string "$built_profile_uuid" "$state_tmp" &&
     /usr/bin/plutil -insert lastSuccessfulInstallUTC -string "$(timestamp)" "$state_tmp"
 }; then
-    log "Peakline installed, but its refresh state could not be recorded; leaving the old profile available for recovery."
+    log "$APP_DISPLAY_NAME installed, but its refresh state could not be recorded; leaving the old profile available for recovery."
     exit 1
 fi
-git_commit="$(/usr/bin/git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null || print unknown)"
+git_commit="$(current_git_commit)"
 if ! /usr/bin/plutil -insert gitCommit -string "$git_commit" "$state_tmp" || \
    ! /usr/bin/plutil -lint "$state_tmp" >/dev/null || \
    ! /bin/mv "$state_tmp" "$STATE_PLIST"; then
-    log "Peakline installed, but its refresh state could not be committed; leaving the old profile available for recovery."
+    log "$APP_DISPLAY_NAME installed, but its refresh state could not be committed; leaving the old profile available for recovery."
     exit 1
 fi
 
 # Keep the old profile in its recoverable backup only after install and state commit succeed.
 KEEP_QUARANTINED=1
 
-set_attempt_result "success" "Peakline refresh succeeded; the installed profile now expires at $built_expiration."
-log "Peakline refresh succeeded; the installed profile now expires at $built_expiration."
+set_attempt_result "success" "$APP_DISPLAY_NAME refresh succeeded; the installed profile now expires at $built_expiration."
+log "$APP_DISPLAY_NAME refresh succeeded; the installed profile now expires at $built_expiration."

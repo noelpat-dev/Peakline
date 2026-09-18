@@ -18,7 +18,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testBrandedStartupWaitsForCriticalReadyThenShowsToday() throws {
-        launch(arguments: ["-UITestCoachFatigueFixture", "-UITestStartupAnimationMaxMS", "1500", "-UITestStartupPreparationDelayMS", "350"])
+        launch(arguments: ["-UITestCoachFatigueFixture", "-UITestStartupPreparationDelayMS", "350"])
 
         let splash = app.descendants(matching: .any)["startup-brand-screen"]
         let criticalReady = app.descendants(matching: .any)["startup-critical-ready"]

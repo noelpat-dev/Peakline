@@ -12,5 +12,5 @@ if [[ -f "$DESTINATION_PLIST" ]]; then
     /bin/mv "$DESTINATION_PLIST" "$HOME/.Trash/$trash_name"
 fi
 
-print "Peakline Auto Refresh is disabled and its LaunchAgent plist was moved to Trash."
-print "Build logs and refresh state were retained under your Library folders."
+print "iOS Auto Refresh is disabled and its LaunchAgent plist was moved to Trash."
+print "Per-app build logs, profile backups, refresh state, and DerivedData were retained under your Library folders."
