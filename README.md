@@ -22,20 +22,21 @@ The product is designed for the gym rather than for a social feed. It keeps the 
 | --- | --- | --- | --- |
 | ![Peakline Today dashboard in Dark appearance](docs/media/peakline-today-dark.png) | ![Prepared workout Preview in Dark appearance](docs/media/peakline-preview-dark.png) | ![Live workout Logger in Dark appearance](docs/media/peakline-logger-dark.png) | ![Monthly workout History in Dark appearance](docs/media/peakline-history-dark.png) |
 
-Watch the Peakline feature walkthrough in browser-friendly segments:
+The segmented walkthrough plays directly on GitHub as lightweight animated previews:
 
-1. [Today and readiness](docs/media/peakline-demo-segments/01-today-readiness.mp4)
-2. [Daily tracking and workout preview](docs/media/peakline-demo-segments/02-daily-tracking-and-preview.mp4)
-3. [Exercise Guide](docs/media/peakline-demo-segments/03-exercise-guide.mp4)
-4. [Training Splits overview](docs/media/peakline-demo-segments/04-training-splits-overview.mp4)
-5. [Training Split detail and editing](docs/media/peakline-demo-segments/05-training-split-editing.mp4)
-6. [Coach recommendations](docs/media/peakline-demo-segments/06-coach-recommendations.mp4)
-7. [Coach preferences](docs/media/peakline-demo-segments/07-coach-preferences.mp4)
-8. [Starting and logging a workout](docs/media/peakline-demo-segments/08-workout-start-and-logging.mp4)
-9. [Live workout controls](docs/media/peakline-demo-segments/09-live-workout-controls.mp4)
-10. [Workout summary and History](docs/media/peakline-demo-segments/10-summary-and-history.mp4)
+| Today and readiness | Daily tracking and workout preview |
+| --- | --- |
+| ![Today dashboard, readiness and recovery signals](docs/media/peakline-demo-segments/01-today-readiness.gif) | ![Daily tracking controls and workout preview](docs/media/peakline-demo-segments/02-daily-tracking-and-preview.gif) |
+| **Exercise Guide** | **Training Splits overview** |
+| ![Exercise Guide library, search and pose sequence](docs/media/peakline-demo-segments/03-exercise-guide.gif) | ![Training Splits overview](docs/media/peakline-demo-segments/04-training-splits-overview.gif) |
+| **Training Split detail and editing** | **Coach recommendations** |
+| ![Training Split details and editing controls](docs/media/peakline-demo-segments/05-training-split-editing.gif) | ![Coach recommendations and recovery mode](docs/media/peakline-demo-segments/06-coach-recommendations.gif) |
+| **Coach preferences** | **Starting and logging a workout** |
+| ![Coach preferences and split intent](docs/media/peakline-demo-segments/07-coach-preferences.gif) | ![Starting and logging a workout](docs/media/peakline-demo-segments/08-workout-start-and-logging.gif) |
+| **Live workout controls** | **Workout summary and History** |
+| ![Live workout controls, timer and set logging](docs/media/peakline-demo-segments/09-live-workout-controls.gif) | ![Workout completion, summary and History](docs/media/peakline-demo-segments/10-summary-and-history.gif) |
 
-Each clip is under 10 MB for GitHub browser playback. All media uses Peakline's synthetic UI-test store.
+Matching MP4 segments are retained for higher-quality viewing. All media uses Peakline's synthetic UI-test store.
 
 ## What Peakline does
 
