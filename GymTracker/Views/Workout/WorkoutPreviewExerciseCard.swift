@@ -153,6 +153,9 @@ struct WorkoutPreviewExerciseCard: View {
                         exerciseTitle
                     }
 
+                    CoachBadgeView(recommendationType: suggestion.recommendationType)
+                        .fixedSize(horizontal: true, vertical: false)
+
                     HStack(spacing: 8) {
                         Spacer(minLength: 0)
                         reorderHandle
@@ -167,7 +170,12 @@ struct WorkoutPreviewExerciseCard: View {
 
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(alignment: .top, spacing: 8) {
-                            exerciseTitle
+                            VStack(alignment: .leading, spacing: 4) {
+                                exerciseTitle
+
+                                CoachBadgeView(recommendationType: suggestion.recommendationType)
+                                    .fixedSize(horizontal: true, vertical: false)
+                            }
 
                             Spacer(minLength: 8)
 
@@ -224,10 +232,6 @@ struct WorkoutPreviewExerciseCard: View {
 
     private var exerciseDetails: some View {
         VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top, spacing: 8) {
-                    CoachBadgeView(recommendationType: suggestion.recommendationType)
-                }
-
                 Text(
                     PeaklineText.setRepSummary(
                         sets: exercise.targetSets,
