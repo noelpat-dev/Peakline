@@ -410,7 +410,6 @@ final class SleepRecoveryReliabilityTests: XCTestCase {
             qualityRating: 3,
             dataSource: .manual,
             confidence: .medium,
-            appleHealthSummary: nil,
             appSessionID: UUID(),
             notes: nil,
             conflict: nil,

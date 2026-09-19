@@ -907,7 +907,6 @@ struct SleepDashboardView: View {
                 qualityRating: $0.qualityRating,
                 dataSource: $0.source,
                 confidence: $0.confidence,
-                appleHealthSummary: nil,
                 appSessionID: $0.id,
                 notes: $0.notes,
                 conflict: nil,
@@ -944,18 +943,6 @@ struct SleepDashboardView: View {
                         .foregroundStyle(appTheme.colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-            }
-        }
-    }
-
-    private var trainingInsightCard: some View {
-        DashboardSection(title: "Sleep And Training") {
-            SleepCard(style: .compact) {
-                SleepRow(
-                    title: "Training context",
-                    subtitle: coaching.trainingInsight(summaries: summaries, workouts: workouts),
-                    systemImage: "figure.strengthtraining.traditional"
-                )
             }
         }
     }

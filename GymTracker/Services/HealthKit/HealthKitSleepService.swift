@@ -242,16 +242,6 @@ struct HealthKitSleepService {
     #endif
 
     @discardableResult
-    func requestReadAuthorization() async throws -> HealthKitSleepAccessSnapshot {
-        try await requestAuthorization(read: true, write: false)
-    }
-
-    @discardableResult
-    func requestWriteAuthorization() async throws -> HealthKitSleepAccessSnapshot {
-        try await requestAuthorization(read: false, write: true)
-    }
-
-    @discardableResult
     func requestAuthorization(read: Bool, write: Bool) async throws -> HealthKitSleepAccessSnapshot {
         guard isAvailable else { throw HealthKitSyncError.unavailable }
 
@@ -419,16 +409,6 @@ struct HealthKitSleepService {
         #endif
     }
 
-    /// Compatibility wrapper for the pre-result API. New callers should use
-    /// `importRecentSleepCandidatesResult` so failures cannot be mistaken for an
-    /// empty HealthKit result.
-    @available(*, deprecated, message: "Use importRecentSleepCandidatesResult(days:existing:access:)")
-    func importRecentSleepCandidates(days: Int, existing: HealthKitSleepImportExistingSnapshot) async -> [HealthKitSleepImportCandidate] {
-        let result = await importRecentSleepCandidatesResult(days: days, existing: existing)
-        guard case .imported(let candidates, _) = result else { return [] }
-        return candidates
-    }
-
     func writeConfirmedSession(_ session: HealthKitSleepWriteSnapshot) async throws -> [String] {
         PerformanceTracer.mark(.healthKitSleepBridge, "writeConfirmedSession begin session=\(session.id.uuidString)")
         guard isAvailable else { throw HealthKitSyncError.unavailable }
@@ -492,32 +472,6 @@ struct HealthKitSleepService {
         #endif
     }
 
-    func fetchSleepSamples(from startDate: Date, to endDate: Date) async throws -> [HealthSleepSample] {
-        guard isAvailable else { throw HealthKitSyncError.unavailable }
-
-        #if canImport(HealthKit)
-        let samples = try await rawSleepSamples(from: startDate, to: endDate)
-        return samples.map { sample in
-            HealthSleepSample(
-                id: sample.uuid,
-                startDate: sample.startDate,
-                endDate: sample.endDate,
-                value: Self.healthSleepStage(for: sample.value),
-                sourceName: sample.sourceRevision.source.name,
-                sourceBundleIdentifier: sample.sourceRevision.source.bundleIdentifier
-            )
-        }
-        #else
-        throw HealthKitSyncError.unavailable
-        #endif
-    }
-
-    func fetchSleepSummary(for sleepDate: Date) async throws -> HealthSleepSummary? {
-        let window = SleepCalendar.queryWindow(for: sleepDate)
-        let samples = try await fetchSleepSamples(from: window.start, to: window.end)
-        return Self.summary(for: sleepDate, samples: samples, intervalStart: window.start, intervalEnd: window.end)
-    }
-
     private static func importResult(for error: Error) -> HealthKitSleepImportResult {
         if let syncError = error as? HealthKitSyncError {
             switch syncError {
@@ -539,46 +493,6 @@ struct HealthKitSleepService {
         }
 
         return .error(.unknown(error.localizedDescription))
-    }
-
-    static func summary(for sleepDate: Date, samples: [HealthSleepSample], intervalStart: Date, intervalEnd: Date) -> HealthSleepSummary? {
-        let relevant = samples.filter { sample in
-            sample.endDate > intervalStart && sample.startDate < intervalEnd
-        }
-        guard !relevant.isEmpty else { return nil }
-
-        let inBed = relevant
-            .filter { $0.value == .inBed }
-            .reduce(0) { $0 + clippedDuration($1, intervalStart: intervalStart, intervalEnd: intervalEnd) }
-        let asleep = relevant
-            .filter { $0.value.countsAsAsleep }
-            .reduce(0) { $0 + clippedDuration($1, intervalStart: intervalStart, intervalEnd: intervalEnd) }
-        let awakeSamples = relevant.filter { $0.value == .awake }
-        let awake = awakeSamples.isEmpty ? nil : awakeSamples.reduce(0) { $0 + clippedDuration($1, intervalStart: intervalStart, intervalEnd: intervalEnd) }
-        let coreSamples = relevant.filter { $0.value == .asleepCore }
-        let deepSamples = relevant.filter { $0.value == .asleepDeep }
-        let remSamples = relevant.filter { $0.value == .asleepREM }
-        let core = coreSamples.isEmpty ? nil : coreSamples.reduce(0) { $0 + clippedDuration($1, intervalStart: intervalStart, intervalEnd: intervalEnd) }
-        let deep = deepSamples.isEmpty ? nil : deepSamples.reduce(0) { $0 + clippedDuration($1, intervalStart: intervalStart, intervalEnd: intervalEnd) }
-        let rem = remSamples.isEmpty ? nil : remSamples.reduce(0) { $0 + clippedDuration($1, intervalStart: intervalStart, intervalEnd: intervalEnd) }
-        let sourceNames = Array(Set(relevant.compactMap(\.sourceName))).sorted()
-
-        guard asleep > 0 || inBed > 0 else { return nil }
-
-        return HealthSleepSummary(
-            sleepDate: SleepCalendar.nightDate(for: sleepDate),
-            intervalStart: intervalStart,
-            intervalEnd: intervalEnd,
-            totalInBedDuration: inBed,
-            totalAsleepDuration: asleep,
-            totalAwakeDuration: awake,
-            coreDuration: core,
-            deepDuration: deep,
-            remDuration: rem,
-            sampleCount: relevant.count,
-            sourceNames: sourceNames,
-            confidence: confidence(asleepDuration: asleep, inBedDuration: inBed, samples: relevant)
-        )
     }
 
     #if canImport(HealthKit)
@@ -659,51 +573,7 @@ struct HealthKitSleepService {
 
         return false
     }
-
-    static func healthSleepStage(for value: Int) -> HealthSleepStage {
-        if value == HKCategoryValueSleepAnalysis.inBed.rawValue {
-            return .inBed
-        }
-        if value == HKCategoryValueSleepAnalysis.awake.rawValue {
-            return .awake
-        }
-        if value == HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue {
-            return .asleepUnspecified
-        }
-
-        if #available(iOS 16.0, *) {
-            if value == HKCategoryValueSleepAnalysis.asleepCore.rawValue {
-                return .asleepCore
-            }
-            if value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue {
-                return .asleepDeep
-            }
-            if value == HKCategoryValueSleepAnalysis.asleepREM.rawValue {
-                return .asleepREM
-            }
-        }
-
-        return .unknown
-    }
     #endif
-
-    private static func clippedDuration(_ sample: HealthSleepSample, intervalStart: Date, intervalEnd: Date) -> TimeInterval {
-        max(0, min(sample.endDate, intervalEnd).timeIntervalSince(max(sample.startDate, intervalStart)))
-    }
-
-    private static func confidence(asleepDuration: TimeInterval, inBedDuration: TimeInterval, samples: [HealthSleepSample]) -> SleepConfidence {
-        let asleepMinutes = asleepDuration / 60
-        if asleepMinutes >= 300, asleepMinutes <= 720, samples.contains(where: { $0.value == .asleepCore || $0.value == .asleepDeep || $0.value == .asleepREM }) {
-            return .high
-        }
-        if asleepMinutes >= 180, asleepMinutes <= 840 {
-            return .medium
-        }
-        if asleepDuration == 0, inBedDuration > 0 {
-            return .low
-        }
-        return .low
-    }
 
     private func isLikelyNap(start: Date, end: Date, calendar: Calendar) -> Bool {
         let duration = end.timeIntervalSince(start)

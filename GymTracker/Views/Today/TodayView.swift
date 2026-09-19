@@ -385,18 +385,13 @@ struct TodayView: View {
     }
 
     private func makeTodaySnapshot() -> TodayDashboardSnapshot {
-        let sessionSnapshots = completedSessions.prefix(40).map(makeWorkoutSessionSnapshot)
         let orderedActiveSplits = rotationService.orderedActiveSplits(activeSplits)
         let decision = decisionService.decision(
             activeSplits: orderedActiveSplits,
             completedSessions: Array(completedSessions.prefix(40))
         )
-        let recentCycleNames = makeRecentProgrammeCycleNames(from: sessionSnapshots)
         let suggested = orderedActiveSplits.first { $0.name == decision.recommendedSplitName }
             ?? orderedActiveSplits.first
-        let weekSessionSnapshots = makeWeeklySessionSnapshots(from: sessionSnapshots)
-        let workingSets = weekSessionSnapshots.reduce(0) { $0 + $1.workingSetCount }
-        let volume = weekSessionSnapshots.reduce(0) { $0 + $1.workingSetVolume }
         let mode = makeTrainingCall(
             decision: decision,
             coachSnapshot: currentCoachSnapshot
@@ -406,12 +401,7 @@ struct TodayView: View {
             completedSessions: Array(completedSessions.prefix(40)),
             mode: mode
         )
-        let completedDays = makeCompletedDaysThisWeek(from: weekSessionSnapshots)
-        let coverageNames = makeSplitCoverageNames(from: activeSplits)
-        let trainedNames = Set(weekSessionSnapshots.map(\.baseSplitName))
-        let coverageItems = coverageNames.map { name in
-            SplitCoverageItem(name: name, isComplete: trainedNames.contains(name))
-        }
+        let completedDays = makeCompletedDaysThisWeek(from: completedSessions.prefix(40).map(\.date))
 
         return TodayDashboardSnapshot(
             nutritionTotals: NutritionCalculatorService().totals(
@@ -423,15 +413,6 @@ struct TodayView: View {
                 targetML: hydrationTargetML
             ),
             suggestedSplit: suggested,
-            recentProgrammeCycleNames: recentCycleNames,
-            weeklySessions: weekSessionSnapshots.map(\.session),
-            workoutsThisWeek: weekSessionSnapshots.count,
-            workingSetsThisWeek: workingSets,
-            volumeThisWeekText: makeVolumeText(volume),
-            splitCoverageItems: coverageItems,
-            splitCoverageNames: coverageNames,
-            splitBalanceText: makeSplitBalanceText(from: coverageItems),
-            splitCoverageSubtitle: makeSplitCoverageSubtitle(from: coverageItems),
             nextLift: nextLift,
             completedDaysThisWeek: completedDays
         )
@@ -476,7 +457,7 @@ struct TodayView: View {
         )
     }
 
-    private func makeCompletedDaysThisWeek(from snapshots: [TodayWorkoutSessionSnapshot]) -> [Bool] {
+    private func makeCompletedDaysThisWeek(from dates: [Date]) -> [Bool] {
         let calendar = Calendar.current
         guard let weekStart = calendar.dateInterval(of: .weekOfYear, for: .now)?.start else {
             return Array(repeating: false, count: 7)
@@ -486,7 +467,7 @@ struct TodayView: View {
             guard let day = calendar.date(byAdding: .day, value: offset, to: weekStart) else {
                 return false
             }
-            return snapshots.contains { calendar.isDate($0.session.date, inSameDayAs: day) }
+            return dates.contains { $0 <= .now && calendar.isDate($0, inSameDayAs: day) }
         }
     }
 
@@ -1244,17 +1225,6 @@ struct TodayView: View {
         )
     }
 
-    private var hydrationSubtitle: String {
-        let summary = hydrationSummary
-        if summary.totalML >= summary.targetML {
-            return "Target reached today"
-        }
-        if summary.totalML > 0 {
-            return "\(HydrationService.formatAmount(summary.totalML)) / \(HydrationService.formatAmount(summary.targetML)) today"
-        }
-        return "Log water intake"
-    }
-
     private var suggestedSplit: TrainingSplit? {
         currentTodaySnapshot.suggestedSplit
             ?? trainingCall.recommendedSplitName.flatMap { recommendedName in
@@ -1265,140 +1235,6 @@ struct TodayView: View {
                     ) == .orderedSame
                 }
             }
-    }
-
-    private var programmeOrderedSplits: [TrainingSplit] {
-        rotationService.orderedActiveSplits(activeSplits)
-    }
-
-    private var recentProgrammeCycleNames: [String] {
-        currentTodaySnapshot.recentProgrammeCycleNames
-    }
-
-    private func makeWorkoutSessionSnapshot(_ session: WorkoutSession) -> TodayWorkoutSessionSnapshot {
-        var workingSetCount = 0
-        var workingSetVolume = 0.0
-        let exerciseLogs = session.exerciseLogs
-
-        for log in exerciseLogs {
-            for set in log.setLogs where set.completed && !set.isWarmup {
-                workingSetCount += 1
-                workingSetVolume += set.weight * Double(set.reps)
-            }
-        }
-
-        return TodayWorkoutSessionSnapshot(
-            session: session,
-            baseSplitName: baseSplitName(session.splitNameSnapshot),
-            programmeSplitName: programmeSplitName(for: session),
-            exerciseCount: exerciseLogs.count,
-            workingSetCount: workingSetCount,
-            workingSetVolume: workingSetVolume
-        )
-    }
-
-    private func makeRecentProgrammeCycleNames(from sessionSnapshots: [TodayWorkoutSessionSnapshot]) -> [String] {
-        var names: [String] = []
-
-        for sessionSnapshot in sessionSnapshots {
-            guard let name = sessionSnapshot.programmeSplitName else { continue }
-
-            if names.contains(name) {
-                break
-            }
-
-            names.append(name)
-
-            if names.count == programmeOrderedSplits.count {
-                break
-            }
-        }
-
-        return names
-    }
-
-    private func programmeSplitName(for session: WorkoutSession) -> String? {
-        if let splitId = session.splitId {
-            return programmeOrderedSplits.first { $0.id == splitId }?.name
-        }
-
-        let matches = programmeOrderedSplits.filter { split in
-            session.splitNameSnapshot == split.name
-                || session.splitNameSnapshot.hasPrefix("\(split.name) - ")
-        }
-        return matches.count == 1 ? matches.first?.name : nil
-    }
-
-    private var weeklySessions: [WorkoutSession] {
-        currentTodaySnapshot.weeklySessions
-    }
-
-    private func makeWeeklySessionSnapshots(from sessionSnapshots: [TodayWorkoutSessionSnapshot]) -> [TodayWorkoutSessionSnapshot] {
-        sessionSnapshots.filter { $0.session.date <= .now && Calendar.current.isDate($0.session.date, equalTo: .now, toGranularity: .weekOfYear) }
-    }
-
-    private var workoutsThisWeek: Int {
-        currentTodaySnapshot.workoutsThisWeek
-    }
-
-    private var workingSetsThisWeek: Int {
-        currentTodaySnapshot.workingSetsThisWeek
-    }
-
-    private var volumeThisWeekText: String {
-        currentTodaySnapshot.volumeThisWeekText
-    }
-
-    private func makeVolumeText(_ volume: Double) -> String {
-        guard volume > 0 else { return "0" }
-        if volume >= 100_000 {
-            return "\(Int(volume / 1_000))k"
-        }
-        if volume >= 1_000 {
-            return String(format: "%.1fk", volume / 1_000)
-        }
-        return "\(Int(volume))"
-    }
-
-    private var splitCoverageItems: [SplitCoverageItem] {
-        currentTodaySnapshot.splitCoverageItems
-    }
-
-    private var splitCoverageNames: [String] {
-        currentTodaySnapshot.splitCoverageNames
-    }
-
-    private func makeSplitCoverageNames(from splits: [TrainingSplit]) -> [String] {
-        rotationService.orderedActiveSplits(splits).map(\.name)
-    }
-
-    private var splitBalanceText: String {
-        currentTodaySnapshot.splitBalanceText
-    }
-
-    private func makeSplitBalanceText(from items: [SplitCoverageItem]) -> String {
-        guard !items.isEmpty else { return "0/0" }
-        return "\(items.filter(\.isComplete).count)/\(items.count)"
-    }
-
-    private var splitCoverageSubtitle: String {
-        currentTodaySnapshot.splitCoverageSubtitle
-    }
-
-    private func makeSplitCoverageSubtitle(from items: [SplitCoverageItem]) -> String {
-        guard !items.isEmpty else {
-            return "Create active splits to track weekly coverage."
-        }
-
-        if items.allSatisfy(\.isComplete) {
-            return "Balanced week complete."
-        }
-
-        return "Complete each active split once this week."
-    }
-
-    private func baseSplitName(_ splitNameSnapshot: String) -> String {
-        splitNameSnapshot.components(separatedBy: " - ").first ?? splitNameSnapshot
     }
 
     private func previewSuggestedSplit() {
@@ -1492,15 +1328,6 @@ private struct TodayDashboardSnapshot {
     let trainingDecision: TrainingDecision
     let hydrationSummary: DailyHydrationSummary
     let suggestedSplit: TrainingSplit?
-    let recentProgrammeCycleNames: [String]
-    let weeklySessions: [WorkoutSession]
-    let workoutsThisWeek: Int
-    let workingSetsThisWeek: Int
-    let volumeThisWeekText: String
-    let splitCoverageItems: [SplitCoverageItem]
-    let splitCoverageNames: [String]
-    let splitBalanceText: String
-    let splitCoverageSubtitle: String
     var nextLift: TodayNextLiftSnapshot
     let completedDaysThisWeek: [Bool]
 
@@ -1523,15 +1350,6 @@ private struct TodayDashboardSnapshot {
             lastLoggedAt: nil
         ),
         suggestedSplit: nil,
-        recentProgrammeCycleNames: [],
-        weeklySessions: [],
-        workoutsThisWeek: 0,
-        workingSetsThisWeek: 0,
-        volumeThisWeekText: "0",
-        splitCoverageItems: [],
-        splitCoverageNames: [],
-        splitBalanceText: "0/0",
-        splitCoverageSubtitle: "Create active splits to track weekly coverage.",
         nextLift: .empty,
         completedDaysThisWeek: Array(repeating: false, count: 7)
     )
@@ -1547,15 +1365,6 @@ private struct TodayNextLiftSnapshot {
         detail: "Choose a training split to prepare your next lift.",
         footer: nil
     )
-}
-
-private struct TodayWorkoutSessionSnapshot {
-    let session: WorkoutSession
-    let baseSplitName: String
-    let programmeSplitName: String?
-    let exerciseCount: Int
-    let workingSetCount: Int
-    let workingSetVolume: Double
 }
 
 private enum TodayRoute: Hashable, Identifiable {
@@ -1631,105 +1440,6 @@ private struct BackupHealthWarningCard: View {
                 }
             }
         }
-    }
-}
-
-private struct TodaySleepRecoveryCard: View {
-    @Environment(\.appTheme) private var appTheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    let summary: SleepSummary
-    let recommendation: String
-    @State private var displayedScore: Double?
-
-    var body: some View {
-        FitnessCard {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "moon.stars.fill")
-                    .font(AppTypography.cardTitle)
-                    .foregroundStyle(appTheme.colors.textAccent)
-                    .frame(width: 46, height: 46)
-                    .background(appTheme.colors.accentSurface, in: Circle())
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Text(recoveryTitle)
-                            .font(AppTypography.sectionTitle)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-
-                        if let source = summary.source {
-                            Text(source.displayName)
-                                .font(AppTypography.chip)
-                                .foregroundStyle(appTheme.colors.textAccent)
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 5)
-                                .background(appTheme.colors.accentSurface, in: Capsule())
-                        }
-                    }
-
-                    Text(detailText)
-                        .font(AppTypography.body)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-
-                    Text(recommendation)
-                        .font(AppTypography.metadata)
-                        .foregroundStyle(appTheme.colors.textTertiary)
-                        .lineLimit(2)
-                }
-
-                Spacer(minLength: 8)
-
-                if let score = summary.sleepScore {
-                    ZStack {
-                        AnimatedMetricNumber(
-                            value: displayedScore ?? Double(score),
-                            suffix: "%"
-                        )
-                        .font(.headline.bold())
-                        .foregroundStyle(appTheme.colors.textAccent)
-                    }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Sleep recovery score")
-                    .accessibilityValue("\(score) percent")
-                    .onAppear {
-                        if displayedScore == nil {
-                            displayedScore = Double(score)
-                        }
-                    }
-                    .onChange(of: score) { _, newScore in
-                        if reduceMotion {
-                            displayedScore = Double(newScore)
-                        } else {
-                            withAnimation(AppMotion.animation(for: .metricChange, reduceMotion: false)) {
-                                displayedScore = Double(newScore)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var recoveryTitle: String {
-        switch summary.recoveryState {
-        case .high, .good:
-            return "Sleep recovery looks good"
-        case .moderate:
-            return "Sleep recovery is slightly reduced"
-        case .low, .veryLow:
-            return "Sleep recovery may affect today"
-        case .unknown:
-            return "No sleep recorded last night"
-        }
-    }
-
-    private var detailText: String {
-        guard summary.primarySession != nil else {
-            return "Add the missing overnight record, or start Sleep Mode tonight."
-        }
-
-        let quality = summary.qualityRating.map { SleepQualityPicker.label(for: $0) } ?? "No quality"
-        return "\(SleepScoringService.durationText(minutes: summary.totalSleepMinutes)) sleep · \(quality) quality"
     }
 }
 

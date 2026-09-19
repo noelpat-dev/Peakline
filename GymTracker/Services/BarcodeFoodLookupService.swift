@@ -67,11 +67,7 @@ struct BarcodeFoodLookupService {
     }
 
     func findLocalFood(by rawBarcode: String, in localFoods: [FoodItem]) -> FoodItem? {
-        let barcode = Self.normalizedBarcode(rawBarcode)
-        return localFoods.first { food in
-            guard let storedBarcode = food.barcode else { return false }
-            return Self.normalizedBarcode(storedBarcode) == barcode
-        }
+        NutritionDataIntegrityService().existingFood(matchingBarcode: rawBarcode, in: localFoods)
     }
 
     static func normalizedBarcode(_ barcode: String) -> String {

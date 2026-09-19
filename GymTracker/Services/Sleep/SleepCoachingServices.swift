@@ -667,22 +667,4 @@ struct SleepCoachingService {
             return "Not scored"
         }
     }
-
-    func trainingInsight(summaries: [SleepSummary], workouts: [WorkoutSession]) -> String {
-        let tracked = summaries.filter { $0.primarySession != nil }
-        guard tracked.count >= 5, workouts.count >= 5 else {
-            return "Log more sleep and workouts to see how recovery affects your performance."
-        }
-
-        let strongNights = tracked.filter { $0.totalSleepMinutes >= 420 }.count
-        if strongNights >= 3 {
-            return "Your strongest recent sessions may follow nights with 7h+ sleep."
-        }
-
-        if tracked.contains(where: { $0.totalSleepMinutes < 360 }) {
-            return "Low sleep may make heavy sets feel harder. Use your warm-up sets to decide whether to push today."
-        }
-
-        return "Your sleep trend is building a useful recovery baseline for coaching."
-    }
 }

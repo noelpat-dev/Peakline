@@ -604,14 +604,6 @@ struct FirebaseFullAppBackupStore: RemoteFullAppBackupStoring {
         return data
     }
 
-    private func deleteChunks(after chunkCount: Int, from backupReference: DocumentReference) async throws {
-        let snapshot = try await getDocuments(backupReference.collection("chunks"))
-        for document in snapshot.documents {
-            guard let index = document.data()["index"] as? Int, index >= chunkCount else { continue }
-            try await delete(document.reference)
-        }
-    }
-
     static func split(_ data: Data, chunkByteLimit: Int) -> [Data] {
         precondition(chunkByteLimit > 0)
         guard !data.isEmpty else { return [Data()] }
@@ -671,35 +663,9 @@ struct FirebaseFullAppBackupStore: RemoteFullAppBackupStoring {
         }
     }
 
-    private func getDocuments(_ reference: CollectionReference) async throws -> QuerySnapshot {
-        try await withCheckedThrowingContinuation { continuation in
-            reference.getDocuments { snapshot, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else if let snapshot {
-                    continuation.resume(returning: snapshot)
-                } else {
-                    continuation.resume(throwing: FirebaseFullAppBackupError.missingRecordData)
-                }
-            }
-        }
-    }
-
     private func setData(_ data: [String: Any], on reference: DocumentReference) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             reference.setData(data) { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume(returning: ())
-                }
-            }
-        }
-    }
-
-    private func delete(_ reference: DocumentReference) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            reference.delete { error in
                 if let error {
                     continuation.resume(throwing: error)
                 } else {

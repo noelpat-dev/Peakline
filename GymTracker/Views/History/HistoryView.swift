@@ -1076,22 +1076,6 @@ struct HistoryView: View {
         }
     }
 
-    private var splitFilterBinding: Binding<String?> {
-        Binding {
-            filters.splitName
-        } set: { newValue in
-            filters.splitName = newValue
-        }
-    }
-
-    private var ratingFilterBinding: Binding<Int?> {
-        Binding {
-            filters.minimumRating
-        } set: { newValue in
-            filters.minimumRating = newValue
-        }
-    }
-
     private var startDateBinding: Binding<Date> {
         Binding {
             filters.startDate ?? Calendar.current.date(byAdding: .month, value: -1, to: .now) ?? .now

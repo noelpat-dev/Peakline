@@ -53,17 +53,6 @@ enum AppMotion {
                 0.45
             }
         }
-
-        var allowedRange: ClosedRange<TimeInterval> {
-            switch self {
-            case .micro:
-                0...AppMotion.microDurationMaximum
-            case .standard:
-                AppMotion.standardDurationRange
-            case .expressive:
-                AppMotion.expressiveDurationRange
-            }
-        }
     }
 
     enum ReduceMotionPolicy: String, CaseIterable {
@@ -103,11 +92,6 @@ enum AppMotion {
         case reduceMotionFallback
     }
 
-    struct RoleSpec {
-        let duration: ClosedRange<TimeInterval>
-        let feel: String
-    }
-
     static let microDurationMaximum: TimeInterval = 0.12
     static let standardDurationRange: ClosedRange<TimeInterval> = 0.22...0.28
     static let expressiveDurationRange: ClosedRange<TimeInterval> = 0.35...0.50
@@ -115,7 +99,6 @@ enum AppMotion {
     static let stepperRollDuration: TimeInterval = 0.15
     static let setCheckmarkDuration: TimeInterval = 0.18
     static let chartDrawInDuration: TimeInterval = 0.40
-    static let attendanceRingDuration: TimeInterval = 0.40
     static let todayReentryWashDuration: TimeInterval = 0.30
     static let restUrgencyPulseDuration: TimeInterval = 1.0
     static let reducedMotionImmediateDuration: TimeInterval = 0.01
@@ -137,10 +120,7 @@ enum AppMotion {
     static let emphasizedControlScale: CGFloat = 1.035
     static let cardAppearOffset: CGFloat = 10
     static let navigationPressDownDuration: TimeInterval = 0.08
-    static let navigationPressReleaseDuration: TimeInterval = 0.12
 
-    static let snappy = Preset.snappy.animation
-    static let smooth = Preset.smooth.animation
     static let expressive = Preset.expressive.animation
 
     static func instantOr(
@@ -149,53 +129,6 @@ enum AppMotion {
         policy: ReduceMotionPolicy = .immediate
     ) -> Animation {
         reduceMotion ? reducedMotionAnimation(policy: policy) : animation
-    }
-
-    static func preset(for role: Role) -> Preset? {
-        switch role {
-        case .tapDown,
-             .tapRelease,
-             .cardPress,
-             .buttonPress,
-             .primaryAction,
-             .secondaryAction,
-             .chipSelect,
-             .ratingSelect,
-             .checkInSelect,
-             .rowReorder,
-             .successConfirm,
-             .swipeSnap:
-            return .snappy
-        case .modeChange,
-             .cardAppear,
-             .cardDisappear,
-             .rowInsert,
-             .rowRemove,
-             .sheetPresent,
-             .sheetDismiss,
-             .modalPresent,
-             .modalDismiss,
-             .loadingReveal,
-             .destructiveConfirm:
-            return .smooth
-        case .metricChange, .celebration:
-            return .expressive
-        case .tabSelect, .routePush, .routePop, .reduceMotionFallback:
-            // Root tabs and navigation retain native presentation. Keep the
-            // roles for compatibility, but do not inject a custom transition.
-            return nil
-        }
-    }
-
-    static func duration(for role: Role) -> Duration {
-        switch role {
-        case .metricChange, .celebration:
-            return .expressive
-        case .tabSelect, .routePush, .routePop, .reduceMotionFallback:
-            return .micro
-        default:
-            return .standard
-        }
     }
 
     static func reduceMotionPolicy(for role: Role) -> ReduceMotionPolicy {
@@ -260,73 +193,6 @@ enum AppMotion {
         return Preset.snappy.animation
     }
 
-    static func spec(for role: Role) -> RoleSpec {
-        let duration: ClosedRange<TimeInterval>
-        switch role {
-        case .tapDown:
-            duration = 0...navigationPressDownDuration
-        case .tapRelease, .cardPress, .buttonPress, .primaryAction, .secondaryAction,
-             .chipSelect, .tabSelect, .ratingSelect, .checkInSelect, .rowReorder,
-             .swipeSnap:
-            duration = 0...microDurationMaximum
-        case .successConfirm:
-            duration = setCheckmarkDuration...setCheckmarkDuration
-        case .metricChange, .celebration:
-            duration = expressiveDurationRange
-        case .routePush, .routePop, .reduceMotionFallback:
-            duration = 0...reducedMotionImmediateDuration
-        default:
-            duration = standardDurationRange
-        }
-
-        switch role {
-        case .tapDown:
-            return RoleSpec(duration: duration, feel: "immediate restrained acknowledgement")
-        case .tapRelease:
-            return RoleSpec(duration: duration, feel: "snappy spring release")
-        case .cardPress:
-            return RoleSpec(duration: duration, feel: "tiny scale with no bounce")
-        case .buttonPress:
-            return RoleSpec(duration: duration, feel: "subtle opacity and scale")
-        case .primaryAction:
-            return RoleSpec(duration: duration, feel: "decisive action feedback")
-        case .secondaryAction:
-            return RoleSpec(duration: duration, feel: "quiet action feedback")
-        case .chipSelect, .ratingSelect, .checkInSelect:
-            return RoleSpec(duration: duration, feel: "snappy selection state")
-        case .tabSelect:
-            return RoleSpec(duration: duration, feel: "native tab selection with no root animation")
-        case .modeChange:
-            return RoleSpec(duration: duration, feel: "clean local mode transition")
-        case .cardAppear, .rowInsert:
-            return RoleSpec(duration: duration, feel: "opacity with a small local lift")
-        case .cardDisappear, .rowRemove:
-            return RoleSpec(duration: duration, feel: "local fade and collapse")
-        case .rowReorder:
-            return RoleSpec(duration: duration, feel: "snappy ordered movement")
-        case .sheetPresent, .modalPresent:
-            return RoleSpec(duration: duration, feel: "calm native presentation")
-        case .sheetDismiss, .modalDismiss:
-            return RoleSpec(duration: duration, feel: "faster dismissal")
-        case .routePush, .routePop:
-            return RoleSpec(duration: duration, feel: "native navigation, state changes immediately")
-        case .loadingReveal:
-            return RoleSpec(duration: duration, feel: "opacity-led progressive reveal")
-        case .metricChange:
-            return RoleSpec(duration: duration, feel: "expressive numeric change without layout shift")
-        case .successConfirm:
-            return RoleSpec(duration: duration, feel: "short confirmation")
-        case .destructiveConfirm:
-            return RoleSpec(duration: duration, feel: "fast explicit confirmation")
-        case .celebration:
-            return RoleSpec(duration: duration, feel: "one-shot earned emphasis, never blocking")
-        case .swipeSnap:
-            return RoleSpec(duration: duration, feel: "interactive snap")
-        case .reduceMotionFallback:
-            return RoleSpec(duration: duration, feel: "instant or opacity-only")
-        }
-    }
-
     static func animation(for role: Role, reduceMotion: Bool) -> Animation {
         let policy = reduceMotionPolicy(for: role)
 
@@ -335,43 +201,17 @@ enum AppMotion {
             return reduceMotion
                 ? reducedMotionAnimation(policy: policy)
                 : .easeOut(duration: navigationPressDownDuration)
-        case .tapRelease:
+        case .tapRelease, .cardPress, .buttonPress, .primaryAction, .secondaryAction,
+             .chipSelect, .ratingSelect, .checkInSelect, .rowReorder, .successConfirm,
+             .swipeSnap:
             return animation(for: .snappy, reduceMotion: reduceMotion, policy: policy)
-        case .cardPress:
-            return animation(for: .snappy, reduceMotion: reduceMotion, policy: policy)
-        case .buttonPress, .primaryAction, .secondaryAction:
-            return animation(for: .snappy, reduceMotion: reduceMotion, policy: policy)
-        case .chipSelect, .ratingSelect, .checkInSelect:
-            return animation(for: .snappy, reduceMotion: reduceMotion, policy: policy)
-        case .tabSelect:
-            return reducedMotionAnimation(policy: .immediate)
-        case .modeChange:
+        case .modeChange, .cardAppear, .rowInsert, .cardDisappear, .rowRemove,
+             .sheetPresent, .modalPresent, .sheetDismiss, .modalDismiss,
+             .loadingReveal, .destructiveConfirm:
             return animation(for: .smooth, reduceMotion: reduceMotion, policy: policy)
-        case .cardAppear, .rowInsert:
-            return animation(for: .smooth, reduceMotion: reduceMotion, policy: policy)
-        case .cardDisappear, .rowRemove:
-            return animation(for: .smooth, reduceMotion: reduceMotion, policy: policy)
-        case .rowReorder:
-            return animation(for: .snappy, reduceMotion: reduceMotion, policy: policy)
-        case .sheetPresent, .modalPresent:
-            return animation(for: .smooth, reduceMotion: reduceMotion, policy: policy)
-        case .sheetDismiss, .modalDismiss:
-            return animation(for: .smooth, reduceMotion: reduceMotion, policy: policy)
-        case .routePush, .routePop:
-            return reducedMotionAnimation(policy: .immediate)
-        case .loadingReveal:
-            return animation(for: .smooth, reduceMotion: reduceMotion, policy: policy)
-        case .metricChange:
+        case .metricChange, .celebration:
             return animation(for: .expressive, reduceMotion: reduceMotion, policy: policy)
-        case .successConfirm:
-            return animation(for: .snappy, reduceMotion: reduceMotion, policy: policy)
-        case .destructiveConfirm:
-            return animation(for: .smooth, reduceMotion: reduceMotion, policy: policy)
-        case .celebration:
-            return animation(for: .expressive, reduceMotion: reduceMotion, policy: policy)
-        case .swipeSnap:
-            return animation(for: .snappy, reduceMotion: reduceMotion, policy: policy)
-        case .reduceMotionFallback:
+        case .tabSelect, .routePush, .routePop, .reduceMotionFallback:
             return reducedMotionAnimation(policy: .immediate)
         }
     }
@@ -394,18 +234,6 @@ enum AppMotion {
 
     static func cardIn(reduceMotion: Bool) -> Animation {
         animation(for: .cardAppear, reduceMotion: reduceMotion)
-    }
-
-    static func cardOut(reduceMotion: Bool) -> Animation {
-        animation(for: .cardDisappear, reduceMotion: reduceMotion)
-    }
-
-    static func modalIn(reduceMotion: Bool) -> Animation {
-        animation(for: .modalPresent, reduceMotion: reduceMotion)
-    }
-
-    static func modalOut(reduceMotion: Bool) -> Animation {
-        animation(for: .modalDismiss, reduceMotion: reduceMotion)
     }
 
     static func chip(reduceMotion: Bool) -> Animation {
@@ -491,16 +319,8 @@ enum AppMotion {
         animation(for: .sheetPresent, reduceMotion: reduceMotion)
     }
 
-    static func sheetPopup(reduceMotion: Bool) -> Animation {
-        sheet(reduceMotion: reduceMotion)
-    }
-
     static func toggle(reduceMotion: Bool) -> Animation {
         animation(for: .snappy, reduceMotion: reduceMotion, policy: .opacity)
-    }
-
-    static func workoutCompletion(reduceMotion: Bool) -> Animation {
-        celebration(reduceMotion: reduceMotion)
     }
 
     static func popupEntrance(reduceMotion: Bool) -> Animation {
@@ -511,16 +331,8 @@ enum AppMotion {
         animation(for: .sheetDismiss, reduceMotion: reduceMotion)
     }
 
-    static func quickSpring(reduceMotion: Bool) -> Animation {
-        animation(for: .snappy, reduceMotion: reduceMotion)
-    }
-
     static func swipeRevealSnap(reduceMotion: Bool) -> Animation {
         swipeReveal(reduceMotion: reduceMotion)
-    }
-
-    static func selectionSpring(reduceMotion: Bool) -> Animation {
-        animation(for: .chipSelect, reduceMotion: reduceMotion)
     }
 
     static func reorderSpring(reduceMotion: Bool) -> Animation {
@@ -573,17 +385,6 @@ enum AppMotion {
             : .opacity.combined(with: .offset(y: sheetInnerContentOffset))
     }
 
-    static func cardTransition(reduceMotion: Bool) -> AnyTransition {
-        reduceMotion
-            ? .opacity
-            : .asymmetric(
-                insertion: .opacity
-                    .combined(with: .offset(y: cardAppearOffset)),
-                removal: .opacity
-                    .combined(with: .offset(y: 6))
-            )
-    }
-
     static func rowInsertRemoveTransition(reduceMotion: Bool) -> AnyTransition {
         reduceMotion
             ? .opacity
@@ -593,30 +394,6 @@ enum AppMotion {
                 removal: .opacity
                     .combined(with: .offset(y: 4))
             )
-    }
-
-    static func loadingRevealTransition(reduceMotion: Bool) -> AnyTransition {
-        reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 4))
-    }
-
-    static func popupTransition(reduceMotion: Bool) -> AnyTransition {
-        reduceMotion
-            ? .opacity
-            : .asymmetric(
-                insertion: .opacity
-                    .combined(with: .scale(scale: 0.98, anchor: .center))
-                    .combined(with: .offset(y: 16)),
-                removal: .opacity
-                    .combined(with: .scale(scale: 0.99, anchor: .center))
-                    .combined(with: .offset(y: 8))
-            )
-    }
-
-    @MainActor
-    static func smoothNavigate(reduceMotion: Bool, _ action: @escaping @MainActor () -> Void) {
-        PerformanceTracer.trace(.motionRoutePush) {
-            action()
-        }
     }
 
     static func withoutAnimation(_ action: () -> Void) {
@@ -1022,10 +799,6 @@ extension View {
 
     func loadingReveal(isVisible: Bool = true, reduceMotion: Bool) -> some View {
         modifier(LoadingRevealModifier(isVisible: isVisible, reduceMotion: reduceMotion))
-    }
-
-    func rowInsertRemoveMotion(reduceMotion: Bool) -> some View {
-        transition(AppMotion.rowInsertRemoveTransition(reduceMotion: reduceMotion))
     }
 
     func metricValueMotion<Value: Equatable>(value: Value, reduceMotion: Bool) -> some View {

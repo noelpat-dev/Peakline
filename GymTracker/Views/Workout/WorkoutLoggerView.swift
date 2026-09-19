@@ -1196,32 +1196,6 @@ struct WorkoutLoggerView: View {
         return max(0, Int(date.timeIntervalSince(startedAt)) - session.accumulatedPausedSeconds - livePauseSeconds)
     }
 
-    private var sessionDurationText: String? {
-        if let durationSeconds = session.durationSeconds {
-            return durationText(seconds: durationSeconds)
-        }
-
-        if let startedAt = session.startedAt, let endedAt = session.endedAt {
-            return durationText(startedAt: startedAt, endedAt: endedAt)
-        }
-
-        if let minutes = session.durationMinutes {
-            return "\(minutes) min"
-        }
-
-        return nil
-    }
-
-    private func durationText(startedAt: Date?, endedAt: Date) -> String {
-        guard let startedAt else { return "time" }
-        return durationText(startedAt: startedAt, endedAt: endedAt)
-    }
-
-    private func durationText(startedAt: Date, endedAt: Date) -> String {
-        let totalSeconds = max(0, Int(endedAt.timeIntervalSince(startedAt)))
-        return durationText(seconds: totalSeconds)
-    }
-
     private func durationText(seconds totalSeconds: Int) -> String {
         let hours = totalSeconds / 3600
         let minutes = (totalSeconds % 3600) / 60

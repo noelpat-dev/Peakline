@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 @testable import GymTracker
 
 @MainActor
@@ -12,16 +13,53 @@ final class AppMotionTests: XCTestCase {
         XCTAssertEqual(AppMotion.Preset.expressive.dampingFraction, 0.75, accuracy: 0.0001)
     }
 
-    func testRoleMappingKeepsInteractionMotionBounded() {
-        XCTAssertEqual(AppMotion.preset(for: .tapRelease), .snappy)
-        XCTAssertEqual(AppMotion.preset(for: .chipSelect), .snappy)
-        XCTAssertEqual(AppMotion.preset(for: .swipeSnap), .snappy)
-        XCTAssertEqual(AppMotion.preset(for: .rowRemove), .smooth)
-        XCTAssertEqual(AppMotion.preset(for: .sheetPresent), .smooth)
-        XCTAssertEqual(AppMotion.preset(for: .metricChange), .expressive)
-        XCTAssertEqual(AppMotion.preset(for: .celebration), .expressive)
-        XCTAssertNil(AppMotion.preset(for: .routePush))
-        XCTAssertNil(AppMotion.preset(for: .tabSelect))
+    func testRolesProduceTheirExpectedAnimations() {
+        let springRoles: [(AppMotion.Preset, [AppMotion.Role])] = [
+            (.snappy, [.tapRelease, .cardPress, .buttonPress, .primaryAction,
+                       .secondaryAction, .chipSelect, .ratingSelect, .checkInSelect,
+                       .rowReorder, .successConfirm, .swipeSnap]),
+            (.smooth, [.modeChange, .cardAppear, .cardDisappear, .rowInsert,
+                       .rowRemove, .sheetPresent, .sheetDismiss, .modalPresent,
+                       .modalDismiss, .loadingReveal, .destructiveConfirm]),
+            (.expressive, [.metricChange, .celebration])
+        ]
+        for (preset, roles) in springRoles {
+            for role in roles {
+                XCTAssertEqual(
+                    AppMotion.animation(for: role, reduceMotion: false),
+                    preset.animation,
+                    role.rawValue
+                )
+            }
+        }
+        XCTAssertEqual(
+            AppMotion.animation(for: AppMotion.Role.tapDown, reduceMotion: false),
+            .easeOut(duration: AppMotion.navigationPressDownDuration)
+        )
+        for role in [AppMotion.Role.tabSelect, .routePush, .routePop, .reduceMotionFallback] {
+            XCTAssertEqual(
+                AppMotion.animation(for: role, reduceMotion: false),
+                .easeOut(duration: AppMotion.reducedMotionImmediateDuration),
+                role.rawValue
+            )
+        }
+    }
+
+    func testEveryRoleRespectsReduceMotion() {
+        let immediateRoles: Set<AppMotion.Role> = [
+            .routePush, .routePop, .tabSelect, .swipeSnap, .celebration,
+            .successConfirm, .destructiveConfirm, .reduceMotionFallback
+        ]
+        for role in AppMotion.Role.allCases {
+            let duration = immediateRoles.contains(role)
+                ? AppMotion.reducedMotionImmediateDuration
+                : AppMotion.reducedMotionOpacityDuration
+            XCTAssertEqual(
+                AppMotion.animation(for: role, reduceMotion: true),
+                .easeOut(duration: duration),
+                role.rawValue
+            )
+        }
     }
 
     func testDurationLadderAndDocumentedFeatureExceptions() {

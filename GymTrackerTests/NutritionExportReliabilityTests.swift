@@ -127,6 +127,23 @@ final class NutritionExportReliabilityTests: XCTestCase {
         XCTAssertNil(totals.fibre)
     }
 
+    func testLocalBarcodeLookupNormalizesBlankAndExclusion() {
+        let excluded = FoodItem(id: UUID(), barcode: "0123456789012", name: "Excluded")
+        let matching = FoodItem(id: UUID(), barcode: " 123-456-7890 ", name: "Matching")
+        let blank = FoodItem(id: UUID(), barcode: "", name: "No barcode")
+        let foods = [excluded, matching, blank]
+        let integrity = NutritionDataIntegrityService()
+
+        XCTAssertEqual(
+            integrity.existingFood(matchingBarcode: "123 456 7890", in: foods)?.id,
+            matching.id
+        )
+        XCTAssertNil(integrity.existingFood(matchingBarcode: "123 456 7890", in: foods, excluding: matching.id))
+        XCTAssertNil(integrity.existingFood(matchingBarcode: "   ", in: foods))
+        XCTAssertNil(BarcodeFoodLookupService().findLocalFood(by: "   ", in: foods))
+        XCTAssertEqual(BarcodeFoodLookupService().findLocalFood(by: "123 456 7890", in: foods)?.id, matching.id)
+    }
+
     func testHydrationSummaryFiltersByDateAndStatusThresholds() {
         let calendar = utcCalendar()
         let targetDay = date(day: 8, hour: 12)

@@ -451,7 +451,6 @@ struct ResolvedSleepSession: Identifiable, Codable, Equatable {
     let qualityRating: Int?
     let dataSource: SleepSource
     let confidence: SleepConfidence
-    let appleHealthSummary: HealthSleepSummary?
     let appSessionID: UUID?
     let notes: String?
     let conflict: SleepSourceConflict?
@@ -884,60 +883,6 @@ struct SleepPerformanceBaseline: Codable, Equatable {
     let lowPerformanceSleepThreshold: TimeInterval?
 }
 
-enum HealthSleepStage: String, Codable, Equatable {
-    case inBed
-    case asleep
-    case asleepUnspecified
-    case asleepCore
-    case asleepDeep
-    case asleepREM
-    case awake
-    case unknown
-
-    var countsAsAsleep: Bool {
-        switch self {
-        case .asleep, .asleepUnspecified, .asleepCore, .asleepDeep, .asleepREM:
-            return true
-        case .inBed, .awake, .unknown:
-            return false
-        }
-    }
-}
-
-struct HealthSleepSample: Identifiable, Codable, Equatable {
-    let id: UUID
-    let startDate: Date
-    let endDate: Date
-    let value: HealthSleepStage
-    let sourceName: String?
-    let sourceBundleIdentifier: String?
-}
-
-struct HealthSleepSummary: Codable, Equatable {
-    let sleepDate: Date
-    let intervalStart: Date
-    let intervalEnd: Date
-    let totalInBedDuration: TimeInterval
-    let totalAsleepDuration: TimeInterval
-    let totalAwakeDuration: TimeInterval?
-    let coreDuration: TimeInterval?
-    let deepDuration: TimeInterval?
-    let remDuration: TimeInterval?
-    let sampleCount: Int
-    let sourceNames: [String]
-    let confidence: SleepConfidence
-
-    var stageBreakdown: SleepStageBreakdown? {
-        let breakdown = SleepStageBreakdown(
-            awakeMinutes: totalAwakeDuration.map { Int($0 / 60) },
-            coreMinutes: coreDuration.map { Int($0 / 60) },
-            deepMinutes: deepDuration.map { Int($0 / 60) },
-            remMinutes: remDuration.map { Int($0 / 60) }
-        )
-        return breakdown.hasStages ? breakdown : nil
-    }
-}
-
 enum SleepConsistencyStatus: String, Codable {
     case strong
     case moderate
@@ -1162,14 +1107,6 @@ enum SleepCalendar {
     static func nightDate(for date: Date, calendar: Calendar = .current) -> Date {
         let adjusted = calendar.date(byAdding: .hour, value: -12, to: date) ?? date
         return calendar.startOfDay(for: adjusted)
-    }
-
-    static func queryWindow(for sleepDate: Date, calendar: Calendar = .current) -> (start: Date, end: Date) {
-        let startOfSleepDate = calendar.startOfDay(for: sleepDate)
-        let previousDay = calendar.date(byAdding: .day, value: -1, to: startOfSleepDate) ?? startOfSleepDate.addingTimeInterval(-86_400)
-        let start = calendar.date(bySettingHour: 18, minute: 0, second: 0, of: previousDay) ?? previousDay.addingTimeInterval(18 * 3_600)
-        let end = calendar.date(bySettingHour: 14, minute: 0, second: 0, of: startOfSleepDate) ?? startOfSleepDate.addingTimeInterval(14 * 3_600)
-        return (start, end)
     }
 
     static func displayTitle(for date: Date) -> String {
