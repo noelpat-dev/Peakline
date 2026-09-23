@@ -76,6 +76,7 @@ enum SummitCatalog {
 // MARK: - Engine inputs
 
 struct SummitSetInput: Hashable {
+    var id: UUID = UUID()
     var exerciseID: UUID
     var exerciseName: String
     var pattern: MovementPattern

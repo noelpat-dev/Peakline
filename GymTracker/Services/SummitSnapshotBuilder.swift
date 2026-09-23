@@ -29,6 +29,7 @@ enum SummitSnapshotBuilder {
                             .sorted { $0.setNumber < $1.setNumber }
                             .map { set in
                                 SummitSetInput(
+                                    id: set.id,
                                     exerciseID: exerciseLog.exerciseId,
                                     exerciseName: exerciseLog.exerciseNameSnapshot.isEmpty
                                         ? exercise?.name ?? "Exercise"
@@ -83,10 +84,21 @@ enum SummitSnapshotBuilder {
             bodyweights: sortedBodyweights,
             profileBodyweightKg: profileBodyweightKg
         )
+        var liftCalendar = calendar
+        liftCalendar.firstWeekday = 2
+        let currentLiftWeekStart = liftCalendar.dateInterval(of: .weekOfYear, for: now)?.start
+            ?? liftCalendar.startOfDay(for: now)
+        let liftWindowStart = liftCalendar.date(
+            byAdding: .weekOfYear,
+            value: 1 - liftWeekCount,
+            to: currentLiftWeekStart
+        ) ?? currentLiftWeekStart
 
         var previousBestByExercise: [UUID: Double] = [:]
         var sessionCountByExercise: [UUID: Int] = [:]
         var observationsByExercise: [UUID: [LiftObservation]] = [:]
+        var bestSetsByExercise: [UUID: [LiftSetObservation]] = [:]
+        var prSetIDs: Set<UUID> = []
         var metresBySession: [UUID: Int] = [:]
         var climbs: [SummitSessionClimb] = []
         var totalMetres = 0
@@ -108,7 +120,14 @@ enum SummitSnapshotBuilder {
                 volumeKg += setVolume
                 hasLoadedSets = hasLoadedSets || set.weightKg > 0
                 let e1RM = TrainingAnalyticsService.estimatedOneRepMax(weight: set.weightKg, reps: set.reps)
-                setsByExercise[set.exerciseID, default: []].append(LiftSetObservation(set: set, e1RM: e1RM, sessionID: session.id, date: session.date))
+                let observation = LiftSetObservation(set: set, e1RM: e1RM, date: session.date)
+                setsByExercise[set.exerciseID, default: []].append(observation)
+                if session.date >= liftWindowStart {
+                    var bestSets = bestSetsByExercise[set.exerciseID, default: []]
+                    bestSets.append(observation)
+                    bestSets.sort { $0.e1RM > $1.e1RM }
+                    bestSetsByExercise[set.exerciseID] = Array(bestSets.prefix(3))
+                }
             }
 
             let metres = bodyweightKg > 0 ? Int((climbWork / bodyweightKg).rounded()) : 0
@@ -123,6 +142,7 @@ enum SummitSnapshotBuilder {
                 let isPR = hasEarlierSession && bestSet.e1RM > previousBest
 
                 if isPR {
+                    prSetIDs.insert(bestSet.set.id)
                     prs.append(SummitPR(
                         exerciseName: bestSet.set.exerciseName,
                         weightKg: bestSet.set.weightKg,
@@ -134,12 +154,9 @@ enum SummitSnapshotBuilder {
                 sessionCountByExercise[exerciseID, default: 0] += 1
                 observationsByExercise[exerciseID, default: []].append(
                     LiftObservation(
-                        sessionID: session.id,
                         date: session.date,
                         name: bestSet.set.exerciseName,
                         e1RM: bestSet.e1RM,
-                        bestWeightKg: bestSet.set.weightKg,
-                        bestReps: bestSet.set.reps,
                         isCompound: bestSet.set.isCompound,
                         isPR: isPR
                     )
@@ -169,7 +186,13 @@ enum SummitSnapshotBuilder {
         let gainedToday = todayClimbs.isEmpty ? nil : todayClimbs.reduce(0) { $0 + $1.metres }
         let altitude = SummitProgressService.altitude(totalMetres: totalMetres, gainedToday: gainedToday)
         let month = monthRidge(climbs: climbs, now: now, calendar: calendar)
-        let lifts = liftPeaks(observationsByExercise: observationsByExercise, now: now, calendar: calendar)
+        let lifts = liftPeaks(
+            observationsByExercise: observationsByExercise,
+            bestSetsByExercise: bestSetsByExercise,
+            prSetIDs: prSetIDs,
+            now: now,
+            calendar: calendar
+        )
         let cairn = SummitProgressService.cairn(
             sessionDates: chronologicalSessions.map(\.date),
             now: now,
@@ -275,6 +298,8 @@ enum SummitSnapshotBuilder {
 
     private static func liftPeaks(
         observationsByExercise: [UUID: [LiftObservation]],
+        bestSetsByExercise: [UUID: [LiftSetObservation]],
+        prSetIDs: Set<UUID>,
         now: Date,
         calendar: Calendar
     ) -> [SummitLiftPeak] {
@@ -306,15 +331,14 @@ enum SummitSnapshotBuilder {
             let current = weeklyBest.last ?? earliestRecentValue
             let latestName = recent.last?.name ?? ordered.last?.name ?? "Exercise"
             let isCompound = recent.last?.isCompound ?? false
-            let bestSets = recent.sorted { $0.e1RM > $1.e1RM }
-                .prefix(3)
+            let bestSets = (bestSetsByExercise[exerciseID] ?? [])
                 .map {
                     SummitBestSet(
-                        id: $0.sessionID,
-                        weightKg: $0.bestWeightKg,
-                        reps: $0.bestReps,
+                        id: $0.set.id,
+                        weightKg: $0.set.weightKg,
+                        reps: $0.set.reps,
                         date: $0.date,
-                        isPR: $0.isPR
+                        isPR: prSetIDs.contains($0.set.id)
                     )
                 }
             let hasRecentPR = recent.contains {
@@ -357,17 +381,13 @@ enum SummitSnapshotBuilder {
     private struct LiftSetObservation {
         let set: SummitSetInput
         let e1RM: Double
-        let sessionID: UUID
         let date: Date
     }
 
     private struct LiftObservation {
-        let sessionID: UUID
         let date: Date
         let name: String
         let e1RM: Double
-        let bestWeightKg: Double
-        let bestReps: Int
         let isCompound: Bool
         let isPR: Bool
     }

@@ -111,6 +111,37 @@ final class SummitSnapshotBuilderTests: XCTestCase {
         XCTAssertEqual(snapshot.log.map(\.metres), [5, 6])
     }
 
+    func testLiftBestSetsCanComeFromTheSameSession() {
+        let exerciseID = UUID()
+        let setIDs = [UUID(), UUID(), UUID()]
+        var first = inputSession(
+            id: UUID(), date: date(2026, 9, 10), exerciseID: exerciseID,
+            name: "Bench press", weight: 150, reps: 1
+        )
+        first.sets = [150.0, 140.0, 130.0].enumerated().map { index, weight in
+            var set = first.sets[0]
+            set.id = setIDs[index]
+            set.weightKg = weight
+            return set
+        }
+        let sessions = [
+            first,
+            inputSession(id: UUID(), date: date(2026, 9, 16), exerciseID: exerciseID, name: "Bench press", weight: 50, reps: 1),
+            inputSession(id: UUID(), date: date(2026, 9, 23), exerciseID: exerciseID, name: "Bench press", weight: 60, reps: 1)
+        ]
+
+        let snapshot = SummitSnapshotBuilder.build(
+            sessions: sessions,
+            bodyweights: [],
+            profileBodyweightKg: 80,
+            expeditionStart: nil,
+            now: date(2026, 9, 23),
+            calendar: calendar()
+        )
+
+        XCTAssertEqual(snapshot.lifts.first?.bestSets.map(\.id), setIDs)
+    }
+
     func testCompoundLiftsArePreferredWhenSelectingSixRecentExercises() {
         let benchID = UUID()
         let curlID = UUID()
