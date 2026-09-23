@@ -287,6 +287,7 @@ struct DashboardEmptyStateCard: View {
 /// render without reaching through to SwiftData or rebuilding a live snapshot.
 struct TodayReadinessHero: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let scoreText: String
     let scoreValue: Int?
@@ -367,7 +368,8 @@ struct TodayReadinessHero: View {
                                     Text(signal.label.uppercased())
                                         .modifier(AppTypography.waypointLabelSmall)
                                         .foregroundStyle(appTheme.colors.textSecondary)
-                                        .lineLimit(1)
+                                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                                        .fixedSize(horizontal: false, vertical: true)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }

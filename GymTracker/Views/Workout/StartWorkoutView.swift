@@ -931,15 +931,17 @@ struct StartWorkoutContentView: View {
                 .map(WorkoutSelectableExercise.init),
             mode: mode
         )
+        let duration = prepared?.estimatedDuration ?? modePlanner.estimatedDurationMinutes(
+            for: plannedExercises,
+            mode: mode
+        )
         return StartWorkoutRecommendedSplitSnapshot(
             id: split.id,
             name: split.name,
             routeTagText: split.splitType.displayName,
             mode: mode,
             exerciseCount: plannedExercises.count,
-            estimatedDurationText: prepared.map {
-                "\($0.estimatedDuration.lowerBound)–\($0.estimatedDuration.upperBound) min"
-            } ?? estimatedDurationText(for: split),
+            estimatedDurationText: "\(duration.lowerBound)–\(duration.upperBound) min",
             routeStops: WorkoutDashboardRouteStop.make(from: plannedExercises)
         )
     }
