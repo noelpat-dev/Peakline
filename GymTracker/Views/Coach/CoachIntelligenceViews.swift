@@ -1,6 +1,20 @@
 import SwiftData
 import SwiftUI
 
+struct RecoveryAwareCoachTag: View {
+    let state: CoachBadgeState
+
+    @ViewBuilder
+    var body: some View {
+        switch state {
+        case .recovery:
+            TrailSignTag(text: state.label)
+        default:
+            CoachBadgeView(state: state)
+        }
+    }
+}
+
 struct TrainingCallAuditCard: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -76,9 +90,7 @@ struct TrainingCallAuditCard: View {
                     .foregroundStyle(appTheme.colors.textPrimary)
 
                 if isExpandable {
-                    Text(snapshot.confidence.displayName)
-                        .font(AppTypography.metadataEmphasis)
-                        .foregroundStyle(accent)
+                    TrailSignTag(text: snapshot.confidence.displayName)
                 } else {
                     Text("\(snapshot.headline) - \(snapshot.confidence.displayName)")
                         .font(AppTypography.bodyEmphasis)

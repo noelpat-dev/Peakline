@@ -654,7 +654,7 @@ struct WorkoutPreviewView: View {
 
                         Spacer(minLength: 8)
 
-                        CoachBadgeView(state: snapshot.coachSummaryBadge)
+                        RecoveryAwareCoachTag(state: snapshot.coachSummaryBadge)
                     }
 
                 }
@@ -895,7 +895,7 @@ struct WorkoutPreviewView: View {
 
                     Spacer(minLength: 8)
 
-                    CoachBadgeView(state: planReadinessBadge(snapshot: snapshot))
+                    RecoveryAwareCoachTag(state: planReadinessBadge(snapshot: snapshot))
                 }
 
                 HStack(alignment: .top, spacing: 12) {

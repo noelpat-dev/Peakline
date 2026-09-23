@@ -401,13 +401,11 @@ struct CoachContentView: View {
                             Spacer(minLength: 8)
 
                             VStack(alignment: .trailing, spacing: 5) {
-                                CoachBadgeView(state: dailyDecision.badgeState)
+                                RecoveryAwareCoachTag(state: dailyDecision.badgeState)
                                 if dailyDecision.confidenceLabel.caseInsensitiveCompare(
                                     dailyDecision.badgeState.label
                                 ) != .orderedSame {
-                                    Text(dailyDecision.confidenceLabel)
-                                        .font(AppTypography.metadataEmphasis)
-                                        .foregroundStyle(appTheme.colors.textTertiary)
+                                    TrailSignTag(text: dailyDecision.confidenceLabel)
                                 }
                             }
                         }
@@ -523,7 +521,7 @@ struct CoachContentView: View {
                                     }
 
                                     Spacer(minLength: 8)
-                                    CoachBadgeView(state: badgeState(for: dailyDecision.recommendedMode))
+                                    RecoveryAwareCoachTag(state: badgeState(for: dailyDecision.recommendedMode))
                                 }
 
                                 WorkoutModePicker(selection: .constant(dailyDecision.recommendedMode))
@@ -645,7 +643,7 @@ struct CoachContentView: View {
                                         Text(recommendation.title)
                                             .font(AppTypography.sectionTitle)
                                         Spacer()
-                                        CoachBadgeView(state: badgeState(for: recommendation.level))
+                                        RecoveryAwareCoachTag(state: badgeState(for: recommendation.level))
                                     }
 
                                     Text(recommendation.message)
