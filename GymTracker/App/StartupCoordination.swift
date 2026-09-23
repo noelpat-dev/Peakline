@@ -140,7 +140,7 @@ final class StartupPresentationCoordinator: ObservableObject {
     }
 
     var isRevealComplete: Bool {
-        state == .revealing || state == .hidden
+        state == .hidden
     }
 
     func start() {

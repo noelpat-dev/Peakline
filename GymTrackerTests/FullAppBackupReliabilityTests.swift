@@ -586,6 +586,21 @@ final class FullAppBackupReliabilityTests: XCTestCase {
 private struct InjectedBackupFailure: Error {}
 
 final class StartupPresentationReducerTests: XCTestCase {
+    @MainActor
+    func testRevealCompletesOnlyAfterSplashOverlayIsHidden() {
+        let presentation = StartupPresentationCoordinator()
+        presentation.markCriticalReady()
+        presentation.markAnimationFinished()
+
+        XCTAssertTrue(presentation.isOverlayMounted)
+        XCTAssertFalse(presentation.isRevealComplete)
+
+        presentation.finishReveal()
+
+        XCTAssertFalse(presentation.isOverlayMounted)
+        XCTAssertTrue(presentation.isRevealComplete)
+    }
+
     func testCriticalReadyWaitsForFullBrandAnimation() {
         var state = StartupPresentationState.animating
         state = StartupPresentationReducer.reduce(state, event: .criticalReady)
