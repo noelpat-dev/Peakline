@@ -219,6 +219,10 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
         XCTAssertTrue(
+            app.descendants(matching: .any)["startup-brand-screen"].waitForNonExistence(timeout: 3),
+            "Expected the branded splash to be gone before opening readiness"
+        )
+        XCTAssertTrue(
             app.descendants(matching: .any)["startup-critical-ready"].waitForExistence(timeout: 5),
             "Expected the DEBUG performance summary to remain mounted for the full route journey"
         )
@@ -227,7 +231,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
             "Expected Today to expose the redesigned readiness hero"
         )
 
-        tapElement(identifier: "today-readiness-hero", maxSwipes: 4)
+        tapElement(identifier: "readiness-signal-coverage", maxSwipes: 4)
         XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Coach to open")
         let coachCall = app.descendants(matching: .any)["coach-todays-call"]
         XCTAssertTrue(coachCall.waitForExistence(timeout: 12))
@@ -1217,6 +1221,11 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     func testReadinessV2ShowsProvisionalCoverageAndMissingSignals() throws {
         launch()
 
+        XCTAssertTrue(
+            app.descendants(matching: .any)["startup-brand-screen"].waitForNonExistence(timeout: 3),
+            "Expected the branded splash to be gone before opening readiness"
+        )
+
         let provisional = app.descendants(matching: .any)["readiness-provisional-status"].firstMatch
         let coverage = app.descendants(matching: .any)["readiness-signal-coverage"]
         let score = app.descendants(matching: .any)["today-readiness-score-value"]
@@ -1227,7 +1236,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         XCTAssertTrue(coverage.waitForExistence(timeout: 3))
         XCTAssertEqual(coverage.label, "0 of 5 signals included")
 
-        tapElement(identifier: "today-readiness-hero", maxSwipes: 4)
+        tapElement(identifier: "readiness-signal-coverage", maxSwipes: 4)
         XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Coach to open")
         let coachHeadline = app.descendants(matching: .any)["coach-todays-call"]
         XCTAssertTrue(coachHeadline.waitForExistence(timeout: 2))
