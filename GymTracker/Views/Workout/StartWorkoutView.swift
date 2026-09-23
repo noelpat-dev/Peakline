@@ -558,13 +558,9 @@ struct StartWorkoutContentView: View {
             )
             return StartWorkoutDashboardSnapshot(
                 trainingCall: presentationCall,
-                recommendedSplit: StartWorkoutRecommendedSplitSnapshot(
-                    id: split.id,
-                    name: split.name,
-                    routeTagText: split.splitType.displayName,
-                    mode: presentationCall.recommendedMode,
-                    exerciseCount: currentSplitCardSnapshots.first(where: { $0.splitId == split.id })?.exerciseCount ?? split.exercises.count,
-                    estimatedDurationText: currentSplitCardSnapshots.first(where: { $0.splitId == split.id })?.estimatedDurationText ?? "Plan ready"
+                recommendedSplit: recommendedSplitSnapshot(
+                    for: split,
+                    mode: presentationCall.recommendedMode
                 )
             )
         }
@@ -588,13 +584,9 @@ struct StartWorkoutContentView: View {
 
         return StartWorkoutDashboardSnapshot(
             trainingCall: safeCall,
-            recommendedSplit: StartWorkoutRecommendedSplitSnapshot(
-                id: recommendedSplit.id,
-                name: recommendedSplit.name,
-                routeTagText: recommendedSplit.routeTagText,
-                mode: safeCall.recommendedMode,
-                routeStops: recommendedSplit.routeStops
-            )
+            recommendedSplit: activeSplits.first(where: { $0.id == recommendedSplit.id }).map {
+                recommendedSplitSnapshot(for: $0, mode: safeCall.recommendedMode)
+            }
         )
     }
 
