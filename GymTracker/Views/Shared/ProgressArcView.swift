@@ -139,8 +139,6 @@ struct AttendanceRingView: View {
 
 // MARK: - Summit horizon
 
-fileprivate let summitAlpenglow = Color(red: 1, green: 0.61, blue: 0.48)
-
 enum SummitCondition: CaseIterable, Hashable {
     case clear
     case changeable
@@ -249,6 +247,7 @@ struct SummitHorizonView: View {
                     timeOfDay: timeOfDay,
                     background: appTheme.colors.backgroundPrimary,
                     foreground: appTheme.colors.textPrimary,
+                    alpenglow: appTheme.colors.alpenglow,
                     opacity: displayedSkyOpacity
                 )
 
@@ -293,7 +292,8 @@ struct SummitHorizonView: View {
                     )
                     Self.drawFlag(
                         in: flagContext,
-                        peak: CGPoint(x: Self.columnCenter(prDayIndex), y: Self.peakY(for: normalizedWeek[prDayIndex]))
+                        peak: CGPoint(x: Self.columnCenter(prDayIndex), y: Self.peakY(for: normalizedWeek[prDayIndex])),
+                        alpenglow: appTheme.colors.alpenglow
                     )
                 }
             }
@@ -487,6 +487,7 @@ struct SummitHorizonView: View {
         timeOfDay: SummitTimeOfDay,
         background: Color,
         foreground: Color,
+        alpenglow: Color,
         opacity: Double
     ) {
         guard opacity > 0 else { return }
@@ -499,7 +500,7 @@ struct SummitHorizonView: View {
                 let center = CGPoint(x: 232, y: 136)
                 context.stroke(
                     circle(center: center, radius: 22),
-                    with: .color(summitAlpenglow.opacity(0.72 * opacity)),
+                    with: .color(alpenglow.opacity(0.72 * opacity)),
                     lineWidth: 1.4
                 )
                 for index in 0..<3 {
@@ -507,7 +508,7 @@ struct SummitHorizonView: View {
                     var line = Path()
                     line.move(to: CGPoint(x: 194, y: y))
                     line.addLine(to: CGPoint(x: 209, y: y - 4))
-                    context.stroke(line, with: .color(summitAlpenglow.opacity(0.36 * opacity)), lineWidth: 1)
+                    context.stroke(line, with: .color(alpenglow.opacity(0.36 * opacity)), lineWidth: 1)
                 }
             case .night:
                 drawStars(in: context, color: foreground, opacity: opacity)
@@ -637,19 +638,19 @@ struct SummitHorizonView: View {
         return result
     }
 
-    private static func drawFlag(in context: GraphicsContext, peak: CGPoint) {
+    private static func drawFlag(in context: GraphicsContext, peak: CGPoint, alpenglow: Color) {
         let top = peak.y - 16
         var pole = Path()
         pole.move(to: CGPoint(x: peak.x, y: peak.y))
         pole.addLine(to: CGPoint(x: peak.x, y: top))
-        context.stroke(pole, with: .color(summitAlpenglow), lineWidth: 1.5)
+        context.stroke(pole, with: .color(alpenglow), lineWidth: 1.5)
 
         var pennant = Path()
         pennant.move(to: CGPoint(x: peak.x, y: top))
         pennant.addLine(to: CGPoint(x: peak.x + 10, y: top + 3.5))
         pennant.addLine(to: CGPoint(x: peak.x, y: top + 7))
         pennant.closeSubpath()
-        context.fill(pennant, with: .color(summitAlpenglow))
+        context.fill(pennant, with: .color(alpenglow))
     }
 }
 

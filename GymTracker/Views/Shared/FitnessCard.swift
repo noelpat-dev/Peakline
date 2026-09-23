@@ -798,26 +798,6 @@ struct FilterChip: View {
 
 // MARK: - Summit trail
 
-// These local styles let the Summit trail compile before F1 adds the shared
-// AppThemeColors.alpenglow and AppTypography instrument/waypoint tokens.
-fileprivate enum SummitTrailPlaceholderTokens {
-    static func alpenglow(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color(red: 1.0, green: 0.612, blue: 0.478)
-            : Color(red: 0.824, green: 0.376, blue: 0.243)
-    }
-
-    static func instrumentFont(size: CGFloat, weight: Font.Weight = .semibold) -> Font {
-        Font.system(size: size, weight: weight)
-            .width(.condensed)
-            .monospacedDigit()
-    }
-
-    static func waypointFont(size: CGFloat, weight: Font.Weight = .medium) -> Font {
-        Font.system(size: size, weight: weight)
-    }
-}
-
 private struct SummitTrailDashLine: View {
     let color: Color
 
@@ -876,8 +856,7 @@ struct TrailSection<Content: View>: View {
                 Text(" · \(label.uppercased())")
                     .foregroundStyle(appTheme.colors.textSecondary)
             }
-            .font(SummitTrailPlaceholderTokens.waypointFont(size: labelSize))
-            .tracking(1.7)
+            .modifier(AppTypography.waypointLabel)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Section \(sectionNumber) · \(label)")
@@ -995,7 +974,7 @@ struct TrailSignTag: View {
 
     var body: some View {
         Text(text.uppercased())
-            .font(SummitTrailPlaceholderTokens.instrumentFont(size: textSize))
+            .font(Font.system(size: textSize, weight: .semibold).width(.condensed).monospacedDigit())
             .tracking(0.9)
             .foregroundStyle(appTheme.colors.textPrimary)
             .lineLimit(1)
@@ -1083,7 +1062,6 @@ private func summitSaturatingAdd(_ value: Int, _ offset: Int) -> Int {
 
 private struct SummitAltitudeTape: View {
     @Environment(\.appTheme) private var appTheme
-    @Environment(\.colorScheme) private var colorScheme
     @ScaledMetric(relativeTo: .caption) private var labelSize: CGFloat = 11
 
     let reading: Int
@@ -1131,7 +1109,7 @@ private struct SummitAltitudeTape: View {
                 let tickValue = element.element
                 if tickValue.isMultiple(of: 500) {
                     Text(tickValue.formatted())
-                        .font(SummitTrailPlaceholderTokens.instrumentFont(size: labelSize, weight: .medium))
+                        .font(Font.system(size: labelSize, weight: .medium).width(.condensed).monospacedDigit())
                         .foregroundStyle(appTheme.colors.textTertiary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.55)
@@ -1150,11 +1128,11 @@ private struct SummitAltitudeTape: View {
                     $0.name == milestone.name && $0.metres == milestone.metres
                 }
                 SummitTapeTriangle()
-                    .fill(isPassed ? SummitTrailPlaceholderTokens.alpenglow(for: colorScheme) : .clear)
+                    .fill(isPassed ? appTheme.colors.alpenglow : .clear)
                     .overlay {
                         SummitTapeTriangle()
                             .stroke(
-                                isPassed ? SummitTrailPlaceholderTokens.alpenglow(for: colorScheme) : appTheme.colors.textSecondary,
+                                isPassed ? appTheme.colors.alpenglow : appTheme.colors.textSecondary,
                                 lineWidth: 1
                             )
                     }
@@ -1187,12 +1165,8 @@ private struct SummitAltitudeTape: View {
 
 struct AltimeterView: View {
     @Environment(\.appTheme) private var appTheme
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ScaledMetric(relativeTo: .largeTitle) private var heroSize: CGFloat = 48
-    @ScaledMetric(relativeTo: .body) private var unitSize: CGFloat = 18
     @ScaledMetric(relativeTo: .body) private var gainSize: CGFloat = 15
-    @ScaledMetric(relativeTo: .caption) private var captionSize: CGFloat = 10.5
 
     let metres: Int
     let gainedToday: Int?
@@ -1231,14 +1205,13 @@ struct AltimeterView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(displayedMetres.formatted())
-                        .font(SummitTrailPlaceholderTokens.instrumentFont(size: heroSize))
+                        .modifier(AppTypography.instrumentHero)
                         .foregroundStyle(appTheme.colors.textPrimary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
 
                     Text("M")
-                        .font(SummitTrailPlaceholderTokens.instrumentFont(size: unitSize))
-                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .modifier(AppTypography.instrumentUnit)
                 }
                 .layoutPriority(1)
 
@@ -1247,16 +1220,16 @@ struct AltimeterView: View {
                 if let gainedToday {
                     HStack(spacing: 4) {
                         SummitTapeTriangle()
-                            .fill(SummitTrailPlaceholderTokens.alpenglow(for: colorScheme))
+                            .fill(appTheme.colors.alpenglow)
                             .frame(width: 7, height: 6)
                             .accessibilityHidden(true)
                         Text("+\(max(0, gainedToday).formatted()) TODAY")
-                            .font(SummitTrailPlaceholderTokens.instrumentFont(size: gainSize))
+                            .font(Font.system(size: gainSize, weight: .semibold).width(.condensed).monospacedDigit())
                             .tracking(0.8)
                             .lineLimit(1)
                             .minimumScaleFactor(0.55)
                     }
-                    .foregroundStyle(SummitTrailPlaceholderTokens.alpenglow(for: colorScheme))
+                    .foregroundStyle(appTheme.colors.alpenglow)
                     .accessibilityLabel("Plus \(max(0, gainedToday).formatted()) metres today")
                 }
             }
@@ -1268,9 +1241,7 @@ struct AltimeterView: View {
             )
 
             Text(caption)
-                .font(SummitTrailPlaceholderTokens.waypointFont(size: captionSize))
-                .tracking(0.9)
-                .foregroundStyle(appTheme.colors.textSecondary)
+                .modifier(AppTypography.waypointLabelSmall)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1327,7 +1298,6 @@ struct AltimeterView: View {
 
 struct CairnView: View {
     @Environment(\.appTheme) private var appTheme
-    @Environment(\.colorScheme) private var colorScheme
 
     let stones: Int
     let newestIsFresh: Bool
@@ -1352,7 +1322,7 @@ struct CairnView: View {
                         let stone = Path(ellipseIn: CGRect(x: 30 - width / 2, y: centerY - 4, width: width, height: 8))
                         let isNewest = index == displayedStoneCount - 1
                         let color = isNewest && newestIsFresh
-                            ? SummitTrailPlaceholderTokens.alpenglow(for: colorScheme)
+                            ? appTheme.colors.alpenglow
                             : appTheme.colors.textPrimary
                         context.stroke(stone, with: .color(color), lineWidth: 1.3)
                     }
@@ -1402,8 +1372,6 @@ struct SummitPrimaryButton: View {
 
 struct CampSuppliesRow: View {
     @Environment(\.appTheme) private var appTheme
-    @ScaledMetric(relativeTo: .body) private var valueSize: CGFloat = 17
-    @ScaledMetric(relativeTo: .caption) private var captionSize: CGFloat = 10.5
     @ScaledMetric(relativeTo: .caption) private var logSize: CGFloat = 11
 
     let items: [(symbol: String, caption: String, value: String?)]
@@ -1420,9 +1388,7 @@ struct CampSuppliesRow: View {
     var body: some View {
         if items.isEmpty {
             Text("NO SUPPLIES LOGGED")
-                .font(SummitTrailPlaceholderTokens.waypointFont(size: captionSize))
-                .tracking(0.9)
-                .foregroundStyle(appTheme.colors.textSecondary)
+                .modifier(AppTypography.waypointLabelSmall)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             HStack(spacing: 0) {
@@ -1446,22 +1412,20 @@ struct CampSuppliesRow: View {
 
                             if let value = item.value, !value.isEmpty {
                                 Text(value)
-                                    .font(SummitTrailPlaceholderTokens.instrumentFont(size: valueSize))
+                                    .modifier(AppTypography.instrumentValue)
                                     .foregroundStyle(appTheme.colors.textPrimary)
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.6)
                             } else {
                                 Text("+ LOG")
-                                    .font(SummitTrailPlaceholderTokens.instrumentFont(size: logSize))
+                                    .font(Font.system(size: logSize, weight: .semibold).width(.condensed).monospacedDigit())
                                     .tracking(0.6)
                                     .foregroundStyle(appTheme.colors.textSecondary)
                                     .lineLimit(1)
                             }
 
                             Text(item.caption.uppercased())
-                                .font(SummitTrailPlaceholderTokens.waypointFont(size: captionSize))
-                                .tracking(0.9)
-                                .foregroundStyle(appTheme.colors.textSecondary)
+                                .modifier(AppTypography.waypointLabelSmall)
                                 .lineLimit(2)
                                 .multilineTextAlignment(.center)
                                 .fixedSize(horizontal: false, vertical: true)
