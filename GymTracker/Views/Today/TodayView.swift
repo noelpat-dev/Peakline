@@ -1383,14 +1383,14 @@ struct TodayView: View {
     }
 
     private var baseCampChecklistItems: [(title: String, detail: String, done: Bool, action: () -> Void)] {
-        let healthConnected = sleepSummary.primarySession != nil
+        let sleepRecorded = sleepSummary.primarySession != nil
         let splitChosen = !activeSplits.isEmpty
         let firstWaterLogged = hydrationSummary.totalML > 0
         let firstWorkout = !completedSessions.isEmpty
         let sleepGoalSet = sleepSettings.targetSleepMinutes > 0
 
         return [
-            ("Health connected", healthConnected ? "Sleep signal available" : "Connect Apple Health", healthConnected, { openRoute(.sleep) }),
+            ("Sleep recorded", sleepRecorded ? "Sleep signal available" : "Add your first sleep entry", sleepRecorded, { openRoute(.sleep) }),
             ("Split chosen", splitChosen ? "Training plan ready" : "Choose a training split", splitChosen, {
                 if suggestedSplit == nil { openRoute(.workout) } else { previewSuggestedSplit() }
             }),
@@ -1431,6 +1431,7 @@ struct TodayView: View {
                 }
                 .buttonStyle(.plain)
                 .frame(minHeight: 44)
+                .accessibilityValue(item.done ? "Complete" : "Not complete")
             }
         }
     }

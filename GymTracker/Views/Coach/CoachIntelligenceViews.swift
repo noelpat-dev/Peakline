@@ -405,7 +405,7 @@ struct ReadinessContextCard: View {
                             : "Daily readiness \(readiness.value) - \(readiness.category.displayName)"
                     )
                         .font(AppTypography.chip)
-                        .foregroundStyle(readinessColor(for: readiness.category, theme: appTheme))
+                        .foregroundStyle(appTheme.colors.textPrimary)
                 }
 
                 Spacer(minLength: 8)

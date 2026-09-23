@@ -278,6 +278,20 @@ struct WorkoutDashboardRouteStop: Identifiable, Sendable {
     let id: UUID
     let title: String
     let detail: String
+
+    static func make(from plannedExercises: [PlannedWorkoutExercise]) -> [WorkoutDashboardRouteStop] {
+        plannedExercises.map { exercise in
+            WorkoutDashboardRouteStop(
+                id: exercise.id,
+                title: exercise.name,
+                detail: PeaklineText.setRepSummary(
+                    sets: exercise.targetSets,
+                    minimumReps: exercise.minReps,
+                    maximumReps: exercise.maxReps
+                )
+            )
+        }
+    }
 }
 
 #Preview("Workout route · Light") {
@@ -919,33 +933,23 @@ struct StartWorkoutContentView: View {
             for: WorkoutPreviewSplit(split),
             mode: mode
         )
+        let plannedExercises = prepared?.plannedExercises ?? modePlanner.plannedExercises(
+            from: split.exercises
+                .sorted { $0.orderIndex < $1.orderIndex }
+                .map(WorkoutSelectableExercise.init),
+            mode: mode
+        )
         return StartWorkoutRecommendedSplitSnapshot(
             id: split.id,
             name: split.name,
             routeTagText: split.splitType.displayName,
             mode: mode,
-            exerciseCount: prepared?.plannedExercises.count ?? split.exercises.count,
+            exerciseCount: plannedExercises.count,
             estimatedDurationText: prepared.map {
                 "\($0.estimatedDuration.lowerBound)–\($0.estimatedDuration.upperBound) min"
             } ?? estimatedDurationText(for: split),
-            routeStops: dashboardRouteStops(from: split)
+            routeStops: WorkoutDashboardRouteStop.make(from: plannedExercises)
         )
-    }
-
-    private func dashboardRouteStops(from split: TrainingSplit) -> [WorkoutDashboardRouteStop] {
-        split.exercises
-            .sorted { $0.orderIndex < $1.orderIndex }
-            .map { exercise in
-                WorkoutDashboardRouteStop(
-                    id: exercise.id,
-                    title: exercise.exerciseNameSnapshot,
-                    detail: PeaklineText.setRepSummary(
-                        sets: exercise.targetSets,
-                        minimumReps: exercise.minReps,
-                        maximumReps: exercise.maxReps
-                    )
-                )
-            }
     }
 
     private func refreshDashboardSnapshot(signature: String) async {
@@ -1667,7 +1671,9 @@ struct WorkoutStartFirstFrameSnapshot: Sendable {
                         estimatedDurationText: prepared.map {
                             "\($0.estimatedDuration.lowerBound)–\($0.estimatedDuration.upperBound) min"
                         } ?? "Plan ready",
-                        routeStops: routeStops(from: split)
+                        routeStops: prepared.map {
+                            WorkoutDashboardRouteStop.make(from: $0.plannedExercises)
+                        } ?? []
                     )
                 }
             ),
@@ -1680,21 +1686,6 @@ struct WorkoutStartFirstFrameSnapshot: Sendable {
 
     private static func baseSplitName(_ snapshot: String) -> String {
         snapshot.components(separatedBy: " - ").first ?? snapshot
-    }
-
-    private static func routeStops(from split: TrainingSplitSnapshot) -> [WorkoutDashboardRouteStop] {
-        split.exercises
-            .sorted { $0.orderIndex < $1.orderIndex }
-            .map { exercise in
-                let repRange = exercise.minReps == exercise.maxReps
-                    ? "\(exercise.minReps) reps"
-                    : "\(exercise.minReps)–\(exercise.maxReps) reps"
-                return WorkoutDashboardRouteStop(
-                    id: exercise.id,
-                    title: exercise.exerciseNameSnapshot,
-                    detail: repRange
-                )
-            }
     }
 }
 
