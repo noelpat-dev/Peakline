@@ -440,12 +440,16 @@ struct TrainingAnalyticsService {
         }
     }
 
+    static func estimatedOneRepMax(weight: Double, reps: Int) -> Double {
+        weight * (1 + Double(reps) / 30)
+    }
+
     private func estimatedOneRepMax(_ set: SetLog) -> Double {
-        set.weight * (1 + Double(set.reps) / 30)
+        Self.estimatedOneRepMax(weight: set.weight, reps: set.reps)
     }
 
     private func estimatedOneRepMax(_ set: SetAnalyticsLog) -> Double {
-        set.weight * (1 + Double(set.reps) / 30)
+        Self.estimatedOneRepMax(weight: set.weight, reps: set.reps)
     }
 
     private func baseSplitName(_ snapshot: String) -> String {
