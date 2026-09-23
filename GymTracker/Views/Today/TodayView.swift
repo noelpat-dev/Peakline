@@ -70,6 +70,7 @@ struct TodayView: View {
     @State private var dashboardRefreshTask: Task<Void, Never>?
 
     private let initialStartupSnapshot: StartupSnapshotBundle?
+    private let startupRevealComplete: Bool
     private let openHistory: () -> Void
     private let openSettings: () -> Void
     private let coachIntelligence = CoachIntelligenceService()
@@ -134,10 +135,16 @@ struct TodayView: View {
         )
     }
 
-    init(startupSnapshot: StartupSnapshotBundle? = nil, openHistory: @escaping () -> Void, openSettings: @escaping () -> Void) {
+    init(
+        startupSnapshot: StartupSnapshotBundle? = nil,
+        startupRevealComplete: Bool = true,
+        openHistory: @escaping () -> Void,
+        openSettings: @escaping () -> Void
+    ) {
         self.openHistory = openHistory
         self.openSettings = openSettings
         initialStartupSnapshot = startupSnapshot
+        self.startupRevealComplete = startupRevealComplete
         _activeSplits = Query(Self.activeSplitsDescriptor)
         _exercises = Query(Self.exercisesDescriptor)
         _completedSessions = Query(Self.completedSessionsDescriptor)
@@ -706,7 +713,6 @@ struct TodayView: View {
                 .padding(.horizontal, appTheme.metrics.screenPadding)
                 .padding(.bottom, appTheme.metrics.screenBottomPadding)
             }
-            .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
             .accessibilityIdentifier("today-screen")
             .toolbar(.hidden, for: .navigationBar)
             .navigationTitle("")
@@ -797,6 +803,7 @@ struct TodayView: View {
                 dashboardArrival.cancel()
             }
         }
+        .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
     }
 
     private func refreshBackupWarning() async {
@@ -975,7 +982,8 @@ struct TodayView: View {
                 condition: summitHorizon.condition,
                 timeOfDay: summitHorizon.timeOfDay,
                 isEmpty: summitHorizon.isEmpty,
-                animatesIntro: true
+                animatesIntro: true,
+                introReady: startupRevealComplete
             )
 
             SummitHeaderOverlay(
@@ -1042,8 +1050,8 @@ struct TodayView: View {
                 Label("Settings", systemImage: "gearshape")
             }
         } label: {
-            Image(systemName: "person.crop.circle")
-                .font(AppTypography.rounded(size: 28, weight: .semibold))
+            Image(systemName: "person")
+                .font(AppTypography.rounded(size: 17, weight: .medium))
                 .foregroundStyle(appTheme.colors.textSecondary)
                 .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
                 .contentShape(Circle())
@@ -1102,18 +1110,6 @@ struct TodayView: View {
         }
     }
 
-    private var readinessSignals: [(label: String, value: String?)] {
-        let trainingFactor = readinessScore.factors.first {
-            $0.kind == .training && $0.isDataAvailable
-        }
-        let trainingValue = trainingFactor?.score.map { "\($0)/100" } ?? trainingFactor?.detail
-        let sleepValue = sleepSummary.primarySession == nil ? nil : sleepValueText
-        let waterValue = hydrationSummary.totalML > 0
-            ? HydrationService.formatAmount(hydrationSummary.totalML)
-            : nil
-        return [("Sleep", sleepValue), ("Training", trainingValue), ("Water", waterValue)]
-    }
-
     private var readinessCoverageText: String {
         guard hasLoadedReadiness else { return "Local signals are still loading." }
         return readinessScore.coverageSummary
@@ -1155,7 +1151,6 @@ struct TodayView: View {
                     summary: hasBaseCampState ? baseCampProgressText : readinessSummaryText,
                     coverage: readinessCoverageText,
                     isProvisional: readinessIsProvisional,
-                    signals: hasReadinessEvidence ? readinessSignals : [],
                     action: openCoachRoute
                 )
                 .todayReentryWash(isActive: reentryWashCards.contains(.readiness))
@@ -1169,20 +1164,22 @@ struct TodayView: View {
 
     private var todayRouteSection: some View {
         TrailSection(index: 2, label: hasBaseCampState ? "YOUR FIRST CLIMB" : "TODAY'S ROUTE") {
-            VStack(alignment: .leading, spacing: appTheme.metrics.spacing12) {
+            VStack(alignment: .leading, spacing: appTheme.metrics.spacing6) {
                 Button(action: nextLiftAction) {
                     HStack(alignment: .firstTextBaseline, spacing: appTheme.metrics.spacing8) {
                         Text(isRoutePresentationReady ? routePresentation.dayName : "Preparing today's route")
                             .font(AppTypography.sectionTitle)
                             .foregroundStyle(appTheme.colors.textPrimary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
 
                         Spacer(minLength: appTheme.metrics.spacing4)
 
                         Text(routeSummaryText)
                             .modifier(AppTypography.instrumentValue)
                             .foregroundStyle(appTheme.colors.textSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
                             .multilineTextAlignment(.trailing)
 
                         Image(systemName: "chevron.right")
@@ -1217,18 +1214,6 @@ struct TodayView: View {
         return "\(routePresentation.liftCount) LIFTS · ~\(routePresentation.estimatedMinutes) MIN"
     }
 
-    private var coachHasPRTarget: Bool {
-        guard isRoutePresentationReady,
-              let recommendationType = coachNavigationSnapshot?.dailyDecision.primaryTarget?.recommendationType else {
-            return false
-        }
-
-        switch recommendationType {
-        case .increaseLoad, .addReps: return true
-        default: return false
-        }
-    }
-
     @ViewBuilder
     private var plannedTodayRoute: some View {
         if routePresentation.lifts.isEmpty {
@@ -1239,20 +1224,19 @@ struct TodayView: View {
                     : "A route will appear when a training split is ready."
             )
         } else {
-            ForEach(Array(routePresentation.lifts.enumerated()), id: \.offset) { _, lift in
+            ForEach(Array(routePresentation.lifts.prefix(2).enumerated()), id: \.offset) { _, lift in
                 TrailStop(title: lift.name, detail: lift.target)
             }
 
             if !routePresentation.remainingLiftNames.isEmpty {
-                TrailStop(
-                    title: "+ \(routePresentation.remainingLiftNames.count) more",
-                    detail: routePresentation.remainingLiftNames.joined(separator: " · ")
-                )
+                Text("+ \(routePresentation.remainingLiftNames.count) more · \(routePresentation.remainingLiftNames.joined(separator: " · "))")
+                    .font(AppTypography.metadata)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, appTheme.metrics.spacing2)
             }
-        }
-
-        if !routePresentation.lifts.isEmpty, coachHasPRTarget {
-            TrailSignTag(text: "PR ATTEMPT")
         }
 
         SummitPrimaryButton(title: "Start \(routePresentation.dayName)", action: nextLiftAction)

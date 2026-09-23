@@ -287,7 +287,6 @@ struct DashboardEmptyStateCard: View {
 /// render without reaching through to SwiftData or rebuilding a live snapshot.
 struct TodayReadinessHero: View {
     @Environment(\.appTheme) private var appTheme
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let scoreText: String
     let scoreValue: Int?
@@ -295,18 +294,18 @@ struct TodayReadinessHero: View {
     let summary: String
     let coverage: String
     let isProvisional: Bool
-    let signals: [(label: String, value: String?)]
     let action: () -> Void
 
     var body: some View {
         Button {
             action()
         } label: {
-            VStack(alignment: .leading, spacing: appTheme.metrics.spacing12) {
-                HStack(alignment: .firstTextBaseline, spacing: appTheme.metrics.spacing8) {
+            VStack(alignment: .leading, spacing: appTheme.metrics.spacing8) {
+                HStack(alignment: .top, spacing: appTheme.metrics.spacing8) {
                     Text(status)
                         .font(AppTypography.sectionTitle)
                         .foregroundStyle(appTheme.colors.textPrimary)
+                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
 
                     Spacer(minLength: appTheme.metrics.spacing8)
@@ -323,80 +322,33 @@ struct TodayReadinessHero: View {
                     Text(summary)
                         .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary.opacity(0.85))
+                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                if let scoreValue {
-                    HStack(alignment: .firstTextBaseline, spacing: 5) {
-                        Text("READINESS")
-                            .modifier(AppTypography.waypointLabel)
-                            .foregroundStyle(appTheme.colors.textSecondary)
+                HStack(alignment: .center, spacing: appTheme.metrics.spacing6) {
+                    Text("READINESS")
+                        .modifier(AppTypography.waypointLabel)
+                        .foregroundStyle(appTheme.colors.textSecondary)
 
-                        Spacer(minLength: appTheme.metrics.spacing8)
+                    Text(scoreText)
+                        .modifier(AppTypography.instrumentLarge)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .accessibilityIdentifier("today-readiness-score-value")
 
-                        Text(scoreText)
-                            .modifier(AppTypography.instrumentLarge)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                            .lineLimit(1)
-                            .accessibilityIdentifier("today-readiness-score-value")
-
+                    if scoreValue != nil {
                         Text("/100")
                             .font(AppTypography.bodyEmphasis)
                             .foregroundStyle(appTheme.colors.textTertiary)
                     }
 
-                    InstrumentGauge(value: scoreValue)
+                    Spacer(minLength: appTheme.metrics.spacing4)
 
-                    if !signals.isEmpty {
-                        if dynamicTypeSize.isAccessibilitySize {
-                            VStack(alignment: .leading, spacing: appTheme.metrics.spacing8) {
-                                ForEach(Array(signals.prefix(3).enumerated()), id: \.offset) { _, signal in
-                                    HStack(alignment: .firstTextBaseline, spacing: appTheme.metrics.spacing8) {
-                                        Text(signal.label.uppercased())
-                                            .modifier(AppTypography.waypointLabelSmall)
-                                            .foregroundStyle(appTheme.colors.textSecondary)
-
-                                        Spacer(minLength: appTheme.metrics.spacing8)
-
-                                        Text(signal.value ?? "+ LOG")
-                                            .modifier(AppTypography.instrumentValue)
-                                            .foregroundStyle(appTheme.colors.textPrimary)
-                                    }
-                                }
-                            }
-                        } else {
-                            HStack(alignment: .top, spacing: 0) {
-                                ForEach(Array(signals.prefix(3).enumerated()), id: \.offset) { index, signal in
-                                    if index > 0 {
-                                        Rectangle()
-                                            .fill(appTheme.colors.textTertiary.opacity(0.72))
-                                            .frame(width: 0.5, height: 36)
-                                            .padding(.horizontal, appTheme.metrics.spacing10)
-                                            .accessibilityHidden(true)
-                                    }
-
-                                    VStack(alignment: .leading, spacing: appTheme.metrics.spacing4) {
-                                        Text(signal.value ?? "+ LOG")
-                                            .modifier(AppTypography.instrumentValue)
-                                            .foregroundStyle(appTheme.colors.textPrimary)
-                                            .lineLimit(1)
-                                            .minimumScaleFactor(0.65)
-
-                                        Text(signal.label.uppercased())
-                                            .modifier(AppTypography.waypointLabelSmall)
-                                            .foregroundStyle(appTheme.colors.textSecondary)
-                                            .lineLimit(1)
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                            }
-                        }
+                    if let scoreValue {
+                        TodayReadinessGauge(value: scoreValue)
                     }
-                } else {
-                    Text(scoreText)
-                        .font(AppTypography.metadata)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                        .accessibilityIdentifier("today-readiness-score-value")
                 }
 
                 HStack(alignment: .center, spacing: appTheme.metrics.spacing10) {
@@ -408,7 +360,8 @@ struct TodayReadinessHero: View {
                     Text(coverage)
                         .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                         .accessibilityIdentifier("readiness-signal-coverage")
 
                     Spacer(minLength: appTheme.metrics.spacing8)
@@ -425,6 +378,41 @@ struct TodayReadinessHero: View {
         .buttonStyle(.plain)
         .accessibilityHint("Opens Coach")
         .accessibilityIdentifier("today-readiness-hero")
+    }
+}
+
+private struct TodayReadinessGauge: View {
+    @Environment(\.appTheme) private var appTheme
+    let value: Int
+
+    private var clampedValue: Int { min(max(value, 0), 100) }
+
+    var body: some View {
+        Canvas { context, size in
+            let tickCount = 14
+            let spacing: CGFloat = 2
+            let tickWidth = (size.width - spacing * CGFloat(tickCount - 1)) / CGFloat(tickCount)
+
+            for index in 0..<tickCount {
+                let tallTick = index.isMultiple(of: 3)
+                let tickHeight = tallTick ? size.height : size.height * 0.65
+                let x = CGFloat(index) * (tickWidth + spacing)
+                var tick = Path()
+                tick.move(to: CGPoint(x: x + tickWidth / 2, y: size.height - tickHeight))
+                tick.addLine(to: CGPoint(x: x + tickWidth / 2, y: size.height))
+                context.stroke(
+                    tick,
+                    with: .color(appTheme.colors.textPrimary.opacity(
+                        Double(index) * 100 / Double(tickCount) < Double(clampedValue) ? 0.95 : 0.18
+                    )),
+                    style: StrokeStyle(lineWidth: max(1, tickWidth), lineCap: .round)
+                )
+            }
+        }
+        .frame(width: 76, height: 16)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Instrument gauge")
+        .accessibilityValue("\(clampedValue) of 100")
     }
 }
 
@@ -873,7 +861,6 @@ private struct TodaySummitPreviewGallery: View {
                             summary: advice,
                             coverage: "4 of 5 signals included",
                             isProvisional: scene == .changeable,
-                            signals: [("Sleep", "7h 42m"), ("Training", "76/100"), ("Water", "1.8 L")],
                             action: {}
                         )
                     }
