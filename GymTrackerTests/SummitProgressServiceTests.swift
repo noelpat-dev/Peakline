@@ -48,6 +48,12 @@ final class SummitProgressServiceTests: XCTestCase {
         XCTAssertNil(progress.estimatedSessionsLeft)
     }
 
+    func testExpeditionEstimatesSessionsLeftWithThreeRecentSessions() {
+        let progress = expedition(climbed: 0, recentSessionMetres: [100, 120, 140])
+
+        XCTAssertEqual(progress.estimatedSessionsLeft, 40)
+    }
+
     func testExpeditionProgressAtTwoThousandTwoHundredTwelveMetres() {
         let progress = expedition(climbed: 2_212)
 
@@ -182,12 +188,12 @@ final class SummitProgressServiceTests: XCTestCase {
         )
     }
 
-    private func expedition(climbed: Int) -> ExpeditionProgress {
+    private func expedition(climbed: Int, recentSessionMetres: [Int] = []) -> ExpeditionProgress {
         SummitProgressService.expeditionProgress(
             route: SummitCatalog.machame,
             startDate: date(2026, 8, 1),
             climbedSinceStart: climbed,
-            recentSessionMetres: [100, 120, 140]
+            recentSessionMetres: recentSessionMetres
         )
     }
 
