@@ -985,9 +985,11 @@ struct SummitRouteForkView: View {
 
                 Text("YOUR CAIRN IS SAFE · REST NEVER KNOCKS IT DOWN")
                     .modifier(AppTypography.waypointLabelSmall)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.65)
-                    .offset(x: 48, y: 181)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 48)
+                    .padding(.trailing, 20)
+                    .offset(y: 181)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Your cairn is safe. Rest never knocks it down.")
             }
