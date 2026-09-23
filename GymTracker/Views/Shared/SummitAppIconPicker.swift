@@ -22,7 +22,7 @@ struct SummitAppIconPicker: View {
 
     @ViewBuilder
     private func iconTile(_ icon: SummitAppIcon) -> some View {
-        let isUnlocked = icon.unlockMetres <= totalMetres
+        let isUnlocked = SummitProgressService.unlockedAppIcons(totalMetres: totalMetres).contains(icon)
         let peakName = SummitCatalog.peaks.first { $0.metres == icon.unlockMetres }?.name ?? "the next summit"
         let detail = isUnlocked
             ? "Unlocked"
