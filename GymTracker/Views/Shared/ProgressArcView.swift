@@ -181,6 +181,7 @@ struct SummitHorizonView: View {
     private static let canvasHeight: CGFloat = 268
     private static let visibleCanvasHeight: CGFloat = 200
     private static let skyDownshift: CGFloat = 36
+    private static let skyDiscCenterX: CGFloat = 236
     private static let dayLetters = ["M", "T", "W", "T", "F", "S", "S"]
     private static let backRidgePoints: [CGPoint] = [
         CGPoint(x: 0, y: 168), CGPoint(x: 30, y: 150), CGPoint(x: 65, y: 158),
@@ -508,7 +509,13 @@ struct SummitHorizonView: View {
         case .clear:
             switch timeOfDay {
             case .day:
-                drawSun(center: CGPoint(x: 262, y: 74), radius: 15, color: foreground, opacity: opacity, in: context)
+                drawSun(
+                    center: CGPoint(x: skyDiscCenterX, y: 74),
+                    radius: 15,
+                    color: foreground,
+                    opacity: opacity,
+                    in: context
+                )
             case .dawn:
                 let center = CGPoint(x: 232, y: 136)
                 context.stroke(
@@ -525,10 +532,10 @@ struct SummitHorizonView: View {
                 }
             case .night:
                 drawStars(in: context, color: foreground, opacity: opacity)
-                let moonCenter = CGPoint(x: 262, y: 58)
+                let moonCenter = CGPoint(x: skyDiscCenterX, y: 58)
                 context.fill(circle(center: moonCenter, radius: 18), with: .color(foreground.opacity(0.78 * opacity)))
                 context.fill(
-                    circle(center: CGPoint(x: 271, y: 52), radius: 18),
+                    circle(center: CGPoint(x: moonCenter.x + 9, y: moonCenter.y - 6), radius: 18),
                     with: .color(background)
                 )
             }
@@ -537,7 +544,7 @@ struct SummitHorizonView: View {
             drawCloud(origin: CGPoint(x: 150, y: 110), scale: 0.8, background: background, foreground: foreground, opacity: opacity, in: context)
             if timeOfDay == .day {
                 context.stroke(
-                    circle(center: CGPoint(x: 276, y: 60), radius: 11),
+                    circle(center: CGPoint(x: skyDiscCenterX, y: 60), radius: 11),
                     with: .color(foreground.opacity(0.7 * opacity)),
                     lineWidth: 1.2
                 )
