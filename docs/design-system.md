@@ -268,10 +268,10 @@ Earned celebration:
 
 Startup motion:
 
-- Show only the centred Peakline wordmark on the semantic primary background.
-- Use the existing restrained one-shot ascending-letter sequence with a small rise, tiny scale, and no bounce.
-- Yield as soon as correctness-critical preparation is ready; the decorative letter sequence is never a second readiness gate. Use the 280 ms opacity-led exit only for the transition that is already in progress. Match the native launch wordmark's resting size and centre; slow-progress content must not move it. Five seconds exposes truthful preparation progress; it never reveals unready content.
-- Reduce Motion keeps the wordmark static and removes exit scale.
+- Show the centred Peakline wordmark on the semantic primary background, with nine monochrome contour rings centred on the real tittle of the "i".
+- Use the one-shot topographic sequence: contours draw from the outside inward, contract toward the summit and fade; the "i" tittle pulses as a ripple expands, while the letters lift in a wave outward from it. Keep every layer on the resolved wordmark colour.
+- Every cold launch plays the full sequence (about 2.3 seconds) before the 280 ms opacity-led exit; the reveal requires both animation completion and correctness-critical readiness. Match the native launch wordmark's resting size and centre; outside the sequence the contours stay hidden so the static wordmark matches the launch screen, and slow-progress content must not move it. Five seconds is a ceiling that releases a ready root; it never reveals unready content.
+- Reduce Motion keeps the wordmark static, hides the contours and ripple, and removes exit scale.
 - Do not add a logo, blur, gradient, sound, haptic, repeating animation, or animated tracking.
 
 Banned motion patterns:
