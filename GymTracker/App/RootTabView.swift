@@ -1322,8 +1322,7 @@ private struct DeferredWorkoutTabHost: View {
                         if let recommendedSplit = initialFirstFrameSnapshot.dashboard.recommendedSplit {
                             WorkoutDashboardHero(
                                 splitName: recommendedSplit.name,
-                                iconKey: ExerciseIconMapper.splitIconKey(for: recommendedSplit.name),
-                                status: preparedStatus,
+                                routeStops: recommendedSplit.routeStops,
                                 exerciseCount: recommendedSplit.exerciseCount,
                                 durationText: recommendedSplit.estimatedDurationText,
                                 modeText: initialFirstFrameSnapshot.dashboard.trainingCall.recommendedMode.displayName,
@@ -1361,26 +1360,6 @@ private struct DeferredWorkoutTabHost: View {
         }
     }
 
-    private var preparedStatus: CoachBadgeState {
-        if initialOverallReadinessIsProvisional {
-            return .provisional
-        }
-
-        if initialFirstFrameSnapshot.dashboard.trainingCall.recommendedMode == .recovery {
-            return .recovery
-        }
-
-        switch initialFirstFrameSnapshot.dashboard.trainingCall.action {
-        case .recover:
-            return .recovery
-        case .push:
-            return .ready
-        case .repeatTarget:
-            return .repeatTarget
-        case .rebalance, .buildBaseline:
-            return .baseline
-        }
-    }
 }
 
 /// Keeps the native Splits tab's first frame lightweight. The tab still owns
