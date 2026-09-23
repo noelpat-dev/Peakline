@@ -667,14 +667,14 @@ private struct CairnWeekStrip: View {
         return "Recent weeks, \(qualified) qualified weeks in the last twelve, current week \(max(0, state.climbsThisWeek)) of \(max(1, state.climbsNeeded)) climbs"
     }
 
+    private var newestFreshWeekIndex: Int? {
+        guard state.newestIsFresh else { return nil }
+        return state.recentWeeks.lastIndex(where: { $0.isCurrent && $0.qualified })
+            ?? state.recentWeeks.lastIndex(where: { $0.qualified && !$0.isCurrent })
+    }
+
     private func weekColor(at index: Int, week: CairnWeek) -> Color {
-        if state.newestIsFresh,
-           week.qualified,
-           !week.isCurrent,
-           index == state.recentWeeks.lastIndex(where: { $0.qualified && !$0.isCurrent }) {
-            return appTheme.colors.alpenglow
-        }
-        if state.newestIsFresh && week.isCurrent && week.qualified {
+        if index == newestFreshWeekIndex {
             return appTheme.colors.alpenglow
         }
         return week.isCurrent && !week.qualified ? appTheme.colors.textTertiary : appTheme.colors.textPrimary
@@ -748,13 +748,8 @@ private struct CairnIllustration: View {
                         .font(Font.system(size: markerLabelSize, weight: .medium).width(.condensed))
                         .tracking(1.2)
                         .foregroundColor(appTheme.colors.textSecondary),
-                    at: CGPoint(
-                        x: size.width < 370
-                            ? size.width - 8
-                            : (pending.centerX - 2 + pending.rx / 0.82 * 0.9 + 8) * scaleX,
-                        y: pending.centerY + 4
-                    ),
-                    anchor: size.width < 370 ? .trailing : .leading
+                    at: CGPoint(x: size.width - 8, y: pending.centerY + 4),
+                    anchor: .trailing
                 )
             }
 
