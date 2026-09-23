@@ -182,6 +182,7 @@ struct SummitHorizonView: View {
     private static let visibleCanvasHeight: CGFloat = 200
     private static let skyDownshift: CGFloat = 36
     private static let skyDiscCenterX: CGFloat = 236
+    static let frontRidgeBaseline: CGFloat = 236
     private static let dayLetters = ["M", "T", "W", "T", "F", "S", "S"]
     private static let backRidgePoints: [CGPoint] = [
         CGPoint(x: 0, y: 168), CGPoint(x: 30, y: 150), CGPoint(x: 65, y: 158),
@@ -444,20 +445,25 @@ struct SummitHorizonView: View {
         introStarted = false
     }
 
-    private static func frontRidgePoints(for loads: [Double]) -> [CGPoint] {
-        let baseline: CGFloat = 236
+    static func frontRidgePoints(for loads: [Double]) -> [CGPoint] {
+        let normalizedLoads = loads.prefix(7).map { load in
+            load.isFinite ? min(max(load, 0), 1) : 0
+        } + Array(repeating: 0, count: max(0, 7 - loads.count))
         let columnWidth = (canvasWidth - 24) / 7
-        var points = [CGPoint(x: 0, y: baseline)]
+        var points = [CGPoint(x: 0, y: frontRidgeBaseline)]
         for index in 0..<7 {
             let center = columnCenter(index)
-            let load = CGFloat(loads[index])
-            points.append(CGPoint(x: center - 0.46 * columnWidth, y: baseline - 2 - (index.isMultiple(of: 2) ? 0 : 6 * load)))
-            points.append(CGPoint(x: center - 0.12 * columnWidth, y: baseline - 38 * load))
-            points.append(CGPoint(x: center, y: baseline - 52 * load))
-            points.append(CGPoint(x: center + 0.16 * columnWidth, y: baseline - 40 * load))
-            points.append(CGPoint(x: center + 0.46 * columnWidth, y: baseline - 4 * load))
+            let load = CGFloat(normalizedLoads[index])
+            let shoulderDepth: CGFloat = 2 + (index.isMultiple(of: 2) ? 0 : 6)
+            points.append(
+                CGPoint(x: center - 0.46 * columnWidth, y: frontRidgeBaseline - shoulderDepth * load)
+            )
+            points.append(CGPoint(x: center - 0.12 * columnWidth, y: frontRidgeBaseline - 38 * load))
+            points.append(CGPoint(x: center, y: frontRidgeBaseline - 52 * load))
+            points.append(CGPoint(x: center + 0.16 * columnWidth, y: frontRidgeBaseline - 40 * load))
+            points.append(CGPoint(x: center + 0.46 * columnWidth, y: frontRidgeBaseline - 4 * load))
         }
-        points.append(CGPoint(x: canvasWidth, y: baseline))
+        points.append(CGPoint(x: canvasWidth, y: frontRidgeBaseline))
         return points
     }
 
@@ -467,7 +473,7 @@ struct SummitHorizonView: View {
     }
 
     private static func peakY(for load: Double) -> CGFloat {
-        236 - 52 * CGFloat(load)
+        frontRidgeBaseline - 52 * CGFloat(load)
     }
 
     fileprivate static func drawWeekLabels(
