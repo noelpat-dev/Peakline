@@ -713,6 +713,7 @@ struct TodayView: View {
                 .padding(.horizontal, appTheme.metrics.screenPadding)
                 .padding(.bottom, appTheme.metrics.screenBottomPadding)
             }
+            .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
             .accessibilityIdentifier("today-screen")
             .toolbar(.hidden, for: .navigationBar)
             .navigationTitle("")
