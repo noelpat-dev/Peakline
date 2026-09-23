@@ -8,17 +8,20 @@ struct MetricTile: View {
     let value: String
     let caption: String?
     let systemImage: String?
+    let usesInstrumentStyle: Bool
 
     init(
         label: String,
         value: String,
         caption: String? = nil,
-        systemImage: String? = nil
+        systemImage: String? = nil,
+        usesInstrumentStyle: Bool = false
     ) {
         self.label = label
         self.value = value
         self.caption = caption
         self.systemImage = systemImage
+        self.usesInstrumentStyle = usesInstrumentStyle
     }
 
     var body: some View {
@@ -36,11 +39,16 @@ struct MetricTile: View {
                     .textCase(.uppercase)
             }
 
-            Text(value)
-                .font(AppTypography.largeMetric)
-                .foregroundStyle(appTheme.colors.textPrimary)
-                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.75)
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+            Group {
+                if usesInstrumentStyle {
+                    Text(value).modifier(AppTypography.instrumentLarge)
+                } else {
+                    Text(value).font(AppTypography.largeMetric)
+                }
+            }
+            .foregroundStyle(appTheme.colors.textPrimary)
+            .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.75)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
 
             if let caption, !caption.isEmpty {
                 Text(caption)

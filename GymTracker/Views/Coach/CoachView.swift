@@ -575,14 +575,16 @@ struct CoachContentView: View {
                                     label: "Workouts",
                                     value: "\(weeklyWorkoutCount)",
                                     caption: "This week",
-                                    systemImage: "figure.strengthtraining.traditional"
+                                    systemImage: "figure.strengthtraining.traditional",
+                                    usesInstrumentStyle: true
                                 )
 
                                 MetricTile(
                                     label: "Sets",
                                     value: "\(weeklyWorkingSetCount)",
                                     caption: "Working sets",
-                                    systemImage: "checkmark.circle"
+                                    systemImage: "checkmark.circle",
+                                    usesInstrumentStyle: true
                                 )
                             }
 

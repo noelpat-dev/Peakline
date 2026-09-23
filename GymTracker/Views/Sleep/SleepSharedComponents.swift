@@ -313,7 +313,7 @@ struct SleepMetric: View {
             .foregroundStyle(tint ?? appTheme.colors.textSecondary)
 
             Text(value)
-                .font(.system(.headline, design: .rounded).weight(.bold))
+                .modifier(AppTypography.instrumentValue)
                 .foregroundStyle(appTheme.colors.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
         }

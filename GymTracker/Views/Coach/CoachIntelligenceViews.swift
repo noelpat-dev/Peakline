@@ -200,12 +200,12 @@ struct ReadinessDetailHeaderCard: View {
             VStack(alignment: .leading, spacing: 18) {
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .center, spacing: 16) {
-                        scoreArc
+                        scoreInstrument
                         headerText
                     }
 
                     VStack(alignment: .leading, spacing: 14) {
-                        scoreArc
+                        scoreInstrument
                         headerText
                     }
                 }
@@ -219,12 +219,20 @@ struct ReadinessDetailHeaderCard: View {
         }
     }
 
-    private var scoreArc: some View {
-        ProgressArcView(
-            value: Double(readiness.value) / 100.0,
-            label: "Readiness",
-            caption: readiness.category.displayName
-        )
+    private var scoreInstrument: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text("\(readiness.value)")
+                    .modifier(AppTypography.instrumentLarge)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                Text("/100")
+                    .modifier(AppTypography.instrumentUnit)
+            }
+            InstrumentGauge(value: readiness.value)
+            Text(readiness.category.displayName)
+                .modifier(AppTypography.waypointLabelSmall)
+        }
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Readiness score \(readiness.value) out of 100, \(readiness.category.displayName)")
     }
 
@@ -241,7 +249,7 @@ struct ReadinessDetailHeaderCard: View {
                     : readiness.category.meaning
             )
                 .font(AppTypography.bodyEmphasis)
-                .foregroundStyle(readinessColor(for: readiness.category, theme: appTheme))
+                .foregroundStyle(appTheme.colors.textSecondary)
 
             Text(readiness.recommendation.summary)
                 .font(AppTypography.body)
@@ -447,14 +455,16 @@ struct WeeklyCoachSummaryCard: View {
                         label: "Avg Ready",
                         value: summary.averageReadiness.map { "\($0)" } ?? "--",
                         caption: "Last 7 days",
-                        systemImage: "gauge.with.dots.needle.bottom.50percent"
+                        systemImage: "gauge.with.dots.needle.bottom.50percent",
+                        usesInstrumentStyle: true
                     )
 
                     MetricTile(
                         label: "Sessions",
                         value: "\(summary.trainingSessionsCompleted)",
                         caption: "Last 7 days",
-                        systemImage: "figure.strengthtraining.traditional"
+                        systemImage: "figure.strengthtraining.traditional",
+                        usesInstrumentStyle: true
                     )
                 }
 
