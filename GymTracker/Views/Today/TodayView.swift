@@ -597,9 +597,20 @@ struct TodayView: View {
         let maximumLoad = dailyLoads.max() ?? 0
         let normalizedLoads = dailyLoads.map { maximumLoad > 0 ? $0 / maximumLoad : 0 }
         let score = readiness ?? readinessScore
-        let condition: SummitCondition = score.availableSignalCount > 0
+        var condition: SummitCondition = score.availableSignalCount > 0
             ? TodayReadinessMapping.summitCondition(for: score.category)
             : .changeable
+        var timeOfDay = SummitTimeOfDay(date: .now)
+
+#if DEBUG
+        let launchArguments = ProcessInfo.processInfo.arguments
+        if launchArguments.contains("-SummitCondition=clear") { condition = .clear }
+        if launchArguments.contains("-SummitCondition=changeable") { condition = .changeable }
+        if launchArguments.contains("-SummitCondition=storm") { condition = .storm }
+        if launchArguments.contains("-SummitTime=day") { timeOfDay = .day }
+        if launchArguments.contains("-SummitTime=dawn") { timeOfDay = .dawn }
+        if launchArguments.contains("-SummitTime=night") { timeOfDay = .night }
+#endif
 
         summitHorizon = TodaySummitHorizonPresentation(
             week: normalizedLoads,
@@ -607,7 +618,7 @@ struct TodayView: View {
             // TodayDashboardSnapshot has no personal-record day field yet.
             prDayIndex: nil,
             condition: condition,
-            timeOfDay: SummitTimeOfDay(date: .now),
+            timeOfDay: timeOfDay,
             isEmpty: dailyLoads.allSatisfy { $0 == 0 }
         )
     }
@@ -1416,13 +1427,13 @@ struct TodayView: View {
         let sleepGoalSet = sleepSettings.targetSleepMinutes > 0
 
         return [
-            (sleepRecorded ? "Sleep recorded" : "Log your first sleep entry", sleepRecorded ? "Sleep signal available" : "Add your first sleep entry", sleepRecorded, { openRoute(.sleep) }),
-            (splitChosen ? "Split chosen" : "Choose a training split", splitChosen ? "Training plan ready" : "Choose a training split", splitChosen, {
+            (sleepRecorded ? "Sleep recorded" : "Log your first sleep entry", sleepRecorded ? "Sleep signal available" : "Capture last night's hours and quality", sleepRecorded, { openRoute(.sleep) }),
+            (splitChosen ? "Split chosen" : "Choose a training split", splitChosen ? "Training plan ready" : (suggestedSplit.map { "\($0.name) ready to preview" } ?? "Build your weekly training plan"), splitChosen, {
                 if suggestedSplit == nil { openRoute(.workout) } else { previewSuggestedSplit() }
             }),
-            (firstWaterLogged ? "First glass logged" : "Log your first glass", firstWaterLogged ? HydrationService.formatAmount(hydrationSummary.totalML) : "Log your first glass", firstWaterLogged, { openRoute(.hydration) }),
-            (firstWorkout ? "Workout saved" : "Start your first workout", firstWorkout ? "Workout saved" : "Start your first workout", firstWorkout, { openRoute(.workout) }),
-            (sleepGoalSet ? "Sleep goal set" : "Choose a nightly target", sleepGoalSet ? SleepScoringService.durationText(minutes: sleepSettings.targetSleepMinutes) : "Choose a nightly target", sleepGoalSet, { openRoute(.sleep) })
+            (firstWaterLogged ? "First glass logged" : "Log your first glass", firstWaterLogged ? HydrationService.formatAmount(hydrationSummary.totalML) : "\(HydrationService.formatAmount(hydrationTargetML)) daily goal", firstWaterLogged, { openRoute(.hydration) }),
+            (firstWorkout ? "Workout saved" : "Start your first workout", firstWorkout ? "Workout saved" : "Start with a simple full-body session", firstWorkout, { openRoute(.workout) }),
+            (sleepGoalSet ? "Sleep goal set" : "Choose a nightly target", sleepGoalSet ? SleepScoringService.durationText(minutes: sleepSettings.targetSleepMinutes) : "Set a goal that fits your routine", sleepGoalSet, { openRoute(.sleep) })
         ]
     }
 

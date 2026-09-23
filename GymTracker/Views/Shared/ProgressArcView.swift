@@ -180,8 +180,10 @@ struct SummitHorizonView: View {
     private static let canvasWidth: CGFloat = 332
     private static let canvasHeight: CGFloat = 268
     private static let visibleCanvasHeight: CGFloat = 200
-    private static let skyDownshift: CGFloat = 36
-    private static let skyDiscCenterX: CGFloat = 236
+    private static let skyDownshift: CGFloat = 100
+    private static let skyDiscCenterX: CGFloat = 140
+    // After the top crop, this leaves the tallest background ridge below the header band.
+    private static let headerRidgeDownshift: CGFloat = 76
     static let frontRidgeBaseline: CGFloat = 236
     private static let dayLetters = ["M", "T", "W", "T", "F", "S", "S"]
     private static let backRidgePoints: [CGPoint] = [
@@ -196,6 +198,12 @@ struct SummitHorizonView: View {
         CGPoint(x: 215, y: 160), CGPoint(x: 250, y: 138), CGPoint(x: 285, y: 158),
         CGPoint(x: 332, y: 146)
     ]
+    private static let displayedBackRidgePoints = backRidgePoints.map { point in
+        CGPoint(x: point.x, y: point.y + headerRidgeDownshift)
+    }
+    private static let displayedMiddleRidgePoints = middleRidgePoints.map { point in
+        CGPoint(x: point.x, y: point.y + headerRidgeDownshift)
+    }
     private static let nightStars: [SummitStar] = {
         var state: UInt64 = 11
         func nextValue() -> Double {
@@ -204,8 +212,8 @@ struct SummitHorizonView: View {
         }
 
         return (0..<26).map { _ in
-            let x = nextValue() * 332
-            let y = 14 + nextValue() * 120
+            let x = nextValue() * 230
+            let y = 58 + nextValue() * 30
             let brightness = nextValue()
             return SummitStar(
                 point: CGPoint(x: x, y: y),
@@ -275,7 +283,7 @@ struct SummitHorizonView: View {
                 .frame(width: width, height: artworkHeight)
 
                 SummitRidgeLayer(
-                    points: Self.backRidgePoints,
+                    points: Self.displayedBackRidgePoints,
                     progress: displayedBackRidgeProgress,
                     lineWidth: 1,
                     lineColor: appTheme.colors.textPrimary.opacity(0.22),
@@ -286,7 +294,7 @@ struct SummitHorizonView: View {
                 .frame(width: width, height: artworkHeight)
 
                 SummitRidgeLayer(
-                    points: Self.middleRidgePoints,
+                    points: Self.displayedMiddleRidgePoints,
                     progress: displayedMiddleRidgeProgress,
                     lineWidth: 1.2,
                     lineColor: appTheme.colors.textPrimary.opacity(0.45),
@@ -516,29 +524,29 @@ struct SummitHorizonView: View {
             switch timeOfDay {
             case .day:
                 drawSun(
-                    center: CGPoint(x: skyDiscCenterX, y: 74),
-                    radius: 15,
+                    center: CGPoint(x: 55, y: 78),
+                    radius: 12,
                     color: foreground,
                     opacity: opacity,
                     in: context
                 )
             case .dawn:
-                let center = CGPoint(x: 232, y: 136)
+                let center = CGPoint(x: 140, y: 91)
                 context.stroke(
                     circle(center: center, radius: 22),
                     with: .color(alpenglow.opacity(0.72 * opacity)),
                     lineWidth: 1.4
                 )
                 for index in 0..<3 {
-                    let y = CGFloat(124 + index * 7)
+                    let y = CGFloat(91 + index * 7)
                     var line = Path()
-                    line.move(to: CGPoint(x: 194, y: y))
-                    line.addLine(to: CGPoint(x: 209, y: y - 4))
+                    line.move(to: CGPoint(x: 102, y: y))
+                    line.addLine(to: CGPoint(x: 117, y: y - 4))
                     context.stroke(line, with: .color(alpenglow.opacity(0.36 * opacity)), lineWidth: 1)
                 }
             case .night:
                 drawStars(in: context, color: foreground, opacity: opacity)
-                let moonCenter = CGPoint(x: skyDiscCenterX, y: 58)
+                let moonCenter = CGPoint(x: 70, y: 80)
                 context.fill(circle(center: moonCenter, radius: 18), with: .color(foreground.opacity(0.78 * opacity)))
                 context.fill(
                     circle(center: CGPoint(x: moonCenter.x + 9, y: moonCenter.y - 6), radius: 18),
@@ -546,11 +554,11 @@ struct SummitHorizonView: View {
                 )
             }
         case .changeable:
-            drawCloud(origin: CGPoint(x: 214, y: 80), scale: 1.1, background: background, foreground: foreground, opacity: opacity, in: context)
-            drawCloud(origin: CGPoint(x: 150, y: 110), scale: 0.8, background: background, foreground: foreground, opacity: opacity, in: context)
+            drawCloud(origin: CGPoint(x: 50, y: 58), scale: 1.1, background: background, foreground: foreground, opacity: opacity, in: context)
+            drawCloud(origin: CGPoint(x: 112, y: 60), scale: 0.8, background: background, foreground: foreground, opacity: opacity, in: context)
             if timeOfDay == .day {
                 context.stroke(
-                    circle(center: CGPoint(x: skyDiscCenterX, y: 60), radius: 11),
+                    circle(center: CGPoint(x: skyDiscCenterX, y: 72), radius: 11),
                     with: .color(foreground.opacity(0.7 * opacity)),
                     lineWidth: 1.2
                 )
@@ -570,8 +578,8 @@ struct SummitHorizonView: View {
         context.stroke(circle(center: center, radius: radius), with: .color(color.opacity(opacity)), lineWidth: 1.4)
         for ray in 0..<8 {
             let angle = CGFloat(ray) * .pi / 4
-            let inner = radius + 6
-            let outer = radius + 12
+            let inner = radius + 4
+            let outer = radius + 8
             var path = Path()
             path.move(to: CGPoint(x: center.x + cos(angle) * inner, y: center.y + sin(angle) * inner))
             path.addLine(to: CGPoint(x: center.x + cos(angle) * outer, y: center.y + sin(angle) * outer))
@@ -612,9 +620,9 @@ struct SummitHorizonView: View {
         opacity: Double
     ) {
         for row in 0..<2 {
-            let y = CGFloat(112 + row * 15)
+            let y = CGFloat(92 + row * 15)
             for index in 0..<11 {
-                let x = CGFloat(150 + index * 16)
+                let x = CGFloat(35 + index * 5)
                 var rain = Path()
                 rain.move(to: CGPoint(x: x, y: y))
                 rain.addLine(to: CGPoint(x: x - 6, y: y + 12))
@@ -622,14 +630,14 @@ struct SummitHorizonView: View {
             }
         }
 
-        drawCloud(origin: CGPoint(x: 170, y: 84), scale: 1.5, background: background, foreground: foreground, opacity: opacity, in: context)
-        drawCloud(origin: CGPoint(x: 238, y: 70), scale: 1.2, background: background, foreground: foreground, opacity: opacity, in: context)
+        drawCloud(origin: CGPoint(x: 35, y: 58), scale: 1.5, background: background, foreground: foreground, opacity: opacity, in: context)
+        drawCloud(origin: CGPoint(x: 100, y: 58), scale: 1.2, background: background, foreground: foreground, opacity: opacity, in: context)
 
         var lightning = Path()
-        lightning.move(to: CGPoint(x: 226, y: 96))
-        lightning.addLine(to: CGPoint(x: 218, y: 112))
-        lightning.addLine(to: CGPoint(x: 226, y: 112))
-        lightning.addLine(to: CGPoint(x: 216, y: 130))
+        lightning.move(to: CGPoint(x: 90, y: 52))
+        lightning.addLine(to: CGPoint(x: 82, y: 68))
+        lightning.addLine(to: CGPoint(x: 90, y: 68))
+        lightning.addLine(to: CGPoint(x: 80, y: 86))
         context.stroke(lightning, with: .color(foreground.opacity(opacity)), lineWidth: 1.4)
     }
 
