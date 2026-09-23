@@ -181,6 +181,8 @@ struct WorkoutDashboardPrimaryButtonStyle: ButtonStyle {
 }
 
 struct WorkoutDashboardHero: View {
+    private static let visibleRouteStopLimit = 2
+
     @Environment(\.appTheme) private var appTheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -210,12 +212,12 @@ struct WorkoutDashboardHero: View {
                     if routeStops.isEmpty {
                         TrailStop(title: "Workout route", detail: "Your exercise order is ready in Preview")
                     } else {
-                        ForEach(routeStops.prefix(4)) { stop in
+                        ForEach(routeStops.prefix(Self.visibleRouteStopLimit)) { stop in
                             TrailStop(title: stop.title, detail: stop.detail)
                         }
 
-                        if routeStops.count > 4 {
-                            TrailStop(title: "+ \(routeStops.count - 4) more")
+                        if routeStops.count > Self.visibleRouteStopLimit {
+                            TrailStop(title: "+ \(routeStops.count - Self.visibleRouteStopLimit) more")
                         }
                     }
 
