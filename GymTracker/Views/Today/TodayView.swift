@@ -1,6 +1,53 @@
 import SwiftData
 import SwiftUI
 
+enum TodayReadinessMapping {
+    static func summitCondition(for category: ReadinessCategory) -> SummitCondition {
+        switch category {
+        case .peak, .ready: .clear
+        case .cautious, .low: .changeable
+        case .recovery: .storm
+        }
+    }
+
+    static func headline(for category: ReadinessCategory) -> String {
+        switch category {
+        case .peak, .ready: "Clear skies"
+        case .cautious, .low: "Changeable"
+        case .recovery: "Storm warning"
+        }
+    }
+
+    static func fallbackAdvice(for category: ReadinessCategory) -> String {
+        switch category {
+        case .peak: "Summit push. A good day to go for a PR."
+        case .ready: "Good climbing weather. Train as planned."
+        case .cautious: "Steady climb. Train as planned, skip the max attempts."
+        case .low: "Take it steady. Trim volume and keep effort moderate."
+        case .recovery: "Stay at base camp. Mobility or an easy walk today."
+        }
+    }
+}
+
+struct TodayRouteStopsPresentation: Equatable {
+    static let visibleStopLimit = 2
+
+    let visibleNames: [String]
+    let remainingNames: [String]
+
+    init(names: [String]) {
+        visibleNames = Array(names.prefix(Self.visibleStopLimit))
+        remainingNames = Array(names.dropFirst(Self.visibleStopLimit))
+    }
+
+    var remainingCount: Int { remainingNames.count }
+
+    var remainingLine: String? {
+        guard !remainingNames.isEmpty else { return nil }
+        return "+ \(remainingCount) more · \(remainingNames.joined(separator: " · "))"
+    }
+}
+
 struct TodayView: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -551,7 +598,7 @@ struct TodayView: View {
         let normalizedLoads = dailyLoads.map { maximumLoad > 0 ? $0 / maximumLoad : 0 }
         let score = readiness ?? readinessScore
         let condition: SummitCondition = score.availableSignalCount > 0
-            ? summitCondition(for: score.category)
+            ? TodayReadinessMapping.summitCondition(for: score.category)
             : .changeable
 
         summitHorizon = TodaySummitHorizonPresentation(
@@ -590,7 +637,10 @@ struct TodayView: View {
         let selectedExercises = plannedExercises.compactMap { planned in
             orderedExercises.first(where: { $0.id == planned.id })
         }
-        let visibleLifts = selectedExercises.prefix(2).map { exercise -> (name: String, target: String) in
+        let stopPresentation = TodayRouteStopsPresentation(
+            names: selectedExercises.map(\.exerciseNameSnapshot)
+        )
+        let visibleLifts = selectedExercises.prefix(stopPresentation.visibleNames.count).map { exercise -> (name: String, target: String) in
             let original = targetSuggestionService.suggestion(
                 for: exercise,
                 completedSessions: Array(completedSessions.prefix(40))
@@ -608,7 +658,7 @@ struct TodayView: View {
             }
             return (exercise.exerciseNameSnapshot, target)
         }
-        let remainingLiftNames = Array(selectedExercises.dropFirst(2).map(\.exerciseNameSnapshot))
+        let remainingLiftNames = stopPresentation.remainingNames
 
         let finishedSession = completedSessions
             .filter { Calendar.current.isDate($0.date, inSameDayAs: .now) }
@@ -665,14 +715,6 @@ struct TodayView: View {
             .flatMap(\.setLogs)
             .filter { $0.completed && !$0.isWarmup }
             .reduce(0.0) { $0 + ($1.weight * Double($1.reps)) }
-    }
-
-    private func summitCondition(for category: ReadinessCategory) -> SummitCondition {
-        switch category {
-        case .peak, .ready: .clear
-        case .cautious, .low: .changeable
-        case .recovery: .storm
-        }
     }
 
     private func formattedWeight(_ weight: Double) -> String {
@@ -1092,11 +1134,7 @@ struct TodayView: View {
 
     private var readinessStatusText: String {
         guard hasReadinessEvidence else { return "Summit conditions unknown" }
-        return switch readinessScore.category {
-        case .peak, .ready: "Clear skies"
-        case .cautious, .low: "Changeable"
-        case .recovery: "Storm warning"
-        }
+        return TodayReadinessMapping.headline(for: readinessScore.category)
     }
 
     private var readinessSummaryText: String {
@@ -1108,13 +1146,7 @@ struct TodayView: View {
     }
 
     private var readinessFallbackAdvice: String {
-        switch readinessScore.category {
-        case .peak: "Summit push. A good day to go for a PR."
-        case .ready: "Good climbing weather. Train as planned."
-        case .cautious: "Steady climb. Train as planned, skip the max attempts."
-        case .low: "Take it steady. Trim volume and keep effort moderate."
-        case .recovery: "Stay at base camp. Mobility or an easy walk today."
-        }
+        TodayReadinessMapping.fallbackAdvice(for: readinessScore.category)
     }
 
     private var readinessCoverageText: String {
@@ -1235,8 +1267,11 @@ struct TodayView: View {
                 TrailStop(title: lift.name, detail: lift.target)
             }
 
-            if !routePresentation.remainingLiftNames.isEmpty {
-                Text("+ \(routePresentation.remainingLiftNames.count) more · \(routePresentation.remainingLiftNames.joined(separator: " · "))")
+            let stopPresentation = TodayRouteStopsPresentation(
+                names: routePresentation.lifts.map { $0.name } + routePresentation.remainingLiftNames
+            )
+            if let remainingLine = stopPresentation.remainingLine {
+                Text(remainingLine)
                     .font(AppTypography.metadata)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .lineLimit(1)
@@ -1381,13 +1416,13 @@ struct TodayView: View {
         let sleepGoalSet = sleepSettings.targetSleepMinutes > 0
 
         return [
-            ("Sleep recorded", sleepRecorded ? "Sleep signal available" : "Add your first sleep entry", sleepRecorded, { openRoute(.sleep) }),
-            ("Split chosen", splitChosen ? "Training plan ready" : "Choose a training split", splitChosen, {
+            (sleepRecorded ? "Sleep recorded" : "Log your first sleep entry", sleepRecorded ? "Sleep signal available" : "Add your first sleep entry", sleepRecorded, { openRoute(.sleep) }),
+            (splitChosen ? "Split chosen" : "Choose a training split", splitChosen ? "Training plan ready" : "Choose a training split", splitChosen, {
                 if suggestedSplit == nil { openRoute(.workout) } else { previewSuggestedSplit() }
             }),
-            ("First water logged", firstWaterLogged ? HydrationService.formatAmount(hydrationSummary.totalML) : "Log your first glass", firstWaterLogged, { openRoute(.hydration) }),
-            ("First workout", firstWorkout ? "Workout saved" : "Start your first workout", firstWorkout, { openRoute(.workout) }),
-            ("Sleep goal set", sleepGoalSet ? SleepScoringService.durationText(minutes: sleepSettings.targetSleepMinutes) : "Choose a nightly target", sleepGoalSet, { openRoute(.sleep) })
+            (firstWaterLogged ? "First glass logged" : "Log your first glass", firstWaterLogged ? HydrationService.formatAmount(hydrationSummary.totalML) : "Log your first glass", firstWaterLogged, { openRoute(.hydration) }),
+            (firstWorkout ? "Workout saved" : "Start your first workout", firstWorkout ? "Workout saved" : "Start your first workout", firstWorkout, { openRoute(.workout) }),
+            (sleepGoalSet ? "Sleep goal set" : "Choose a nightly target", sleepGoalSet ? SleepScoringService.durationText(minutes: sleepSettings.targetSleepMinutes) : "Choose a nightly target", sleepGoalSet, { openRoute(.sleep) })
         ]
     }
 
