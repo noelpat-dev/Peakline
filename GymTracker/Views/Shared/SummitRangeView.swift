@@ -448,19 +448,15 @@ struct SummitRangeView: View {
                     .padding(.vertical, 9)
             } else {
                 ForEach(Array(lift.bestSets.prefix(3))) { set in
-                    bestSetRow(set, lift: lift)
+                    bestSetRow(set)
                 }
             }
         }
         .accessibilityElement(children: .contain)
     }
 
-    private func bestSetRow(_ set: SummitBestSet, lift: SummitLiftPeak) -> some View {
-        let value = SummitWeightFormatting.displayString(set.weightKg, unitSystem: unitSystem)
-        let unit = SummitWeightFormatting.unitSymbol(unitSystem).uppercased()
-        let isBodyweightPull = lift.shortName.localizedCaseInsensitiveContains("pull")
-            || lift.name.localizedCaseInsensitiveContains("pull-up")
-        let setText = isBodyweightPull ? "BW+\(value) \(unit) × \(set.reps)" : "\(value) \(unit) × \(set.reps)"
+    private func bestSetRow(_ set: SummitBestSet) -> some View {
+        let setText = "\(SummitWeightFormatting.setLoad(set.weightKg, isBodyweight: set.isBodyweight, unitSystem: unitSystem).uppercased()) × \(set.reps)"
         return HStack(alignment: .center, spacing: 8) {
             HStack(spacing: 8) {
                 if set.isPR {
@@ -485,7 +481,7 @@ struct SummitRangeView: View {
             Rectangle().fill(appTheme.colors.cardBorder.opacity(0.75)).frame(height: 0.5)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(set.isPR ? "Personal record, " : "")\(setText), \(set.date.formatted(date: .abbreviated, time: .omitted))")
+        .accessibilityLabel("\(set.isPR ? "Personal record, " : "")\(SummitWeightFormatting.accessibleSetLoad(set.weightKg, isBodyweight: set.isBodyweight, unitSystem: unitSystem)), \(set.reps) reps, \(set.date.formatted(date: .abbreviated, time: .omitted))")
     }
 
     private var trendStartLabel: String {

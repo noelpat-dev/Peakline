@@ -111,6 +111,36 @@ final class SummitSnapshotBuilderTests: XCTestCase {
         XCTAssertEqual(snapshot.log.map(\.metres), [5, 6])
     }
 
+    func testBodyweightPullupsUseEffectiveLoadForPRAndShowAddedLoad() {
+        let exerciseID = UUID()
+        let sessions = [
+            inputSession(id: UUID(), date: date(2026, 9, 10), exerciseID: exerciseID, name: "Pull-up", pattern: .pull, bodyweight: true, weight: 0, reps: 5),
+            inputSession(id: UUID(), date: date(2026, 9, 16), exerciseID: exerciseID, name: "Pull-up", pattern: .pull, bodyweight: true, weight: 0, reps: 8),
+            inputSession(id: UUID(), date: date(2026, 9, 23), exerciseID: exerciseID, name: "Pull-up", pattern: .pull, bodyweight: true, weight: 10, reps: 8)
+        ]
+
+        let snapshot = SummitSnapshotBuilder.build(
+            sessions: sessions,
+            bodyweights: [],
+            profileBodyweightKg: 80,
+            expeditionStart: nil,
+            now: date(2026, 9, 23),
+            calendar: calendar()
+        )
+
+        XCTAssertEqual(snapshot.log[1].prs.first?.weightKg, 0)
+        XCTAssertEqual(snapshot.log[1].prs.first?.isBodyweight, true)
+        XCTAssertGreaterThan(snapshot.lifts.first?.e1RMNow ?? 0, 80)
+        XCTAssertEqual(snapshot.lifts.first?.bestSets.first?.weightKg, 10)
+        XCTAssertEqual(snapshot.lifts.first?.bestSets.first?.isBodyweight, true)
+        XCTAssertEqual(SummitWeightFormatting.setLoad(0, isBodyweight: true, unitSystem: .metric), "BW")
+        XCTAssertEqual(SummitWeightFormatting.setLoad(10, isBodyweight: true, unitSystem: .metric), "BW+10 kg")
+        XCTAssertEqual(
+            SummitWeightFormatting.accessibleSetLoad(10, isBodyweight: true, unitSystem: .metric),
+            "body weight plus 10 kilograms"
+        )
+    }
+
     func testLiftBestSetsCanComeFromTheSameSession() {
         let exerciseID = UUID()
         let setIDs = [UUID(), UUID(), UUID()]

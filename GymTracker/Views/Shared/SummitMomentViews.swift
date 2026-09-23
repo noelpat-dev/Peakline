@@ -376,7 +376,7 @@ private struct SummitMomentPRRow: View {
     let unitSystem: UnitSystem
 
     private var weightText: String {
-        "\(SummitWeightFormatting.displayString(record.weightKg, unitSystem: unitSystem)) \(SummitWeightFormatting.unitSymbol(unitSystem).uppercased()) × \(record.reps.formatted())"
+        "\(SummitWeightFormatting.setLoad(record.weightKg, isBodyweight: record.isBodyweight, unitSystem: unitSystem).uppercased()) × \(record.reps.formatted())"
     }
 
     var body: some View {
@@ -400,7 +400,7 @@ private struct SummitMomentPRRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            "\(record.exerciseName), \(SummitWeightFormatting.displayString(record.weightKg, unitSystem: unitSystem)) \(SummitWeightFormatting.unitSymbol(unitSystem)), \(record.reps.formatted()) reps, new personal record"
+            "\(record.exerciseName), \(SummitWeightFormatting.accessibleSetLoad(record.weightKg, isBodyweight: record.isBodyweight, unitSystem: unitSystem)), \(record.reps.formatted()) reps, new personal record"
         )
     }
 }

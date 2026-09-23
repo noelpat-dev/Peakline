@@ -125,6 +125,22 @@ enum SummitWeightFormatting {
     static func unitSymbol(_ unitSystem: UnitSystem) -> String {
         unitSystem == .imperial ? "lb" : "kg"
     }
+
+    static func setLoad(_ weightKg: Double, isBodyweight: Bool, unitSystem: UnitSystem) -> String {
+        let value = displayString(abs(weightKg), unitSystem: unitSystem)
+        let unit = unitSymbol(unitSystem)
+        guard isBodyweight else { return "\(displayString(weightKg, unitSystem: unitSystem)) \(unit)" }
+        guard weightKg != 0 else { return "BW" }
+        return "BW\(weightKg > 0 ? "+" : "−")\(value) \(unit)"
+    }
+
+    static func accessibleSetLoad(_ weightKg: Double, isBodyweight: Bool, unitSystem: UnitSystem) -> String {
+        let unit = unitSystem == .imperial ? "pounds" : "kilograms"
+        guard isBodyweight else { return "\(displayString(weightKg, unitSystem: unitSystem)) \(unit)" }
+        guard weightKg != 0 else { return "body weight" }
+        let adjustment = weightKg > 0 ? "plus" : "minus"
+        return "body weight \(adjustment) \(displayString(abs(weightKg), unitSystem: unitSystem)) \(unit)"
+    }
 }
 
 // MARK: - Engine outputs
@@ -133,6 +149,7 @@ struct SummitPR: Hashable {
     var exerciseName: String
     var weightKg: Double
     var reps: Int
+    var isBodyweight: Bool = false
 }
 
 struct SummitAltitude: Hashable {
@@ -172,6 +189,7 @@ struct SummitBestSet: Hashable, Identifiable {
     var reps: Int
     var date: Date
     var isPR: Bool
+    var isBodyweight: Bool = false
 }
 
 struct SummitLiftPeak: Hashable, Identifiable {
@@ -203,7 +221,7 @@ struct CairnState: Hashable {
     var stones: Int
     var newestIsFresh: Bool
     var climbsThisWeek: Int
-    var climbsNeeded: Int
+    var climbsNeeded: Int // weekly target, including climbs already completed
     var recentWeeks: [CairnWeek] // 12, oldest first; the last is the current week
     var pastCairns: [PastCairn] // newest first, at most 5
 }

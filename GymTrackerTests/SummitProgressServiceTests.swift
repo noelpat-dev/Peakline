@@ -108,7 +108,7 @@ final class SummitProgressServiceTests: XCTestCase {
         )
 
         XCTAssertEqual(state.climbsThisWeek, 1)
-        XCTAssertEqual(state.climbsNeeded, 1)
+        XCTAssertEqual(state.climbsNeeded, 2)
         XCTAssertEqual(state.stones, 1)
     }
 

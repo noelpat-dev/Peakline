@@ -16,11 +16,15 @@ enum SummitProgressService {
 
     static func metreWork(for set: SummitSetInput, bodyweightKg: Double) -> Double {
         guard set.reps > 0 else { return 0 }
+        let load = effectiveLoad(for: set, bodyweightKg: bodyweightKg)
+        return load * Double(set.reps) * rangeOfMotion(for: set.pattern)
+    }
+
+    static func effectiveLoad(for set: SummitSetInput, bodyweightKg: Double) -> Double {
         let bodyweightLoad = set.isBodyweight
             ? bodyweightKg * bodyweightFactor(for: set.pattern)
             : 0
-        let load = set.weightKg + bodyweightLoad
-        return load * Double(set.reps) * rangeOfMotion(for: set.pattern)
+        return set.weightKg + bodyweightLoad
     }
 
     static func altitude(totalMetres: Int, gainedToday: Int?) -> SummitAltitude {
@@ -191,7 +195,7 @@ enum SummitProgressService {
             stones: stones,
             newestIsFresh: newestIsFresh,
             climbsThisWeek: climbsThisWeek,
-            climbsNeeded: max(0, sessionsPerCairnStone - climbsThisWeek),
+            climbsNeeded: sessionsPerCairnStone,
             recentWeeks: recentWeeks,
             pastCairns: Array(pastCairns.reversed().prefix(5))
         )

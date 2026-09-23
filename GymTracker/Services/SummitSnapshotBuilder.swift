@@ -119,7 +119,8 @@ enum SummitSnapshotBuilder {
                 climbWork += SummitProgressService.metreWork(for: set, bodyweightKg: bodyweightKg)
                 volumeKg += setVolume
                 hasLoadedSets = hasLoadedSets || set.weightKg > 0
-                let e1RM = TrainingAnalyticsService.estimatedOneRepMax(weight: set.weightKg, reps: set.reps)
+                let estimatedLoad = SummitProgressService.effectiveLoad(for: set, bodyweightKg: bodyweightKg)
+                let e1RM = TrainingAnalyticsService.estimatedOneRepMax(weight: estimatedLoad, reps: set.reps)
                 let observation = LiftSetObservation(set: set, e1RM: e1RM, date: session.date)
                 setsByExercise[set.exerciseID, default: []].append(observation)
                 if session.date >= liftWindowStart {
@@ -146,7 +147,8 @@ enum SummitSnapshotBuilder {
                     prs.append(SummitPR(
                         exerciseName: bestSet.set.exerciseName,
                         weightKg: bestSet.set.weightKg,
-                        reps: bestSet.set.reps
+                        reps: bestSet.set.reps,
+                        isBodyweight: bestSet.set.isBodyweight
                     ))
                 }
 
@@ -338,7 +340,8 @@ enum SummitSnapshotBuilder {
                         weightKg: $0.set.weightKg,
                         reps: $0.set.reps,
                         date: $0.date,
-                        isPR: prSetIDs.contains($0.set.id)
+                        isPR: prSetIDs.contains($0.set.id),
+                        isBodyweight: $0.set.isBodyweight
                     )
                 }
             let hasRecentPR = recent.contains {

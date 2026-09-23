@@ -419,7 +419,7 @@ struct SummitLogEntryRow: View {
             parts.append("\(SummitWeightFormatting.displayString(climb.volumeKg, unitSystem: unitSystem, maximumFractionDigits: 0)) \(unitName) total volume")
         }
         parts += climb.prs.map {
-            "personal record, \($0.exerciseName), \(SummitWeightFormatting.displayString($0.weightKg, unitSystem: unitSystem)) \(unitName) for \($0.reps) reps"
+            "personal record, \($0.exerciseName), \(SummitWeightFormatting.accessibleSetLoad($0.weightKg, isBodyweight: $0.isBodyweight, unitSystem: unitSystem)) for \($0.reps) reps"
         }
         if let peak = climb.passedPeak {
             parts.append("summit passed, \(peak.name), \(peak.metres) metres")
@@ -472,7 +472,7 @@ struct SummitLogEntryRow: View {
 
                 ForEach(Array(climb.prs.enumerated()), id: \.offset) { _, pr in
                     noteLine(
-                        "PR · \(pr.exerciseName) \(SummitWeightFormatting.displayString(pr.weightKg, unitSystem: unitSystem)) \(SummitWeightFormatting.unitSymbol(unitSystem)) × \(pr.reps)",
+                        "PR · \(pr.exerciseName) \(SummitWeightFormatting.setLoad(pr.weightKg, isBodyweight: pr.isBodyweight, unitSystem: unitSystem)) × \(pr.reps)",
                         color: appTheme.colors.alpenglow
                     )
                 }
