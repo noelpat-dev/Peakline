@@ -1647,7 +1647,7 @@ struct WorkoutStartFirstFrameSnapshot: Sendable {
             return StartWorkoutSplitCardSnapshot(
                 splitId: split.id,
                 splitName: split.name,
-                routeTagText: split.name,
+                routeTagText: split.splitTypeLabel,
                 lastTrainedText: lastTrainedText,
                 estimatedDurationText: estimatedDurationText,
                 exerciseCount: split.exercises.count,
@@ -1668,7 +1668,7 @@ struct WorkoutStartFirstFrameSnapshot: Sendable {
                     return StartWorkoutRecommendedSplitSnapshot(
                         id: split.id,
                         name: split.name,
-                        routeTagText: split.name,
+                        routeTagText: split.splitTypeLabel,
                         mode: trainingCall.recommendedMode,
                         exerciseCount: prepared?.plannedExercises.count ?? split.exercises.count,
                         estimatedDurationText: prepared.map {
