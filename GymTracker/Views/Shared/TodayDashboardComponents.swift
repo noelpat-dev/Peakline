@@ -348,30 +348,47 @@ struct TodayReadinessHero: View {
                     InstrumentGauge(value: scoreValue)
 
                     if !signals.isEmpty {
-                        HStack(alignment: .top, spacing: 0) {
-                            ForEach(Array(signals.prefix(3).enumerated()), id: \.offset) { index, signal in
-                                if index > 0 {
-                                    Rectangle()
-                                        .fill(appTheme.colors.textTertiary.opacity(0.72))
-                                        .frame(width: 0.5, height: 36)
-                                        .padding(.horizontal, appTheme.metrics.spacing10)
-                                        .accessibilityHidden(true)
-                                }
+                        if dynamicTypeSize.isAccessibilitySize {
+                            VStack(alignment: .leading, spacing: appTheme.metrics.spacing8) {
+                                ForEach(Array(signals.prefix(3).enumerated()), id: \.offset) { _, signal in
+                                    HStack(alignment: .firstTextBaseline, spacing: appTheme.metrics.spacing8) {
+                                        Text(signal.label.uppercased())
+                                            .modifier(AppTypography.waypointLabelSmall)
+                                            .foregroundStyle(appTheme.colors.textSecondary)
 
-                                VStack(alignment: .leading, spacing: appTheme.metrics.spacing4) {
-                                    Text(signal.value ?? "+ LOG")
-                                        .modifier(AppTypography.instrumentValue)
-                                        .foregroundStyle(appTheme.colors.textPrimary)
-                                        .lineLimit(1)
-                                        .minimumScaleFactor(0.65)
+                                        Spacer(minLength: appTheme.metrics.spacing8)
 
-                                    Text(signal.label.uppercased())
-                                        .modifier(AppTypography.waypointLabelSmall)
-                                        .foregroundStyle(appTheme.colors.textSecondary)
-                                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-                                        .fixedSize(horizontal: false, vertical: true)
+                                        Text(signal.value ?? "+ LOG")
+                                            .modifier(AppTypography.instrumentValue)
+                                            .foregroundStyle(appTheme.colors.textPrimary)
+                                    }
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        } else {
+                            HStack(alignment: .top, spacing: 0) {
+                                ForEach(Array(signals.prefix(3).enumerated()), id: \.offset) { index, signal in
+                                    if index > 0 {
+                                        Rectangle()
+                                            .fill(appTheme.colors.textTertiary.opacity(0.72))
+                                            .frame(width: 0.5, height: 36)
+                                            .padding(.horizontal, appTheme.metrics.spacing10)
+                                            .accessibilityHidden(true)
+                                    }
+
+                                    VStack(alignment: .leading, spacing: appTheme.metrics.spacing4) {
+                                        Text(signal.value ?? "+ LOG")
+                                            .modifier(AppTypography.instrumentValue)
+                                            .foregroundStyle(appTheme.colors.textPrimary)
+                                            .lineLimit(1)
+                                            .minimumScaleFactor(0.65)
+
+                                        Text(signal.label.uppercased())
+                                            .modifier(AppTypography.waypointLabelSmall)
+                                            .foregroundStyle(appTheme.colors.textSecondary)
+                                            .lineLimit(1)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                }
                             }
                         }
                     }
