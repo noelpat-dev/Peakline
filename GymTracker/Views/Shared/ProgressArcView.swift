@@ -216,7 +216,7 @@ struct SummitHorizonView: View {
         }
 
         return (0..<26).map { _ in
-            let x = nextValue() * 230
+            let x = 110 + nextValue() * 70
             let y = 58 + nextValue() * 30
             let brightness = nextValue()
             return SummitStar(
