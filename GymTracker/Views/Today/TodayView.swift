@@ -1050,17 +1050,11 @@ struct TodayView: View {
                 Label("Settings", systemImage: "gearshape")
             }
         } label: {
-            ZStack {
-                Circle()
-                    .fill(appTheme.colors.backgroundSecondary)
-                    .frame(width: 38, height: 38)
-
-                Image(systemName: "person")
-                    .font(AppTypography.rounded(size: 17, weight: .medium))
-                    .foregroundStyle(appTheme.colors.textSecondary)
-            }
-            .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
-            .contentShape(Circle())
+            Image(systemName: "person")
+                .font(AppTypography.rounded(size: 17, weight: .medium))
+                .foregroundStyle(appTheme.colors.textSecondary)
+                .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
+                .contentShape(Circle())
         }
         .accessibilityLabel("Profile and more options")
         .accessibilityIdentifier("today-profile-menu")
