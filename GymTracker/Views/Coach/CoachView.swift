@@ -396,9 +396,7 @@ struct CoachContentView: View {
                             )
 
                             Text("Today's Call")
-                                .font(AppTypography.eyebrow)
-                                .foregroundStyle(appTheme.colors.textTertiary)
-                                .textCase(.uppercase)
+                                .modifier(AppTypography.waypointLabel)
 
                             Spacer(minLength: 8)
 
@@ -434,9 +432,7 @@ struct CoachContentView: View {
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Start here")
-                                .font(AppTypography.metadataEmphasis)
-                                .foregroundStyle(appTheme.colors.textTertiary)
-                                .textCase(.uppercase)
+                                .modifier(AppTypography.waypointLabelSmall)
 
                             Text(displayedNextStep)
                                 .font(AppTypography.bodyEmphasis)
