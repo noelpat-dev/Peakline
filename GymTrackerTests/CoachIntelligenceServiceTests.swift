@@ -64,6 +64,19 @@ final class CoachIntelligenceServiceTests: XCTestCase {
         XCTAssertTrue(points.allSatisfy { $0.y == SummitHorizonView.frontRidgeBaseline })
     }
 
+    func testSummitSkyPlacementSelectsFlattestThreeDaySpan() {
+        XCTAssertEqual(
+            SummitHorizonView.skySpanStartIndex(for: [1, 1, 0, 0, 0, 0, 0]),
+            2,
+            "Expected the sky to sit over Wednesday through Friday"
+        )
+        XCTAssertEqual(
+            SummitHorizonView.skySpanStartIndex(for: [0, 0, 0, 0, 0, 1, 1]),
+            0,
+            "Expected the sky to sit over Monday through Wednesday"
+        )
+    }
+
     func testTodayReadinessMappingCoversEveryCategory() {
         let cases: [(category: ReadinessCategory, condition: SummitCondition, headline: String, advice: String)] = [
             (.peak, .clear, "Clear skies", "Summit push. A good day to go for a PR."),

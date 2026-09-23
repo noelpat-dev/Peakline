@@ -184,6 +184,10 @@ struct SummitHorizonView: View {
     private static let skyDiscCenterX: CGFloat = 140
     // After the top crop, this leaves the tallest background ridge below the header band.
     private static let headerRidgeDownshift: CGFloat = 76
+    // The header overlay's top inset and title/date stack occupy about 76 points below the crop.
+    private static let headerBandBottom: CGFloat = canvasHeight - visibleCanvasHeight + 76
+    private static let skyRidgeClearance: CGFloat = 9
+    private static let minimumSkyScale: CGFloat = 0.75
     static let frontRidgeBaseline: CGFloat = 236
     private static let dayLetters = ["M", "T", "W", "T", "F", "S", "S"]
     private static let backRidgePoints: [CGPoint] = [
@@ -234,6 +238,7 @@ struct SummitHorizonView: View {
     let isEmpty: Bool
     let animatesIntro: Bool
     let introReady: Bool
+    private let skyPlacement: SummitSkyPlacement
 
     init(
         week: [Double],
@@ -253,6 +258,7 @@ struct SummitHorizonView: View {
         self.isEmpty = isEmpty
         self.animatesIntro = animatesIntro
         self.introReady = introReady
+        self.skyPlacement = Self.makeSkyPlacement(for: week, condition: condition, timeOfDay: timeOfDay)
     }
 
     @State private var backRidgeProgress = 0.0
@@ -277,7 +283,7 @@ struct SummitHorizonView: View {
                     foreground: appTheme.colors.textPrimary,
                     alpenglow: appTheme.colors.alpenglow,
                     canvasSize: CGSize(width: Self.canvasWidth, height: Self.canvasHeight),
-                    skyDownshift: Self.skyDownshift
+                    skyPlacement: skyPlacement
                 )
                 .equatable()
                 .frame(width: width, height: artworkHeight)
@@ -371,6 +377,82 @@ struct SummitHorizonView: View {
 
     private static var topCrop: CGFloat {
         canvasHeight - visibleCanvasHeight
+    }
+
+    static func skySpanStartIndex(for loads: [Double]) -> Int {
+        let normalizedLoads = normalizedLoads(from: loads)
+        var bestStartIndex = 0
+        var lowestMaximumLoad = Double.infinity
+
+        for startIndex in 0...4 {
+            let maximumLoad = normalizedLoads[startIndex..<(startIndex + 3)].max() ?? 0
+            if maximumLoad < lowestMaximumLoad {
+                lowestMaximumLoad = maximumLoad
+                bestStartIndex = startIndex
+            }
+        }
+
+        return bestStartIndex
+    }
+
+    private static func normalizedLoads(from loads: [Double]) -> [Double] {
+        let values = loads.prefix(7).map { value in
+            value.isFinite ? min(max(value, 0), 1) : 0
+        }
+        return values + Array(repeating: 0, count: max(0, 7 - values.count))
+    }
+
+    private static func makeSkyPlacement(
+        for week: [Double],
+        condition: SummitCondition,
+        timeOfDay: SummitTimeOfDay
+    ) -> SummitSkyPlacement {
+        let normalizedLoads = normalizedLoads(from: week)
+        let spanStartIndex = skySpanStartIndex(for: normalizedLoads)
+        let spanCenterX = (columnCenter(spanStartIndex) + columnCenter(spanStartIndex + 2)) / 2
+        let skyBounds = skyBounds(for: condition, timeOfDay: timeOfDay)
+        return SummitSkyPlacement(
+            bounds: skyBounds,
+            centerX: spanCenterX,
+            ridgeLayers: [
+                displayedBackRidgePoints,
+                displayedMiddleRidgePoints,
+                frontRidgePoints(for: normalizedLoads)
+            ],
+            baseDownshift: skyDownshift,
+            headerFloor: headerBandBottom,
+            ridgeClearance: skyRidgeClearance,
+            minimumScale: minimumSkyScale
+        )
+    }
+
+    private static func skyBounds(for condition: SummitCondition, timeOfDay: SummitTimeOfDay) -> CGRect {
+        switch condition {
+        case .clear:
+            switch timeOfDay {
+            case .day:
+                return CGRect(x: 34, y: 57, width: 42, height: 42)
+            case .dawn:
+                return CGRect(x: 101, y: 68, width: 62, height: 46)
+            case .night:
+                let starBounds = nightStars.reduce(into: CGRect.null) { bounds, star in
+                    bounds = bounds.union(CGRect(
+                        x: star.point.x - star.radius,
+                        y: star.point.y - star.radius,
+                        width: star.radius * 2,
+                        height: star.radius * 2
+                    ))
+                }
+                let moonBounds = CGRect(x: 51, y: 61, width: 38, height: 38)
+                return starBounds.union(moonBounds)
+            }
+        case .changeable:
+            return timeOfDay == .day
+                ? CGRect(x: 48, y: 57, width: 106, height: 29)
+                : CGRect(x: 48, y: 57, width: 106, height: 28)
+        case .storm:
+            return CGRect(x: 28, y: 51, width: 134, height: 69)
+        }
     }
 
     private var normalizedWeek: [Double] {
@@ -680,6 +762,89 @@ struct SummitHorizonView: View {
     }
 }
 
+private struct SummitSkyPlacement: Equatable {
+    let originX: CGFloat
+    let originY: CGFloat
+    let scale: CGFloat
+
+    init(
+        bounds: CGRect,
+        centerX: CGFloat,
+        ridgeLayers: [[CGPoint]],
+        baseDownshift: CGFloat,
+        headerFloor: CGFloat,
+        ridgeClearance: CGFloat,
+        minimumScale: CGFloat
+    ) {
+        func availableHeight(at scale: CGFloat) -> CGFloat {
+            let range = Self.ridgeRange(bounds: bounds, centerX: centerX, scale: scale)
+            return Self.highestRidgeY(in: range, layers: ridgeLayers) - headerFloor - ridgeClearance
+        }
+
+        let scale: CGFloat
+        if availableHeight(at: 1) >= bounds.height {
+            scale = 1
+        } else if availableHeight(at: minimumScale) >= bounds.height * minimumScale {
+            var lowerBound = minimumScale
+            var upperBound: CGFloat = 1
+            for _ in 0..<12 {
+                let candidate = (lowerBound + upperBound) / 2
+                if availableHeight(at: candidate) >= bounds.height * candidate {
+                    lowerBound = candidate
+                } else {
+                    upperBound = candidate
+                }
+            }
+            scale = lowerBound
+        } else {
+            scale = minimumScale
+        }
+
+        let ridgeRange = Self.ridgeRange(bounds: bounds, centerX: centerX, scale: scale)
+        let ridgeY = Self.highestRidgeY(in: ridgeRange, layers: ridgeLayers)
+        let scaledHalfHeight = bounds.height * scale / 2
+        let baseCenterY = baseDownshift + bounds.midY
+        let unshiftedTop = baseCenterY - scaledHalfHeight
+        let unshiftedBottom = baseCenterY + scaledHalfHeight
+        let headerShift = headerFloor - unshiftedTop
+        let ridgeShift = ridgeY - ridgeClearance - unshiftedBottom
+        let verticalShift: CGFloat
+        if headerShift <= ridgeShift {
+            verticalShift = min(max(0, headerShift), ridgeShift)
+        } else {
+            verticalShift = headerShift
+        }
+
+        self.originX = centerX - bounds.midX * scale
+        self.originY = baseDownshift + bounds.midY * (1 - scale) + verticalShift
+        self.scale = scale
+    }
+
+    private static func ridgeRange(bounds: CGRect, centerX: CGFloat, scale: CGFloat) -> ClosedRange<CGFloat> {
+        let halfWidth = bounds.width * scale / 2 + 1
+        return (centerX - halfWidth)...(centerX + halfWidth)
+    }
+
+    private static func highestRidgeY(in horizontalRange: ClosedRange<CGFloat>, layers: [[CGPoint]]) -> CGFloat {
+        var highestY = CGFloat.infinity
+
+        for points in layers {
+            for (start, end) in zip(points, points.dropFirst()) {
+                let segmentMinX = max(horizontalRange.lowerBound, start.x)
+                let segmentMaxX = min(horizontalRange.upperBound, end.x)
+                guard segmentMinX <= segmentMaxX, end.x > start.x else { continue }
+
+                let slope = (end.y - start.y) / (end.x - start.x)
+                let minY = start.y + (segmentMinX - start.x) * slope
+                let maxY = start.y + (segmentMaxX - start.x) * slope
+                highestY = min(highestY, min(minY, maxY))
+            }
+        }
+
+        return highestY.isFinite ? highestY : 0
+    }
+}
+
 private struct SummitHorizonStaticBackground: View, Equatable {
     let condition: SummitCondition
     let timeOfDay: SummitTimeOfDay
@@ -687,7 +852,7 @@ private struct SummitHorizonStaticBackground: View, Equatable {
     let foreground: Color
     let alpenglow: Color
     let canvasSize: CGSize
-    let skyDownshift: CGFloat
+    let skyPlacement: SummitSkyPlacement
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.condition == rhs.condition
@@ -696,7 +861,7 @@ private struct SummitHorizonStaticBackground: View, Equatable {
             && lhs.foreground == rhs.foreground
             && lhs.alpenglow == rhs.alpenglow
             && lhs.canvasSize == rhs.canvasSize
-            && lhs.skyDownshift == rhs.skyDownshift
+            && lhs.skyPlacement == rhs.skyPlacement
     }
 
     var body: some View {
@@ -711,7 +876,8 @@ private struct SummitHorizonStaticBackground: View, Equatable {
             drawingContext.fill(bounds, with: .color(background))
 
             var skyContext = drawingContext
-            skyContext.translateBy(x: 0, y: skyDownshift)
+            skyContext.translateBy(x: skyPlacement.originX, y: skyPlacement.originY)
+            skyContext.scaleBy(x: skyPlacement.scale, y: skyPlacement.scale)
             SummitHorizonView.drawSky(
                 in: skyContext,
                 condition: condition,
