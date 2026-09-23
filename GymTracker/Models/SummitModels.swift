@@ -93,6 +93,39 @@ struct SummitSessionInput: Hashable, Identifiable {
     var sets: [SummitSetInput] // completed, non-warm-up sets only
 }
 
+struct SummitBodyweightInput: Hashable {
+    var date: Date
+    var weightKg: Double
+}
+
+/// Shared conversion at the boundary between stored/display loads and Summit's kg values.
+enum SummitWeightFormatting {
+    static func kilograms(_ value: Double, unitSystem: UnitSystem) -> Double {
+        guard unitSystem == .imperial else { return value }
+        return Measurement(value: value, unit: UnitMass.pounds)
+            .converted(to: .kilograms).value
+    }
+
+    static func displayValue(_ kilograms: Double, unitSystem: UnitSystem) -> Double {
+        guard unitSystem == .imperial else { return kilograms }
+        return Measurement(value: kilograms, unit: UnitMass.kilograms)
+            .converted(to: .pounds).value
+    }
+
+    static func displayString(
+        _ kilograms: Double,
+        unitSystem: UnitSystem,
+        maximumFractionDigits: Int = 1
+    ) -> String {
+        displayValue(kilograms, unitSystem: unitSystem)
+            .formatted(.number.precision(.fractionLength(0...maximumFractionDigits)))
+    }
+
+    static func unitSymbol(_ unitSystem: UnitSystem) -> String {
+        unitSystem == .imperial ? "lb" : "kg"
+    }
+}
+
 // MARK: - Engine outputs
 
 struct SummitPR: Hashable {
