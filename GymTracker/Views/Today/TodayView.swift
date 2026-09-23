@@ -595,7 +595,8 @@ struct TodayView: View {
         }
 
         let maximumLoad = dailyLoads.max() ?? 0
-        let normalizedLoads = dailyLoads.map { maximumLoad > 0 ? $0 / maximumLoad : 0 }
+        var normalizedLoads = dailyLoads.map { maximumLoad > 0 ? $0 / maximumLoad : 0 }
+        var isSummitWeekEmpty = dailyLoads.allSatisfy { $0 == 0 }
         let score = readiness ?? readinessScore
         var condition: SummitCondition = score.availableSignalCount > 0
             ? TodayReadinessMapping.summitCondition(for: score.category)
@@ -610,6 +611,20 @@ struct TodayView: View {
         if launchArguments.contains("-SummitTime=day") { timeOfDay = .day }
         if launchArguments.contains("-SummitTime=dawn") { timeOfDay = .dawn }
         if launchArguments.contains("-SummitTime=night") { timeOfDay = .night }
+
+        let weekLoadsArgumentPrefix = "-SummitWeekLoads="
+        if let argument = launchArguments.first(where: { $0.hasPrefix(weekLoadsArgumentPrefix) }) {
+            let fixtureComponents = argument
+                .dropFirst(weekLoadsArgumentPrefix.count)
+                .split(separator: ",", omittingEmptySubsequences: false)
+            let fixtureLoads = fixtureComponents.compactMap { Double(String($0)) }
+            if fixtureComponents.count == 7,
+               fixtureLoads.count == 7,
+               fixtureLoads.allSatisfy({ $0.isFinite }) {
+                normalizedLoads = fixtureLoads.map { min(max($0, 0), 1) }
+                isSummitWeekEmpty = normalizedLoads.allSatisfy { $0 == 0 }
+            }
+        }
 #endif
 
         summitHorizon = TodaySummitHorizonPresentation(
@@ -619,7 +634,7 @@ struct TodayView: View {
             prDayIndex: nil,
             condition: condition,
             timeOfDay: timeOfDay,
-            isEmpty: dailyLoads.allSatisfy { $0 == 0 }
+            isEmpty: isSummitWeekEmpty
         )
     }
 
