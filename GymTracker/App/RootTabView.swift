@@ -1171,7 +1171,7 @@ private struct RootTabContainer: View {
                 .equatable()
                 .onAppear { scheduleStableFrame(for: .today) }
                 .tabItem {
-                    Label("Today", systemImage: "house")
+                    Label("Today", systemImage: "mountain.2")
                         .environment(\.symbolVariants, .none)
                 }
                 .tag(RootTab.today)
@@ -1202,7 +1202,7 @@ private struct RootTabContainer: View {
                 .equatable()
                 .onAppear { scheduleStableFrame(for: .splits) }
                 .tabItem {
-                    Label("Splits", systemImage: "list.bullet.rectangle")
+                    Label("Splits", systemImage: "map")
                         .environment(\.symbolVariants, .none)
                 }
                 .tag(RootTab.splits)
@@ -1214,7 +1214,7 @@ private struct RootTabContainer: View {
                 .equatable()
                 .onAppear { scheduleStableFrame(for: .history) }
                 .tabItem {
-                    Label("History", systemImage: "clock.arrow.circlepath")
+                    Label("History", systemImage: "book.closed")
                         .environment(\.symbolVariants, .none)
                 }
                 .tag(RootTab.history)
