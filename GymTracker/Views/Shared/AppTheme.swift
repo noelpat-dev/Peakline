@@ -3,6 +3,7 @@ import UIKit
 
 struct AppThemeColors {
     let accent: Color
+    let alpenglow: Color
     let accentForeground: Color
     let accentHighlight: Color
     let accentSurface: Color
@@ -100,8 +101,117 @@ enum AppTypography {
     static let workoutNumber = Font.system(.headline, design: .rounded).monospacedDigit().weight(.bold)
     static let workoutLargeNumber = Font.system(.title2, design: .rounded).monospacedDigit().weight(.bold)
 
+    static var instrumentHero: ScaledTypographyStyle {
+        ScaledTypographyStyle(
+            size: 48,
+            weight: .semibold,
+            relativeTo: .largeTitle,
+            isCondensed: true,
+            usesMonospacedDigits: true
+        )
+    }
+
+    static var instrumentLarge: ScaledTypographyStyle {
+        ScaledTypographyStyle(
+            size: 26,
+            weight: .semibold,
+            relativeTo: .title,
+            isCondensed: true,
+            usesMonospacedDigits: true
+        )
+    }
+
+    static var instrumentValue: ScaledTypographyStyle {
+        ScaledTypographyStyle(
+            size: 17,
+            weight: .semibold,
+            relativeTo: .body,
+            isCondensed: true,
+            usesMonospacedDigits: true
+        )
+    }
+
+    static var instrumentUnit: ScaledTypographyStyle {
+        ScaledTypographyStyle(
+            size: 18,
+            weight: .semibold,
+            relativeTo: .body,
+            usesSecondaryColor: true
+        )
+    }
+
+    static var waypointLabel: ScaledTypographyStyle {
+        ScaledTypographyStyle(
+            size: 12,
+            weight: .medium,
+            relativeTo: .caption,
+            tracking: 1.7,
+            isUppercase: true,
+            usesSecondaryColor: true
+        )
+    }
+
+    static var waypointLabelSmall: ScaledTypographyStyle {
+        ScaledTypographyStyle(
+            size: 10.5,
+            weight: .medium,
+            relativeTo: .caption2,
+            tracking: 1.7,
+            isUppercase: true,
+            usesSecondaryColor: true
+        )
+    }
+
     static func rounded(size: CGFloat, weight: Font.Weight = .semibold) -> Font {
         .system(size: size, weight: weight, design: .rounded)
+    }
+}
+
+struct ScaledTypographyStyle: ViewModifier {
+    @Environment(\.appTheme) private var theme
+    @ScaledMetric private var scaledSize: CGFloat
+
+    private let weight: Font.Weight
+    private let isCondensed: Bool
+    private let usesMonospacedDigits: Bool
+    private let tracking: CGFloat
+    private let isUppercase: Bool
+    private let usesSecondaryColor: Bool
+
+    init(
+        size: CGFloat,
+        weight: Font.Weight,
+        relativeTo textStyle: Font.TextStyle,
+        isCondensed: Bool = false,
+        usesMonospacedDigits: Bool = false,
+        tracking: CGFloat = 0,
+        isUppercase: Bool = false,
+        usesSecondaryColor: Bool = false
+    ) {
+        _scaledSize = ScaledMetric(wrappedValue: size, relativeTo: textStyle)
+        self.weight = weight
+        self.isCondensed = isCondensed
+        self.usesMonospacedDigits = usesMonospacedDigits
+        self.tracking = tracking
+        self.isUppercase = isUppercase
+        self.usesSecondaryColor = usesSecondaryColor
+    }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let baseFont = Font.system(size: scaledSize, weight: weight, design: .default)
+        let widthAdjustedFont = isCondensed ? baseFont.width(.condensed) : baseFont
+        let font = usesMonospacedDigits ? widthAdjustedFont.monospacedDigit() : widthAdjustedFont
+        let styledContent = content
+            .font(font)
+            .tracking(tracking)
+            .textCase(isUppercase ? .uppercase : nil)
+
+        if usesSecondaryColor {
+            styledContent.foregroundStyle(theme.colors.textSecondary)
+        } else {
+            styledContent
+        }
     }
 }
 
@@ -159,6 +269,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
 
         return AppThemeColors(
             accent: accent,
+            alpenglow: Color(light: 0xD2603E, dark: 0xFF9C7A),
             accentForeground: Color(light: 0xFFFFFF, dark: 0x000000),
             accentHighlight: Color(light: 0x3A3A3C, dark: 0xFFFFFF),
             accentSurface: accent.opacity(0.12),
@@ -348,4 +459,32 @@ struct AppSwitchToggleStyle: ToggleStyle {
         Toggle(configuration)
             .toggleStyle(SwitchToggleStyle(tint: theme.colors.textSuccess))
     }
+}
+
+#Preview("Summit typography and alpenglow") {
+    let theme = AppTheme.black
+
+    VStack(alignment: .leading, spacing: 12) {
+        RoundedRectangle(cornerRadius: 4)
+            .fill(theme.colors.alpenglow)
+            .frame(width: 72, height: 16)
+            .accessibilityLabel("Alpenglow colour swatch")
+
+        Text("8,450")
+            .modifier(AppTypography.instrumentHero)
+        Text("2,850")
+            .modifier(AppTypography.instrumentLarge)
+        Text("42")
+            .modifier(AppTypography.instrumentValue)
+        Text("M")
+            .modifier(AppTypography.instrumentUnit)
+        Text("02 · TODAY'S ROUTE")
+            .modifier(AppTypography.waypointLabel)
+        Text("LAST SET")
+            .modifier(AppTypography.waypointLabelSmall)
+    }
+    .padding(24)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(theme.colors.backgroundPrimary)
+    .environment(\.appTheme, theme)
 }
