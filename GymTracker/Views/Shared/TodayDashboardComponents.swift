@@ -90,101 +90,6 @@ extension View {
     }
 }
 
-struct QuickAction: Identifiable {
-    let identifier: String?
-    let title: String
-    let subtitle: String
-    let systemImage: String
-    let style: QuickActionStyle
-    let action: () -> Void
-
-    var id: String {
-        identifier ?? title
-    }
-
-    init(
-        identifier: String? = nil,
-        title: String,
-        subtitle: String,
-        systemImage: String,
-        style: QuickActionStyle,
-        action: @escaping () -> Void
-    ) {
-        self.identifier = identifier
-        self.title = title
-        self.subtitle = subtitle
-        self.systemImage = systemImage
-        self.style = style
-        self.action = action
-    }
-}
-
-enum QuickActionStyle {
-    case primary
-    case neutral
-    case calm
-    case progress
-    case hydration
-}
-
-struct QuickActionTile: View {
-    @Environment(\.appTheme) private var appTheme
-
-    let action: QuickAction
-
-    var body: some View {
-        let identifier = action.identifier ?? "quick-action-\(action.title.lowercased().replacingOccurrences(of: " ", with: "-"))"
-
-        Button {
-            action.action()
-        } label: {
-            FitnessCard(style: .compact) {
-                VStack(alignment: .leading, spacing: 13) {
-                    HStack {
-                        FitnessIconBadge(
-                            systemImage: action.systemImage,
-                            size: appTheme.metrics.rowIconSize,
-                            tint: iconColor,
-                            background: iconBackground
-                        )
-
-                        Spacer(minLength: 8)
-
-                        Image(systemName: "chevron.right")
-                            .font(AppTypography.eyebrow)
-                            .foregroundStyle(appTheme.colors.textTertiary)
-                    }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(action.title)
-                            .font(AppTypography.compactCardTitle)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.82)
-
-                        Text(action.subtitle)
-                            .font(AppTypography.metadata)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
-            }
-        }
-        .buttonStyle(PressableCardButtonStyle())
-        .accessibilityIdentifier(identifier)
-    }
-
-    private var iconColor: Color {
-        appTheme.colors.accent
-    }
-
-    private var iconBackground: Color {
-        appTheme.colors.accentSurface
-    }
-}
-
 struct DashboardSection<Content: View>: View {
     @Environment(\.appTheme) private var appTheme
 
@@ -326,29 +231,36 @@ struct TodayReadinessHero: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                HStack(alignment: .center, spacing: appTheme.metrics.spacing6) {
-                    Text("READINESS")
-                        .modifier(AppTypography.waypointLabel)
-                        .foregroundStyle(appTheme.colors.textSecondary)
+                if let scoreValue {
+                    HStack(alignment: .center, spacing: appTheme.metrics.spacing6) {
+                        Text("READINESS")
+                            .modifier(AppTypography.waypointLabel)
+                            .foregroundStyle(appTheme.colors.textSecondary)
 
-                    Text(scoreText)
-                        .modifier(AppTypography.instrumentLarge)
-                        .foregroundStyle(appTheme.colors.textPrimary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .accessibilityIdentifier("today-readiness-score-value")
+                        Text(scoreText)
+                            .modifier(AppTypography.instrumentLarge)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .accessibilityIdentifier("today-readiness-score-value")
 
-                    if scoreValue != nil {
                         Text("/100")
                             .font(AppTypography.bodyEmphasis)
                             .foregroundStyle(appTheme.colors.textTertiary)
-                    }
 
-                    Spacer(minLength: appTheme.metrics.spacing4)
+                        Spacer(minLength: appTheme.metrics.spacing4)
 
-                    if let scoreValue {
                         TodayReadinessGauge(value: scoreValue)
                     }
+                } else {
+                    Text(scoreText)
+                        .font(.system(size: 1))
+                        .foregroundStyle(Color.clear)
+                        .frame(width: 1, height: 1)
+                        .clipped()
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(scoreText)
+                        .accessibilityIdentifier("today-readiness-score-value")
                 }
 
                 HStack(alignment: .center, spacing: appTheme.metrics.spacing10) {
@@ -460,301 +372,6 @@ struct TodayCampSuppliesRow: View {
     }
 }
 
-/// A compact, tappable Today tile for a prepared metric or next action.
-struct TodayMetricCard: View {
-    @Environment(\.appTheme) private var appTheme
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    let title: String
-    let systemImage: String
-    let value: String
-    let detail: String
-    let footer: String?
-    let isMetric: Bool
-    let isEnabled: Bool
-    let action: () -> Void
-
-    init(
-        title: String,
-        systemImage: String,
-        value: String,
-        detail: String,
-        footer: String? = nil,
-        isMetric: Bool = false,
-        isEnabled: Bool = true,
-        action: @escaping () -> Void
-    ) {
-        self.title = title
-        self.systemImage = systemImage
-        self.value = value
-        self.detail = detail
-        self.footer = footer
-        self.isMetric = isMetric
-        self.isEnabled = isEnabled
-        self.action = action
-    }
-
-    var body: some View {
-        Button {
-            action()
-        } label: {
-            FitnessCard(style: .compact, padding: appTheme.metrics.spacing14) {
-                VStack(alignment: .leading, spacing: appTheme.metrics.spacing6) {
-                    HStack(alignment: .center, spacing: appTheme.metrics.spacing8) {
-                        Image(systemName: systemImage)
-                            .font(AppTypography.rounded(size: appTheme.metrics.spacing20, weight: .semibold))
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .frame(width: appTheme.metrics.spacing22, height: appTheme.metrics.spacing22, alignment: .leading)
-                            .accessibilityHidden(true)
-
-                        Spacer(minLength: appTheme.metrics.spacing8)
-
-                        Text(title)
-                            .font(AppTypography.eyebrow)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .textCase(.uppercase)
-                            .multilineTextAlignment(.trailing)
-                            .lineLimit(2)
-                    }
-
-                    Text(value)
-                        .font(valueFont)
-                        .foregroundStyle(appTheme.colors.textPrimary)
-                        .lineLimit(nil)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if !detail.isEmpty {
-                        HStack(spacing: appTheme.metrics.spacing8) {
-                            Text(detail)
-                                .font(AppTypography.body)
-                                .foregroundStyle(appTheme.colors.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                            if footer == nil {
-                                Spacer(minLength: 0)
-                                Image(systemName: "chevron.right")
-                                    .font(AppTypography.metadataEmphasis)
-                                    .foregroundStyle(appTheme.colors.textTertiary)
-                                    .accessibilityHidden(true)
-                            }
-                        }
-                    }
-
-                    if let footer, !footer.isEmpty {
-                        Divider()
-                            .overlay(appTheme.colors.cardBorder.opacity(0.58))
-
-                        HStack(alignment: .center, spacing: appTheme.metrics.spacing8) {
-                            Text(footer)
-                                .font(AppTypography.metadata)
-                                .foregroundStyle(appTheme.colors.textSecondary)
-                                .lineLimit(nil)
-                                .fixedSize(horizontal: false, vertical: true)
-
-                            Spacer(minLength: appTheme.metrics.spacing4)
-
-                            Image(systemName: "chevron.right")
-                                .font(AppTypography.metadataEmphasis)
-                                .foregroundStyle(appTheme.colors.textTertiary)
-                                .accessibilityHidden(true)
-                        }
-                    }
-                }
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: dynamicTypeSize.isAccessibilitySize
-                        ? appTheme.metrics.metricTileMinHeight + appTheme.metrics.spacing16
-                        : appTheme.metrics.metricTileMinHeight,
-                    alignment: .topLeading
-                )
-            }
-        }
-        .buttonStyle(PressableCardButtonStyle())
-        .disabled(!isEnabled)
-        .opacity(isEnabled ? 1 : 0.6)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint(
-            isEnabled
-                ? "Opens \(title)"
-                : "Unavailable until a workout plan is available"
-        )
-    }
-
-    private var valueFont: Font {
-        isMetric
-            ? AppTypography.largeMetric
-            : AppTypography.compactCardTitle
-    }
-}
-
-/// A compact seven day activity summary. The label intentionally describes
-/// completed days rather than implying a streak or another derived measure.
-struct TodayWeeklyActivityCard: View {
-    @Environment(\.appTheme) private var appTheme
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    let completedDays: [Bool]
-    let action: () -> Void
-
-    var body: some View {
-        Button {
-            action()
-        } label: {
-            FitnessCard(style: .compact) {
-                ViewThatFits(in: .horizontal) {
-                    horizontalContent
-                    verticalContent
-                }
-            }
-        }
-        .buttonStyle(PressableCardButtonStyle())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Weekly activity")
-        .accessibilityValue("\(completedCount) of \(dayCount) days completed")
-        .accessibilityHint("Opens your activity history")
-        .accessibilityIdentifier("today-weekly-activity")
-    }
-
-    private var horizontalContent: some View {
-        HStack(alignment: .center, spacing: appTheme.metrics.spacing12) {
-            Image(systemName: "calendar")
-                .font(AppTypography.rounded(size: appTheme.metrics.spacing22, weight: .semibold))
-                .foregroundStyle(appTheme.colors.textSecondary)
-                .frame(width: appTheme.metrics.spacing28, height: appTheme.metrics.spacing28)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: appTheme.metrics.spacing4) {
-                Text("Weekly activity")
-                    .font(AppTypography.eyebrow)
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .textCase(.uppercase)
-
-                HStack(alignment: .firstTextBaseline, spacing: appTheme.metrics.spacing6) {
-                    Text("\(completedCount)/\(dayCount)")
-                        .font(AppTypography.workoutLargeNumber)
-                        .foregroundStyle(appTheme.colors.textPrimary)
-
-                    Text("days")
-                        .font(AppTypography.body)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                }
-            }
-
-            Spacer(minLength: appTheme.metrics.spacing8)
-
-            dayDots
-
-            Image(systemName: "chevron.right")
-                .font(AppTypography.metadataEmphasis)
-                .foregroundStyle(appTheme.colors.textTertiary)
-                .accessibilityHidden(true)
-        }
-        .frame(maxWidth: .infinity, minHeight: appTheme.metrics.compactRowMinHeight, alignment: .leading)
-    }
-
-    private var verticalContent: some View {
-        VStack(alignment: .leading, spacing: appTheme.metrics.spacing12) {
-            HStack(alignment: .center, spacing: appTheme.metrics.spacing12) {
-                Image(systemName: "calendar")
-                    .font(AppTypography.rounded(size: appTheme.metrics.spacing22, weight: .semibold))
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .frame(width: appTheme.metrics.spacing28, height: appTheme.metrics.spacing28)
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: appTheme.metrics.spacing4) {
-                    Text("Weekly activity")
-                        .font(AppTypography.eyebrow)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                        .textCase(.uppercase)
-
-                    Text("\(completedCount) of \(dayCount) days completed")
-                        .font(AppTypography.bodyEmphasis)
-                        .foregroundStyle(appTheme.colors.textPrimary)
-                }
-
-                Spacer(minLength: appTheme.metrics.spacing8)
-
-                Image(systemName: "chevron.right")
-                    .font(AppTypography.metadataEmphasis)
-                    .foregroundStyle(appTheme.colors.textTertiary)
-                    .accessibilityHidden(true)
-            }
-
-            dayDots
-        }
-    }
-
-    private var dayDots: some View {
-        HStack(spacing: appTheme.metrics.spacing6) {
-            ForEach(Array(completedDays.enumerated()), id: \.offset) { _, isComplete in
-                Circle()
-                    .fill(isComplete ? appTheme.colors.accent : appTheme.colors.cardBackgroundElevated)
-                    .frame(
-                        width: dynamicTypeSize.isAccessibilitySize
-                            ? appTheme.metrics.spacing14
-                            : appTheme.metrics.spacing12,
-                        height: dynamicTypeSize.isAccessibilitySize
-                            ? appTheme.metrics.spacing14
-                            : appTheme.metrics.spacing12
-                    )
-                    .overlay {
-                        Circle()
-                            .stroke(
-                                isComplete
-                                    ? appTheme.colors.accent.opacity(0.16)
-                                    : appTheme.colors.cardBorder,
-                                lineWidth: 0.75
-                            )
-                    }
-                    .accessibilityHidden(true)
-            }
-        }
-    }
-
-    private var completedCount: Int {
-        completedDays.filter { $0 }.count
-    }
-
-    private var dayCount: Int {
-        completedDays.count
-    }
-}
-
-/// The monochrome entry point for the existing suggested session preview.
-struct TodayPlanButton: View {
-    @Environment(\.appTheme) private var appTheme
-
-    var title: String = "Review Today’s Plan"
-    var isEnabled: Bool = true
-    let action: () -> Void
-
-    var body: some View {
-        Button {
-            action()
-        } label: {
-            HStack(spacing: appTheme.metrics.spacing8) {
-                Spacer(minLength: appTheme.metrics.spacing8)
-
-                Label(title, systemImage: "list.bullet")
-
-                Spacer(minLength: appTheme.metrics.spacing8)
-
-                Image(systemName: "chevron.right")
-                    .font(AppTypography.metadataEmphasis)
-                    .accessibilityHidden(true)
-            }
-        }
-        .buttonStyle(NeutralFitnessButtonStyle())
-        .disabled(!isEnabled)
-        .opacity(isEnabled ? 1 : 0.6)
-        .accessibilityHint(
-            isEnabled
-                ? "Opens your prepared workout preview"
-                : "Unavailable until an active split is available"
-        )
-        .accessibilityIdentifier("today-review-plan")
-    }
-}
-
 private struct TodaySummitPreviewGallery: View {
     private enum Scene: String, CaseIterable {
         case baseCamp
@@ -842,10 +459,10 @@ private struct TodaySummitPreviewGallery: View {
                                 .fill(.primary.opacity(0.55))
                                 .frame(height: 2)
                             TrailStop(title: "Health connected", detail: "Sleep signal available", done: true)
-                            TrailStop(title: "Split chosen", detail: "Choose a training split")
-                            TrailStop(title: "First water logged", detail: "Log your first glass")
-                            TrailStop(title: "First workout", detail: "Start your first workout")
-                            TrailStop(title: "Sleep goal set", detail: "Choose a nightly target")
+                            TrailStop(title: "Choose a training split", detail: "Choose a training split")
+                            TrailStop(title: "Log your first glass", detail: "Log your first glass")
+                            TrailStop(title: "Start your first workout", detail: "Start your first workout")
+                            TrailStop(title: "Choose a nightly target", detail: "Choose a nightly target")
                         }
                     }
                     TrailSection(index: 2, label: "YOUR FIRST CLIMB") {
