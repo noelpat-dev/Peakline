@@ -632,13 +632,7 @@ struct StartWorkoutContentView: View {
                     id: $0.id,
                     name: $0.name,
                     activeRotationIndex: $0.activeRotationIndex,
-                    updatedAt: $0.updatedAt,
-                    exerciseSignature: $0.exercises
-                        .map {
-                            "\($0.id.uuidString):\($0.orderIndex):\($0.exerciseNameSnapshot):\($0.targetSets):\($0.minReps):\($0.maxReps)"
-                        }
-                        .sorted()
-                        .joined(separator: ",")
+                    updatedAt: $0.updatedAt
                 )
             },
             sessions: completedSessions.prefix(20).map {
@@ -1570,7 +1564,6 @@ struct WorkoutDashboardInputSignature: Sendable, Equatable {
         let name: String
         let activeRotationIndex: Int?
         let updatedAt: Date
-        let exerciseSignature: String
     }
 
     struct Session: Sendable, Equatable {
@@ -1599,7 +1592,7 @@ struct WorkoutDashboardInputSignature: Sendable, Equatable {
         [
             "revision:\(workoutRevision)",
             splits.map { split in
-                "\(split.id.uuidString):\(split.name):\(split.activeRotationIndex ?? -1):\(split.updatedAt.timeIntervalSince1970):\(split.exerciseSignature)"
+                "\(split.id.uuidString):\(split.name):\(split.activeRotationIndex ?? -1):\(split.updatedAt.timeIntervalSince1970)"
             }
             .joined(separator: "|"),
             sessions.map { session in
