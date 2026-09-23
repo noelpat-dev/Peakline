@@ -210,18 +210,22 @@ struct WorkoutDashboardHero: View {
                     if routeStops.isEmpty {
                         TrailStop(title: "Workout route", detail: "Your exercise order is ready in Preview")
                     } else {
-                        ForEach(routeStops) { stop in
+                        ForEach(routeStops.prefix(4)) { stop in
                             TrailStop(title: stop.title, detail: stop.detail)
                         }
+
+                        if routeStops.count > 4 {
+                            TrailStop(title: "+ \(routeStops.count - 4) more")
+                        }
                     }
+
+                    SummitPrimaryButton(title: "Start Workout", action: onStart)
+                        .accessibilityIdentifier("workout-recommended-start")
 
                     ViewThatFits(in: .horizontal) {
                         routeMetrics
                         routeMetricsStack
                     }
-
-                    SummitPrimaryButton(title: "Start Workout", action: onStart)
-                        .accessibilityIdentifier("workout-recommended-start")
 
                     Button("Preview Workout", action: onPreview)
                         .font(AppTypography.bodyEmphasis)
