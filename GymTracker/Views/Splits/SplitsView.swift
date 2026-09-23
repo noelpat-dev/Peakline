@@ -65,135 +65,140 @@ struct SplitsView: View {
 
         NavigationStack {
             FitnessScreen {
-                if isPreparingInitialSnapshot {
-                    SwiftUI.ProgressView("Loading splits…")
-                        .frame(maxWidth: .infinity, minHeight: 180)
-                        .accessibilityIdentifier("splits-loading")
-                } else if !snapshot.activeProgrammeSplits.isEmpty {
-                    SplitProgrammeCard(
-                        splits: snapshot.activeProgrammeSplits,
-                        trainingCall: snapshot.trainingCall,
-                        onEditRotation: {
-                            presentEditRotation()
-                        }
-                    )
-
-                    DashboardSection(title: "Training Days") {
-                        ForEach(snapshot.activeProgrammeSplits) { split in
-                            NavigationLink(value: split.id) {
-                                SplitTrainingDayCard(
-                                    split: split,
-                                    status: snapshot.statusesBySplitName[split.name] ?? .ready,
-                                    lastTrainedText: snapshot.lastTrainedTextBySplitName[split.name] ?? "No history yet",
-                                    focusDescription: snapshot.focusTextBySplitName[split.name] ?? focusDescription(for: split)
+                TrailPage {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if isPreparingInitialSnapshot {
+                            TrailSection(index: 1, label: "Programme") {
+                                SwiftUI.ProgressView("Loading splits…")
+                                    .frame(maxWidth: .infinity, minHeight: 80, alignment: .leading)
+                                    .accessibilityIdentifier("splits-loading")
+                            }
+                        } else if !snapshot.activeProgrammeSplits.isEmpty {
+                            TrailSection(index: 1, label: "Active programme") {
+                                SplitProgrammeCard(
+                                    splits: snapshot.activeProgrammeSplits,
+                                    trainingCall: snapshot.trainingCall,
+                                    exerciseCount: snapshot.programmeExerciseCount,
+                                    onEditRotation: {
+                                        presentEditRotation()
+                                    }
                                 )
                             }
-                            .buttonStyle(PressableCardButtonStyle())
-                            .accessibilityIdentifier("split-card-\(split.name.peaklineAccessibilityIdentifierFragment)")
-                        }
-                    }
-                } else {
-                    DashboardEmptyStateCard(
-                        title: "No active programme",
-                        message: "Create training days or edit the rotation to build your programme dashboard.",
-                        systemImage: "list.bullet.rectangle"
-                    )
 
-                    Button {
-                        presentEditRotation()
-                    } label: {
-                        Label("Edit Rotation", systemImage: "slider.horizontal.3")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(SecondaryFitnessButtonStyle())
-                    .accessibilityIdentifier("edit-empty-rotation-button")
-                }
-
-                if !snapshot.otherSplits.isEmpty {
-                    FitnessCard(style: .compact, padding: 0) {
-                        VStack(spacing: 0) {
-                            Button {
-                                withAnimation(AppMotion.reorderSpring(reduceMotion: reduceMotion)) {
-                                    showingOtherSplits.toggle()
-                                }
-                            } label: {
-                                HStack(spacing: 14) {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("Other Splits")
-                                            .font(AppTypography.sectionTitle)
-                                            .foregroundStyle(appTheme.colors.textPrimary)
-                                        Text("\(snapshot.otherSplits.count) inactive or custom templates")
-                                            .font(AppTypography.body)
-                                            .foregroundStyle(appTheme.colors.textSecondary)
-                                    }
-
-                                    Spacer(minLength: 12)
-
-                                    Text(showingOtherSplits ? "Hide" : "Show")
-                                        .font(AppTypography.bodyEmphasis)
-                                        .foregroundStyle(showingOtherSplits ? appTheme.colors.accent : appTheme.colors.textSecondary)
-                                        .padding(.horizontal, 14)
-                                        .padding(.vertical, 9)
-                                        .background(
-                                            showingOtherSplits ? appTheme.colors.accentSurfaceStrong : appTheme.elevatedCardBackground,
-                                            in: Capsule()
-                                        )
-
-                                    Image(systemName: "chevron.right")
-                                        .font(AppTypography.eyebrow)
-                                        .foregroundStyle(appTheme.colors.textTertiary)
-                                        .rotationEffect(.degrees(showingOtherSplits ? 90 : 0))
-                                }
-                                .padding(18)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(PeaklineButtonPressStyle())
-                            .accessibilityLabel(showingOtherSplits ? "Hide other splits" : "Show other splits")
-                            .accessibilityValue(showingOtherSplits ? "expanded" : "collapsed")
-                            .accessibilityIdentifier("other-splits-toggle")
-
-                            if showingOtherSplits {
+                            TrailSection(index: 2, label: "Training days") {
                                 VStack(spacing: 0) {
-                                    Text("Inactive templates are not used by today's recommendations.")
-                                        .font(.footnote)
+                                    ForEach(snapshot.activeProgrammeSplits) { split in
+                                        NavigationLink(value: split.id) {
+                                            SplitTrainingDayCard(
+                                                split: split,
+                                                status: snapshot.statusesBySplitName[split.name] ?? .ready,
+                                                lastTrainedText: snapshot.lastTrainedTextBySplitName[split.name] ?? "No history yet",
+                                                focusDescription: snapshot.focusTextBySplitName[split.name] ?? focusDescription(for: split),
+                                                exerciseCount: snapshot.exerciseCountsBySplitID[split.id] ?? 0,
+                                                relativeVolumes: snapshot.relativeVolumesBySplitID[split.id] ?? []
+                                            )
+                                        }
+                                        .buttonStyle(PressableCardButtonStyle())
+                                        .accessibilityIdentifier("split-card-\(split.name.peaklineAccessibilityIdentifierFragment)")
+                                    }
+                                }
+                            }
+                        } else {
+                            TrailSection(index: 1, label: "Active programme") {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text("No active programme")
+                                        .font(AppTypography.sectionTitle)
+                                        .foregroundStyle(appTheme.colors.textPrimary)
+                                    Text("Create training days or edit the rotation to build your programme dashboard.")
+                                        .font(AppTypography.body)
                                         .foregroundStyle(appTheme.colors.textSecondary)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(.horizontal, 18)
-                                        .padding(.bottom, 8)
+                                        .fixedSize(horizontal: false, vertical: true)
 
-                                    ForEach(snapshot.otherSplits) { split in
-                                        Divider()
-                                            .padding(.leading, 66)
+                                    Button {
+                                        presentEditRotation()
+                                    } label: {
+                                        Label("Edit Rotation", systemImage: "slider.horizontal.3")
+                                            .frame(minHeight: appTheme.metrics.minimumHitTarget)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .foregroundStyle(appTheme.colors.textPrimary)
+                                    .accessibilityIdentifier("edit-empty-rotation-button")
+                                }
+                            }
 
-                                        HStack(spacing: 0) {
-                                            NavigationLink(value: split.id) {
-                                                inactiveSplitRow(split)
-                                            }
-                                            .buttonStyle(PeaklineButtonPressStyle())
-                                            .accessibilityIdentifier("other-split-card-\(split.name.peaklineAccessibilityIdentifierFragment)")
+                            TrailSection(index: 2, label: "Training days") {
+                                Text("No training days are included in this rotation yet.")
+                                    .font(AppTypography.body)
+                                    .foregroundStyle(appTheme.colors.textSecondary)
+                            }
+                        }
 
-                                            Menu {
-                                                Button(role: .destructive) {
-                                                    pendingDeleteSplitID = split.id
-                                                } label: {
-                                                    Label("Delete Split", systemImage: "trash")
-                                                }
-                                            } label: {
-                                                Image(systemName: "ellipsis")
-                                                    .font(AppTypography.compactCardTitle)
-                                                    .foregroundStyle(appTheme.colors.textSecondary)
-                                                    .frame(
-                                                        width: appTheme.metrics.minimumHitTarget,
-                                                        height: appTheme.metrics.minimumHitTarget
+                        if !snapshot.otherSplits.isEmpty {
+                            TrailSection(index: 3, label: "Other splits") {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Button {
+                                        withAnimation(AppMotion.reorderSpring(reduceMotion: reduceMotion)) {
+                                            showingOtherSplits.toggle()
+                                        }
+                                    } label: {
+                                        HStack(spacing: 12) {
+                                            Text(showingOtherSplits ? "Hide inactive templates" : "Show \(snapshot.otherSplits.count) inactive or custom templates")
+                                                .font(AppTypography.bodyEmphasis)
+                                                .foregroundStyle(appTheme.colors.textPrimary)
+
+                                            Spacer(minLength: 8)
+
+                                            Image(systemName: "chevron.right")
+                                                .font(AppTypography.eyebrow)
+                                                .foregroundStyle(appTheme.colors.textTertiary)
+                                                .rotationEffect(.degrees(showingOtherSplits ? 90 : 0))
+                                        }
+                                        .padding(.vertical, 12)
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(PeaklineButtonPressStyle())
+                                    .accessibilityLabel(showingOtherSplits ? "Hide other splits" : "Show other splits")
+                                    .accessibilityValue(showingOtherSplits ? "expanded" : "collapsed")
+                                    .accessibilityIdentifier("other-splits-toggle")
+
+                                    if showingOtherSplits {
+                                        Text("Inactive templates are not used by today's recommendations.")
+                                            .font(.footnote)
+                                            .foregroundStyle(appTheme.colors.textSecondary)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                            .padding(.bottom, 4)
+
+                                        ForEach(snapshot.otherSplits) { split in
+                                            HStack(spacing: 0) {
+                                                NavigationLink(value: split.id) {
+                                                    inactiveSplitRow(
+                                                        split,
+                                                        exerciseCount: snapshot.exerciseCountsBySplitID[split.id] ?? 0
                                                     )
-                                                    .background(appTheme.elevatedCardBackground, in: Circle())
+                                                }
+                                                .buttonStyle(PeaklineButtonPressStyle())
+                                                .accessibilityIdentifier("other-split-card-\(split.name.peaklineAccessibilityIdentifierFragment)")
+
+                                                Menu {
+                                                    Button(role: .destructive) {
+                                                        pendingDeleteSplitID = split.id
+                                                    } label: {
+                                                        Label("Delete Split", systemImage: "trash")
+                                                    }
+                                                } label: {
+                                                    Image(systemName: "ellipsis")
+                                                        .font(AppTypography.compactCardTitle)
+                                                        .foregroundStyle(appTheme.colors.textSecondary)
+                                                        .frame(
+                                                            width: appTheme.metrics.minimumHitTarget,
+                                                            height: appTheme.metrics.minimumHitTarget
+                                                        )
+                                                }
+                                                .accessibilityLabel("Actions for \(split.name)")
                                             }
-                                            .accessibilityLabel("Actions for \(split.name)")
-                                            .padding(.trailing, appTheme.metrics.spacing12)
                                         }
                                     }
                                 }
-                                .padding(.bottom, 12)
                             }
                         }
                     }
@@ -351,10 +356,20 @@ struct SplitsView: View {
     private func makeDashboardSnapshot() -> SplitsDashboardSnapshot {
         let activeProgrammeSplits = rotationService.orderedActiveSplits(splits)
         let otherSplits = splits.filter { !$0.isActive }
+        let orderedActiveExercisesBySplitID = Dictionary(uniqueKeysWithValues: activeProgrammeSplits.map { split in
+            (split.id, split.exercises.sorted { $0.orderIndex < $1.orderIndex })
+        })
+        let exerciseCountsBySplitID = Dictionary(uniqueKeysWithValues: splits.map { split in
+            (split.id, split.exercises.count)
+        })
+        let relativeVolumesBySplitID = Dictionary(uniqueKeysWithValues: activeProgrammeSplits.map { split in
+            let exercises = orderedActiveExercisesBySplitID[split.id] ?? []
+            return (split.id, relativeVolumeProfile(for: exercises))
+        })
         let analyticsSessions = completedSessions.map(WorkoutAnalyticsSession.init)
         let splitSnapshots = activeProgrammeSplits.map(TrainingSplitSnapshot.init)
         let targetSuggestionsByExerciseID = makeTargetSuggestions(
-            for: activeProgrammeSplits.flatMap(\.exercises),
+            for: activeProgrammeSplits.flatMap { orderedActiveExercisesBySplitID[$0.id] ?? [] },
             completedSessions: analyticsSessions,
             targetService: targetService
         )
@@ -389,15 +404,38 @@ struct SplitsView: View {
             trainingCall: trainingCall,
             statusesBySplitName: statusesBySplitName,
             lastTrainedTextBySplitName: lastTrainedTextBySplitName,
-            focusTextBySplitName: focusTextBySplitName
+            focusTextBySplitName: focusTextBySplitName,
+            programmeExerciseCount: activeProgrammeSplits.reduce(0) {
+                $0 + (exerciseCountsBySplitID[$1.id] ?? 0)
+            },
+            exerciseCountsBySplitID: exerciseCountsBySplitID,
+            relativeVolumesBySplitID: relativeVolumesBySplitID
         )
     }
 
-    private func inactiveSplitRow(_ split: TrainingSplit) -> some View {
+    private func relativeVolumeProfile(for exercises: [SplitExercise]) -> [Double] {
+        // Planned load is not stored on a split exercise; target sets × midpoint
+        // reps gives each exercise a stable relative-volume estimate.
+        let volumes = exercises.map { exercise in
+            let averageReps = (Double(exercise.minReps) + Double(exercise.maxReps)) / 2
+            return Double(max(exercise.targetSets, 0)) * max(averageReps, 0)
+        }
+        let maximumSampleCount = 12
+        guard volumes.count > maximumSampleCount else { return volumes }
+
+        return (0..<maximumSampleCount).map { index in
+            let lowerBound = index * volumes.count / maximumSampleCount
+            let upperBound = (index + 1) * volumes.count / maximumSampleCount
+            let bucket = volumes[lowerBound..<upperBound]
+            return bucket.reduce(0, +) / Double(bucket.count)
+        }
+    }
+
+    private func inactiveSplitRow(_ split: TrainingSplit, exerciseCount: Int) -> some View {
         HStack(spacing: 12) {
             ExerciseIconView(
                 iconKey: ExerciseIconMapper.splitIconKey(for: split.name),
-                size: 36,
+                size: 32,
                 tint: appTheme.colors.textSecondary,
                 showBackground: true,
                 isDecorative: true
@@ -409,22 +447,22 @@ struct SplitsView: View {
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(PeaklineText.count(split.exercises.count, singular: "exercise"))
+                Text(PeaklineText.count(exerciseCount, singular: "exercise"))
                     .font(AppTypography.metadata)
                     .foregroundStyle(appTheme.colors.textSecondary)
+                TrailSignTag(text: split.splitType.displayName)
             }
             .layoutPriority(1)
 
             Spacer()
 
-            SplitStatusBadge(status: split.isActive ? .custom : .inactive)
-
             Image(systemName: "chevron.right")
                 .font(AppTypography.eyebrow)
                 .foregroundStyle(appTheme.colors.textTertiary)
         }
-        .padding(.horizontal, 18)
         .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
 
     private func delete(_ split: TrainingSplit) {
@@ -577,6 +615,9 @@ private struct SplitsDashboardSnapshot {
     let statusesBySplitName: [String: SplitStatus]
     let lastTrainedTextBySplitName: [String: String]
     let focusTextBySplitName: [String: String]
+    let programmeExerciseCount: Int
+    let exerciseCountsBySplitID: [UUID: Int]
+    let relativeVolumesBySplitID: [UUID: [Double]]
 
     static let empty = SplitsDashboardSnapshot(
         activeProgrammeSplits: [],
@@ -585,7 +626,10 @@ private struct SplitsDashboardSnapshot {
         trainingCall: .placeholder,
         statusesBySplitName: [:],
         lastTrainedTextBySplitName: [:],
-        focusTextBySplitName: [:]
+        focusTextBySplitName: [:],
+        programmeExerciseCount: 0,
+        exerciseCountsBySplitID: [:],
+        relativeVolumesBySplitID: [:]
     )
 }
 
@@ -651,31 +695,39 @@ private struct SplitDetailView: View {
         let suggestionsByExerciseID = currentTargetSuggestionsByExerciseID
 
         FitnessScreen {
-            splitHeroCard
+            TrailPage {
+                VStack(alignment: .leading, spacing: 0) {
+                    TrailSection(index: 1, label: "Training day") {
+                        splitHeroContent
+                    }
 
-            DashboardSection(title: "Exercises") {
-                if orderedExercises.isEmpty {
-                    DashboardEmptyStateCard(
-                        title: "No exercises yet",
-                        message: "Add exercises to make this split useful in previews and coaching.",
-                        systemImage: "dumbbell"
-                    )
-                } else {
-                    FitnessCard(style: .compact, padding: 14) {
-                        VStack(spacing: 0) {
-                            ForEach(Array(orderedExercises.enumerated()), id: \.element.id) { index, exercise in
-                                if index > 0 {
-                                    Divider()
-                                        .padding(.leading, 50)
-                                }
+                    TrailSection(index: 2, label: "Exercises") {
+                        if orderedExercises.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("No exercises yet")
+                                    .font(AppTypography.sectionTitle)
+                                    .foregroundStyle(appTheme.colors.textPrimary)
+                                Text("Add exercises to make this split useful in previews and coaching.")
+                                    .font(AppTypography.body)
+                                    .foregroundStyle(appTheme.colors.textSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        } else {
+                            VStack(spacing: 0) {
+                                ForEach(Array(orderedExercises.enumerated()), id: \.element.id) { index, exercise in
+                                    if index > 0 {
+                                        Divider()
+                                            .padding(.leading, 50)
+                                    }
 
-                                SplitExerciseRow(
-                                    exercise: exercise,
-                                    suggestion: targetSuggestion(
-                                        for: exercise,
-                                        suggestionsByExerciseID: suggestionsByExerciseID
+                                    SplitExerciseRow(
+                                        exercise: exercise,
+                                        suggestion: targetSuggestion(
+                                            for: exercise,
+                                            suggestionsByExerciseID: suggestionsByExerciseID
+                                        )
                                     )
-                                )
+                                }
                             }
                         }
                     }
@@ -764,68 +816,51 @@ private struct SplitDetailView: View {
         )
     }
 
-    private var splitHeroCard: some View {
-        FitnessCard(style: .hero) {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .top, spacing: 14) {
-                    ExerciseIconTile(
-                        iconKey: ExerciseIconMapper.splitIconKey(for: split.name),
-                        title: nil,
-                        size: 54,
-                        style: .compact,
-                        tint: split.isActive ? appTheme.colors.accent : appTheme.colors.textSecondary
-                    )
+    private var splitHeroContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                ExerciseIconTile(
+                    iconKey: ExerciseIconMapper.splitIconKey(for: split.name),
+                    title: nil,
+                    size: 44,
+                    style: .compact,
+                    tint: appTheme.colors.textPrimary
+                )
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(split.isActive ? "Active Training Day" : "Inactive Template")
-                            .font(AppTypography.eyebrow)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .textCase(.uppercase)
-                        Text(split.name)
-                            .font(AppTypography.heroTitle)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.7)
-                            .layoutPriority(1)
-                            .accessibilityIdentifier("split-detail-title-\(split.name.peaklineAccessibilityIdentifierFragment)")
-                        Text(
-                            PeaklineText.joinedMetadata([
-                                PeaklineText.count(orderedExercises.count, singular: "exercise"),
-                                "\(split.daysPerWeek) days/week"
-                            ])
-                        )
-                            .font(AppTypography.body)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                    }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(split.name)
+                        .font(AppTypography.heroTitle)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.7)
+                        .layoutPriority(1)
+                        .accessibilityIdentifier("split-detail-title-\(split.name.peaklineAccessibilityIdentifierFragment)")
 
-                    Spacer(minLength: 0)
+                    TrailSignTag(text: split.splitType.displayName)
 
-                    SplitStatusBadge(status: detailStatus)
+                    Text(split.isActive ? "Active training day" : "Inactive template")
+                        .font(AppTypography.metadataEmphasis)
+                        .foregroundStyle(appTheme.colors.textSecondary)
                 }
 
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 10) {
-                        MetricTile(label: "Last trained", value: compactLastTrainedText, caption: nil, systemImage: "clock.arrow.circlepath")
-                        MetricTile(label: "Focus", value: focusDescription, caption: split.splitType.displayName, systemImage: "scope")
-                    }
-
-                    VStack(spacing: 10) {
-                        MetricTile(label: "Last trained", value: compactLastTrainedText, caption: nil, systemImage: "clock.arrow.circlepath")
-                        MetricTile(label: "Focus", value: focusDescription, caption: split.splitType.displayName, systemImage: "scope")
-                    }
-                }
+                Spacer(minLength: 0)
             }
-        }
-    }
 
-    private var detailStatus: SplitStatus {
-        guard split.isActive else { return .inactive }
-        guard let last = lastSession else { return .ready }
-        if Calendar.current.isDateInToday(last.date) || Calendar.current.isDateInYesterday(last.date) {
-            return .recentlyTrained
+            Text(
+                PeaklineText.joinedMetadata([
+                    PeaklineText.count(orderedExercises.count, singular: "exercise"),
+                    "\(split.daysPerWeek) days/week"
+                ])
+            )
+                .font(AppTypography.body)
+                .foregroundStyle(appTheme.colors.textSecondary)
+
+            Text(PeaklineText.joinedMetadata(["Last trained \(compactLastTrainedText)", "Focus: \(focusDescription)"]))
+                .font(AppTypography.metadata)
+                .foregroundStyle(appTheme.colors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        let days = Calendar.current.dateComponents([.day], from: last.date, to: .now).day ?? 0
-        return days >= 7 ? .prioritise : .ready
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var lastSession: WorkoutSession? {
