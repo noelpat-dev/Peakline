@@ -1,4 +1,5 @@
 import Observation
+import os
 import SwiftData
 import SwiftUI
 
@@ -271,10 +272,14 @@ struct RootTabView: View {
         }
         .onChange(of: startupRevealComplete) { _, isComplete in
             guard isComplete else { return }
-            startDeferredServicesIfNeeded()
-            refreshOverallReadinessIfNeeded(reason: "startup_reveal_complete")
-            scheduleWarmSleepAnalyticsRefresh(reason: "startup_reveal_complete")
-            presentSleepDeepLinkIfReady(sleepDeepLinkRouter.pendingRequest)
+            RootTabStartupSignposts.trace("startup.post_reveal.root_callback") {
+                startDeferredServicesIfNeeded()
+                RootTabStartupSignposts.trace("startup.post_reveal.readiness") {
+                    refreshOverallReadinessIfNeeded(reason: "startup_reveal_complete")
+                }
+                scheduleWarmSleepAnalyticsRefresh(reason: "startup_reveal_complete")
+                presentSleepDeepLinkIfReady(sleepDeepLinkRouter.pendingRequest)
+            }
         }
         .onAppear {
             startRootTabPrewarmIfNeeded()
@@ -595,7 +600,17 @@ struct RootTabView: View {
                 return
             }
 
-            guard refreshWarmSleepAnalytics(reason: reason) else { return }
+            let didRefreshWarmSleepAnalytics: Bool
+            if reason == "startup_reveal_complete" {
+                didRefreshWarmSleepAnalytics = RootTabStartupSignposts.trace(
+                    "startup.post_reveal.warm_sleep_sync"
+                ) {
+                    refreshWarmSleepAnalytics(reason: reason)
+                }
+            } else {
+                didRefreshWarmSleepAnalytics = refreshWarmSleepAnalytics(reason: reason)
+            }
+            guard didRefreshWarmSleepAnalytics else { return }
             guard !Task.isCancelled,
                   !rootTabTransitionGate.isActive,
                   !isWorkoutCompletionPresentationActive,
@@ -732,7 +747,15 @@ struct RootTabView: View {
         let sourceSignature = previewWarmSourceSignature
         let snapshots: [WorkoutAnalyticsSession]
         do {
-            snapshots = try WorkoutAnalyticsSnapshotBuilder.snapshots(from: recentSessions, in: modelContext)
+            if reason == "startup_reveal_complete" {
+                snapshots = try RootTabStartupSignposts.trace(
+                    "startup.post_reveal.progress_projection"
+                ) {
+                    try WorkoutAnalyticsSnapshotBuilder.snapshots(from: recentSessions, in: modelContext)
+                }
+            } else {
+                snapshots = try WorkoutAnalyticsSnapshotBuilder.snapshots(from: recentSessions, in: modelContext)
+            }
         } catch {
             PerformanceTracer.mark(.appLifecycle, "warm_progress_refresh failed reason=\(reason) error=\(error.localizedDescription)")
             return
@@ -1061,6 +1084,26 @@ struct RootTabView: View {
         ].joined(separator: ":")
 
         return [String(dayKey), preferenceSignature, sessionSignature, workoutSignature].joined(separator: "|")
+    }
+}
+
+private enum RootTabStartupSignposts {
+    #if DEBUG
+    private static let log = OSLog(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.noel.GymTracker",
+        category: "StartupReveal"
+    )
+    #endif
+
+    static func trace<T>(_ name: StaticString, _ work: () throws -> T) rethrows -> T {
+        #if DEBUG
+        let signpostID = OSSignpostID(log: log)
+        os_signpost(.begin, log: log, name: name, signpostID: signpostID)
+        defer {
+            os_signpost(.end, log: log, name: name, signpostID: signpostID)
+        }
+        #endif
+        return try work()
     }
 }
 
