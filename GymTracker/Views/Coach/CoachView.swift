@@ -74,6 +74,7 @@ struct CoachContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject private var readinessRefreshClock = ReadinessRefreshClock.shared
     @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
 
@@ -387,27 +388,42 @@ struct CoachContentView: View {
             FitnessInformationalActionCard(style: .hero) {
                 VStack(alignment: .leading, spacing: 14) {
                     VStack(alignment: .leading, spacing: 10) {
-                        HStack(alignment: .center, spacing: 12) {
-                            ExerciseIconTile(
-                                iconKey: ExerciseIconMapper.splitIconKey(for: dailyDecision.recommendedSplitName ?? ""),
-                                title: nil,
-                                size: 60,
-                                style: .compact
-                            )
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(alignment: .center, spacing: 12) {
+                                ExerciseIconTile(
+                                    iconKey: ExerciseIconMapper.splitIconKey(for: dailyDecision.recommendedSplitName ?? ""),
+                                    title: nil,
+                                    size: 60,
+                                    style: .compact
+                                )
 
-                            Text("Today's Call")
-                                .modifier(AppTypography.waypointLabel)
+                                Text("Today's Call")
+                                    .modifier(AppTypography.waypointLabel)
+                                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
 
-                            Spacer(minLength: 8)
+                            ViewThatFits(in: .horizontal) {
+                                HStack(alignment: .center, spacing: 8) {
+                                    Spacer(minLength: 0)
+                                    RecoveryAwareCoachTag(state: dailyDecision.badgeState)
+                                    if dailyDecision.confidenceLabel.caseInsensitiveCompare(
+                                        dailyDecision.badgeState.label
+                                    ) != .orderedSame {
+                                        TrailSignTag(text: dailyDecision.confidenceLabel)
+                                    }
+                                }
 
-                            VStack(alignment: .trailing, spacing: 5) {
-                                RecoveryAwareCoachTag(state: dailyDecision.badgeState)
-                                if dailyDecision.confidenceLabel.caseInsensitiveCompare(
-                                    dailyDecision.badgeState.label
-                                ) != .orderedSame {
-                                    TrailSignTag(text: dailyDecision.confidenceLabel)
+                                VStack(alignment: .trailing, spacing: 5) {
+                                    RecoveryAwareCoachTag(state: dailyDecision.badgeState)
+                                    if dailyDecision.confidenceLabel.caseInsensitiveCompare(
+                                        dailyDecision.badgeState.label
+                                    ) != .orderedSame {
+                                        TrailSignTag(text: dailyDecision.confidenceLabel)
+                                    }
                                 }
                             }
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                         }
 
                         Text(dailyDecision.headline)
