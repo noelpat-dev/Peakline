@@ -30,6 +30,7 @@ service cloud.firestore {
           'storageSchemaVersion',
           'generationID',
           'payloadSHA256',
+          'expectedPreviousGenerationID',
           'state'
         ])
         && data.schemaVersion == 3
@@ -75,6 +76,7 @@ service cloud.firestore {
         && (expectedGenerationID == null || data.generationID == expectedGenerationID)
         && data.payloadSHA256 is string
         && data.payloadSHA256.size() == 64
+        && (data.expectedPreviousGenerationID == null || data.expectedPreviousGenerationID is string)
         && data.state == 'complete';
     }
 
@@ -101,12 +103,19 @@ service cloud.firestore {
       // immutable generation layout below.
       allow read: if isOwner(userId);
       allow create, update: if isOwner(userId)
-                            && validManifest(request.resource.data, null);
+                            && validManifest(request.resource.data, null)
+                            && (request.method == 'create'
+                                || request.resource.data.expectedPreviousGenerationID == resource.data.generationID);
 
       match /generations/{generationId} {
         allow read: if isOwner(userId);
-        allow create, update: if isOwner(userId)
+        allow create: if isOwner(userId)
                               && validManifest(request.resource.data, generationId);
+        // Completed generations are immutable. Retrying an interrupted write
+        // may only write the exact same manifest, never replace its payload.
+        allow update: if isOwner(userId)
+                              && validManifest(request.resource.data, generationId)
+                              && resource.data.state != 'complete';
 
         match /chunks/{chunkId} {
           allow read: if isOwner(userId);

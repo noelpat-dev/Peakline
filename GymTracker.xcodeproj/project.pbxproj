@@ -394,6 +394,9 @@
 		972666C4C12FB89883DD39DB /* WorkoutGuide */ = {isa = PBXFileReference; lastKnownFileType = folder; name = WorkoutGuide; path = GymTracker/Resources/WorkoutGuide; sourceTree = SOURCE_ROOT; };
 		F90A8222AAE63088EC3585FF /* ExerciseGuideUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExerciseGuideUITests.swift; path = GymTrackerUITests/ExerciseGuideUITests.swift; sourceTree = SOURCE_ROOT; };
 		8C3AD24E9453E3998DFECC18 /* ExerciseGuideCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExerciseGuideCatalogTests.swift; path = GymTrackerTests/ExerciseGuideCatalogTests.swift; sourceTree = SOURCE_ROOT; };
+		A1B2C3D4E5F60123456789AB /* Peakline.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Peakline.xcconfig; sourceTree = SOURCE_ROOT; };
+		A1B2C3D4E5F60123456789AC /* Peakline.local.xcconfig.example */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Peakline.local.xcconfig.example; sourceTree = SOURCE_ROOT; };
+		A1B2C3D4E5F60123456789AD /* Config README.md */ = {isa = PBXFileReference; lastKnownFileType = text; path = README.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -427,11 +430,22 @@
 		004000000000000000000001 = {
 			isa = PBXGroup;
 			children = (
+				A1B2C3D4E5F60123456789AE /* Config */,
 				004000000000000000000002 /* GymTracker */,
 				004000000000000000000018 /* GymTrackerTests */,
 				004000000000000000000019 /* GymTrackerUITests */,
 				004000000000000000000012 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		A1B2C3D4E5F60123456789AE /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F60123456789AB /* Peakline.xcconfig */,
+				A1B2C3D4E5F60123456789AC /* Peakline.local.xcconfig.example */,
+				A1B2C3D4E5F60123456789AD /* Config README.md */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 		004000000000000000000002 /* GymTracker */ = {
@@ -1150,6 +1164,7 @@
 /* Begin XCBuildConfiguration section */
 		008000000000000000000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A1B2C3D4E5F60123456789AB /* Peakline.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -1211,6 +1226,7 @@
 		};
 		008000000000000000000002 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A1B2C3D4E5F60123456789AB /* Peakline.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -1265,6 +1281,7 @@
 		};
 		008000000000000000000003 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A1B2C3D4E5F60123456789AB /* Peakline.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -1272,7 +1289,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = 272AN3AJLF;
+				DEVELOPMENT_TEAM = "$(PEAKLINE_DEVELOPMENT_TEAM)";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1294,7 +1311,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.noel.GymTracker;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PEAKLINE_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_STRICT_CONCURRENCY = "$(PEAKLINE_STRICT_CONCURRENCY)";
@@ -1305,6 +1322,7 @@
 		};
 		008000000000000000000004 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A1B2C3D4E5F60123456789AB /* Peakline.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -1312,7 +1330,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = 272AN3AJLF;
+				DEVELOPMENT_TEAM = "$(PEAKLINE_DEVELOPMENT_TEAM)";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1334,7 +1352,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.noel.GymTracker;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PEAKLINE_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_STRICT_CONCURRENCY = "$(PEAKLINE_STRICT_CONCURRENCY)";
@@ -1345,11 +1363,12 @@
 		};
 		008000000000000000000005 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A1B2C3D4E5F60123456789AB /* Peakline.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 272AN3AJLF;
+				DEVELOPMENT_TEAM = "$(PEAKLINE_DEVELOPMENT_TEAM)";
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1358,7 +1377,7 @@
 					"@loader_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.noel.GymTrackerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PEAKLINE_BUNDLE_IDENTIFIER).Tests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
@@ -1369,11 +1388,12 @@
 		};
 		008000000000000000000006 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A1B2C3D4E5F60123456789AB /* Peakline.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 272AN3AJLF;
+				DEVELOPMENT_TEAM = "$(PEAKLINE_DEVELOPMENT_TEAM)";
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1382,7 +1402,7 @@
 					"@loader_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.noel.GymTrackerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PEAKLINE_BUNDLE_IDENTIFIER).Tests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
@@ -1393,10 +1413,11 @@
 		};
 		008000000000000000000007 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A1B2C3D4E5F60123456789AB /* Peakline.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 272AN3AJLF;
+				DEVELOPMENT_TEAM = "$(PEAKLINE_DEVELOPMENT_TEAM)";
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1405,7 +1426,7 @@
 					"@loader_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.noel.GymTrackerUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PEAKLINE_BUNDLE_IDENTIFIER).UITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
@@ -1416,10 +1437,11 @@
 		};
 		008000000000000000000008 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A1B2C3D4E5F60123456789AB /* Peakline.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 272AN3AJLF;
+				DEVELOPMENT_TEAM = "$(PEAKLINE_DEVELOPMENT_TEAM)";
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1428,7 +1450,7 @@
 					"@loader_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.noel.GymTrackerUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PEAKLINE_BUNDLE_IDENTIFIER).UITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;

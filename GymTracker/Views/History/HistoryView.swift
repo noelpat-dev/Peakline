@@ -355,6 +355,7 @@ struct HistoryView: View {
     @State private var isHistoryVisible = false
     @State private var isSupplementaryContentMounted = false
     @State private var sourceSnapshotRefreshTask: Task<Void, Never>?
+    @State private var historyPageHydrationTask: Task<Void, Never>?
     @State private var monthSnapshotRefreshTask: Task<Void, Never>?
     @State private var monthWorkoutSnapshots: [HistoryWorkoutSnapshot] = []
     @State private var monthSnapshotCacheKey: Date?
@@ -470,7 +471,7 @@ struct HistoryView: View {
                 handleDetailRouteChange(from: oldRoute, to: newRoute)
             }
             .onChange(of: filters) { _, _ in
-                refreshDisplaySnapshot()
+                scheduleSourceSnapshotRefresh(force: true)
             }
             .onChange(of: displayedMonth) { _, _ in
                 scheduleMonthSnapshotRefresh()
@@ -583,6 +584,8 @@ struct HistoryView: View {
         isHistoryVisible = false
         sourceSnapshotRefreshTask?.cancel()
         sourceSnapshotRefreshTask = nil
+        historyPageHydrationTask?.cancel()
+        historyPageHydrationTask = nil
         monthSnapshotRefreshTask?.cancel()
         monthSnapshotRefreshTask = nil
         monthLoadGeneration += 1
@@ -896,7 +899,33 @@ struct HistoryView: View {
         }
 
         guard force || generation != lastSessionGeneration else { return }
-        workoutSnapshots = sessions.prefix(120).map(HistoryWorkoutSnapshot.init)
+        if filters.isActive {
+            // Search and date filters must be able to reach sessions outside
+            // the warm recent prefix. Show the first page immediately, then
+            // append older pages while the route remains visible.
+            let descriptor = FetchDescriptor<WorkoutSession>(
+                predicate: #Predicate<WorkoutSession> { $0.completed },
+                sortBy: [SortDescriptor(\WorkoutSession.date, order: .reverse)]
+            )
+            let firstPage = (try? CompleteQueryService.fetchPage(descriptor, in: modelContext, offset: 0, pageSize: 120)) ?? []
+            workoutSnapshots = firstPage.map(HistoryWorkoutSnapshot.init)
+            historyPageHydrationTask?.cancel()
+            historyPageHydrationTask = Task { @MainActor in
+                var offset = firstPage.count
+                while !Task.isCancelled {
+                    let page = (try? CompleteQueryService.fetchPage(descriptor, in: modelContext, offset: offset, pageSize: 120)) ?? []
+                    guard !page.isEmpty else { break }
+                    workoutSnapshots.append(contentsOf: page.map(HistoryWorkoutSnapshot.init))
+                    refreshDisplaySnapshot()
+                    offset += page.count
+                    if page.count < 120 { break }
+                    await Task.yield()
+                }
+                historyPageHydrationTask = nil
+            }
+        } else {
+            workoutSnapshots = sessions.prefix(120).map(HistoryWorkoutSnapshot.init)
+        }
         lastSessionGeneration = generation
         refreshDisplaySnapshot()
     }

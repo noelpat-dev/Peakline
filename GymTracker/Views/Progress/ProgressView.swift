@@ -459,9 +459,17 @@ struct ProgressContentView: View {
             .joined(separator: ",")
         guard force || signature != lastExercisesSignature else { return }
 
+        let completeExercises = (try? CompleteQueryService.fetchAll(
+            FetchDescriptor<Exercise>(
+                predicate: #Predicate<Exercise> { !$0.isArchived },
+                sortBy: [SortDescriptor(\Exercise.name)]
+            ),
+            in: modelContext
+        )) ?? []
+        let sourceExercises = completeExercises.isEmpty ? observedExercises : completeExercises
         AppMotion.withoutAnimation {
             exerciseRows = Array(
-                observedExercises
+                sourceExercises
                     .map(ProgressExerciseRowSnapshot.init)
                     .sorted {
                         let comparison = $0.name.localizedStandardCompare($1.name)
@@ -647,6 +655,7 @@ private struct ProgressActionCard: View {
 
     private struct ExerciseProgressDetailView: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.modelContext) private var modelContext
     @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
 
     let exercise: ProgressExerciseRowSnapshot
@@ -664,7 +673,6 @@ private struct ProgressActionCard: View {
         _sessions = Query(Self.completedSessionsDescriptor)
     }
 
-    /// Hard bound on the live relationship traversal performed for this route.
     private static let sessionScanLimit = 160
 
     private static var completedSessionsDescriptor: FetchDescriptor<WorkoutSession> {
@@ -678,7 +686,11 @@ private struct ProgressActionCard: View {
 
     @MainActor
     private func makeEntryInputs() -> [ExerciseProgressSessionInput] {
-        sessions.compactMap { session in
+        let completeSessions = (try? CompleteQueryService.sessions(
+            containingExerciseID: exercise.id,
+            in: modelContext
+        )) ?? sessions
+        return completeSessions.compactMap { session in
             guard let exerciseLog = session.exerciseLogs.first(where: { $0.exerciseId == exercise.id }) else {
                 return nil
             }

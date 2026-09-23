@@ -3,34 +3,104 @@ import SwiftData
 
 @MainActor
 enum SeedDataService {
-    static func seedIfNeeded(in context: ModelContext) {
+    enum InitialProgramme: String, CaseIterable, Identifiable {
+        case blank, pushPullLegs, upperLower, fullBody
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .blank: "Blank programme"
+            case .pushPullLegs: "Push / Pull / Legs"
+            case .upperLower: "Upper / Lower"
+            case .fullBody: "Full body"
+            }
+        }
+    }
+
+    /// Reference content is installed once per dataset, independently of setup.
+    /// Registry keys are append-only catalogue IDs, never display-name matches.
+    static func installCatalogue(in context: ModelContext) throws {
+        let workspace = try WorkspaceService.metadata(in: context)
+        guard workspace.catalogueVersion < 1 else { return }
+        var provenance = try WorkspaceService.provenance(workspace)
+        for (index, exercise) in starterExercises().enumerated() {
+            let key = String(format: "peakline.reference.v1.%03d", index + 1)
+            guard provenance.exercises[key] == nil else { continue }
+            context.insert(exercise)
+            provenance.exercises[key] = CatalogueProvenance.Entry(
+                recordID: exercise.id,
+                initialFingerprint: WorkspaceService.exerciseFingerprint(exercise)
+            )
+        }
+        try WorkspaceService.setProvenance(provenance, on: workspace)
+        workspace.catalogueVersion = 1
+    }
+
+    static func completeSetup(_ programme: InitialProgramme, in context: ModelContext) throws {
+        let workspace = try WorkspaceService.metadata(in: context)
+        guard !workspace.initialized else { return }
         do {
-            var existingExercises = try context.fetch(FetchDescriptor<Exercise>())
-            let existingExerciseNames = Set(existingExercises.map(\.name))
-            let missingExercises = starterExercises().filter { !existingExerciseNames.contains($0.name) }
-            missingExercises.forEach(context.insert)
-            existingExercises.append(contentsOf: missingExercises)
-
-            let profileCount = try context.fetchCount(FetchDescriptor<UserProfile>())
-            if profileCount == 0 {
-                context.insert(UserProfile(trainingDaysPerWeek: 4, preferredSplitType: .custom))
+            try installCatalogue(in: context)
+            let provenance = try WorkspaceService.provenance(workspace)
+            let exercises = try context.fetch(FetchDescriptor<Exercise>())
+            let byID = Dictionary(uniqueKeysWithValues: exercises.map { ($0.id, $0) })
+            // Resolve only the explicitly registered catalogue records. Duplicate
+            // personal display names never affect template application.
+            let references = provenance.exercises.sorted { $0.key < $1.key }
+                .compactMap { byID[$0.value.recordID] }
+            let splits: [TrainingSplit]
+            switch programme {
+            case .blank:
+                splits = [TrainingSplit(name: "My programme", splitType: .custom)]
+            case .pushPullLegs:
+                splits = starterSplits(using: references)
+            case .upperLower:
+                let specs: [(String, [String])] = [
+                    ("Upper", ["Bench Press", "Lat Pulldown", "Dumbbell Shoulder Press", "Dumbbell Bicep Curl"]),
+                    ("Lower", ["Hack Squat", "Seated Leg Curl", "Standing Calf Raise", "Abdominal Crunch"])
+                ]
+                splits = genericSplits(specs, using: references)
+            case .fullBody:
+                splits = genericSplits([("Full body", ["Hack Squat", "Bench Press", "Lat Pulldown", "Seated Leg Curl"])], using: references)
             }
-
-            let existingSplits = try context.fetch(FetchDescriptor<TrainingSplit>())
-            let hasPersonalPushSplit = existingSplits.contains { split in
-                split.name == "Push" && split.exercises.contains { $0.exerciseNameSnapshot == "Incline Chest Press (Smith)" }
+            for (index, split) in splits.enumerated() {
+                split.activeRotationIndex = index
+                context.insert(split)
             }
-
-            if !hasPersonalPushSplit {
-                let previousTemplateNames = ["Push", "Pull", "Legs", "Chest + Triceps", "Back + Biceps", "Shoulders", "Legs + Core"]
-                for split in existingSplits where previousTemplateNames.contains(split.name) {
-                    split.isActive = false
-                }
-
-                starterSplits(using: existingExercises).forEach(context.insert)
+            if try context.fetchCount(FetchDescriptor<UserProfile>()) == 0 {
+                context.insert(UserProfile())
             }
+            var updatedProvenance = provenance
+            updatedProvenance.appliedTemplateIDs.append("peakline.programme.v1." + programme.rawValue)
+            try WorkspaceService.setProvenance(updatedProvenance, on: workspace)
+            workspace.initialized = true
+            workspace.bootstrapVersion = 1
+            workspace.revision &+= 1
+            workspace.backupState = "localOnly"
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
+    }
 
+    private static func genericSplits(_ specs: [(String, [String])], using exercises: [Exercise]) -> [TrainingSplit] {
+        let lookup = Dictionary(exercises.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
+        return specs.map { name, names in
+            makeSplit(name: name, exercises: names.map { ($0, 2, 6, 12, 120, "Choose a comfortable starting load and record your own baseline.") }, lookup: lookup)
+        }
+    }
+
+    static func seedIfNeeded(in context: ModelContext) throws {
+        do {
+            try installCatalogue(in: context)
+            let existingExercises = try context.fetch(FetchDescriptor<Exercise>())
 #if DEBUG
+            // Test fixtures require an explicitly isolated store and cannot run
+            // in a normal release or against the personal persistent dataset.
+            if ProcessInfo.processInfo.arguments.contains("-UITestInMemoryStore") {
+                try completeSetup(.pushPullLegs, in: context)
+            }
+            if ProcessInfo.processInfo.arguments.contains("-UITestInMemoryStore") {
             if ProcessInfo.processInfo.arguments.contains("-UITestCoachFatigueFixture") {
                 try seedCoachFatigueFixture(in: context, exercises: existingExercises)
             }
@@ -82,14 +152,16 @@ enum SeedDataService {
             if ProcessInfo.processInfo.arguments.contains("-UITestSleepMorningFixture") {
                 try seedSleepActiveFixture(in: context, morningConfirmation: true)
             }
+            }
 #endif
 
-            try TrainingRotationService().normalizePersistedRotation(in: context)
+            // Existing active order and notes remain untouched during bootstrap.
             if context.hasChanges {
                 try context.save()
             }
         } catch {
-            assertionFailure("Seed data failed: \(error)")
+            context.rollback()
+            throw error
         }
     }
 
@@ -134,36 +206,36 @@ enum SeedDataService {
     }
 
     private static func starterSplits(using exercises: [Exercise]) -> [TrainingSplit] {
-        let byName = Dictionary(uniqueKeysWithValues: exercises.map { ($0.name, $0) })
+        let byName = Dictionary(exercises.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
 
         return [
             makeSplit(name: "Push", exercises: [
-                ("Incline Chest Press (Smith)", 2, 6, 10, 150, "Baseline: 40kg each side x 8. Progress when both hard sets hit 10 reps."),
-                ("Bench Press", 2, 4, 8, 180, "Baseline: 100kg x 5. Add load after 2 sessions at 8 reps with clean form."),
-                ("Converging Chest Press", 2, 6, 10, 150, "Baseline: 86kg x 10. Hold load until both sets reach top of range."),
-                ("Chest Fly", 2, 8, 15, 90, "Baseline: 136kg x 8. Keep controlled stretch; progress reps before load."),
-                ("Dumbbell Shoulder Press", 2, 5, 9, 150, "Baseline: 42kg x 5."),
-                ("Shoulder Press (Smith)", 2, 6, 10, 150, "Baseline: 25kg each side; next target 30kg each side when range is owned."),
-                ("Cable Lateral Raise", 2, 8, 15, 75, "Baseline: 10.2kg x 5. Prioritize clean reps and side delt tension."),
-                ("Triceps Pushdown", 2, 8, 12, 90, "Baseline: 42kg x 8."),
-                ("Overhead Triceps Extension", 2, 8, 12, 90, "Baseline: 26kg.")
+                ("Incline Chest Press (Smith)", 2, 6, 10, 150, "Choose a comfortable starting load. Progress only after consistent, controlled reps."),
+                ("Bench Press", 2, 4, 8, 180, "Choose a comfortable starting load. Progress only after consistent, controlled reps."),
+                ("Converging Chest Press", 2, 6, 10, 150, "Choose a comfortable starting load. Progress only after consistent, controlled reps."),
+                ("Chest Fly", 2, 8, 15, 90, "Choose a comfortable starting load. Progress only after consistent, controlled reps."),
+                ("Dumbbell Shoulder Press", 2, 5, 9, 150, "Choose a comfortable starting load. Progress only after consistent, controlled reps."),
+                ("Shoulder Press (Smith)", 2, 6, 10, 150, "Choose a comfortable starting load. Progress only after consistent, controlled reps."),
+                ("Cable Lateral Raise", 2, 8, 15, 75, "Choose a comfortable starting load. Progress only after consistent, controlled reps."),
+                ("Triceps Pushdown", 2, 8, 12, 90, "Choose a comfortable starting load. Progress only after consistent, controlled reps."),
+                ("Overhead Triceps Extension", 2, 8, 12, 90, "Choose a comfortable starting load. Progress only after consistent, controlled reps.")
             ], lookup: byName),
             makeSplit(name: "Pull", exercises: [
-                ("Lat Pulldown", 2, 5, 9, 150, "Baseline: 102kg x 5."),
-                ("Close Grip Weighted Pull-Up", 2, 6, 10, 150, "Baseline: +15kg x 9."),
-                ("Diverging Seated Row", 2, 6, 10, 150, "Baseline: 100kg x 7."),
-                ("Diverging Lower Lat Row", 2, 8, 12, 120, "Baseline: 57.9kg x 9."),
-                ("Rear Delt Cable", 2, 10, 15, 75, "Baseline: 12.5kg x 7."),
-                ("Bicep Preacher Curl", 2, 8, 12, 90, "Baseline: 17.5kg x 10.")
+                ("Lat Pulldown", 2, 5, 9, 150, "Choose a comfortable starting load. Progress only after consistent, controlled reps."),
+                ("Close Grip Weighted Pull-Up", 2, 6, 10, 150, "Choose a comfortable starting load. Progress only after consistent, controlled reps."),
+                ("Diverging Seated Row", 2, 6, 10, 150, "Choose a comfortable starting load. Progress only after consistent, controlled reps."),
+                ("Diverging Lower Lat Row", 2, 8, 12, 120, "Choose a comfortable starting load. Progress only after consistent, controlled reps."),
+                ("Rear Delt Cable", 2, 10, 15, 75, "Choose a comfortable starting load. Progress only after consistent, controlled reps."),
+                ("Bicep Preacher Curl", 2, 8, 12, 90, "Choose a comfortable starting load. Progress only after consistent, controlled reps.")
             ], lookup: byName),
             makeSplit(name: "Legs", exercises: [
-                ("Hack Squat", 2, 6, 10, 180, "Baseline: 70kg x 8."),
-                ("Leg Press", 2, 6, 10, 180, "Baseline: 125kg each side x 6."),
-                ("Quad Extension", 2, 8, 12, 90, "Baseline: 113kg x 5."),
-                ("Seated Leg Curl", 2, 8, 12, 90, "Baseline: 66kg x 10."),
-                ("Standing Calf Raise", 2, 10, 20, 75, "Baseline: holding 15kg x 20."),
-                ("Hip Adduction", 2, 8, 15, 75, "Baseline: 100kg x 8."),
-                ("Abdominal Crunch", 2, 8, 15, 75, "Baseline: 59kg x 8.")
+                ("Hack Squat", 2, 6, 10, 180, "Choose a comfortable starting load. Progress only after consistent, controlled reps."),
+                ("Leg Press", 2, 6, 10, 180, "Choose a comfortable starting load. Progress only after consistent, controlled reps."),
+                ("Quad Extension", 2, 8, 12, 90, "Choose a comfortable starting load. Progress only after consistent, controlled reps."),
+                ("Seated Leg Curl", 2, 8, 12, 90, "Choose a comfortable starting load. Progress only after consistent, controlled reps."),
+                ("Standing Calf Raise", 2, 10, 20, 75, "Choose a comfortable starting load. Progress only after consistent, controlled reps."),
+                ("Hip Adduction", 2, 8, 15, 75, "Choose a comfortable starting load. Progress only after consistent, controlled reps."),
+                ("Abdominal Crunch", 2, 8, 15, 75, "Choose a comfortable starting load. Progress only after consistent, controlled reps.")
             ], lookup: byName)
         ]
     }

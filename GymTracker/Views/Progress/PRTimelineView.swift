@@ -17,13 +17,10 @@ struct PRTimelineView: View {
     @State private var refreshPending = false
 
     private static var completedSessionsDescriptor: FetchDescriptor<WorkoutSession> {
-        var descriptor = FetchDescriptor<WorkoutSession>(
+        return FetchDescriptor<WorkoutSession>(
             predicate: #Predicate<WorkoutSession> { $0.completed },
             sortBy: [SortDescriptor(\.date, order: .reverse)]
         )
-        descriptor.fetchLimit = 80
-        descriptor.includePendingChanges = true
-        return descriptor
     }
 
     private var records: [PRRecord] {
@@ -147,7 +144,10 @@ struct PRTimelineView: View {
 
         let recentSessions: [WorkoutSession]
         do {
-            recentSessions = try modelContext.fetch(Self.completedSessionsDescriptor)
+            recentSessions = try CompleteQueryService.fetchAll(
+                Self.completedSessionsDescriptor,
+                in: modelContext
+            )
         } catch {
             allRecords = []
             weeklySummary = nil

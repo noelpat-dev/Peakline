@@ -1,3 +1,4 @@
+import FirebaseCore
 import SwiftData
 import SwiftUI
 
@@ -8,10 +9,14 @@ struct AccountBackupView: View {
     @State private var readiness: AccountReadiness = .needsSignIn
     @State private var latestMetadata: FullAppBackupMetadata?
     @State private var backupPassphrase = ""
+    @State private var accountEmail = ""
+    @State private var accountPassword = ""
     @State private var statusMessage: String?
     @State private var errorMessage: String?
     @State private var isWorking = false
     @State private var showingRestoreConfirmation = false
+    @State private var showingDeleteConfirmation = false
+    @State private var backupConnected = false
 
     private let accountService = FirebaseAccountService()
     private let backupCoordinator = BackupCoordinator()
@@ -56,6 +61,14 @@ struct AccountBackupView: View {
         } message: {
             Text("This replaces the current local Peakline data with the latest Firebase backup. Export a JSON backup first if you want a separate safety copy.")
         }
+        .alert("Delete backup account and cloud copy?", isPresented: $showingDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete Account", role: .destructive) {
+                Task { await deleteAccount() }
+            }
+        } message: {
+            Text("Your local Peakline data stays on this device. The remote backup is removed first, then the account is deleted. You will need your account password.")
+        }
     }
 
     private var accountStatusCard: some View {
@@ -69,6 +82,41 @@ struct AccountBackupView: View {
                     .font(AppTypography.body)
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if readiness.isReady && !backupConnected {
+                    Button {
+                        Task { await connectBackup() }
+                    } label: {
+                        Label("Connect This Workspace for Backup", systemImage: "link.badge.plus")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(PrimaryFitnessButtonStyle())
+                    .disabled(isWorking)
+                }
+
+                if !readiness.isReady {
+                    TextField("Account email", text: $accountEmail)
+                        .textContentType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.emailAddress)
+                        .padding(12)
+                        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius8, style: .continuous))
+                    SecureField("Account password", text: $accountPassword)
+                        .textContentType(.password)
+                        .padding(12)
+                        .background(appTheme.colors.cardBackgroundElevated, in: RoundedRectangle(cornerRadius: appTheme.metrics.radius8, style: .continuous))
+                    HStack(spacing: 10) {
+                        Button("Sign In") { Task { await signIn() } }
+                            .buttonStyle(PrimaryFitnessButtonStyle())
+                            .disabled(isWorking)
+                        Button("Create Account") { Task { await createAccount() } }
+                            .buttonStyle(SecondaryFitnessButtonStyle())
+                            .disabled(isWorking)
+                    }
+                    Button("Forgot password?") { Task { await recoverPassword() } }
+                        .font(AppTypography.bodyEmphasis)
+                        .foregroundStyle(appTheme.colors.accent)
+                }
 
                 HStack(spacing: 10) {
                     Button {
@@ -88,6 +136,15 @@ struct AccountBackupView: View {
                     }
                     .buttonStyle(SecondaryFitnessButtonStyle())
                     .disabled(isWorking || !readiness.isReady)
+
+                    Button(role: .destructive) {
+                        showingDeleteConfirmation = true
+                    } label: {
+                        Label("Delete Account & Cloud Backup", systemImage: "trash")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryFitnessButtonStyle())
+                    .disabled(isWorking || !readiness.isReady || !backupConnected)
                 }
             }
         }
@@ -154,7 +211,12 @@ struct AccountBackupView: View {
             return
         }
 
-        switch await backupCoordinator.latestMetadata() {
+        do {
+            let workspace = try WorkspaceService.metadata(in: modelContext)
+            backupConnected = workspace.backupProjectID != nil && workspace.backupUID != nil
+        } catch { backupConnected = false }
+
+        switch await backupCoordinator.latestMetadata(in: modelContext) {
         case .available(let metadata):
             latestMetadata = metadata
             errorMessage = nil
@@ -176,6 +238,14 @@ struct AccountBackupView: View {
             latestMetadata = metadata
             statusMessage = "Saved encrypted backup with \(metadata.counts.totalRecordCount) records."
             errorMessage = nil
+        case .savedWithCredentialWarning(let metadata, let warning):
+            latestMetadata = metadata
+            statusMessage = "Saved encrypted backup. Keychain cache warning: (warning)"
+            errorMessage = nil
+        case .skippedUnchanged(let metadata):
+            latestMetadata = metadata
+            statusMessage = "Backup is unchanged; the existing encrypted copy was kept."
+            errorMessage = nil
         case .keptExistingBackup(let metadata):
             latestMetadata = metadata
             statusMessage = "Kept existing Firebase backup because the current local store has no user data."
@@ -185,6 +255,69 @@ struct AccountBackupView: View {
         case .unavailable(let message), .failed(let message):
             errorMessage = message
         }
+    }
+
+    private func connectBackup() async {
+        guard let account = accountService.currentRecord(),
+              let projectID = FirebaseApp.app()?.options.projectID else {
+            errorMessage = "Firebase is not configured or no account is signed in."
+            return
+        }
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            try WorkspaceService.bindBackup(projectID: projectID, uid: account.userIdentifier, in: modelContext)
+            backupConnected = true
+            statusMessage = "This local workspace is connected to the signed-in backup account."
+            errorMessage = nil
+            await refresh()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    private func signIn() async {
+        await performAccountAction {
+            try await accountService.signIn(email: accountEmail, password: accountPassword)
+            return "Signed in. Review the backup connection before saving local data."
+        }
+    }
+
+    private func createAccount() async {
+        await performAccountAction {
+            try await accountService.createAccount(email: accountEmail, password: accountPassword)
+            return "Account created. Review the backup connection before saving local data."
+        }
+    }
+
+    private func recoverPassword() async {
+        do {
+            try await accountService.sendPasswordReset(email: accountEmail)
+            statusMessage = "Password reset instructions sent if that account exists."
+            errorMessage = nil
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    private func performAccountAction(_ action: () async throws -> String) async {
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            statusMessage = try await action()
+            errorMessage = nil
+            await refresh()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    private func deleteAccount() async {
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            try await accountService.deleteAccountAndRemoteBackup(password: accountPassword)
+            latestMetadata = nil
+            try WorkspaceService.disconnectBackup(in: modelContext)
+            backupConnected = false
+            statusMessage = "Account and encrypted cloud backup deleted. Local data remains on this device."
+            errorMessage = nil
+            await refresh()
+        } catch { errorMessage = error.localizedDescription }
     }
 
     private func restoreCloudBackup() async {
@@ -209,6 +342,8 @@ struct AccountBackupView: View {
 
     private func signOut() {
         do {
+            try WorkspaceService.disconnectBackup(in: modelContext)
+            backupConnected = false
             if let account = accountService.currentRecord() {
                 try? KeychainBackupEncryptionKeyCache(accountIdentifier: account.userIdentifier).delete()
             }

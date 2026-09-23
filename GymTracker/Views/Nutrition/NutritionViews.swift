@@ -136,7 +136,6 @@ struct NutritionDashboardView: View {
             },
             sortBy: [SortDescriptor(\.loggedAt)]
         )
-        descriptor.fetchLimit = 160
         return (try? modelContext.fetch(descriptor)) ?? []
     }
 
@@ -721,12 +720,19 @@ private struct NutritionDashboardSnapshot {
 
 struct AddFoodHubView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.modelContext) private var modelContext
 
-    @Query(sort: \FoodItem.name)
+    @Query
     private var foodItems: [FoodItem]
 
     @State private var showingManualEntry = false
     @State private var selectedRoute: AddFoodHubRoute?
+
+    init() {
+        var descriptor = FetchDescriptor<FoodItem>(sortBy: [SortDescriptor(\.name)])
+        descriptor.fetchLimit = 180
+        _foodItems = Query(descriptor)
+    }
 
     var body: some View {
         FitnessScreen(
@@ -822,7 +828,11 @@ struct AddFoodHubView: View {
     }
 
     private func navigateToSavedFoods() {
-        let catalog = SavedFoodCatalogSnapshot(foods: foodItems.map(SavedFoodSnapshot.init))
+        let completeFoods = (try? CompleteQueryService.fetchAll(
+            FetchDescriptor<FoodItem>(sortBy: [SortDescriptor(\.name)]),
+            in: modelContext
+        )) ?? foodItems
+        let catalog = SavedFoodCatalogSnapshot(foods: completeFoods.map(SavedFoodSnapshot.init))
         SavedFoodWarmStartStore.shared.update(catalog)
         guard let preparedRoute = SavedFoodWarmStartStore.shared.preparedRoute() else { return }
         navigate(to: .savedFoods(preparedRoute))

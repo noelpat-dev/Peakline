@@ -217,6 +217,7 @@ enum AppStartupPreferences {
 enum AppStartupPhase {
     case branding
     case checkingAccount
+    case onboarding
     case accountRequired(AccountReadiness)
     case checkingBackup
     case restorePrompt(FullAppBackupMetadata)
@@ -529,59 +530,34 @@ final class AppStartupCoordinator: ObservableObject {
         }
     }
 
-    private func evaluateAccountAndRestore(in context: ModelContext) async {
-        phase = .checkingAccount
-
-        let canPromptRestore: Bool
+    func completeSetup(_ programme: SeedDataService.InitialProgramme, in context: ModelContext) async {
         do {
-            canPromptRestore = try backupCoordinator.canPromptRestore(in: context)
+            try SeedDataService.completeSetup(programme, in: context)
+            await prepareLocalData(in: context, forceDateRepair: false)
         } catch {
             phase = .recoverableFailure(error.localizedDescription, canContinueOffline: false)
-            return
         }
+    }
 
+    private func evaluateAccountAndRestore(in context: ModelContext) async {
+        phase = .checkingAccount
+        do {
+            let workspace = try WorkspaceService.metadata(in: context)
 #if DEBUG
-        guard !ProcessInfo.processInfo.arguments.contains("-UITestInMemoryStore")
-                && !ProcessInfo.processInfo.arguments.contains("-SkipAccountGate") else {
-            await prepareLocalData(in: context, forceDateRepair: false)
-            return
-        }
+            if ProcessInfo.processInfo.arguments.contains("-UITestInMemoryStore") {
+                try SeedDataService.completeSetup(.pushPullLegs, in: context)
+            }
 #endif
-
-        // A populated local store is always usable without a cloud account. Account
-        // readiness only matters when an empty install can offer a cloud restore.
-        guard canPromptRestore else {
+            if !workspace.initialized {
+                // First-run decisions are local. Neither a configured plist nor
+                // a cached Firebase session grants consent to upload/replace.
+                phase = .onboarding
+                return
+            }
+            if context.hasChanges { try context.save() }
             await prepareLocalData(in: context, forceDateRepair: false)
-            return
-        }
-
-        let readiness = await PerformanceTracer.traceAsync(.startupAccountCheck) {
-            await accountService.readiness()
-        }
-
-        if case .firebaseNotConfigured = readiness,
-           AppStartupPreferences.localOnlyBackupBypassEnabled {
-            await prepareLocalData(in: context, forceDateRepair: false)
-            return
-        }
-
-        guard readiness.isReady else {
-            phase = .accountRequired(readiness)
-            return
-        }
-
-        phase = .checkingBackup
-        let metadataOutcome = await PerformanceTracer.traceAsync(.startupBackupMetadata) {
-            await backupCoordinator.latestMetadata()
-        }
-
-        switch metadataOutcome {
-        case .available(let metadata) where metadata.counts.userContentCount > 0:
-            phase = .restorePrompt(metadata)
-        case .available, .noBackup:
-            await prepareLocalData(in: context, forceDateRepair: false)
-        case .unavailable(let message), .failed(let message):
-            phase = .recoverableFailure(message, canContinueOffline: true)
+        } catch {
+            phase = .recoverableFailure(error.localizedDescription, canContinueOffline: false)
         }
     }
 
@@ -591,7 +567,7 @@ final class AppStartupCoordinator: ObservableObject {
 
         do {
             let projections = try PerformanceTracer.trace(.startupLocalPreparation) {
-                SeedDataService.seedIfNeeded(in: context)
+                try SeedDataService.seedIfNeeded(in: context)
                 try AppStartupMigrationService.repairWorkoutDatesIfNeeded(
                     in: context,
                     force: forceDateRepair

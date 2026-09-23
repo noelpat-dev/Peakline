@@ -146,6 +146,8 @@ enum BackupCoordinatorMetadataOutcome: Equatable {
 
 enum BackupCoordinatorSaveOutcome: Equatable {
     case saved(FullAppBackupMetadata)
+    case savedWithCredentialWarning(FullAppBackupMetadata, String)
+    case skippedUnchanged(FullAppBackupMetadata)
     case keptExistingBackup(FullAppBackupMetadata)
     case passphraseRequired
     case unavailable(String)
@@ -213,19 +215,32 @@ struct BackupCoordinator {
         }
     }
 
+    func latestMetadata(in context: ModelContext) async -> BackupCoordinatorMetadataOutcome {
+        do {
+            let scoped = try scopedStore(in: context)
+            guard let metadata = try await scoped.latestMetadata() else { return .noBackup }
+            return .available(metadata)
+        } catch FirebaseFullAppBackupError.unavailable(let message) { return .unavailable(message) }
+        catch { return .failed(error.localizedDescription) }
+    }
+
     func saveLatestBackup(in context: ModelContext, passphrase: String? = nil) async -> BackupCoordinatorSaveOutcome {
         do {
             try Task.checkCancellation()
+            let remoteStore = try scopedStore(in: context)
+            let operation: WorkspaceOperationContext? = store is FirebaseFullAppBackupStore
+                ? try operationContext(in: context) : nil
             // Persist any edits still pending in the UI context before the
             // background snapshot actor opens its own context.
             if context.hasChanges {
                 try context.save()
             }
             let envelope = try await backupService.makeEnvelope(in: context.container)
+            try ensureCurrent(operation, in: context)
             try backupService.validate(envelope)
             try Task.checkCancellation()
             let compressedData = try await payloadWorker.encodeAndCompress(envelope)
-            try Task.checkCancellation()
+            try ensureCurrent(operation, in: context)
             let metadata = FullAppBackupMetadata(
                 createdAt: Date(),
                 exportedAt: envelope.exportedAt,
@@ -233,8 +248,19 @@ struct BackupCoordinator {
                 compressedByteCount: compressedData.count,
                 appVersion: envelope.appVersion
             )
-            let existingHeader = try await store.latestHeader()
-            try Task.checkCancellation()
+            let fingerprint = FirebaseFullAppBackupStore.sha256Hex(compressedData)
+            let workspace = try WorkspaceService.metadata(in: context)
+            let existingHeader = try await remoteStore.latestHeader()
+            try ensureCurrent(operation, in: context)
+
+            if workspace.lastBackupFingerprint == fingerprint,
+               let existingHeader,
+               workspace.lastSuccessfulBackupAt != nil {
+                workspace.lastAttemptedBackupAt = Date()
+                workspace.backupState = "unchanged"
+                try context.save()
+                return .skippedUnchanged(existingHeader.metadata)
+            }
 
             if metadata.counts.userContentCount == 0,
                let existingHeader,
@@ -249,8 +275,9 @@ struct BackupCoordinator {
             if let existingHeader,
                existingHeader.metadata.counts.userContentCount > 0,
                !keyMaterial.loadedFromCache,
-               let existingRecord = try await store.latestRecord() {
+               let existingRecord = try await remoteStore.latestRecord() {
                 _ = try await payloadWorker.decrypt(existingRecord, keyData: keyMaterial.keyData)
+                try ensureCurrent(operation, in: context)
             }
 
             let encrypted = try await payloadWorker.encrypt(compressedData, keyMaterial: keyMaterial.material)
@@ -260,24 +287,35 @@ struct BackupCoordinator {
                 crypto: encrypted.crypto,
                 encryptedData: encrypted.ciphertext
             )
-            try await store.saveRecord(record)
+            try ensureCurrent(operation, in: context)
+            try await remoteStore.saveRecord(record)
             // Once saveRecord returns, its atomic pointer commit has completed.
             // Report success even if cancellation arrives after that commit so
             // the UI never claims the previous cloud copy was preserved when
             // the new generation is already live.
-            try keyCache.write(keyMaterial.material)
+            workspace.lastBackupFingerprint = fingerprint
+            workspace.lastAttemptedBackupAt = Date()
+            workspace.lastSuccessfulBackupAt = Date()
+            workspace.backupState = "saved"
+            workspace.backupError = nil
+            try context.save()
+            do { try keyCache.write(keyMaterial.material) }
+            catch { return .savedWithCredentialWarning(metadata, error.localizedDescription) }
             return .saved(metadata)
         } catch is CancellationError {
+            markFailure(in: context, message: "cancelled")
             return .failed("Backup was cancelled before it replaced the previous cloud copy.")
         } catch BackupEncryptionError.passphraseRequired {
             return .passphraseRequired
         } catch BackupEncryptionError.invalidPassphrase {
             return .failed("Backup passphrase did not unlock the existing backup.")
         } catch FirebaseFullAppBackupError.unavailable(let message) {
+            markFailure(in: context, message: message)
             return .unavailable(message)
         } catch let error as FirebaseFullAppBackupError {
             return .failed(error.localizedDescription)
         } catch {
+            markFailure(in: context, message: error.localizedDescription)
             return .failed(error.localizedDescription)
         }
     }
@@ -289,16 +327,19 @@ struct BackupCoordinator {
     ) async -> BackupCoordinatorRestoreOutcome {
         do {
             try Task.checkCancellation()
-            guard let record = try await store.latestRecord() else {
+            let remoteStore = try scopedStore(in: context)
+            let operation: WorkspaceOperationContext? = store is FirebaseFullAppBackupStore
+                ? try operationContext(in: context) : nil
+            guard let record = try await remoteStore.latestRecord() else {
                 return .skippedNoBackup
             }
-            try Task.checkCancellation()
+            try ensureCurrent(operation, in: context)
             if !replaceExisting, try backupService.userContentCount(in: context) > 0 {
                 return .skippedStoreNotEmpty
             }
             let keyMaterial = try await resolveKeyMaterial(passphrase: passphrase, existingCrypto: record.crypto)
             let decoded = try await payloadWorker.decryptDecompressAndDecode(record, keyData: keyMaterial.keyData)
-            try Task.checkCancellation()
+            try ensureCurrent(operation, in: context)
             guard decoded.compressedByteCount == record.metadata.compressedByteCount else {
                 throw FirebaseFullAppBackupError.integrityCheckFailed
             }
@@ -307,6 +348,7 @@ struct BackupCoordinator {
                 throw FirebaseFullAppBackupError.integrityCheckFailed
             }
             let summary = try backupService.importBackup(decoded.envelope, into: context, replaceExisting: true)
+            try ensureCurrent(operation, in: context)
             try keyCache.write(keyMaterial.material)
             return .restored(summary)
         } catch is CancellationError {
@@ -354,10 +396,43 @@ struct BackupCoordinator {
         )
         return ResolvedBackupKeyMaterial(material: material, loadedFromCache: false)
     }
+
+    private func operationContext(in context: ModelContext) throws -> WorkspaceOperationContext {
+        guard let account = FirebaseAccountService().currentRecord(),
+              let projectID = FirebaseApp.app()?.options.projectID else {
+            throw FirebaseFullAppBackupError.unavailable("Connect this workspace to a signed-in Firebase account first.")
+        }
+        return try WorkspaceService.operationContext(in: context, projectID: projectID, uid: account.userIdentifier)
+    }
+
+    private func scopedStore(in context: ModelContext) throws -> RemoteFullAppBackupStoring {
+        guard store is FirebaseFullAppBackupStore else { return store }
+        let operation = try operationContext(in: context)
+        if store is FirebaseFullAppBackupStore { return FirebaseFullAppBackupStore(operationContext: operation) }
+        return store
+    }
+
+    private func ensureCurrent(_ operation: WorkspaceOperationContext?, in context: ModelContext) throws {
+        guard let operation else { return }
+        guard try WorkspaceService.isCurrent(operation, in: context) else { throw WorkspaceError.staleOperation }
+    }
+
+    private func markFailure(in context: ModelContext, message: String) {
+        guard let workspace = try? WorkspaceService.metadata(in: context) else { return }
+        workspace.lastAttemptedBackupAt = Date()
+        workspace.backupState = "failed"
+        workspace.backupError = message
+        try? context.save()
+    }
 }
 
 struct FirebaseFullAppBackupStore: RemoteFullAppBackupStoring {
     private let chunkByteLimit = FullAppBackupLimits.maxCloudChunkBytes
+    private let operationContext: WorkspaceOperationContext?
+
+    init(operationContext: WorkspaceOperationContext? = nil) {
+        self.operationContext = operationContext
+    }
 
     func latestMetadata() async throws -> FullAppBackupMetadata? {
         let backupReference = try backupDocumentReference()
@@ -456,10 +531,15 @@ struct FirebaseFullAppBackupStore: RemoteFullAppBackupStoring {
         }
 
         try Task.checkCancellation()
+        let pointerSnapshot = try await getDocument(pointerReference)
+        let previousGenerationID = pointerSnapshot.data()?["generationID"] as? String
         var manifest = try metadataData(for: record, chunkCount: chunks.count)
         manifest["storageSchemaVersion"] = 3
         manifest["generationID"] = generationID
         manifest["payloadSHA256"] = payloadHash
+        // The pointer commit is compare-and-swap. A concurrent writer must
+        // retry from the newly published generation instead of overwriting it.
+        manifest["expectedPreviousGenerationID"] = previousGenerationID ?? NSNull()
         manifest["state"] = "complete"
         try await setData(manifest, on: generationReference)
 
@@ -473,9 +553,14 @@ struct FirebaseFullAppBackupStore: RemoteFullAppBackupStoring {
         guard FirebaseBootstrap.isConfigured else {
             throw FirebaseFullAppBackupError.unavailable("Firebase is not configured. Add GoogleService-Info.plist from your Firebase project.")
         }
-        guard let userID = Auth.auth().currentUser?.uid else {
-            throw FirebaseFullAppBackupError.unavailable("Sign in to your Peakline backup account first.")
+        if let operationContext,
+           FirebaseApp.app()?.options.projectID != operationContext.projectID {
+            throw FirebaseFullAppBackupError.unavailable("This backup belongs to a different Firebase project.")
         }
+        guard let operationContext else {
+            throw FirebaseFullAppBackupError.unavailable("Connect this workspace to the signed-in account before using backup.")
+        }
+        let userID = operationContext.uid
         return Firestore.firestore()
             .collection("users")
             .document(userID)
@@ -807,6 +892,21 @@ struct KeychainBackupEncryptionKeyCache: BackupEncryptionKeyCaching {
 
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound, accountIdentifierOverride != nil {
+            // Read the pre-workspace key once for compatibility and migrate it
+            // only after the caller has successfully authenticated as the same
+            // account. Never fall back to another UID's key.
+            var legacy = legacyQuery()
+            legacy[kSecReturnData as String] = true
+            legacy[kSecMatchLimit as String] = kSecMatchLimitOne
+            var legacyResult: AnyObject?
+            guard SecItemCopyMatching(legacy as CFDictionary, &legacyResult) == errSecSuccess,
+                  let legacyData = legacyResult as? Data else { return nil }
+            let material = try JSONDecoder().decode(BackupKeyMaterial.self, from: legacyData)
+            try write(material)
+            try? SecItemDelete(legacy as CFDictionary)
+            return material
+        }
         if status == errSecItemNotFound { return nil }
         guard status == errSecSuccess, let data = result as? Data else {
             throw BackupEncryptionError.keychainStatus(status)
@@ -849,12 +949,22 @@ struct KeychainBackupEncryptionKeyCache: BackupEncryptionKeyCaching {
         ]
     }
 
+    private func legacyQuery() -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: "firebase-backup-key-\(accountIdentifierOverride ?? "primary")"
+        ]
+    }
+
     private var account: String {
         if let accountIdentifierOverride {
-            return "firebase-backup-key-\(accountIdentifierOverride)"
+            let project = FirebaseApp.app()?.options.projectID ?? "default-project"
+            return "firebase-backup-key-v2-\(project)-\(accountIdentifierOverride)"
         }
         if FirebaseBootstrap.isConfigured, let userID = Auth.auth().currentUser?.uid {
-            return "firebase-backup-key-\(userID)"
+            let project = FirebaseApp.app()?.options.projectID ?? "default-project"
+            return "firebase-backup-key-v2-\(project)-\(userID)"
         }
         return "firebase-backup-key-primary"
     }

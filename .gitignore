@@ -22,6 +22,7 @@ output/
 
 # Local service configuration
 GymTracker/GoogleService-Info.plist
+Config/Peakline.local.xcconfig
 
 # Private development notes, agent workflow, and temporary reports
 AGENTS.md

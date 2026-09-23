@@ -1,0 +1,9 @@
+// Checked-in, nonpersonal defaults for a clean clone. A developer can create
+// Config/Peakline.local.xcconfig (ignored by Git) to override these values.
+PEAKLINE_BUNDLE_IDENTIFIER = com.example.peakline
+PEAKLINE_DEVELOPMENT_TEAM =
+PEAKLINE_STRICT_CONCURRENCY = minimal
+IPHONEOS_DEPLOYMENT_TARGET = 17.0
+
+// Keep this include last so ignored local values override the defaults.
+#include? "Peakline.local.xcconfig"

@@ -55,6 +55,23 @@ struct AppStartupView: View {
             appTheme.colors.backgroundPrimary
                 .ignoresSafeArea()
                 .accessibilityHidden(true)
+        case .onboarding:
+            FirstRunView(
+                start: { programme in
+                    resumeAfterInteraction()
+                    Task {
+                        await coordinator.completeSetup(programme, in: modelContext)
+                        interruptPresentationIfNeeded()
+                    }
+                },
+                importFinished: {
+                    Task {
+                        await coordinator.retry(in: modelContext)
+                        interruptPresentationIfNeeded()
+                    }
+                }
+            )
+            .onAppear { presentation.interrupt(reason: "onboarding") }
         case .accountRequired(let readiness):
             AccountGateView(
                 readiness: readiness,
@@ -192,6 +209,8 @@ struct AppStartupView: View {
 
     private func interruptPresentationIfNeeded() {
         switch coordinator.phase {
+        case .onboarding:
+            presentation.interrupt(reason: "onboarding")
         case .accountRequired:
             presentation.interrupt(reason: "account")
         case .restorePrompt:

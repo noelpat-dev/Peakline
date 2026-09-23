@@ -45,6 +45,12 @@ struct FullAppBackupImportSummary: Equatable {
     let importedAt: Date
 }
 
+private struct FullAppRestoreJournal: Codable {
+    let id: UUID
+    let templates: [CustomWorkoutTemplate]
+    let preferences: FullAppPreferencesBackupDTO
+}
+
 struct FullAppBackupEnvelope: Codable, @unchecked Sendable {
     let schemaVersion: Int
     let exportedAt: Date
@@ -75,7 +81,7 @@ struct FullAppPreferencesBackupDTO: Codable, Equatable {
         nutritionGoal = NutritionGoalService(defaults: defaults).loadGoal()
     }
 
-    func apply(to defaults: UserDefaults = .standard) {
+    func apply(to defaults: UserDefaults = .standard, preserveHealthKitConsent: Bool = false) {
         if let appTheme {
             defaults.set(appTheme, forKey: "appTheme")
         }
@@ -83,7 +89,9 @@ struct FullAppPreferencesBackupDTO: Codable, Equatable {
             defaults.set(appAppearance, forKey: "appAppearance")
         }
         SleepSettingsStore(defaults: defaults).save(sleepSettings)
-        HealthKitPreferenceStore(defaults: defaults).save(healthKitSyncPreferences)
+        if !preserveHealthKitConsent {
+            HealthKitPreferenceStore(defaults: defaults).save(healthKitSyncPreferences)
+        }
         HydrationSettingsStore(defaults: defaults).saveDailyTargetML(hydrationDailyTargetML)
         NutritionGoalService(defaults: defaults).saveGoal(nutritionGoal)
     }
@@ -164,15 +172,20 @@ struct FullAppBackupService {
     private let defaults: UserDefaults
     private let templateStore: WorkoutTemplateStore
     private let beforeCommit: () throws -> Void
+    private let restoreJournalURL: URL
 
     init(
         defaults: UserDefaults = .standard,
         templateStore: WorkoutTemplateStore = WorkoutTemplateStore(),
-        beforeCommit: @escaping () throws -> Void = {}
+        beforeCommit: @escaping () throws -> Void = {},
+        restoreJournalURL: URL? = nil
     ) {
         self.defaults = defaults
         self.templateStore = templateStore
         self.beforeCommit = beforeCommit
+        self.restoreJournalURL = restoreJournalURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Peakline", isDirectory: true)
+            .appendingPathComponent("restore-journal.json")
     }
 
     func makeEnvelope(in context: ModelContext) throws -> FullAppBackupEnvelope {
@@ -235,7 +248,8 @@ struct FullAppBackupService {
     func importBackup(
         _ envelope: FullAppBackupEnvelope,
         into context: ModelContext,
-        replaceExisting: Bool
+        replaceExisting: Bool,
+        workspaceState: WorkspacePortableState? = nil
     ) throws -> FullAppBackupImportSummary {
         try validate(envelope)
         try preflight(envelope)
@@ -247,6 +261,12 @@ struct FullAppBackupService {
         // Establish a clean rollback boundary before applying the replacement.
         try context.save()
         let previousTemplates = try templateStore.loadTemplatesForBackup()
+        let previousPreferences = FullAppPreferencesBackupDTO(defaults: defaults)
+        let journal = FullAppRestoreJournal(id: UUID(), templates: previousTemplates, preferences: previousPreferences)
+        try writeRestoreJournal(journal)
+        let workspace = try WorkspaceService.metadata(in: context)
+        workspace.pendingRestoreID = journal.id
+        try context.save()
         var replacedTemplates = false
 
         do {
@@ -261,18 +281,65 @@ struct FullAppBackupService {
                 replacedTemplates = true
             }
 
+            if replaceExisting {
+                // A full v2/v3 archive predates templates, so absence means
+                // clear the old template category during replacement.
+                if envelope.data.workoutTemplates == nil {
+                    try templateStore.replaceAll(with: [])
+                    replacedTemplates = true
+                }
+                try WorkspaceService.applyPortableState(workspaceState, in: context)
+            }
+
             try beforeCommit()
             try context.save()
             WorkoutWarmStartInvalidation.shared.invalidate(reason: .importedWorkouts)
-            envelope.preferences.apply(to: defaults)
+            // Device HealthKit permission/automatic-write consent is local
+            // state and must never be enabled by imported archive data.
+            envelope.preferences.apply(to: defaults, preserveHealthKitConsent: true)
+            workspace.pendingRestoreID = nil
+            try context.save()
+            try? FileManager.default.removeItem(at: restoreJournalURL)
             return FullAppBackupImportSummary(counts: envelope.counts, importedAt: Date())
         } catch {
             context.rollback()
             if replacedTemplates {
                 try? templateStore.replaceAll(with: previousTemplates)
             }
+            previousPreferences.apply(to: defaults, preserveHealthKitConsent: true)
+            workspace.pendingRestoreID = nil
+            try? context.save()
+            try? FileManager.default.removeItem(at: restoreJournalURL)
             throw error
         }
+    }
+
+    /// Repairs file-backed state left behind by an interrupted replacement.
+    /// SwiftData itself remains the source of truth; this restores only the
+    /// external categories recorded in the journal and clears the marker.
+    @discardableResult
+    func recoverPendingRestore(in context: ModelContext) throws -> Bool {
+        let workspace = try WorkspaceService.metadata(in: context)
+        guard workspace.pendingRestoreID != nil else { return false }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let journal = try decoder.decode(FullAppRestoreJournal.self, from: Data(contentsOf: restoreJournalURL))
+        try templateStore.replaceAll(with: journal.templates)
+        journal.preferences.apply(to: defaults, preserveHealthKitConsent: true)
+        workspace.pendingRestoreID = nil
+        try context.save()
+        try? FileManager.default.removeItem(at: restoreJournalURL)
+        return true
+    }
+
+    private func writeRestoreJournal(_ journal: FullAppRestoreJournal) throws {
+        try FileManager.default.createDirectory(
+            at: restoreJournalURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(journal).write(to: restoreJournalURL, options: [.atomic])
     }
 
     func userContentCount(in context: ModelContext) throws -> Int {

@@ -683,17 +683,25 @@ struct WeeklyNutritionTrendsView: View {
     private let trendService = NutritionTrendService()
 
     init() {
+        let calendar = Calendar.current
+        let end = Date()
+        let endDay = calendar.startOfDay(for: end)
+        let start = calendar.date(byAdding: .day, value: -6, to: endDay) ?? endDay
+        let periodEnd = calendar.date(byAdding: .day, value: 1, to: endDay) ?? end
         var foodDescriptor = FetchDescriptor<FoodLogEntry>(
+            predicate: #Predicate<FoodLogEntry> { entry in
+                entry.loggedAt >= start && entry.loggedAt < periodEnd
+            },
             sortBy: [SortDescriptor(\.loggedAt, order: .reverse)]
         )
-        foodDescriptor.fetchLimit = 300
         _foodLogs = Query(foodDescriptor)
 
         var workoutDescriptor = FetchDescriptor<WorkoutSession>(
-            predicate: #Predicate<WorkoutSession> { $0.completed },
+            predicate: #Predicate<WorkoutSession> { session in
+                session.completed && session.date >= start && session.date < periodEnd
+            },
             sortBy: [SortDescriptor(\.date, order: .reverse)]
         )
-        workoutDescriptor.fetchLimit = 30
         _completedSessions = Query(workoutDescriptor)
     }
 

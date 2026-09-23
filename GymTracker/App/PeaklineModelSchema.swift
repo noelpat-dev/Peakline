@@ -32,19 +32,26 @@ enum PeaklineSchemaV1: VersionedSchema {
     }
 }
 
+enum PeaklineSchemaV2: VersionedSchema {
+    static let versionIdentifier = Schema.Version(2, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        PeaklineSchemaV1.models + [LocalWorkspaceMetadata.self]
+    }
+}
+
 enum PeaklineSchemaMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [PeaklineSchemaV1.self]
+        [PeaklineSchemaV1.self, PeaklineSchemaV2.self]
     }
 
     static var stages: [MigrationStage] {
-        []
+        [.lightweight(fromVersion: PeaklineSchemaV1.self, toVersion: PeaklineSchemaV2.self)]
     }
 }
 
 enum PeaklineModelStore {
     static var schema: Schema {
-        Schema(versionedSchema: PeaklineSchemaV1.self)
+        Schema(versionedSchema: PeaklineSchemaV2.self)
     }
 
     static func makeContainer(

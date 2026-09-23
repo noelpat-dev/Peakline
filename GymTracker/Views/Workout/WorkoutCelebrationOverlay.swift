@@ -29,47 +29,16 @@ struct WorkoutCelebrationOverlay: View {
         ZStack {
             backdrop
 
-            ScrollView(.vertical) {
-                VStack(spacing: 18) {
-                    celebrationIcon
+            ViewThatFits(in: .vertical) {
+                celebrationCardContent
+                    .padding(appTheme.metrics.spacing24)
 
-                    VStack(spacing: 18) {
-                        VStack(spacing: 8) {
-                            Text(title)
-                                .font(AppTypography.heroTitle)
-                                .foregroundStyle(appTheme.colors.textPrimary)
-                                .multilineTextAlignment(.center)
-                                .fixedSize(horizontal: false, vertical: true)
-
-                            Text(message)
-                                .font(AppTypography.bodyEmphasis)
-                                .foregroundStyle(appTheme.colors.textSecondary)
-                                .multilineTextAlignment(.center)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-
-                        Button {
-                            primaryAction()
-                        } label: {
-                            Label {
-                                Text(primaryActionTitle)
-                            } icon: {
-                                if let primaryActionIcon {
-                                    Image(systemName: primaryActionIcon)
-                                }
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(PrimaryFitnessButtonStyle())
-                        .disabled(isPrimaryActionDisabled)
-                        .accessibilityLabel(primaryActionTitle)
-                        .accessibilityIdentifier("workout-celebration-primary")
-                        .accessibilityFocused($isPrimaryActionFocused)
-                    }
+                ScrollView(.vertical) {
+                    celebrationCardContent
+                        .padding(appTheme.metrics.spacing24)
                 }
-                .padding(appTheme.metrics.spacing24)
+                .scrollBounceBehavior(.basedOnSize)
             }
-            .scrollBounceBehavior(.basedOnSize)
             .frame(maxWidth: .infinity)
             .background(
                 appTheme.colors.cardBackground,
@@ -120,6 +89,46 @@ struct WorkoutCelebrationOverlay: View {
             await Task.yield()
             guard !Task.isCancelled, isVisible else { return }
             prBurstActive = true
+        }
+    }
+
+    private var celebrationCardContent: some View {
+        VStack(spacing: 18) {
+            celebrationIcon
+
+            VStack(spacing: 18) {
+                VStack(spacing: 8) {
+                    Text(title)
+                        .font(AppTypography.heroTitle)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(message)
+                        .font(AppTypography.bodyEmphasis)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Button {
+                    primaryAction()
+                } label: {
+                    Label {
+                        Text(primaryActionTitle)
+                    } icon: {
+                        if let primaryActionIcon {
+                            Image(systemName: primaryActionIcon)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PrimaryFitnessButtonStyle())
+                .disabled(isPrimaryActionDisabled)
+                .accessibilityLabel(primaryActionTitle)
+                .accessibilityIdentifier("workout-celebration-primary")
+                .accessibilityFocused($isPrimaryActionFocused)
+            }
         }
     }
 

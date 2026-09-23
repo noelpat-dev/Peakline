@@ -1,0 +1,8 @@
+// Copy this file to Peakline.local.xcconfig for a personal-device build.
+// Peakline.local.xcconfig is ignored by Git and is included after the
+// checked-in defaults, so these values override them for every target.
+//
+// PEAKLINE_BUNDLE_IDENTIFIER = com.example.peakline.noel
+// PEAKLINE_DEVELOPMENT_TEAM = ABC1234567
+// CODE_SIGNING_ALLOWED = YES
+
