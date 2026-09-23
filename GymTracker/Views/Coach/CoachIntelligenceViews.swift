@@ -71,7 +71,7 @@ struct TrainingCallAuditCard: View {
                 }
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(title). \(snapshot.headline). \(snapshot.reason)")
+            .accessibilityLabel("\(title). \(snapshot.headline). Confidence: \(snapshot.confidence.displayName). \(snapshot.reason)")
         }
     }
 
@@ -92,10 +92,16 @@ struct TrainingCallAuditCard: View {
                 if isExpandable {
                     TrailSignTag(text: snapshot.confidence.displayName)
                 } else {
-                    Text("\(snapshot.headline) - \(snapshot.confidence.displayName)")
-                        .font(AppTypography.bodyEmphasis)
-                        .foregroundStyle(accent)
-                        .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(snapshot.headline)
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(accent)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        TrailSignTag(text: snapshot.confidence.displayName)
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(snapshot.headline). Confidence: \(snapshot.confidence.displayName)")
                 }
             }
 
@@ -107,7 +113,7 @@ struct TrainingCallAuditCard: View {
                     .foregroundStyle(appTheme.colors.textTertiary)
                     .frame(width: 44, height: 44)
             } else {
-                CoachBadgeView(state: badgeState)
+                RecoveryAwareCoachTag(state: badgeState)
                     .fixedSize(horizontal: true, vertical: false)
             }
         }
