@@ -80,8 +80,8 @@ struct TrainingCallAuditCard: View {
             FitnessIconBadge(
                 systemImage: snapshot.recommendedMode.systemImage,
                 size: 42,
-                tint: accent,
-                background: accent.opacity(0.14)
+                tint: appTheme.colors.textSecondary,
+                background: appTheme.colors.cardBackgroundElevated
             )
 
             VStack(alignment: .leading, spacing: 5) {
