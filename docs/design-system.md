@@ -53,6 +53,14 @@ Peakline is **premium athletic**: calm enough to trust, strong enough to motivat
 | Native controls with Peakline styling | Custom replacements for familiar iOS behaviour |
 | Sparse earned celebration | Ambient glow, constant bounce, or decorative motion |
 
+## Summit visual language (Wave 1 and 2)
+
+Today, Workout start and preview, and Splits use the page as a trail map: `TrailPage` draws the route line, `TrailSection` marks numbered waypoints, and `TrailStop` presents exercise or checklist steps without card chrome. `TrailSignTag` marks a day type or meaningful workout state; `SummitPrimaryButton` carries the main action. Coach and Sleep receive the Summit type and readiness treatment without a layout rewrite.
+
+The Today header uses `SummitHorizonView` with a weekly-load front ridge, condition and time-of-day sky, and a `SummitHeaderOverlay` for the wordmark, date, and profile action. `AppTypography` supplies condensed, monospaced instrument numbers and uppercase waypoint labels. The trail and ridge derive their monochrome strokes from semantic theme text colours. `InstrumentGauge` displays readiness without category tint.
+
+`alpenglow` is reserved for earned events: PR flags, a completed summit, milestone markers, a newly completed cairn stone, and altitude gained today. Ordinary readiness, training advice, and navigation remain monochrome; real errors and destructive actions keep their semantic colours. Intro motion plays once per app launch, and Reduce Motion presents the completed static state. Decorative drawings are hidden from accessibility, while sections and instrument values retain meaningful labels and Dynamic Type scaling.
+
 ## Screen Anatomy
 
 Default vertical order:
