@@ -154,6 +154,7 @@ struct RootTabView: View {
     var body: some View {
         RootTabContainer(
             startupSnapshot: startupSnapshot,
+            startupRevealComplete: startupRevealComplete,
             selectionState: tabSelectionState,
             onTabSelectionStarted: rootTabSelectionStarted,
             onTabSelectionSettled: rootTabSelectionSettled,
@@ -1149,6 +1150,7 @@ private final class RootTabSelectionState {
 
 private struct RootTabContainer: View {
     let startupSnapshot: StartupSnapshotBundle
+    let startupRevealComplete: Bool
     @Bindable var selectionState: RootTabSelectionState
     let onTabSelectionStarted: () -> Void
     let onTabSelectionSettled: () -> Void
@@ -1161,9 +1163,12 @@ private struct RootTabContainer: View {
 
     var body: some View {
         TabView(selection: selectedTabBinding) {
-            RootTabContentHost(key: "today|\(startupSnapshot.sourceSignature)") {
+            RootTabContentHost(
+                key: "today|\(startupSnapshot.sourceSignature)|reveal:\(startupRevealComplete)"
+            ) {
                 TodayView(
                     startupSnapshot: startupSnapshot,
+                    startupRevealComplete: startupRevealComplete,
                     openHistory: { selectedTabBinding.wrappedValue = .history },
                     openSettings: onSettingsRequested
                 )
