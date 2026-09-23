@@ -805,6 +805,12 @@ struct TodayView: View {
             }
         }
         .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
+        .overlay(alignment: .top) {
+            appTheme.colors.backgroundPrimary
+                .frame(height: 0)
+                .background(appTheme.colors.backgroundPrimary.ignoresSafeArea(edges: .top))
+                .allowsHitTesting(false)
+        }
     }
 
     private func refreshBackupWarning() async {
