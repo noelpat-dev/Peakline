@@ -4,6 +4,7 @@ import SwiftData
 struct TrainingSplitSnapshot: Sendable, Hashable {
     let id: UUID
     let name: String
+    let splitTypeLabel: String
     let updatedAt: Date
     let activeRotationIndex: Int?
     let exercises: [SplitExerciseSnapshot]
@@ -11,12 +12,14 @@ struct TrainingSplitSnapshot: Sendable, Hashable {
     init(
         id: UUID,
         name: String,
+        splitTypeLabel: String = SplitType.custom.displayName,
         updatedAt: Date,
         activeRotationIndex: Int? = nil,
         exercises: [SplitExerciseSnapshot]
     ) {
         self.id = id
         self.name = name
+        self.splitTypeLabel = splitTypeLabel
         self.updatedAt = updatedAt
         self.activeRotationIndex = activeRotationIndex
         self.exercises = exercises
@@ -25,6 +28,7 @@ struct TrainingSplitSnapshot: Sendable, Hashable {
     init(split: TrainingSplit) {
         self.id = split.id
         self.name = split.name
+        self.splitTypeLabel = split.splitType.displayName
         self.updatedAt = split.updatedAt
         self.activeRotationIndex = split.activeRotationIndex
         self.exercises = split.exercises.map(SplitExerciseSnapshot.init)
@@ -90,6 +94,7 @@ enum TrainingSplitSnapshotBuilder {
             return TrainingSplitSnapshot(
                 id: split.id,
                 name: split.name,
+                splitTypeLabel: split.splitType.displayName,
                 updatedAt: split.updatedAt,
                 activeRotationIndex: split.activeRotationIndex,
                 exercises: exerciseSnapshots

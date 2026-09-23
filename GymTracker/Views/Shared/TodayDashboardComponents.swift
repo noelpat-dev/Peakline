@@ -90,101 +90,6 @@ extension View {
     }
 }
 
-struct QuickAction: Identifiable {
-    let identifier: String?
-    let title: String
-    let subtitle: String
-    let systemImage: String
-    let style: QuickActionStyle
-    let action: () -> Void
-
-    var id: String {
-        identifier ?? title
-    }
-
-    init(
-        identifier: String? = nil,
-        title: String,
-        subtitle: String,
-        systemImage: String,
-        style: QuickActionStyle,
-        action: @escaping () -> Void
-    ) {
-        self.identifier = identifier
-        self.title = title
-        self.subtitle = subtitle
-        self.systemImage = systemImage
-        self.style = style
-        self.action = action
-    }
-}
-
-enum QuickActionStyle {
-    case primary
-    case neutral
-    case calm
-    case progress
-    case hydration
-}
-
-struct QuickActionTile: View {
-    @Environment(\.appTheme) private var appTheme
-
-    let action: QuickAction
-
-    var body: some View {
-        let identifier = action.identifier ?? "quick-action-\(action.title.lowercased().replacingOccurrences(of: " ", with: "-"))"
-
-        Button {
-            action.action()
-        } label: {
-            FitnessCard(style: .compact) {
-                VStack(alignment: .leading, spacing: 13) {
-                    HStack {
-                        FitnessIconBadge(
-                            systemImage: action.systemImage,
-                            size: appTheme.metrics.rowIconSize,
-                            tint: iconColor,
-                            background: iconBackground
-                        )
-
-                        Spacer(minLength: 8)
-
-                        Image(systemName: "chevron.right")
-                            .font(AppTypography.eyebrow)
-                            .foregroundStyle(appTheme.colors.textTertiary)
-                    }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(action.title)
-                            .font(AppTypography.compactCardTitle)
-                            .foregroundStyle(appTheme.colors.textPrimary)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.82)
-
-                        Text(action.subtitle)
-                            .font(AppTypography.metadata)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
-            }
-        }
-        .buttonStyle(PressableCardButtonStyle())
-        .accessibilityIdentifier(identifier)
-    }
-
-    private var iconColor: Color {
-        appTheme.colors.accent
-    }
-
-    private var iconBackground: Color {
-        appTheme.colors.accentSurface
-    }
-}
-
 struct DashboardSection<Content: View>: View {
     @Environment(\.appTheme) private var appTheme
 
@@ -192,6 +97,7 @@ struct DashboardSection<Content: View>: View {
     let subtitle: String?
     let actionTitle: String?
     let action: (() -> Void)?
+    let usesSummitWaypointTitle: Bool
     let content: Content
 
     init(
@@ -199,12 +105,14 @@ struct DashboardSection<Content: View>: View {
         subtitle: String? = nil,
         actionTitle: String? = nil,
         action: (() -> Void)? = nil,
+        usesSummitWaypointTitle: Bool = false,
         @ViewBuilder content: () -> Content
     ) {
         self.title = title
         self.subtitle = subtitle
         self.actionTitle = actionTitle
         self.action = action
+        self.usesSummitWaypointTitle = usesSummitWaypointTitle
         self.content = content()
     }
 
@@ -212,9 +120,16 @@ struct DashboardSection<Content: View>: View {
         VStack(alignment: .leading, spacing: appTheme.metrics.sectionSpacing) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(AppTypography.sectionTitle)
-                        .foregroundStyle(appTheme.colors.textPrimary)
+                    if usesSummitWaypointTitle {
+                        Text(title)
+                            .modifier(AppTypography.waypointLabel)
+                            .accessibilityLabel(title)
+                            .accessibilityAddTraits(.isHeader)
+                    } else {
+                        Text(title)
+                            .font(AppTypography.sectionTitle)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                    }
 
                     if let subtitle, !subtitle.isEmpty {
                         Text(subtitle)
@@ -278,9 +193,9 @@ struct DashboardEmptyStateCard: View {
 struct TodayReadinessHero: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @ScaledMetric(relativeTo: .largeTitle) private var scoreSize: CGFloat = 48
 
     let scoreText: String
+    let scoreValue: Int?
     let status: String
     let summary: String
     let coverage: String
@@ -291,386 +206,340 @@ struct TodayReadinessHero: View {
         Button {
             action()
         } label: {
-            FitnessCard(style: .hero, padding: appTheme.metrics.spacing16) {
-                VStack(alignment: .leading, spacing: appTheme.metrics.spacing8) {
-                    HStack(alignment: .firstTextBaseline, spacing: appTheme.metrics.spacing8) {
-                        Text("Readiness")
-                            .font(AppTypography.eyebrow)
+            VStack(alignment: .leading, spacing: appTheme.metrics.spacing8) {
+                HStack(alignment: .top, spacing: appTheme.metrics.spacing8) {
+                    Text(status)
+                        .font(AppTypography.sectionTitle)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Spacer(minLength: appTheme.metrics.spacing8)
+
+                    if isProvisional {
+                        Text("Provisional")
+                            .font(AppTypography.metadataEmphasis)
                             .foregroundStyle(appTheme.colors.textSecondary)
-                            .textCase(.uppercase)
-
-                        Spacer(minLength: appTheme.metrics.spacing8)
-
-                        if isProvisional {
-                            Text("Provisional")
-                                .font(AppTypography.metadataEmphasis)
-                                .foregroundStyle(appTheme.colors.textSecondary)
-                                .padding(.horizontal, appTheme.metrics.spacing10)
-                                .padding(.vertical, appTheme.metrics.spacing6)
-                                .background(
-                                    appTheme.colors.cardBackgroundElevated,
-                                    in: Capsule()
-                                )
-                                .overlay {
-                                    Capsule()
-                                        .stroke(appTheme.colors.cardBorder.opacity(0.72), lineWidth: 0.75)
-                                }
-                                .accessibilityIdentifier("readiness-provisional-status")
-                        }
+                            .accessibilityIdentifier("readiness-provisional-status")
                     }
+                }
 
-                    HStack(alignment: .firstTextBaseline, spacing: appTheme.metrics.spacing6) {
+                if !summary.isEmpty {
+                    Text(summary)
+                        .font(AppTypography.body)
+                        .foregroundStyle(appTheme.colors.textSecondary.opacity(0.85))
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let scoreValue {
+                    HStack(alignment: .center, spacing: appTheme.metrics.spacing6) {
+                        Text("READINESS")
+                            .modifier(AppTypography.waypointLabel)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+
                         Text(scoreText)
-                            .font(AppTypography.rounded(size: scoreSize, weight: .heavy).monospacedDigit())
-                            .foregroundStyle(scoreColor)
+                            .modifier(AppTypography.instrumentLarge)
+                            .foregroundStyle(appTheme.colors.textPrimary)
                             .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                             .accessibilityIdentifier("today-readiness-score-value")
 
                         Text("/100")
                             .font(AppTypography.bodyEmphasis)
                             .foregroundStyle(appTheme.colors.textTertiary)
+
+                        Spacer(minLength: appTheme.metrics.spacing4)
+
+                        TodayReadinessGauge(value: scoreValue)
                     }
+                } else {
+                    Text(scoreText)
+                        .font(.system(size: 1))
+                        .foregroundStyle(Color.clear)
+                        .frame(width: 1, height: 1)
+                        .clipped()
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(scoreText)
+                        .accessibilityIdentifier("today-readiness-score-value")
+                }
 
-                    Text(status)
-                        .font(AppTypography.cardTitle)
-                        .foregroundStyle(appTheme.colors.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .center, spacing: appTheme.metrics.spacing10) {
+                    Image(systemName: "chart.bar.fill")
+                        .font(AppTypography.bodyEmphasis)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .accessibilityHidden(true)
 
-                    if !summary.isEmpty {
-                        Text(summary)
-                            .font(AppTypography.body)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    Text(coverage)
+                        .font(AppTypography.body)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .accessibilityIdentifier("readiness-signal-coverage")
 
-                    Divider()
-                        .overlay(appTheme.colors.cardBorder.opacity(0.62))
+                    Spacer(minLength: appTheme.metrics.spacing8)
 
-                    HStack(alignment: .center, spacing: appTheme.metrics.spacing10) {
-                        Image(systemName: "chart.bar.fill")
-                            .font(AppTypography.bodyEmphasis)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .accessibilityHidden(true)
-
-                        Text(coverage)
-                            .font(AppTypography.body)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("readiness-signal-coverage")
-
-                        Spacer(minLength: appTheme.metrics.spacing8)
-
-                        Image(systemName: "chevron.right")
-                            .font(AppTypography.metadataEmphasis)
-                            .foregroundStyle(appTheme.colors.textTertiary)
-                            .accessibilityHidden(true)
-                    }
+                    Image(systemName: "chevron.right")
+                        .font(AppTypography.metadataEmphasis)
+                        .foregroundStyle(appTheme.colors.textTertiary)
+                        .accessibilityHidden(true)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(PressableCardButtonStyle())
-        .accessibilityHint("Opens your readiness details")
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens Coach")
         .accessibilityIdentifier("today-readiness-hero")
-    }
-
-    private var scoreColor: Color {
-        scoreText == "—" ? appTheme.colors.textSecondary : appTheme.colors.success
     }
 }
 
-/// A compact, tappable Today tile for a prepared metric or next action.
-struct TodayMetricCard: View {
+private struct TodayReadinessGauge: View {
     @Environment(\.appTheme) private var appTheme
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let value: Int
 
-    let title: String
-    let systemImage: String
-    let value: String
-    let detail: String
-    let footer: String?
-    let isMetric: Bool
-    let isEnabled: Bool
-    let action: () -> Void
-
-    init(
-        title: String,
-        systemImage: String,
-        value: String,
-        detail: String,
-        footer: String? = nil,
-        isMetric: Bool = false,
-        isEnabled: Bool = true,
-        action: @escaping () -> Void
-    ) {
-        self.title = title
-        self.systemImage = systemImage
-        self.value = value
-        self.detail = detail
-        self.footer = footer
-        self.isMetric = isMetric
-        self.isEnabled = isEnabled
-        self.action = action
-    }
+    private var clampedValue: Int { min(max(value, 0), 100) }
 
     var body: some View {
-        Button {
-            action()
-        } label: {
-            FitnessCard(style: .compact, padding: appTheme.metrics.spacing14) {
-                VStack(alignment: .leading, spacing: appTheme.metrics.spacing6) {
-                    HStack(alignment: .center, spacing: appTheme.metrics.spacing8) {
-                        Image(systemName: systemImage)
-                            .font(AppTypography.rounded(size: appTheme.metrics.spacing20, weight: .semibold))
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .frame(width: appTheme.metrics.spacing22, height: appTheme.metrics.spacing22, alignment: .leading)
-                            .accessibilityHidden(true)
+        Canvas { context, size in
+            let tickCount = 14
+            let spacing: CGFloat = 2
+            let tickWidth = (size.width - spacing * CGFloat(tickCount - 1)) / CGFloat(tickCount)
 
-                        Spacer(minLength: appTheme.metrics.spacing8)
-
-                        Text(title)
-                            .font(AppTypography.eyebrow)
-                            .foregroundStyle(appTheme.colors.textSecondary)
-                            .textCase(.uppercase)
-                            .multilineTextAlignment(.trailing)
-                            .lineLimit(2)
-                    }
-
-                    Text(value)
-                        .font(valueFont)
-                        .foregroundStyle(appTheme.colors.textPrimary)
-                        .lineLimit(nil)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if !detail.isEmpty {
-                        HStack(spacing: appTheme.metrics.spacing8) {
-                            Text(detail)
-                                .font(AppTypography.body)
-                                .foregroundStyle(appTheme.colors.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                            if footer == nil {
-                                Spacer(minLength: 0)
-                                Image(systemName: "chevron.right")
-                                    .font(AppTypography.metadataEmphasis)
-                                    .foregroundStyle(appTheme.colors.textTertiary)
-                                    .accessibilityHidden(true)
-                            }
-                        }
-                    }
-
-                    if let footer, !footer.isEmpty {
-                        Divider()
-                            .overlay(appTheme.colors.cardBorder.opacity(0.58))
-
-                        HStack(alignment: .center, spacing: appTheme.metrics.spacing8) {
-                            Text(footer)
-                                .font(AppTypography.metadata)
-                                .foregroundStyle(appTheme.colors.textSecondary)
-                                .lineLimit(nil)
-                                .fixedSize(horizontal: false, vertical: true)
-
-                            Spacer(minLength: appTheme.metrics.spacing4)
-
-                            Image(systemName: "chevron.right")
-                                .font(AppTypography.metadataEmphasis)
-                                .foregroundStyle(appTheme.colors.textTertiary)
-                                .accessibilityHidden(true)
-                        }
-                    }
-                }
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: dynamicTypeSize.isAccessibilitySize
-                        ? appTheme.metrics.metricTileMinHeight + appTheme.metrics.spacing16
-                        : appTheme.metrics.metricTileMinHeight,
-                    alignment: .topLeading
+            for index in 0..<tickCount {
+                let tallTick = index.isMultiple(of: 3)
+                let tickHeight = tallTick ? size.height : size.height * 0.65
+                let x = CGFloat(index) * (tickWidth + spacing)
+                var tick = Path()
+                tick.move(to: CGPoint(x: x + tickWidth / 2, y: size.height - tickHeight))
+                tick.addLine(to: CGPoint(x: x + tickWidth / 2, y: size.height))
+                context.stroke(
+                    tick,
+                    with: .color(appTheme.colors.textPrimary.opacity(
+                        Double(index) * 100 / Double(tickCount) < Double(clampedValue) ? 0.95 : 0.18
+                    )),
+                    style: StrokeStyle(lineWidth: max(1, tickWidth), lineCap: .round)
                 )
             }
         }
-        .buttonStyle(PressableCardButtonStyle())
-        .disabled(!isEnabled)
-        .opacity(isEnabled ? 1 : 0.6)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint(
-            isEnabled
-                ? "Opens \(title)"
-                : "Unavailable until a workout plan is available"
-        )
-    }
-
-    private var valueFont: Font {
-        isMetric
-            ? AppTypography.largeMetric
-            : AppTypography.compactCardTitle
+        .frame(width: 76, height: 16)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Instrument gauge")
+        .accessibilityValue("\(clampedValue) of 100")
     }
 }
 
-/// A compact seven day activity summary. The label intentionally describes
-/// completed days rather than implying a streak or another derived measure.
-struct TodayWeeklyActivityCard: View {
+/// Keeps the shared CampSuppliesRow appearance while assigning each existing
+/// Today quick-action identifier to an individually tappable accessibility button.
+struct TodayCampSuppliesRow: View {
     @Environment(\.appTheme) private var appTheme
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    let completedDays: [Bool]
-    let action: () -> Void
+    let items: [(symbol: String, caption: String, value: String?, identifier: String)]
+    let onTap: (Int) -> Void
 
     var body: some View {
-        Button {
-            action()
-        } label: {
-            FitnessCard(style: .compact) {
-                ViewThatFits(in: .horizontal) {
-                    horizontalContent
-                    verticalContent
-                }
-            }
-        }
-        .buttonStyle(PressableCardButtonStyle())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Weekly activity")
-        .accessibilityValue("\(completedCount) of \(dayCount) days completed")
-        .accessibilityHint("Opens your activity history")
-        .accessibilityIdentifier("today-weekly-activity")
-    }
+        HStack(spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.offset) { element in
+                let index = element.offset
+                let item = element.element
 
-    private var horizontalContent: some View {
-        HStack(alignment: .center, spacing: appTheme.metrics.spacing12) {
-            Image(systemName: "calendar")
-                .font(AppTypography.rounded(size: appTheme.metrics.spacing22, weight: .semibold))
-                .foregroundStyle(appTheme.colors.textSecondary)
-                .frame(width: appTheme.metrics.spacing28, height: appTheme.metrics.spacing28)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: appTheme.metrics.spacing4) {
-                Text("Weekly activity")
-                    .font(AppTypography.eyebrow)
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .textCase(.uppercase)
-
-                HStack(alignment: .firstTextBaseline, spacing: appTheme.metrics.spacing6) {
-                    Text("\(completedCount)/\(dayCount)")
-                        .font(AppTypography.workoutLargeNumber)
-                        .foregroundStyle(appTheme.colors.textPrimary)
-
-                    Text("days")
-                        .font(AppTypography.body)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                }
-            }
-
-            Spacer(minLength: appTheme.metrics.spacing8)
-
-            dayDots
-
-            Image(systemName: "chevron.right")
-                .font(AppTypography.metadataEmphasis)
-                .foregroundStyle(appTheme.colors.textTertiary)
-                .accessibilityHidden(true)
-        }
-        .frame(maxWidth: .infinity, minHeight: appTheme.metrics.compactRowMinHeight, alignment: .leading)
-    }
-
-    private var verticalContent: some View {
-        VStack(alignment: .leading, spacing: appTheme.metrics.spacing12) {
-            HStack(alignment: .center, spacing: appTheme.metrics.spacing12) {
-                Image(systemName: "calendar")
-                    .font(AppTypography.rounded(size: appTheme.metrics.spacing22, weight: .semibold))
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .frame(width: appTheme.metrics.spacing28, height: appTheme.metrics.spacing28)
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: appTheme.metrics.spacing4) {
-                    Text("Weekly activity")
-                        .font(AppTypography.eyebrow)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                        .textCase(.uppercase)
-
-                    Text("\(completedCount) of \(dayCount) days completed")
-                        .font(AppTypography.bodyEmphasis)
-                        .foregroundStyle(appTheme.colors.textPrimary)
+                if index > 0 {
+                    Rectangle()
+                        .fill(appTheme.colors.textTertiary.opacity(0.72))
+                        .frame(width: 0.5, height: 44)
+                        .accessibilityHidden(true)
                 }
 
-                Spacer(minLength: appTheme.metrics.spacing8)
-
-                Image(systemName: "chevron.right")
-                    .font(AppTypography.metadataEmphasis)
-                    .foregroundStyle(appTheme.colors.textTertiary)
-                    .accessibilityHidden(true)
-            }
-
-            dayDots
-        }
-    }
-
-    private var dayDots: some View {
-        HStack(spacing: appTheme.metrics.spacing6) {
-            ForEach(Array(completedDays.enumerated()), id: \.offset) { _, isComplete in
-                Circle()
-                    .fill(isComplete ? appTheme.colors.accent : appTheme.colors.cardBackgroundElevated)
-                    .frame(
-                        width: dynamicTypeSize.isAccessibilitySize
-                            ? appTheme.metrics.spacing14
-                            : appTheme.metrics.spacing12,
-                        height: dynamicTypeSize.isAccessibilitySize
-                            ? appTheme.metrics.spacing14
-                            : appTheme.metrics.spacing12
-                    )
-                    .overlay {
-                        Circle()
-                            .stroke(
-                                isComplete
-                                    ? appTheme.colors.accent.opacity(0.16)
-                                    : appTheme.colors.cardBorder,
-                                lineWidth: 0.75
-                            )
+                CampSuppliesRow(
+                    items: [(symbol: item.symbol, caption: item.caption, value: item.value)],
+                    onTap: { _ in onTap(index) }
+                )
+                .frame(maxWidth: .infinity)
+                .accessibilityRepresentation {
+                    Button {
+                        onTap(index)
+                    } label: {
+                        Text(item.caption)
                     }
-                    .accessibilityHidden(true)
+                    .accessibilityLabel(
+                        item.value.map { "\(item.caption), \($0)" } ?? "\(item.caption), no log"
+                    )
+                    .accessibilityHint(item.value == nil ? "Add a log" : "Opens \(item.caption)")
+                    .accessibilityIdentifier(item.identifier)
+                }
             }
         }
-    }
-
-    private var completedCount: Int {
-        completedDays.filter { $0 }.count
-    }
-
-    private var dayCount: Int {
-        completedDays.count
+        .frame(maxWidth: .infinity)
     }
 }
 
-/// The monochrome entry point for the existing suggested session preview.
-struct TodayPlanButton: View {
-    @Environment(\.appTheme) private var appTheme
-
-    var title: String = "Review Today’s Plan"
-    var isEnabled: Bool = true
-    let action: () -> Void
+private struct TodaySummitPreviewGallery: View {
+    private enum Scene: String, CaseIterable {
+        case baseCamp
+        case clear
+        case changeable
+        case storm
+        case afterTraining
+    }
 
     var body: some View {
-        Button {
-            action()
-        } label: {
-            HStack(spacing: appTheme.metrics.spacing8) {
-                Spacer(minLength: appTheme.metrics.spacing8)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 34) {
+                ForEach(Scene.allCases, id: \.self) { scene in
+                    previewScene(scene)
+                }
+            }
+            .padding(20)
+        }
+        .background(Color.clear)
+    }
 
-                Label(title, systemImage: "list.bullet")
+    private func previewScene(_ scene: Scene) -> some View {
+        let isBaseCamp = scene == .baseCamp
+        let isAfterTraining = scene == .afterTraining
+        let condition: SummitCondition = switch scene {
+        case .storm: .storm
+        case .changeable: .changeable
+        default: .clear
+        }
+        let score: Int? = switch scene {
+        case .baseCamp: nil
+        case .clear: 88
+        case .changeable: 63
+        case .storm: 38
+        case .afterTraining: 82
+        }
+        let headline = switch scene {
+        case .baseCamp: "Pack for the climb"
+        case .clear: "Clear skies"
+        case .changeable: "Changeable"
+        case .storm: "Storm warning"
+        case .afterTraining: "Clear skies"
+        }
+        let advice = switch scene {
+        case .baseCamp: "3 of 5 supplies packed."
+        case .clear: "Good climbing weather. Train as planned."
+        case .changeable: "Steady climb. Train as planned, skip the max attempts."
+        case .storm: "Stay at base camp. Mobility or an easy walk today."
+        case .afterTraining: "Good climbing weather. Train as planned."
+        }
+        let load: [Double] = isBaseCamp ? Array(repeating: 0, count: 7) : [0.25, 0, 0.5, 0, 0, 1, 0.35]
 
-                Spacer(minLength: appTheme.metrics.spacing8)
+        return TrailPage {
+            VStack(alignment: .leading, spacing: 0) {
+                ZStack(alignment: .topLeading) {
+                    SummitHorizonView(
+                        week: load,
+                        todayIndex: 2,
+                        prDayIndex: isAfterTraining ? 5 : nil,
+                        condition: condition,
+                        timeOfDay: .day,
+                        isEmpty: isBaseCamp,
+                        animatesIntro: false
+                    )
+                    SummitHeaderOverlay(
+                        title: "Peakline",
+                        subtitle: "WED 23 SEP",
+                        profileButton: Button(action: {}) {
+                            Image(systemName: "person.crop.circle")
+                                .font(.system(size: 28, weight: .semibold))
+                                .frame(width: 44, height: 44)
+                        }
+                    )
+                }
 
-                Image(systemName: "chevron.right")
-                    .font(AppTypography.metadataEmphasis)
-                    .accessibilityHidden(true)
+                if isBaseCamp {
+                    TrailSection(index: 1, label: "BASE CAMP") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Pack for the climb")
+                                .font(AppTypography.sectionTitle)
+                            Text(advice)
+                                .font(AppTypography.body)
+                                .foregroundStyle(.secondary)
+                            Rectangle()
+                                .fill(.primary.opacity(0.55))
+                                .frame(height: 2)
+                            TrailStop(title: "Health connected", detail: "Sleep signal available", done: true)
+                            TrailStop(title: "Choose a training split", detail: "Choose a training split")
+                            TrailStop(title: "Log your first glass", detail: "Log your first glass")
+                            TrailStop(title: "Start your first workout", detail: "Start your first workout")
+                            TrailStop(title: "Choose a nightly target", detail: "Choose a nightly target")
+                        }
+                    }
+                    TrailSection(index: 2, label: "YOUR FIRST CLIMB") {
+                        TrailStop(title: "Choose your first split", detail: "Set up a training split to prepare your first climb.")
+                        SummitPrimaryButton(title: "Start your first climb", action: {})
+                    }
+                } else {
+                    TrailSection(index: 1, label: "SUMMIT CONDITIONS") {
+                        TodayReadinessHero(
+                            scoreText: score.map(String.init) ?? "Not available",
+                            scoreValue: score,
+                            status: headline,
+                            summary: advice,
+                            coverage: "4 of 5 signals included",
+                            isProvisional: scene == .changeable,
+                            action: {}
+                        )
+                    }
+
+                    TrailSection(index: 2, label: "TODAY'S ROUTE") {
+                        if isAfterTraining {
+                            HStack(spacing: 8) {
+                                Image(systemName: "flag.fill").foregroundStyle(.orange)
+                                Text("Summit reached").font(AppTypography.sectionTitle)
+                                Spacer()
+                                Text("Finished 17:42").font(AppTypography.metadata)
+                            }
+                            TrailStop(title: "Time", detail: "54 min")
+                            TrailStop(title: "Volume", detail: "8,240 kg")
+                            TrailStop(title: "Top PR", detail: "No PR logged")
+                            Text("Hydration goal met. Aim for 8h of sleep tonight.")
+                                .font(AppTypography.body)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            HStack {
+                                Text("Push A").font(AppTypography.sectionTitle)
+                                Spacer()
+                                Text("6 LIFTS · ~55 MIN").modifier(AppTypography.instrumentValue)
+                            }
+                            TrailStop(title: "Bench Press", detail: "60 kg × 8 reps")
+                            TrailStop(title: "Incline Dumbbell Press", detail: "22 kg × 10 reps")
+                            TrailStop(title: "+ 4 more", detail: "Lateral Raise · Triceps Pushdown · Pec Deck · Plank")
+                            if scene == .clear {
+                                TrailSignTag(text: "PR ATTEMPT")
+                            }
+                            SummitPrimaryButton(title: "Start Push A", action: {})
+                                .accessibilityIdentifier("today-review-plan")
+                        }
+                    }
+
+                    TrailSection(index: 3, label: "CAMP SUPPLIES") {
+                        CampSuppliesRow(items: [
+                            (symbol: "tent", caption: "Sleep", value: "7h 42m"),
+                            (symbol: "waterbottle", caption: "Water", value: "1.8 L"),
+                            (symbol: "flame", caption: "Fuel", value: nil)
+                        ])
+                    }
+                }
+
+                TrailSection(index: 4, label: "THIS WEEK") {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(isBaseCamp ? "0/7" : "3/7").modifier(AppTypography.instrumentLarge)
+                        Text("days").font(AppTypography.body).foregroundStyle(.secondary)
+                    }
+                }
             }
         }
-        .buttonStyle(NeutralFitnessButtonStyle())
-        .disabled(!isEnabled)
-        .opacity(isEnabled ? 1 : 0.6)
-        .accessibilityHint(
-            isEnabled
-                ? "Opens your prepared workout preview"
-                : "Unavailable until an active split is available"
-        )
-        .accessibilityIdentifier("today-review-plan")
     }
+}
+
+#Preview("Today Summit · All states · Light") {
+    TodaySummitPreviewGallery()
+        .preferredColorScheme(.light)
+}
+
+#Preview("Today Summit · All states · Dark") {
+    TodaySummitPreviewGallery()
+        .preferredColorScheme(.dark)
 }

@@ -451,7 +451,7 @@ struct SleepDashboardView: View {
                 )
 
                 Text(SleepScoringService.durationText(minutes: latestSummary.totalSleepMinutes))
-                    .font(AppTypography.heroMetric)
+                    .modifier(AppTypography.instrumentHero)
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("sleep-last-night-duration")
@@ -502,17 +502,16 @@ struct SleepDashboardView: View {
     }
 
     private var readinessSupportSection: some View {
-        DashboardSection(title: "Readiness & training support") {
+        DashboardSection(title: "Readiness & training support", usesSummitWaypointTitle: true) {
             SleepCard(style: .compact) {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(readinessScore.isProvisional ? "Provisional readiness" : supportTitle)
-                            .font(AppTypography.sectionTitle)
-                            .foregroundStyle(appTheme.colors.textPrimary)
+                            .modifier(AppTypography.waypointLabel)
                         Spacer(minLength: 8)
                         Text("\(readinessScore.value)/100")
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .modifier(AppTypography.instrumentLarge)
+                            .foregroundStyle(appTheme.colors.textPrimary)
                     }
 
                     Text(readinessScore.isProvisional ? "Training guidance waits for more evidence." : supportMessage)
@@ -811,12 +810,12 @@ struct SleepDashboardView: View {
     }
 
     private var weeklyChartCard: some View {
-        DashboardSection(title: "Last 7 Days") {
+        DashboardSection(title: "Last 7 Days", usesSummitWaypointTitle: true) {
             SleepCard {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
                         Text("Average \(SleepScoringService.durationText(minutes: averageSleepMinutes))")
-                            .font(AppTypography.sectionTitle)
+                            .modifier(AppTypography.instrumentValue)
                             .foregroundStyle(appTheme.colors.textPrimary)
 
                         Spacer()
@@ -867,7 +866,7 @@ struct SleepDashboardView: View {
     }
 
     private var napsSection: some View {
-        DashboardSection(title: "Naps") {
+        DashboardSection(title: "Naps", usesSummitWaypointTitle: true) {
             VStack(spacing: 12) {
                 HStack {
                     Spacer(minLength: 0)
@@ -918,7 +917,7 @@ struct SleepDashboardView: View {
     }
 
     private var consistencyAndDebt: some View {
-        DashboardSection(title: "Recovery Trends") {
+        DashboardSection(title: "Recovery Trends", usesSummitWaypointTitle: true) {
             SleepCard {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 10) {
@@ -948,7 +947,7 @@ struct SleepDashboardView: View {
     }
 
     private var coachingInsightsSection: some View {
-        DashboardSection(title: "Coaching Insights") {
+        DashboardSection(title: "Coaching Insights", usesSummitWaypointTitle: true) {
             VStack(spacing: 10) {
                 if dashboardSummary.coachingInsights.isEmpty {
                     SleepCard(style: .compact) {
@@ -968,7 +967,7 @@ struct SleepDashboardView: View {
     }
 
     private var historySection: some View {
-        DashboardSection(title: "History") {
+        DashboardSection(title: "History", usesSummitWaypointTitle: true) {
             if completedSessions.isEmpty {
                 SleepCard(style: .compact) {
                     SleepRow(
@@ -1400,8 +1399,8 @@ private struct SleepHistoryRow: View {
                         .multilineTextAlignment(.trailing)
 
                     Text("\(qualityScore)")
-                        .font(.headline.bold())
-                        .foregroundStyle(appTheme.colors.textAccent)
+                        .modifier(AppTypography.instrumentValue)
+                        .foregroundStyle(appTheme.colors.textPrimary)
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Session quality \(qualityScore) out of 100")

@@ -115,10 +115,63 @@ private struct WorkoutPreviewExerciseDragStyle: ViewModifier {
     }
 }
 
+private struct WorkoutPreviewTrailStopRow<Detail: View, Trailing: View>: View {
+    @Environment(\.appTheme) private var appTheme
+    @ScaledMetric(relativeTo: .body) private var titleSize: CGFloat = 15
+    @ScaledMetric(relativeTo: .caption) private var detailSize: CGFloat = 12.5
+
+    let title: String
+    let titleAccessibilityIdentifier: String
+    private let detail: Detail
+    private let trailing: Trailing
+
+    init(
+        title: String,
+        titleAccessibilityIdentifier: String,
+        @ViewBuilder detail: () -> Detail,
+        @ViewBuilder trailing: () -> Trailing
+    ) {
+        self.title = title
+        self.titleAccessibilityIdentifier = titleAccessibilityIdentifier
+        self.detail = detail()
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: titleSize, weight: .medium))
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier(titleAccessibilityIdentifier)
+
+                detail
+                    .font(.system(size: detailSize, weight: .regular))
+                    .foregroundStyle(appTheme.colors.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            trailing
+        }
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .leading) {
+            Circle()
+                .fill(appTheme.colors.backgroundPrimary)
+                .overlay {
+                    Circle().stroke(appTheme.colors.textSecondary, lineWidth: 1.3)
+                }
+                .frame(width: 7, height: 7)
+                .offset(x: -27.5)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
 struct WorkoutPreviewExerciseCard: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var guideEntry: ExerciseGuideEntry?
     @State private var isGestureDragging = false
@@ -145,52 +198,17 @@ struct WorkoutPreviewExerciseCard: View {
     let cancelGestureDrop: () -> Void
 
     var body: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .top, spacing: 12) {
-                        exerciseIcon
-                        exerciseTitle
-                    }
-
-                    CoachBadgeView(recommendationType: suggestion.recommendationType)
-                        .fixedSize(horizontal: true, vertical: false)
-
-                    HStack(spacing: 8) {
-                        Spacer(minLength: 0)
-                        reorderHandle
-                        actionsButton
-                    }
-
-                    exerciseDetails
-                }
-            } else {
-                HStack(alignment: .top, spacing: 12) {
-                    exerciseIcon
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(alignment: .top, spacing: 8) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                exerciseTitle
-
-                                CoachBadgeView(recommendationType: suggestion.recommendationType)
-                                    .fixedSize(horizontal: true, vertical: false)
-                            }
-
-                            Spacer(minLength: 8)
-
-                            reorderHandle
-
-                            actionsButton
-                        }
-
-                        exerciseDetails
-                    }
-                }
+        WorkoutPreviewTrailStopRow(
+            title: exercise.exerciseNameSnapshot,
+            titleAccessibilityIdentifier: "workout-preview-exercise-name-\(exercise.exerciseNameSnapshot)"
+        ) {
+            exerciseDetails
+        } trailing: {
+            HStack(spacing: 0) {
+                reorderHandle
+                actionsButton
             }
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .modifier(
             WorkoutPreviewExerciseRowFramePublisher(
@@ -212,52 +230,49 @@ struct WorkoutPreviewExerciseCard: View {
         }
     }
 
-    private var exerciseIcon: some View {
-        ExerciseIconView(
-            iconKey: ExerciseIconMapper.iconKey(forName: exercise.exerciseNameSnapshot),
-            size: dynamicTypeSize.isAccessibilitySize ? 48 : 56,
-            showBackground: true,
-            isDecorative: true
-        )
-    }
-
-    private var exerciseTitle: some View {
-        Text(exercise.exerciseNameSnapshot)
-            .font(AppTypography.sectionTitle)
-            .foregroundStyle(appTheme.colors.textPrimary)
-            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityIdentifier("workout-preview-exercise-name-\(exercise.exerciseNameSnapshot)")
-    }
-
     private var exerciseDetails: some View {
         VStack(alignment: .leading, spacing: 8) {
-                Text(
-                    PeaklineText.setRepSummary(
-                        sets: exercise.targetSets,
-                        minimumReps: exercise.minReps,
-                        maximumReps: exercise.maxReps
-                    )
-                )
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(appTheme.colors.textSecondary)
-
-                targetSummary
-
-                Text(suggestion.reason)
-                    .font(.footnote)
-                    .foregroundStyle(appTheme.mutedText)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if let notes = exercise.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Label(notes, systemImage: "note.text")
-                        .font(AppTypography.metadata)
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    setRepSummary
+                    TrailSignTag(text: CoachBadgeState(recommendationType: suggestion.recommendationType).label)
                 }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    setRepSummary
+                    TrailSignTag(text: CoachBadgeState(recommendationType: suggestion.recommendationType).label)
+                }
+            }
+
+            targetSummary
+
+            Text(suggestion.reason)
+                .font(AppTypography.body)
+                .foregroundStyle(appTheme.mutedText)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let notes = exercise.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Label(notes, systemImage: "note.text")
+                    .font(AppTypography.metadata)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+    }
+
+    private var setRepSummary: some View {
+        Text(
+            PeaklineText.setRepSummary(
+                sets: exercise.targetSets,
+                minimumReps: exercise.minReps,
+                maximumReps: exercise.maxReps
+            )
+        )
+        .modifier(AppTypography.instrumentValue)
+        .foregroundStyle(appTheme.colors.textSecondary)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var reorderHandle: some View {
@@ -418,22 +433,30 @@ struct WorkoutPreviewExerciseCard: View {
     }
 
     private var targetSummary: some View {
-        HStack(spacing: 6) {
+        HStack(alignment: .top, spacing: 14) {
             if let lastBest = suggestion.lastBestSetDescription {
-                Text("Last: \(lastBest)")
-                    .foregroundStyle(appTheme.colors.textSecondary)
-
-                Image(systemName: "arrow.right")
-                    .font(AppTypography.eyebrow)
-                    .foregroundStyle(appTheme.colors.textTertiary)
+                instrumentTarget(label: "Last", value: lastBest)
             }
 
-            Text("Target: \(targetDescription)")
-                .foregroundStyle(appTheme.colors.textPrimary)
+            instrumentTarget(label: "Target", value: targetDescription)
         }
-        .font(AppTypography.bodyEmphasis)
         .lineLimit(2)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func instrumentTarget(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .modifier(AppTypography.waypointLabelSmall)
+                .foregroundStyle(appTheme.colors.textSecondary)
+
+            Text(value)
+                .modifier(AppTypography.instrumentValue)
+                .foregroundStyle(label == "Target" ? appTheme.colors.textPrimary : appTheme.colors.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var targetDescription: String {
@@ -452,4 +475,64 @@ struct WorkoutPreviewExerciseCard: View {
     private func format(_ value: Double) -> String {
         value.formatted(.number.precision(.fractionLength(value.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1)))
     }
+}
+
+#Preview("Workout exercise stop · Light") {
+    TrailPage {
+        TrailSection(index: 1, label: "Exercise Order") {
+            WorkoutPreviewTrailStopRow(
+                title: "Barbell Bench Press",
+                titleAccessibilityIdentifier: "workout-preview-exercise-name-Barbell Bench Press"
+            ) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 10) {
+                        Text("4 sets · 6–8 reps")
+                            .modifier(AppTypography.instrumentValue)
+                        TrailSignTag(text: "Increase")
+                    }
+                    Text("Target: 62.5 kg × 8")
+                        .modifier(AppTypography.instrumentValue)
+                    Text("A small load increase fits your recent working sets.")
+                        .font(AppTypography.body)
+                    Text("Pause briefly on each rep.")
+                        .font(AppTypography.metadata)
+                }
+            } trailing: {
+                Image(systemName: "ellipsis")
+                    .frame(width: 44, height: 44)
+            }
+        }
+    }
+    .padding(.horizontal, 20)
+    .preferredColorScheme(.light)
+}
+
+#Preview("Workout exercise stop · Dark") {
+    TrailPage {
+        TrailSection(index: 1, label: "Exercise Order") {
+            WorkoutPreviewTrailStopRow(
+                title: "Barbell Bench Press",
+                titleAccessibilityIdentifier: "workout-preview-exercise-name-Barbell Bench Press"
+            ) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 10) {
+                        Text("4 sets · 6–8 reps")
+                            .modifier(AppTypography.instrumentValue)
+                        TrailSignTag(text: "Increase")
+                    }
+                    Text("Target: 62.5 kg × 8")
+                        .modifier(AppTypography.instrumentValue)
+                    Text("A small load increase fits your recent working sets.")
+                        .font(AppTypography.body)
+                    Text("Pause briefly on each rep.")
+                        .font(AppTypography.metadata)
+                }
+            } trailing: {
+                Image(systemName: "ellipsis")
+                    .frame(width: 44, height: 44)
+            }
+        }
+    }
+    .padding(.horizontal, 20)
+    .preferredColorScheme(.dark)
 }

@@ -44,7 +44,7 @@ GymTracker/App/
 
 `RootTabView` owns the four primary tabs and starts non-critical backup and notification work only after critical readiness:
 
-- Today.
+- Today: a snapshot-backed Summit horizon, readiness forecast or base camp, next workout route, camp supplies, and weekly activity.
 - Workout.
 - Splits.
 - History.

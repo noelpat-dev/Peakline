@@ -181,12 +181,13 @@ struct WorkoutDashboardPrimaryButtonStyle: ButtonStyle {
 }
 
 struct WorkoutDashboardHero: View {
+    private static let visibleRouteStopLimit = 2
+
     @Environment(\.appTheme) private var appTheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let splitName: String
-    let iconKey: ExerciseIconKey
-    let status: CoachBadgeState
+    let routeStops: [WorkoutDashboardRouteStop]
     let exerciseCount: Int
     let durationText: String
     let modeText: String
@@ -194,113 +195,145 @@ struct WorkoutDashboardHero: View {
     let onPreview: () -> Void
 
     var body: some View {
-        FitnessCard(style: .hero, padding: appTheme.metrics.spacing18) {
-            VStack(alignment: .leading, spacing: appTheme.metrics.spacing12) {
-                Text("TODAY")
-                    .font(AppTypography.eyebrow)
-                    .foregroundStyle(appTheme.mutedText)
-                    .tracking(0.7)
+        TrailPage {
+            TrailSection(index: 1, label: "Today's Route") {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(splitName)
+                            .font(AppTypography.heroTitle)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                            .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.78)
+                            .frame(maxWidth: .infinity, alignment: .leading)
 
-                HStack(alignment: .center, spacing: 14) {
-                    ExerciseIconView(
-                        iconKey: iconKey,
-                        size: 58,
-                        tint: appTheme.colors.textPrimary,
-                        showBackground: true,
-                        isDecorative: true
-                    )
-
-                    Text(splitName)
-                        .font(AppTypography.heroTitle)
-                        .foregroundStyle(appTheme.colors.textPrimary)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
-                        .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.78)
-
-                    if !dynamicTypeSize.isAccessibilitySize {
-                        Spacer(minLength: 8)
-                        CoachBadgeView(state: status)
+                        TrailSignTag(text: modeText)
                     }
-                }
 
-                if dynamicTypeSize.isAccessibilitySize {
-                    CoachBadgeView(state: status)
-                        .fixedSize(horizontal: true, vertical: false)
-                }
+                    if routeStops.isEmpty {
+                        TrailStop(title: "Workout route", detail: "Your exercise order is ready in Preview")
+                    } else {
+                        ForEach(routeStops.prefix(Self.visibleRouteStopLimit)) { stop in
+                            TrailStop(title: stop.title, detail: stop.detail)
+                        }
 
-                ViewThatFits(in: .horizontal) {
-                    metadataRow
-                    metadataStack
-                }
-
-                VStack(spacing: appTheme.metrics.spacing10) {
-                    Button {
-                        onStart()
-                    } label: {
-                        Label("Start Workout", systemImage: "play.fill")
-                            .frame(maxWidth: .infinity)
+                        if routeStops.count > Self.visibleRouteStopLimit {
+                            TrailStop(title: "+ \(routeStops.count - Self.visibleRouteStopLimit) more")
+                        }
                     }
-                    .buttonStyle(WorkoutDashboardPrimaryButtonStyle())
-                    .accessibilityIdentifier("workout-recommended-start")
 
-                    Button {
-                        onPreview()
-                    } label: {
-                        Label("Preview Workout", systemImage: "list.bullet")
-                            .frame(maxWidth: .infinity)
+                    SummitPrimaryButton(title: "Start Workout", action: onStart)
+                        .accessibilityIdentifier("workout-recommended-start")
+
+                    ViewThatFits(in: .horizontal) {
+                        routeMetrics
+                        routeMetricsStack
                     }
-                    .buttonStyle(NeutralFitnessButtonStyle())
-                    .accessibilityIdentifier("workout-recommended-preview")
+
+                    Button("Preview Workout", action: onPreview)
+                        .font(AppTypography.bodyEmphasis)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .frame(maxWidth: .infinity, minHeight: appTheme.metrics.minimumHitTarget, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("workout-recommended-preview")
                 }
             }
         }
     }
 
-    private var metadataRow: some View {
-        HStack(spacing: 10) {
-            metadataItem(
-                systemImage: "list.bullet",
-                text: exerciseCountText
-            )
+    private var routeMetrics: some View {
+        HStack(alignment: .top, spacing: 14) {
+            routeMetric(label: "Exercises", value: exerciseCount.formatted())
             metadataDivider
-            metadataItem(systemImage: "clock", text: durationText)
-            metadataDivider
-            metadataItem(systemImage: "figure.strengthtraining.traditional", text: modeText)
+            routeMetric(label: "Time", value: durationText)
         }
-        .foregroundStyle(appTheme.colors.textSecondary)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var metadataStack: some View {
-        VStack(alignment: .leading, spacing: appTheme.metrics.spacing8) {
-            metadataItem(
-                systemImage: "list.bullet",
-                text: exerciseCountText
-            )
-            metadataItem(systemImage: "clock", text: durationText)
-            metadataItem(systemImage: "figure.strengthtraining.traditional", text: modeText)
+    private var routeMetricsStack: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            routeMetric(label: "Exercises", value: exerciseCount.formatted())
+            routeMetric(label: "Time", value: durationText)
         }
-        .foregroundStyle(appTheme.colors.textSecondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func metadataItem(systemImage: String, text: String) -> some View {
-        Label(text, systemImage: systemImage)
-            .font(AppTypography.metadataEmphasis)
-            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-            .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.78)
-    }
+    private func routeMetric(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(value)
+                .modifier(AppTypography.instrumentValue)
+                .foregroundStyle(appTheme.colors.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
 
-    private var exerciseCountText: String {
-        exerciseCount > 0
-            ? PeaklineText.count(exerciseCount, singular: "exercise")
-            : "Plan ready"
+            Text(label)
+                .modifier(AppTypography.waypointLabelSmall)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var metadataDivider: some View {
         Rectangle()
-            .fill(appTheme.colors.cardBorder)
-            .frame(width: 1, height: 18)
+            .fill(appTheme.colors.textTertiary)
+            .frame(width: 0.5, height: 34)
             .accessibilityHidden(true)
     }
+}
+
+struct WorkoutDashboardRouteStop: Identifiable, Sendable {
+    let id: UUID
+    let title: String
+    let detail: String
+
+    static func make(from plannedExercises: [PlannedWorkoutExercise]) -> [WorkoutDashboardRouteStop] {
+        plannedExercises.map { exercise in
+            WorkoutDashboardRouteStop(
+                id: exercise.id,
+                title: exercise.name,
+                detail: PeaklineText.setRepSummary(
+                    sets: exercise.targetSets,
+                    minimumReps: exercise.minReps,
+                    maximumReps: exercise.maxReps
+                )
+            )
+        }
+    }
+}
+
+#Preview("Workout route · Light") {
+    WorkoutDashboardHero(
+        splitName: "Push",
+        routeStops: [
+            WorkoutDashboardRouteStop(id: UUID(), title: "Bench Press", detail: "4 sets · 6–8 reps"),
+            WorkoutDashboardRouteStop(id: UUID(), title: "Overhead Press", detail: "3 sets · 8–10 reps"),
+            WorkoutDashboardRouteStop(id: UUID(), title: "Cable Fly", detail: "3 sets · 12–15 reps")
+        ],
+        exerciseCount: 3,
+        durationText: "45 min",
+        modeText: "Full",
+        onStart: {},
+        onPreview: {}
+    )
+    .padding(.horizontal, 20)
+    .preferredColorScheme(.light)
+}
+
+#Preview("Workout route · Dark") {
+    WorkoutDashboardHero(
+        splitName: "Push",
+        routeStops: [
+            WorkoutDashboardRouteStop(id: UUID(), title: "Bench Press", detail: "4 sets · 6–8 reps"),
+            WorkoutDashboardRouteStop(id: UUID(), title: "Overhead Press", detail: "3 sets · 8–10 reps"),
+            WorkoutDashboardRouteStop(id: UUID(), title: "Cable Fly", detail: "3 sets · 12–15 reps")
+        ],
+        exerciseCount: 3,
+        durationText: "45 min",
+        modeText: "Full",
+        onStart: {},
+        onPreview: {}
+    )
+    .padding(.horizontal, 20)
+    .preferredColorScheme(.dark)
 }
 
 struct WorkoutToolsGrid: View {
@@ -531,12 +564,9 @@ struct StartWorkoutContentView: View {
             )
             return StartWorkoutDashboardSnapshot(
                 trainingCall: presentationCall,
-                recommendedSplit: StartWorkoutRecommendedSplitSnapshot(
-                    id: split.id,
-                    name: split.name,
-                    mode: presentationCall.recommendedMode,
-                    exerciseCount: currentSplitCardSnapshots.first(where: { $0.splitId == split.id })?.exerciseCount ?? split.exercises.count,
-                    estimatedDurationText: currentSplitCardSnapshots.first(where: { $0.splitId == split.id })?.estimatedDurationText ?? "Plan ready"
+                recommendedSplit: recommendedSplitSnapshot(
+                    for: split,
+                    mode: presentationCall.recommendedMode
                 )
             )
         }
@@ -560,11 +590,9 @@ struct StartWorkoutContentView: View {
 
         return StartWorkoutDashboardSnapshot(
             trainingCall: safeCall,
-            recommendedSplit: StartWorkoutRecommendedSplitSnapshot(
-                id: recommendedSplit.id,
-                name: recommendedSplit.name,
-                mode: safeCall.recommendedMode
-            )
+            recommendedSplit: activeSplits.first(where: { $0.id == recommendedSplit.id }).map {
+                recommendedSplitSnapshot(for: $0, mode: safeCall.recommendedMode)
+            }
         )
     }
 
@@ -715,9 +743,13 @@ struct StartWorkoutContentView: View {
                     )
                 }
 
-                DashboardSection(title: "Your Workouts") {
-                    ForEach(currentSplitCardSnapshots) { snapshot in
-                        splitStartCard(snapshot)
+                TrailPage {
+                    TrailSection(index: 2, label: "Other Routes") {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(currentSplitCardSnapshots) { snapshot in
+                                splitStartCard(snapshot)
+                            }
+                        }
                     }
                 }
 
@@ -899,14 +931,24 @@ struct StartWorkoutContentView: View {
             for: WorkoutPreviewSplit(split),
             mode: mode
         )
+        let plannedExercises = prepared?.plannedExercises ?? modePlanner.plannedExercises(
+            from: split.exercises
+                .sorted { $0.orderIndex < $1.orderIndex }
+                .map(WorkoutSelectableExercise.init),
+            mode: mode
+        )
+        let duration = prepared?.estimatedDuration ?? modePlanner.estimatedDurationMinutes(
+            for: plannedExercises,
+            mode: mode
+        )
         return StartWorkoutRecommendedSplitSnapshot(
             id: split.id,
             name: split.name,
+            routeTagText: split.splitType.displayName,
             mode: mode,
-            exerciseCount: prepared?.plannedExercises.count ?? split.exercises.count,
-            estimatedDurationText: prepared.map {
-                "\($0.estimatedDuration.lowerBound)–\($0.estimatedDuration.upperBound) min"
-            } ?? estimatedDurationText(for: split)
+            exerciseCount: plannedExercises.count,
+            estimatedDurationText: "\(duration.lowerBound)–\(duration.upperBound) min",
+            routeStops: WorkoutDashboardRouteStop.make(from: plannedExercises)
         )
     }
 
@@ -957,6 +999,7 @@ struct StartWorkoutContentView: View {
         return StartWorkoutSplitCardSnapshot(
             splitId: split.id,
             splitName: split.name,
+            routeTagText: split.splitType.displayName,
             lastTrainedText: lastTrainedText(for: split),
             estimatedDurationText: preparedFullSnapshot.map {
                 "\($0.estimatedDuration.lowerBound)–\($0.estimatedDuration.upperBound) min"
@@ -1094,10 +1137,9 @@ struct StartWorkoutContentView: View {
     }
 
     private func recommendedWorkoutCard(_ split: StartWorkoutRecommendedSplitSnapshot) -> some View {
-        WorkoutDashboardHero(
+        return WorkoutDashboardHero(
             splitName: split.name,
-            iconKey: ExerciseIconMapper.splitIconKey(for: split.name),
-            status: recommendedBadgeState,
+            routeStops: split.routeStops,
             exerciseCount: split.exerciseCount,
             durationText: split.estimatedDurationText,
             modeText: currentDashboardSnapshot.trainingCall.recommendedMode.displayName,
@@ -1226,23 +1268,28 @@ struct StartWorkoutContentView: View {
     }
 
     private func splitStartCard(_ snapshot: StartWorkoutSplitCardSnapshot) -> some View {
-        Button {
+        let exerciseCount = snapshot.plannedExerciseCount ?? snapshot.exerciseCount
+        let routeDetail = PeaklineText.joinedMetadata([
+            PeaklineText.count(exerciseCount, singular: "exercise"),
+            snapshot.estimatedDurationText,
+            snapshot.lastTrainedText
+        ])
+
+        return Button {
             guard let split = activeSplits.first(where: { $0.id == snapshot.splitId }) else { return }
             preview(split)
         } label: {
-            SplitCardView(
-                splitName: snapshot.splitName,
-                lastTrainedText: snapshot.lastTrainedText,
-                estimatedDurationText: snapshot.estimatedDurationText,
-                exerciseCount: snapshot.plannedExerciseCount ?? snapshot.exerciseCount,
-                badgeState: snapshot.splitName == currentDashboardSnapshot.recommendedSplit?.name
-                    ? recommendedBadgeState : snapshot.badgeState,
-                actionTitle: nil,
-                action: nil,
-                iconTint: appTheme.colors.textPrimary
-            )
+            TrailStop(title: snapshot.splitName, detail: routeDetail) {
+                TrailSignTag(text: snapshot.routeTagText)
+            }
+            .contentShape(Rectangle())
         }
-        .buttonStyle(PressableCardButtonStyle())
+        .buttonStyle(.plain)
+        .accessibilityLabel(PeaklineText.joinedMetadata([
+            snapshot.splitName,
+            routeDetail,
+            "Preview workout"
+        ]))
         .accessibilityIdentifier("start-split-\(snapshot.splitName)")
     }
 
@@ -1597,6 +1644,7 @@ struct WorkoutStartFirstFrameSnapshot: Sendable {
             return StartWorkoutSplitCardSnapshot(
                 splitId: split.id,
                 splitName: split.name,
+                routeTagText: split.splitTypeLabel,
                 lastTrainedText: lastTrainedText,
                 estimatedDurationText: estimatedDurationText,
                 exerciseCount: split.exercises.count,
@@ -1617,11 +1665,15 @@ struct WorkoutStartFirstFrameSnapshot: Sendable {
                     return StartWorkoutRecommendedSplitSnapshot(
                         id: split.id,
                         name: split.name,
+                        routeTagText: split.splitTypeLabel,
                         mode: trainingCall.recommendedMode,
                         exerciseCount: prepared?.plannedExercises.count ?? split.exercises.count,
                         estimatedDurationText: prepared.map {
                             "\($0.estimatedDuration.lowerBound)–\($0.estimatedDuration.upperBound) min"
-                        } ?? "Plan ready"
+                        } ?? "Plan ready",
+                        routeStops: prepared.map {
+                            WorkoutDashboardRouteStop.make(from: $0.plannedExercises)
+                        } ?? []
                     )
                 }
             ),
@@ -1640,22 +1692,28 @@ struct WorkoutStartFirstFrameSnapshot: Sendable {
 struct StartWorkoutRecommendedSplitSnapshot: Sendable {
     let id: UUID
     let name: String
+    let routeTagText: String
     let mode: WorkoutMode
     let exerciseCount: Int
     let estimatedDurationText: String
+    let routeStops: [WorkoutDashboardRouteStop]
 
     init(
         id: UUID,
         name: String,
+        routeTagText: String? = nil,
         mode: WorkoutMode = .full,
         exerciseCount: Int = 0,
-        estimatedDurationText: String = "Plan ready"
+        estimatedDurationText: String = "Plan ready",
+        routeStops: [WorkoutDashboardRouteStop] = []
     ) {
         self.id = id
         self.name = name
+        self.routeTagText = routeTagText ?? name
         self.mode = mode
         self.exerciseCount = exerciseCount
         self.estimatedDurationText = estimatedDurationText
+        self.routeStops = routeStops
     }
 }
 
@@ -1757,6 +1815,7 @@ struct StartWorkoutRecentSessionSnapshot: Sendable {
 struct StartWorkoutSplitCardSnapshot: Identifiable, Sendable {
     let splitId: UUID
     let splitName: String
+    let routeTagText: String
     let lastTrainedText: String
     let estimatedDurationText: String
     let exerciseCount: Int
@@ -1769,6 +1828,7 @@ struct StartWorkoutSplitCardSnapshot: Identifiable, Sendable {
         StartWorkoutSplitCardSnapshot(
             splitId: split.id,
             splitName: split.name,
+            routeTagText: split.splitType.displayName,
             lastTrainedText: "Ready to start",
             estimatedDurationText: "Plan ready",
             exerciseCount: 0,

@@ -136,3 +136,1083 @@ struct AttendanceRingView: View {
         }
     }
 }
+
+// MARK: - Summit horizon
+
+enum SummitCondition: CaseIterable, Hashable {
+    case clear
+    case changeable
+    case storm
+
+    var accessibilityName: String {
+        switch self {
+        case .clear: "clear skies"
+        case .changeable: "changeable skies"
+        case .storm: "stormy skies"
+        }
+    }
+}
+
+enum SummitTimeOfDay: CaseIterable, Hashable {
+    case dawn
+    case day
+    case night
+
+    init(date: Date) {
+        let hour = Calendar.current.component(.hour, from: date)
+        switch hour {
+        case 5...8: self = .dawn
+        case 9...18: self = .day
+        default: self = .night
+        }
+    }
+
+    var accessibilityName: String {
+        switch self {
+        case .dawn: "dawn"
+        case .day: "day"
+        case .night: "night"
+        }
+    }
+}
+
+struct SummitHorizonView: View {
+    private static let canvasWidth: CGFloat = 332
+    private static let canvasHeight: CGFloat = 268
+    private static let visibleCanvasHeight: CGFloat = 200
+    private static let skyDownshift: CGFloat = 100
+    private static let skyDiscCenterX: CGFloat = 140
+    // After the top crop, this leaves the tallest background ridge below the header band.
+    private static let headerRidgeDownshift: CGFloat = 76
+    // The header overlay's top inset and title/date stack occupy about 76 points below the crop.
+    private static let headerBandBottom: CGFloat = canvasHeight - visibleCanvasHeight + 76
+    private static let skyRidgeClearance: CGFloat = 9
+    private static let minimumSkyScale: CGFloat = 0.75
+    static let frontRidgeBaseline: CGFloat = 236
+    private static let dayLetters = ["M", "T", "W", "T", "F", "S", "S"]
+    private static let backRidgePoints: [CGPoint] = [
+        CGPoint(x: 0, y: 168), CGPoint(x: 30, y: 150), CGPoint(x: 65, y: 158),
+        CGPoint(x: 100, y: 128), CGPoint(x: 135, y: 142), CGPoint(x: 170, y: 118),
+        CGPoint(x: 205, y: 134), CGPoint(x: 240, y: 112), CGPoint(x: 275, y: 126),
+        CGPoint(x: 305, y: 110), CGPoint(x: 332, y: 122)
+    ]
+    private static let middleRidgePoints: [CGPoint] = [
+        CGPoint(x: 0, y: 196), CGPoint(x: 40, y: 178), CGPoint(x: 70, y: 186),
+        CGPoint(x: 110, y: 158), CGPoint(x: 150, y: 172), CGPoint(x: 190, y: 150),
+        CGPoint(x: 215, y: 160), CGPoint(x: 250, y: 138), CGPoint(x: 285, y: 158),
+        CGPoint(x: 332, y: 146)
+    ]
+    private static let displayedBackRidgePoints = backRidgePoints.map { point in
+        CGPoint(x: point.x, y: point.y + headerRidgeDownshift)
+    }
+    private static let displayedMiddleRidgePoints = middleRidgePoints.map { point in
+        CGPoint(x: point.x, y: point.y + headerRidgeDownshift)
+    }
+    @Environment(\.appTheme) private var appTheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let week: [Double]
+    let todayIndex: Int
+    let prDayIndex: Int?
+    let condition: SummitCondition
+    let timeOfDay: SummitTimeOfDay
+    let isEmpty: Bool
+    let animatesIntro: Bool
+    let introReady: Bool
+    private let skyPlacement: SummitSkyPlacement
+    private let nightStars: [SummitStar]
+
+    init(
+        week: [Double],
+        todayIndex: Int,
+        prDayIndex: Int?,
+        condition: SummitCondition,
+        timeOfDay: SummitTimeOfDay,
+        isEmpty: Bool,
+        animatesIntro: Bool,
+        introReady: Bool = true
+    ) {
+        self.week = week
+        self.todayIndex = todayIndex
+        self.prDayIndex = prDayIndex
+        self.condition = condition
+        self.timeOfDay = timeOfDay
+        self.isEmpty = isEmpty
+        self.animatesIntro = animatesIntro
+        self.introReady = introReady
+        let skyPlacement = Self.makeSkyPlacement(for: week, condition: condition, timeOfDay: timeOfDay)
+        self.skyPlacement = skyPlacement
+        if condition == .clear, timeOfDay == .night {
+            self.nightStars = Self.makeNightStars(
+                for: Self.normalizedLoads(from: week),
+                moonCenter: skyPlacement.applying(to: CGPoint(x: 70, y: 80)),
+                moonRadius: 18 * skyPlacement.scale
+            )
+        } else {
+            self.nightStars = []
+        }
+    }
+
+    @State private var backRidgeProgress = 0.0
+    @State private var middleRidgeProgress = 0.0
+    @State private var frontRidgeProgress = 0.0
+    @State private var prFlagScale = 0.0
+    @State private var introConfigured = false
+    @State private var introStarted = false
+
+    var body: some View {
+        GeometryReader { geometry in
+            let width = geometry.size.width
+            let scale = width / Self.canvasWidth
+            let artworkHeight = Self.canvasHeight * scale
+            let frontPoints = Self.frontRidgePoints(for: normalizedWeek)
+
+            ZStack(alignment: .topLeading) {
+                SummitHorizonStaticBackground(
+                    condition: condition,
+                    timeOfDay: timeOfDay,
+                    background: appTheme.colors.backgroundPrimary,
+                    foreground: appTheme.colors.textPrimary,
+                    alpenglow: appTheme.colors.alpenglow,
+                    canvasSize: CGSize(width: Self.canvasWidth, height: Self.canvasHeight),
+                    skyPlacement: skyPlacement,
+                    nightStars: nightStars
+                )
+                .equatable()
+                .frame(width: width, height: artworkHeight)
+
+                SummitRidgeLayer(
+                    points: Self.displayedBackRidgePoints,
+                    progress: displayedBackRidgeProgress,
+                    lineWidth: 1,
+                    lineColor: appTheme.colors.textPrimary.opacity(0.22),
+                    fillColor: appTheme.colors.backgroundPrimary,
+                    canvasSize: CGSize(width: Self.canvasWidth, height: Self.canvasHeight),
+                    scale: scale
+                )
+                .frame(width: width, height: artworkHeight)
+
+                SummitRidgeLayer(
+                    points: Self.displayedMiddleRidgePoints,
+                    progress: displayedMiddleRidgeProgress,
+                    lineWidth: 1.2,
+                    lineColor: appTheme.colors.textPrimary.opacity(0.45),
+                    fillColor: appTheme.colors.backgroundPrimary,
+                    canvasSize: CGSize(width: Self.canvasWidth, height: Self.canvasHeight),
+                    scale: scale
+                )
+                .frame(width: width, height: artworkHeight)
+
+                SummitRidgeLayer(
+                    points: frontPoints,
+                    progress: displayedFrontRidgeProgress,
+                    lineWidth: 2,
+                    lineColor: isEmpty ? appTheme.colors.textTertiary : appTheme.colors.textPrimary,
+                    fillColor: appTheme.colors.backgroundPrimary,
+                    canvasSize: CGSize(width: Self.canvasWidth, height: Self.canvasHeight),
+                    scale: scale
+                )
+                .frame(width: width, height: artworkHeight)
+
+                SummitHorizonWeekLabels(
+                    todayIndex: clampedTodayIndex,
+                    textPrimary: appTheme.colors.textPrimary,
+                    textTertiary: appTheme.colors.textTertiary,
+                    canvasSize: CGSize(width: Self.canvasWidth, height: Self.canvasHeight)
+                )
+                .equatable()
+                .frame(width: width, height: artworkHeight)
+
+                if !isEmpty, let prDayIndex, (0..<7).contains(prDayIndex) {
+                    let peak = CGPoint(x: Self.columnCenter(prDayIndex), y: Self.peakY(for: normalizedWeek[prDayIndex]))
+                    Canvas { context, size in
+                        var drawingContext = context
+                        drawingContext.scaleBy(
+                            x: size.width / Self.canvasWidth,
+                            y: size.height / Self.canvasHeight
+                        )
+                        Self.drawFlag(in: drawingContext, peak: peak, alpenglow: appTheme.colors.alpenglow)
+                    }
+                    .frame(width: width, height: artworkHeight)
+                    .scaleEffect(
+                        displayedPRFlagScale,
+                        anchor: UnitPoint(x: peak.x / Self.canvasWidth, y: peak.y / Self.canvasHeight)
+                    )
+                    .accessibilityHidden(true)
+                }
+            }
+            .frame(width: width, height: artworkHeight, alignment: .topLeading)
+            .offset(y: -Self.topCrop * scale)
+            .frame(width: width, height: geometry.size.height, alignment: .top)
+            .clipped()
+        }
+        .aspectRatio(Self.canvasWidth / Self.visibleCanvasHeight, contentMode: .fit)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilitySummary)
+        .onAppear(perform: configureIntro)
+        .onChange(of: introReady) { _, isReady in
+            if isReady {
+                configureIntro()
+            }
+        }
+        .onChange(of: reduceMotion) { _, isEnabled in
+            if isEnabled, introStarted {
+                finishIntroWithoutAnimation()
+            }
+        }
+        .onDisappear {
+            if introStarted {
+                finishIntroWithoutAnimation()
+            }
+        }
+    }
+
+    private static var topCrop: CGFloat {
+        canvasHeight - visibleCanvasHeight
+    }
+
+    static func skySpanStartIndex(for loads: [Double]) -> Int {
+        let normalizedLoads = normalizedLoads(from: loads)
+        var bestStartIndex = 0
+        var lowestMaximumLoad = Double.infinity
+
+        for startIndex in 0...4 {
+            let maximumLoad = normalizedLoads[startIndex..<(startIndex + 3)].max() ?? 0
+            if maximumLoad < lowestMaximumLoad {
+                lowestMaximumLoad = maximumLoad
+                bestStartIndex = startIndex
+            }
+        }
+
+        return bestStartIndex
+    }
+
+    private static func normalizedLoads(from loads: [Double]) -> [Double] {
+        let values = loads.prefix(7).map { value in
+            value.isFinite ? min(max(value, 0), 1) : 0
+        }
+        return values + Array(repeating: 0, count: max(0, 7 - values.count))
+    }
+
+    private static func makeSkyPlacement(
+        for week: [Double],
+        condition: SummitCondition,
+        timeOfDay: SummitTimeOfDay
+    ) -> SummitSkyPlacement {
+        let normalizedLoads = normalizedLoads(from: week)
+        let spanStartIndex = skySpanStartIndex(for: normalizedLoads)
+        let spanCenterX = (columnCenter(spanStartIndex) + columnCenter(spanStartIndex + 2)) / 2
+        let skyBounds = skyBounds(for: condition, timeOfDay: timeOfDay)
+        return SummitSkyPlacement(
+            bounds: skyBounds,
+            centerX: spanCenterX,
+            ridgeLayers: [
+                displayedBackRidgePoints,
+                displayedMiddleRidgePoints,
+                frontRidgePoints(for: normalizedLoads)
+            ],
+            baseDownshift: skyDownshift,
+            headerFloor: headerBandBottom,
+            ridgeClearance: skyRidgeClearance,
+            minimumScale: minimumSkyScale
+        )
+    }
+
+    private static func makeNightStars(for loads: [Double], moonCenter: CGPoint, moonRadius: CGFloat) -> [SummitStar] {
+        let ridgeLayers = [
+            displayedBackRidgePoints,
+            displayedMiddleRidgePoints,
+            frontRidgePoints(for: loads)
+        ]
+        let profileButtonBounds = CGRect(
+            x: canvasWidth - 64,
+            y: canvasHeight - visibleCanvasHeight + 20,
+            width: 44,
+            height: 44
+        )
+        let starCount = 26
+        let xSpacing = (canvasWidth - 32) / CGFloat(starCount - 1)
+        var state: UInt64 = 11
+
+        func nextValue() -> CGFloat {
+            state = (state * 16_807) % 2_147_483_647
+            return CGFloat(state) / 2_147_483_647
+        }
+
+        return (0..<starCount).compactMap { index in
+            let x = 16 + CGFloat(index) * xSpacing + (nextValue() - 0.5) * xSpacing * 0.45
+            let brightness = nextValue()
+            let radius: CGFloat = brightness > 0.8 ? 1.3 : 0.8
+            let ridgeY = summitHighestRidgeY(
+                in: (x - radius)...(x + radius),
+                layers: ridgeLayers
+            )
+            let minimumY = headerBandBottom + 8 + radius
+            let maximumY = ridgeY - 8 - radius - 1
+            guard maximumY >= minimumY else { return nil }
+
+            let moonClearance = moonRadius + radius + 16
+            for _ in 0..<12 {
+                let y = minimumY + (maximumY - minimumY) * nextValue()
+                let starCenter = CGPoint(x: x, y: y)
+                let moonDX = starCenter.x - moonCenter.x
+                let moonDY = starCenter.y - moonCenter.y
+                guard sqrt(moonDX * moonDX + moonDY * moonDY) >= moonClearance,
+                      clearance(from: starCenter, radius: radius, to: profileButtonBounds) >= 16 else {
+                    continue
+                }
+
+                return SummitStar(
+                    point: starCenter,
+                    radius: radius,
+                    opacity: Double(0.25 + brightness * 0.5)
+                )
+            }
+            return nil
+        }
+    }
+
+    private static func clearance(from point: CGPoint, radius: CGFloat, to rect: CGRect) -> CGFloat {
+        let dx = max(max(rect.minX - point.x, 0), point.x - rect.maxX)
+        let dy = max(max(rect.minY - point.y, 0), point.y - rect.maxY)
+        return sqrt(dx * dx + dy * dy) - radius
+    }
+
+    private static func skyBounds(for condition: SummitCondition, timeOfDay: SummitTimeOfDay) -> CGRect {
+        switch condition {
+        case .clear:
+            switch timeOfDay {
+            case .day:
+                return CGRect(x: 34, y: 57, width: 42, height: 42)
+            case .dawn:
+                return CGRect(x: 101, y: 68, width: 62, height: 46)
+            case .night:
+                let moonBounds = CGRect(x: 51, y: 61, width: 38, height: 38)
+                return moonBounds
+            }
+        case .changeable:
+            return timeOfDay == .day
+                ? CGRect(x: 48, y: 57, width: 106, height: 29)
+                : CGRect(x: 48, y: 57, width: 106, height: 28)
+        case .storm:
+            return CGRect(x: 28, y: 51, width: 134, height: 69)
+        }
+    }
+
+    private var normalizedWeek: [Double] {
+        let values = week.prefix(7).map { value in
+            value.isFinite ? min(max(value, 0), 1) : 0
+        }
+        return values + Array(repeating: 0, count: max(0, 7 - values.count))
+    }
+
+    private var clampedTodayIndex: Int {
+        min(max(todayIndex, 0), 6)
+    }
+
+    private var displayedBackRidgeProgress: Double {
+        animatesIntro && !reduceMotion ? backRidgeProgress : 1
+    }
+
+    private var displayedMiddleRidgeProgress: Double {
+        animatesIntro && !reduceMotion ? middleRidgeProgress : 1
+    }
+
+    private var displayedFrontRidgeProgress: Double {
+        animatesIntro && !reduceMotion ? frontRidgeProgress : 1
+    }
+
+    private var displayedPRFlagScale: CGFloat {
+        animatesIntro && !reduceMotion ? CGFloat(prFlagScale) : 1
+    }
+
+    private var accessibilitySummary: String {
+        let loads = zip(Self.dayLetters, normalizedWeek).enumerated().map { index, item in
+            let day = index == clampedTodayIndex ? "today, \(item.0)" : item.0
+            return "\(day) \(Int((item.1 * 100).rounded())) percent"
+        }.joined(separator: ", ")
+        let training = isEmpty ? "no training recorded this week" : "weekly training load, \(loads)"
+        let record: String
+        if !isEmpty, let prDayIndex, (0..<7).contains(prDayIndex) {
+            record = ", personal record on \(Self.dayLetters[prDayIndex])"
+        } else {
+            record = ""
+        }
+        return "Summit conditions, \(condition.accessibilityName), \(timeOfDay.accessibilityName), \(training)\(record)"
+    }
+
+    @MainActor
+    private func configureIntro() {
+        guard introReady, !introConfigured else { return }
+        introConfigured = true
+
+        guard animatesIntro, SummitHorizonIntroPlayback.claimFirstPresentation(), !reduceMotion else {
+            finishIntroWithoutAnimation()
+            return
+        }
+
+        introStarted = true
+        withAnimation(.easeInOut(duration: 1.4).delay(0.1)) {
+            backRidgeProgress = 1
+        }
+        withAnimation(.easeInOut(duration: 1.4).delay(0.25)) {
+            middleRidgeProgress = 1
+        }
+        withAnimation(.easeInOut(duration: 1.4).delay(0.45)) {
+            frontRidgeProgress = 1
+        }
+        withAnimation(.easeOut(duration: 0.45).delay(1.7)) {
+            prFlagScale = 1
+        }
+    }
+
+    @MainActor
+    private func finishIntroWithoutAnimation() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            backRidgeProgress = 1
+            middleRidgeProgress = 1
+            frontRidgeProgress = 1
+            prFlagScale = 1
+        }
+        introStarted = false
+    }
+
+    static func frontRidgePoints(for loads: [Double]) -> [CGPoint] {
+        let normalizedLoads = loads.prefix(7).map { load in
+            load.isFinite ? min(max(load, 0), 1) : 0
+        } + Array(repeating: 0, count: max(0, 7 - loads.count))
+        let columnWidth = (canvasWidth - 24) / 7
+        var points = [CGPoint(x: 0, y: frontRidgeBaseline)]
+        for index in 0..<7 {
+            let center = columnCenter(index)
+            let load = CGFloat(normalizedLoads[index])
+            let shoulderDepth: CGFloat = 2 + (index.isMultiple(of: 2) ? 0 : 6)
+            points.append(
+                CGPoint(x: center - 0.46 * columnWidth, y: frontRidgeBaseline - shoulderDepth * load)
+            )
+            points.append(CGPoint(x: center - 0.12 * columnWidth, y: frontRidgeBaseline - 38 * load))
+            points.append(CGPoint(x: center, y: frontRidgeBaseline - 52 * load))
+            points.append(CGPoint(x: center + 0.16 * columnWidth, y: frontRidgeBaseline - 40 * load))
+            points.append(CGPoint(x: center + 0.46 * columnWidth, y: frontRidgeBaseline - 4 * load))
+        }
+        points.append(CGPoint(x: canvasWidth, y: frontRidgeBaseline))
+        return points
+    }
+
+    private static func columnCenter(_ index: Int) -> CGFloat {
+        let columnWidth = (canvasWidth - 24) / 7
+        return 12 + columnWidth * CGFloat(index) + columnWidth / 2
+    }
+
+    private static func peakY(for load: Double) -> CGFloat {
+        frontRidgeBaseline - 52 * CGFloat(load)
+    }
+
+    fileprivate static func drawWeekLabels(
+        in context: GraphicsContext,
+        todayIndex: Int,
+        textPrimary: Color,
+        textTertiary: Color
+    ) {
+        for index in 0..<7 {
+            let center = columnCenter(index)
+            let color = index == todayIndex ? textPrimary : textTertiary
+            if index == todayIndex {
+                var tick = Path()
+                tick.move(to: CGPoint(x: center, y: 241))
+                tick.addLine(to: CGPoint(x: center, y: 246))
+                context.stroke(tick, with: .color(textPrimary), lineWidth: 1)
+            }
+            context.draw(
+                Text(dayLetters[index])
+                    .font(AppTypography.metadataEmphasis.monospacedDigit())
+                    .foregroundColor(color),
+                at: CGPoint(x: center, y: 258),
+                anchor: .center
+            )
+        }
+    }
+
+    fileprivate static func drawSky(
+        in context: GraphicsContext,
+        condition: SummitCondition,
+        timeOfDay: SummitTimeOfDay,
+        background: Color,
+        foreground: Color,
+        alpenglow: Color,
+        opacity: Double
+    ) {
+        guard opacity > 0 else { return }
+        switch condition {
+        case .clear:
+            switch timeOfDay {
+            case .day:
+                drawSun(
+                    center: CGPoint(x: 55, y: 78),
+                    radius: 12,
+                    color: foreground,
+                    opacity: opacity,
+                    in: context
+                )
+            case .dawn:
+                let center = CGPoint(x: 140, y: 91)
+                context.stroke(
+                    circle(center: center, radius: 22),
+                    with: .color(alpenglow.opacity(0.72 * opacity)),
+                    lineWidth: 1.4
+                )
+                for index in 0..<3 {
+                    let y = CGFloat(91 + index * 7)
+                    var line = Path()
+                    line.move(to: CGPoint(x: 102, y: y))
+                    line.addLine(to: CGPoint(x: 117, y: y - 4))
+                    context.stroke(line, with: .color(alpenglow.opacity(0.36 * opacity)), lineWidth: 1)
+                }
+            case .night:
+                let moonCenter = CGPoint(x: 70, y: 80)
+                context.fill(circle(center: moonCenter, radius: 18), with: .color(foreground.opacity(0.78 * opacity)))
+                context.fill(
+                    circle(center: CGPoint(x: moonCenter.x + 9, y: moonCenter.y - 6), radius: 18),
+                    with: .color(background)
+                )
+            }
+        case .changeable:
+            drawCloud(origin: CGPoint(x: 50, y: 58), scale: 1.1, background: background, foreground: foreground, opacity: opacity, in: context)
+            drawCloud(origin: CGPoint(x: 112, y: 60), scale: 0.8, background: background, foreground: foreground, opacity: opacity, in: context)
+            if timeOfDay == .day {
+                context.stroke(
+                    circle(center: CGPoint(x: skyDiscCenterX, y: 72), radius: 11),
+                    with: .color(foreground.opacity(0.7 * opacity)),
+                    lineWidth: 1.2
+                )
+            }
+        case .storm:
+            drawStorm(in: context, background: background, foreground: foreground, opacity: opacity)
+        }
+    }
+
+    private static func drawSun(
+        center: CGPoint,
+        radius: CGFloat,
+        color: Color,
+        opacity: Double,
+        in context: GraphicsContext
+    ) {
+        context.stroke(circle(center: center, radius: radius), with: .color(color.opacity(opacity)), lineWidth: 1.4)
+        for ray in 0..<8 {
+            let angle = CGFloat(ray) * .pi / 4
+            let inner = radius + 4
+            let outer = radius + 8
+            var path = Path()
+            path.move(to: CGPoint(x: center.x + cos(angle) * inner, y: center.y + sin(angle) * inner))
+            path.addLine(to: CGPoint(x: center.x + cos(angle) * outer, y: center.y + sin(angle) * outer))
+            context.stroke(
+                path,
+                with: .color(color.opacity(opacity)),
+                style: StrokeStyle(lineWidth: 1.3, lineCap: .round)
+            )
+        }
+    }
+
+    private static func drawCloud(
+        origin: CGPoint,
+        scale: CGFloat,
+        background: Color,
+        foreground: Color,
+        opacity: Double,
+        in context: GraphicsContext
+    ) {
+        let cloud = cloudPath(origin: origin, scale: scale)
+        context.fill(cloud, with: .color(background))
+        context.stroke(cloud, with: .color(foreground.opacity(0.65 * opacity)), lineWidth: 1.3)
+    }
+
+    private static func drawStorm(
+        in context: GraphicsContext,
+        background: Color,
+        foreground: Color,
+        opacity: Double
+    ) {
+        for row in 0..<2 {
+            let y = CGFloat(92 + row * 15)
+            for index in 0..<11 {
+                let x = CGFloat(35 + index * 5)
+                var rain = Path()
+                rain.move(to: CGPoint(x: x, y: y))
+                rain.addLine(to: CGPoint(x: x - 6, y: y + 12))
+                context.stroke(rain, with: .color(foreground.opacity(0.45 * opacity)), lineWidth: 1)
+            }
+        }
+
+        drawCloud(origin: CGPoint(x: 35, y: 58), scale: 1.5, background: background, foreground: foreground, opacity: opacity, in: context)
+        drawCloud(origin: CGPoint(x: 100, y: 58), scale: 1.2, background: background, foreground: foreground, opacity: opacity, in: context)
+
+        var lightning = Path()
+        lightning.move(to: CGPoint(x: 90, y: 52))
+        lightning.addLine(to: CGPoint(x: 82, y: 68))
+        lightning.addLine(to: CGPoint(x: 90, y: 68))
+        lightning.addLine(to: CGPoint(x: 80, y: 86))
+        context.stroke(lightning, with: .color(foreground.opacity(opacity)), lineWidth: 1.4)
+    }
+
+    private static func cloudPath(origin: CGPoint, scale: CGFloat) -> Path {
+        let x = origin.x
+        let y = origin.y
+        func point(_ dx: CGFloat, _ dy: CGFloat) -> CGPoint {
+            CGPoint(x: x + dx * scale, y: y + dy * scale)
+        }
+
+        var path = Path()
+        path.move(to: point(2, 22))
+        path.addQuadCurve(to: point(5, 9), control: point(-1, 15))
+        path.addQuadCurve(to: point(17, 6), control: point(7, 1))
+        path.addQuadCurve(to: point(31, 6), control: point(25, 0))
+        path.addQuadCurve(to: point(45, 15), control: point(43, 4))
+        path.addQuadCurve(to: point(43, 23), control: point(50, 18))
+        path.addLine(to: point(2, 23))
+        path.closeSubpath()
+        return path
+    }
+
+    private static func circle(center: CGPoint, radius: CGFloat) -> Path {
+        Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
+    }
+
+    fileprivate static func drawFlag(in context: GraphicsContext, peak: CGPoint, alpenglow: Color) {
+        let top = peak.y - 16
+        var pole = Path()
+        pole.move(to: CGPoint(x: peak.x, y: peak.y))
+        pole.addLine(to: CGPoint(x: peak.x, y: top))
+        context.stroke(pole, with: .color(alpenglow), lineWidth: 1.5)
+
+        var pennant = Path()
+        pennant.move(to: CGPoint(x: peak.x, y: top))
+        pennant.addLine(to: CGPoint(x: peak.x + 10, y: top + 3.5))
+        pennant.addLine(to: CGPoint(x: peak.x, y: top + 7))
+        pennant.closeSubpath()
+        context.fill(pennant, with: .color(alpenglow))
+    }
+}
+
+private struct SummitSkyPlacement: Equatable {
+    let originX: CGFloat
+    let originY: CGFloat
+    let scale: CGFloat
+
+    func applying(to point: CGPoint) -> CGPoint {
+        CGPoint(x: originX + point.x * scale, y: originY + point.y * scale)
+    }
+
+    init(
+        bounds: CGRect,
+        centerX: CGFloat,
+        ridgeLayers: [[CGPoint]],
+        baseDownshift: CGFloat,
+        headerFloor: CGFloat,
+        ridgeClearance: CGFloat,
+        minimumScale: CGFloat
+    ) {
+        func availableHeight(at scale: CGFloat) -> CGFloat {
+            let range = Self.ridgeRange(bounds: bounds, centerX: centerX, scale: scale)
+            return summitHighestRidgeY(in: range, layers: ridgeLayers) - headerFloor - ridgeClearance
+        }
+
+        let scale: CGFloat
+        if availableHeight(at: 1) >= bounds.height {
+            scale = 1
+        } else if availableHeight(at: minimumScale) >= bounds.height * minimumScale {
+            var lowerBound = minimumScale
+            var upperBound: CGFloat = 1
+            for _ in 0..<12 {
+                let candidate = (lowerBound + upperBound) / 2
+                if availableHeight(at: candidate) >= bounds.height * candidate {
+                    lowerBound = candidate
+                } else {
+                    upperBound = candidate
+                }
+            }
+            scale = lowerBound
+        } else {
+            scale = minimumScale
+        }
+
+        let ridgeRange = Self.ridgeRange(bounds: bounds, centerX: centerX, scale: scale)
+        let ridgeY = summitHighestRidgeY(in: ridgeRange, layers: ridgeLayers)
+        let scaledHalfHeight = bounds.height * scale / 2
+        let baseCenterY = baseDownshift + bounds.midY
+        let unshiftedTop = baseCenterY - scaledHalfHeight
+        let unshiftedBottom = baseCenterY + scaledHalfHeight
+        let headerShift = headerFloor - unshiftedTop
+        let ridgeShift = ridgeY - ridgeClearance - unshiftedBottom
+        let verticalShift: CGFloat
+        if headerShift <= ridgeShift {
+            verticalShift = min(max(0, headerShift), ridgeShift)
+        } else {
+            verticalShift = headerShift
+        }
+
+        self.originX = centerX - bounds.midX * scale
+        self.originY = baseDownshift + bounds.midY * (1 - scale) + verticalShift
+        self.scale = scale
+    }
+
+    private static func ridgeRange(bounds: CGRect, centerX: CGFloat, scale: CGFloat) -> ClosedRange<CGFloat> {
+        let halfWidth = bounds.width * scale / 2 + 1
+        return (centerX - halfWidth)...(centerX + halfWidth)
+    }
+
+}
+
+private func summitHighestRidgeY(in horizontalRange: ClosedRange<CGFloat>, layers: [[CGPoint]]) -> CGFloat {
+    var highestY = CGFloat.infinity
+
+    for points in layers {
+        for (start, end) in zip(points, points.dropFirst()) {
+            let segmentMinX = max(horizontalRange.lowerBound, start.x)
+            let segmentMaxX = min(horizontalRange.upperBound, end.x)
+            guard segmentMinX <= segmentMaxX, end.x > start.x else { continue }
+
+            let slope = (end.y - start.y) / (end.x - start.x)
+            let minY = start.y + (segmentMinX - start.x) * slope
+            let maxY = start.y + (segmentMaxX - start.x) * slope
+            highestY = min(highestY, min(minY, maxY))
+        }
+    }
+
+    return highestY.isFinite ? highestY : 0
+}
+
+private struct SummitHorizonStaticBackground: View, Equatable {
+    let condition: SummitCondition
+    let timeOfDay: SummitTimeOfDay
+    let background: Color
+    let foreground: Color
+    let alpenglow: Color
+    let canvasSize: CGSize
+    let skyPlacement: SummitSkyPlacement
+    let nightStars: [SummitStar]
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.condition == rhs.condition
+            && lhs.timeOfDay == rhs.timeOfDay
+            && lhs.background == rhs.background
+            && lhs.foreground == rhs.foreground
+            && lhs.alpenglow == rhs.alpenglow
+            && lhs.canvasSize == rhs.canvasSize
+            && lhs.skyPlacement == rhs.skyPlacement
+            && lhs.nightStars == rhs.nightStars
+    }
+
+    var body: some View {
+        Canvas { context, size in
+            var drawingContext = context
+            drawingContext.scaleBy(
+                x: size.width / canvasSize.width,
+                y: size.height / canvasSize.height
+            )
+
+            let bounds = Path(CGRect(origin: .zero, size: canvasSize))
+            drawingContext.fill(bounds, with: .color(background))
+
+            var skyContext = drawingContext
+            skyContext.translateBy(x: skyPlacement.originX, y: skyPlacement.originY)
+            skyContext.scaleBy(x: skyPlacement.scale, y: skyPlacement.scale)
+            SummitHorizonView.drawSky(
+                in: skyContext,
+                condition: condition,
+                timeOfDay: timeOfDay,
+                background: background,
+                foreground: foreground,
+                alpenglow: alpenglow,
+                opacity: 1
+            )
+            if condition == .clear, timeOfDay == .night {
+                for star in nightStars {
+                    drawingContext.fill(
+                        Path(ellipseIn: CGRect(
+                            x: star.point.x - star.radius,
+                            y: star.point.y - star.radius,
+                            width: star.radius * 2,
+                            height: star.radius * 2
+                        )),
+                        with: .color(foreground.opacity(star.opacity))
+                    )
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+private struct SummitHorizonWeekLabels: View, Equatable {
+    let todayIndex: Int
+    let textPrimary: Color
+    let textTertiary: Color
+    let canvasSize: CGSize
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.todayIndex == rhs.todayIndex
+            && lhs.textPrimary == rhs.textPrimary
+            && lhs.textTertiary == rhs.textTertiary
+            && lhs.canvasSize == rhs.canvasSize
+    }
+
+    var body: some View {
+        Canvas { context, size in
+            var drawingContext = context
+            drawingContext.scaleBy(
+                x: size.width / canvasSize.width,
+                y: size.height / canvasSize.height
+            )
+            SummitHorizonView.drawWeekLabels(
+                in: drawingContext,
+                todayIndex: todayIndex,
+                textPrimary: textPrimary,
+                textTertiary: textTertiary
+            )
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+private struct SummitRidgeLayer: View {
+    let points: [CGPoint]
+    let progress: Double
+    let lineWidth: CGFloat
+    let lineColor: Color
+    let fillColor: Color
+    let canvasSize: CGSize
+    let scale: CGFloat
+
+    var body: some View {
+        ZStack {
+            SummitRidgeFillShape(points: points, canvasSize: canvasSize)
+                .fill(fillColor)
+
+            SummitRidgeLineShape(points: points, canvasSize: canvasSize)
+                .trim(from: 0, to: CGFloat(progress))
+                .stroke(
+                    lineColor,
+                    style: StrokeStyle(lineWidth: lineWidth * scale, lineCap: .round, lineJoin: .round)
+                )
+        }
+        .frame(width: canvasSize.width * scale, height: canvasSize.height * scale)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct SummitRidgeLineShape: Shape {
+    let points: [CGPoint]
+    let canvasSize: CGSize
+
+    func path(in rect: CGRect) -> Path {
+        SummitHorizonPath.polyline(points, canvasSize: canvasSize, in: rect)
+    }
+}
+
+private struct SummitRidgeFillShape: Shape {
+    let points: [CGPoint]
+    let canvasSize: CGSize
+
+    func path(in rect: CGRect) -> Path {
+        guard let firstPoint = points.first, let lastPoint = points.last else { return Path() }
+        var path = SummitHorizonPath.polyline(points, canvasSize: canvasSize, in: rect)
+        path.addLine(to: SummitHorizonPath.point(
+            CGPoint(x: lastPoint.x, y: canvasSize.height),
+            canvasSize: canvasSize,
+            in: rect
+        ))
+        path.addLine(to: SummitHorizonPath.point(
+            CGPoint(x: firstPoint.x, y: canvasSize.height),
+            canvasSize: canvasSize,
+            in: rect
+        ))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private enum SummitHorizonPath {
+    static func polyline(_ points: [CGPoint], canvasSize: CGSize, in rect: CGRect) -> Path {
+        var path = Path()
+        guard let firstPoint = points.first else { return path }
+        path.move(to: point(firstPoint, canvasSize: canvasSize, in: rect))
+        for currentPoint in points.dropFirst() {
+            path.addLine(to: point(currentPoint, canvasSize: canvasSize, in: rect))
+        }
+        return path
+    }
+
+    static func point(_ point: CGPoint, canvasSize: CGSize, in rect: CGRect) -> CGPoint {
+        CGPoint(
+            x: rect.minX + point.x / canvasSize.width * rect.width,
+            y: rect.minY + point.y / canvasSize.height * rect.height
+        )
+    }
+}
+
+@MainActor
+private enum SummitHorizonIntroPlayback {
+    private static var hasPresented = false
+
+    static func claimFirstPresentation() -> Bool {
+        guard !hasPresented else { return false }
+        hasPresented = true
+        return true
+    }
+}
+
+private struct SummitStar: Equatable {
+    let point: CGPoint
+    let radius: CGFloat
+    let opacity: Double
+}
+
+struct SummitHeaderOverlay<ProfileButton: View>: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let title: String
+    let subtitle: String
+    let profileButton: ProfileButton
+
+    init(title: String, subtitle: String, profileButton: ProfileButton) {
+        self.title = title
+        self.subtitle = subtitle
+        self.profileButton = profileButton
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                wordmark
+                Text(subtitle.uppercased())
+                    .font(AppTypography.metadataEmphasis)
+                    .tracking(1.4)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .accessibilityLabel(subtitle)
+            }
+            Spacer(minLength: 0)
+            profileButton
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+                .overlay {
+                    Circle()
+                        .stroke(appTheme.colors.textPrimary, lineWidth: 1)
+                        .frame(width: 38, height: 38)
+                        .accessibilityHidden(true)
+                }
+        }
+        .padding(20)
+    }
+
+    @ViewBuilder
+    private var wordmark: some View {
+        if title.localizedCaseInsensitiveCompare("Peakline") == .orderedSame {
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                Text("Peakl")
+                ZStack(alignment: .topLeading) {
+                    Text("ı")
+                    SummitWordmarkFlag()
+                        .offset(x: 3, y: -2)
+                        .accessibilityHidden(true)
+                }
+                Text("ne")
+            }
+            .font(AppTypography.screenTitle)
+            .foregroundStyle(appTheme.colors.textPrimary)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(title)
+        } else {
+            Text(title)
+                .font(AppTypography.screenTitle)
+                .foregroundStyle(appTheme.colors.textPrimary)
+        }
+    }
+}
+
+private struct SummitWordmarkFlag: View {
+    @Environment(\.appTheme) private var appTheme
+
+    var body: some View {
+        Canvas { context, _ in
+            var pole = Path()
+            pole.move(to: CGPoint(x: 2, y: 15))
+            pole.addLine(to: CGPoint(x: 2, y: 1))
+            context.stroke(pole, with: .color(appTheme.colors.textPrimary), lineWidth: 1.6)
+
+            var pennant = Path()
+            pennant.move(to: CGPoint(x: 2, y: 1))
+            pennant.addLine(to: CGPoint(x: 10, y: 3.5))
+            pennant.addLine(to: CGPoint(x: 2, y: 6))
+            pennant.closeSubpath()
+            context.fill(pennant, with: .color(appTheme.colors.textPrimary))
+        }
+        .frame(width: 12, height: 16)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct SummitHorizonPreviewGallery: View {
+    private let previewWeek = [0.34, 0.72, 0.45, 0.9, 0.58, 0.22, 0.63]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                ForEach(SummitCondition.allCases, id: \.self) { condition in
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(condition.accessibilityName.capitalized)
+                            .font(AppTypography.sectionTitle)
+                        ForEach(SummitTimeOfDay.allCases, id: \.self) { timeOfDay in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(timeOfDay.accessibilityName.capitalized)
+                                    .font(AppTypography.metadataEmphasis)
+                                    .foregroundStyle(.secondary)
+                                HStack(alignment: .top, spacing: 8) {
+                                    previewItem(condition: condition, timeOfDay: timeOfDay, isEmpty: true)
+                                    previewItem(condition: condition, timeOfDay: timeOfDay, isEmpty: false)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(12)
+        }
+    }
+
+    private func previewItem(
+        condition: SummitCondition,
+        timeOfDay: SummitTimeOfDay,
+        isEmpty: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(isEmpty ? "Empty" : "Week")
+                .font(AppTypography.metadata)
+                .foregroundStyle(.secondary)
+            SummitHorizonView(
+                week: isEmpty ? Array(repeating: 0, count: 7) : previewWeek,
+                todayIndex: 2,
+                prDayIndex: isEmpty ? nil : 3,
+                condition: condition,
+                timeOfDay: timeOfDay,
+                isEmpty: isEmpty,
+                animatesIntro: false
+            )
+            .frame(maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+#Preview("Summit horizon · Light") {
+    SummitHorizonPreviewGallery()
+        .preferredColorScheme(.light)
+}
+
+#Preview("Summit horizon · Dark") {
+    SummitHorizonPreviewGallery()
+        .preferredColorScheme(.dark)
+}
