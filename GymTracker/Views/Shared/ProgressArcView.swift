@@ -208,25 +208,6 @@ struct SummitHorizonView: View {
     private static let displayedMiddleRidgePoints = middleRidgePoints.map { point in
         CGPoint(x: point.x, y: point.y + headerRidgeDownshift)
     }
-    private static let nightStars: [SummitStar] = {
-        var state: UInt64 = 11
-        func nextValue() -> Double {
-            state = (state * 16_807) % 2_147_483_647
-            return Double(state) / 2_147_483_647
-        }
-
-        return (0..<26).map { _ in
-            let x = 110 + nextValue() * 70
-            let y = 58 + nextValue() * 30
-            let brightness = nextValue()
-            return SummitStar(
-                point: CGPoint(x: x, y: y),
-                radius: brightness > 0.8 ? 1.3 : 0.8,
-                opacity: 0.25 + brightness * 0.5
-            )
-        }
-    }()
-
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -239,6 +220,7 @@ struct SummitHorizonView: View {
     let animatesIntro: Bool
     let introReady: Bool
     private let skyPlacement: SummitSkyPlacement
+    private let nightStars: [SummitStar]
 
     init(
         week: [Double],
@@ -258,7 +240,17 @@ struct SummitHorizonView: View {
         self.isEmpty = isEmpty
         self.animatesIntro = animatesIntro
         self.introReady = introReady
-        self.skyPlacement = Self.makeSkyPlacement(for: week, condition: condition, timeOfDay: timeOfDay)
+        let skyPlacement = Self.makeSkyPlacement(for: week, condition: condition, timeOfDay: timeOfDay)
+        self.skyPlacement = skyPlacement
+        if condition == .clear, timeOfDay == .night {
+            self.nightStars = Self.makeNightStars(
+                for: Self.normalizedLoads(from: week),
+                moonCenter: skyPlacement.applying(to: CGPoint(x: 70, y: 80)),
+                moonRadius: 18 * skyPlacement.scale
+            )
+        } else {
+            self.nightStars = []
+        }
     }
 
     @State private var backRidgeProgress = 0.0
@@ -283,7 +275,8 @@ struct SummitHorizonView: View {
                     foreground: appTheme.colors.textPrimary,
                     alpenglow: appTheme.colors.alpenglow,
                     canvasSize: CGSize(width: Self.canvasWidth, height: Self.canvasHeight),
-                    skyPlacement: skyPlacement
+                    skyPlacement: skyPlacement,
+                    nightStars: nightStars
                 )
                 .equatable()
                 .frame(width: width, height: artworkHeight)
@@ -426,6 +419,66 @@ struct SummitHorizonView: View {
         )
     }
 
+    private static func makeNightStars(for loads: [Double], moonCenter: CGPoint, moonRadius: CGFloat) -> [SummitStar] {
+        let ridgeLayers = [
+            displayedBackRidgePoints,
+            displayedMiddleRidgePoints,
+            frontRidgePoints(for: loads)
+        ]
+        let profileButtonBounds = CGRect(
+            x: canvasWidth - 64,
+            y: canvasHeight - visibleCanvasHeight + 20,
+            width: 44,
+            height: 44
+        )
+        let starCount = 26
+        let xSpacing = (canvasWidth - 32) / CGFloat(starCount - 1)
+        var state: UInt64 = 11
+
+        func nextValue() -> CGFloat {
+            state = (state * 16_807) % 2_147_483_647
+            return CGFloat(state) / 2_147_483_647
+        }
+
+        return (0..<starCount).compactMap { index in
+            let x = 16 + CGFloat(index) * xSpacing + (nextValue() - 0.5) * xSpacing * 0.45
+            let brightness = nextValue()
+            let radius: CGFloat = brightness > 0.8 ? 1.3 : 0.8
+            let ridgeY = summitHighestRidgeY(
+                in: (x - radius)...(x + radius),
+                layers: ridgeLayers
+            )
+            let minimumY = headerBandBottom + 8 + radius
+            let maximumY = ridgeY - 8 - radius - 1
+            guard maximumY >= minimumY else { return nil }
+
+            let moonClearance = moonRadius + radius + 16
+            for _ in 0..<12 {
+                let y = minimumY + (maximumY - minimumY) * nextValue()
+                let starCenter = CGPoint(x: x, y: y)
+                let moonDX = starCenter.x - moonCenter.x
+                let moonDY = starCenter.y - moonCenter.y
+                guard sqrt(moonDX * moonDX + moonDY * moonDY) >= moonClearance,
+                      clearance(from: starCenter, radius: radius, to: profileButtonBounds) >= 16 else {
+                    continue
+                }
+
+                return SummitStar(
+                    point: starCenter,
+                    radius: radius,
+                    opacity: Double(0.25 + brightness * 0.5)
+                )
+            }
+            return nil
+        }
+    }
+
+    private static func clearance(from point: CGPoint, radius: CGFloat, to rect: CGRect) -> CGFloat {
+        let dx = max(max(rect.minX - point.x, 0), point.x - rect.maxX)
+        let dy = max(max(rect.minY - point.y, 0), point.y - rect.maxY)
+        return sqrt(dx * dx + dy * dy) - radius
+    }
+
     private static func skyBounds(for condition: SummitCondition, timeOfDay: SummitTimeOfDay) -> CGRect {
         switch condition {
         case .clear:
@@ -435,16 +488,8 @@ struct SummitHorizonView: View {
             case .dawn:
                 return CGRect(x: 101, y: 68, width: 62, height: 46)
             case .night:
-                let starBounds = nightStars.reduce(into: CGRect.null) { bounds, star in
-                    bounds = bounds.union(CGRect(
-                        x: star.point.x - star.radius,
-                        y: star.point.y - star.radius,
-                        width: star.radius * 2,
-                        height: star.radius * 2
-                    ))
-                }
                 let moonBounds = CGRect(x: 51, y: 61, width: 38, height: 38)
-                return starBounds.union(moonBounds)
+                return moonBounds
             }
         case .changeable:
             return timeOfDay == .day
@@ -627,7 +672,6 @@ struct SummitHorizonView: View {
                     context.stroke(line, with: .color(alpenglow.opacity(0.36 * opacity)), lineWidth: 1)
                 }
             case .night:
-                drawStars(in: context, color: foreground, opacity: opacity)
                 let moonCenter = CGPoint(x: 70, y: 80)
                 context.fill(circle(center: moonCenter, radius: 18), with: .color(foreground.opacity(0.78 * opacity)))
                 context.fill(
@@ -669,15 +713,6 @@ struct SummitHorizonView: View {
                 path,
                 with: .color(color.opacity(opacity)),
                 style: StrokeStyle(lineWidth: 1.3, lineCap: .round)
-            )
-        }
-    }
-
-    private static func drawStars(in context: GraphicsContext, color: Color, opacity: Double) {
-        for star in nightStars {
-            context.fill(
-                circle(center: star.point, radius: star.radius),
-                with: .color(color.opacity(star.opacity * opacity))
             )
         }
     }
@@ -767,6 +802,10 @@ private struct SummitSkyPlacement: Equatable {
     let originY: CGFloat
     let scale: CGFloat
 
+    func applying(to point: CGPoint) -> CGPoint {
+        CGPoint(x: originX + point.x * scale, y: originY + point.y * scale)
+    }
+
     init(
         bounds: CGRect,
         centerX: CGFloat,
@@ -778,7 +817,7 @@ private struct SummitSkyPlacement: Equatable {
     ) {
         func availableHeight(at scale: CGFloat) -> CGFloat {
             let range = Self.ridgeRange(bounds: bounds, centerX: centerX, scale: scale)
-            return Self.highestRidgeY(in: range, layers: ridgeLayers) - headerFloor - ridgeClearance
+            return summitHighestRidgeY(in: range, layers: ridgeLayers) - headerFloor - ridgeClearance
         }
 
         let scale: CGFloat
@@ -801,7 +840,7 @@ private struct SummitSkyPlacement: Equatable {
         }
 
         let ridgeRange = Self.ridgeRange(bounds: bounds, centerX: centerX, scale: scale)
-        let ridgeY = Self.highestRidgeY(in: ridgeRange, layers: ridgeLayers)
+        let ridgeY = summitHighestRidgeY(in: ridgeRange, layers: ridgeLayers)
         let scaledHalfHeight = bounds.height * scale / 2
         let baseCenterY = baseDownshift + bounds.midY
         let unshiftedTop = baseCenterY - scaledHalfHeight
@@ -825,24 +864,25 @@ private struct SummitSkyPlacement: Equatable {
         return (centerX - halfWidth)...(centerX + halfWidth)
     }
 
-    private static func highestRidgeY(in horizontalRange: ClosedRange<CGFloat>, layers: [[CGPoint]]) -> CGFloat {
-        var highestY = CGFloat.infinity
+}
 
-        for points in layers {
-            for (start, end) in zip(points, points.dropFirst()) {
-                let segmentMinX = max(horizontalRange.lowerBound, start.x)
-                let segmentMaxX = min(horizontalRange.upperBound, end.x)
-                guard segmentMinX <= segmentMaxX, end.x > start.x else { continue }
+private func summitHighestRidgeY(in horizontalRange: ClosedRange<CGFloat>, layers: [[CGPoint]]) -> CGFloat {
+    var highestY = CGFloat.infinity
 
-                let slope = (end.y - start.y) / (end.x - start.x)
-                let minY = start.y + (segmentMinX - start.x) * slope
-                let maxY = start.y + (segmentMaxX - start.x) * slope
-                highestY = min(highestY, min(minY, maxY))
-            }
+    for points in layers {
+        for (start, end) in zip(points, points.dropFirst()) {
+            let segmentMinX = max(horizontalRange.lowerBound, start.x)
+            let segmentMaxX = min(horizontalRange.upperBound, end.x)
+            guard segmentMinX <= segmentMaxX, end.x > start.x else { continue }
+
+            let slope = (end.y - start.y) / (end.x - start.x)
+            let minY = start.y + (segmentMinX - start.x) * slope
+            let maxY = start.y + (segmentMaxX - start.x) * slope
+            highestY = min(highestY, min(minY, maxY))
         }
-
-        return highestY.isFinite ? highestY : 0
     }
+
+    return highestY.isFinite ? highestY : 0
 }
 
 private struct SummitHorizonStaticBackground: View, Equatable {
@@ -853,6 +893,7 @@ private struct SummitHorizonStaticBackground: View, Equatable {
     let alpenglow: Color
     let canvasSize: CGSize
     let skyPlacement: SummitSkyPlacement
+    let nightStars: [SummitStar]
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.condition == rhs.condition
@@ -862,6 +903,7 @@ private struct SummitHorizonStaticBackground: View, Equatable {
             && lhs.alpenglow == rhs.alpenglow
             && lhs.canvasSize == rhs.canvasSize
             && lhs.skyPlacement == rhs.skyPlacement
+            && lhs.nightStars == rhs.nightStars
     }
 
     var body: some View {
@@ -887,6 +929,19 @@ private struct SummitHorizonStaticBackground: View, Equatable {
                 alpenglow: alpenglow,
                 opacity: 1
             )
+            if condition == .clear, timeOfDay == .night {
+                for star in nightStars {
+                    drawingContext.fill(
+                        Path(ellipseIn: CGRect(
+                            x: star.point.x - star.radius,
+                            y: star.point.y - star.radius,
+                            width: star.radius * 2,
+                            height: star.radius * 2
+                        )),
+                        with: .color(foreground.opacity(star.opacity))
+                    )
+                }
+            }
         }
         .accessibilityHidden(true)
     }
@@ -1010,7 +1065,7 @@ private enum SummitHorizonIntroPlayback {
     }
 }
 
-private struct SummitStar {
+private struct SummitStar: Equatable {
     let point: CGPoint
     let radius: CGFloat
     let opacity: Double
