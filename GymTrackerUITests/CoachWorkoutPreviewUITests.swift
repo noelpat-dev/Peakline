@@ -1360,12 +1360,27 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         }
 
         tapElement(identifier: "today-profile-menu", maxSwipes: 2)
-        tapButton(containing: "Check In", maxSwipes: 2)
+        tapTodayProfileMenuAction(title: "Check In")
     }
 
     private func tapTodayMenuAction(title: String) {
         tapElement(identifier: "today-profile-menu", maxSwipes: 2)
-        tapButton(containing: title, maxSwipes: 2)
+        tapTodayProfileMenuAction(title: title)
+    }
+
+    private func tapTodayProfileMenuAction(title: String) {
+        readyTodayProfileMenuAction(title: title).tap()
+    }
+
+    private func readyTodayProfileMenuAction(title: String) -> XCUIElement {
+        // Swiping to find a native menu item dismisses the menu before it appears.
+        let action = buttonContaining(title)
+        XCTAssertTrue(action.waitForExistence(timeout: 5), "Expected Today menu action \(title) to exist")
+        XCTAssertTrue(
+            waitUntil(timeout: 3) { action.isHittable },
+            "Expected Today menu action \(title) to be hittable"
+        )
+        return action
     }
 
     private func openSettingsFromToday() {
@@ -1376,7 +1391,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
             tapTab(at: 0, expectedTitle: "Today")
         }
         tapElement(identifier: "today-profile-menu", maxSwipes: 2)
-        tapButton(containing: "Settings", maxSwipes: 2)
+        tapTodayProfileMenuAction(title: "Settings")
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 8))
     }
 
@@ -1476,9 +1491,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         let startedAt: Date
         if let menuTitle = todayMenuTitle(for: identifier) {
             tapElement(identifier: "today-profile-menu", maxSwipes: 2)
-            let menuAction = buttonContaining(menuTitle)
-            XCTAssertTrue(menuAction.waitForExistence(timeout: 3), "Expected Today menu action \(menuTitle) to exist")
-            XCTAssertTrue(menuAction.isHittable, "Expected Today menu action \(menuTitle) to be hittable")
+            let menuAction = readyTodayProfileMenuAction(title: menuTitle)
             startedAt = Date()
             menuAction.tap()
         } else {

@@ -393,6 +393,7 @@ struct WorkoutPreviewView: View {
     @State private var didMarkStartButtonVisible = false
     @State private var didMarkExerciseRowsVisible = false
     @State private var didMarkFullContentVisible = false
+    @State private var exerciseOrderMounted = false
     @State private var exerciseRowFrames: [UUID: CGRect] = [:]
     @State private var gestureDropTarget: WorkoutPreviewExerciseDropTarget?
     @State private var previewViewportHeight: CGFloat = 0
@@ -692,49 +693,51 @@ struct WorkoutPreviewView: View {
             }
         }
 
-        TrailPage {
-            TrailSection(index: 1, label: "Exercise Order") {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Spacer()
-                        Button("Select All") {
-                            AppMotion.withoutAnimation {
-                                selectedExerciseIds = snapshot.orderedExercises.map(\.id)
+        if exerciseOrderMounted {
+            TrailPage {
+                TrailSection(index: 1, label: "Exercise Order") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Spacer()
+                            Button("Select All") {
+                                AppMotion.withoutAnimation {
+                                    selectedExerciseIds = snapshot.orderedExercises.map(\.id)
+                                }
                             }
+                            .font(AppTypography.bodyEmphasis)
+                            .tint(appTheme.actionColor)
+                            .frame(minHeight: 44)
                         }
-                        .font(AppTypography.bodyEmphasis)
-                        .tint(appTheme.actionColor)
-                        .frame(minHeight: 44)
-                    }
 
-                    if snapshot.plannedExercises.isEmpty {
-                        DashboardEmptyStateCard(
-                            title: "No exercises selected",
-                            message: "Choose at least one exercise before starting.",
-                            systemImage: "list.bullet"
-                        )
-                    } else {
-                        VStack(spacing: 0) {
-                            ForEach(Array(snapshot.plannedExercises.enumerated()), id: \.element.id) { index, exercise in
-                                previewExerciseCard(
-                                    exercise: exercise,
-                                    position: index,
-                                    totalCount: snapshot.plannedExercises.count,
-                                    previousExerciseID: index > 0 ? snapshot.plannedExercises[index - 1].id : nil,
-                                    nextExerciseID: index < snapshot.plannedExercises.count - 1 ? snapshot.plannedExercises[index + 1].id : nil,
-                                    suggestions: snapshot.suggestions
-                                )
+                        if snapshot.plannedExercises.isEmpty {
+                            DashboardEmptyStateCard(
+                                title: "No exercises selected",
+                                message: "Choose at least one exercise before starting.",
+                                systemImage: "list.bullet"
+                            )
+                        } else {
+                            VStack(spacing: 0) {
+                                ForEach(Array(snapshot.plannedExercises.enumerated()), id: \.element.id) { index, exercise in
+                                    previewExerciseCard(
+                                        exercise: exercise,
+                                        position: index,
+                                        totalCount: snapshot.plannedExercises.count,
+                                        previousExerciseID: index > 0 ? snapshot.plannedExercises[index - 1].id : nil,
+                                        nextExerciseID: index < snapshot.plannedExercises.count - 1 ? snapshot.plannedExercises[index + 1].id : nil,
+                                        suggestions: snapshot.suggestions
+                                    )
+                                }
                             }
-                        }
-                        .accessibilityIdentifier("workout-preview-basic-exercise-rows")
-                        .onAppear {
-                            markExerciseRowsVisibleIfNeeded(count: snapshot.plannedExercises.count, source: "hydrated")
+                            .accessibilityIdentifier("workout-preview-basic-exercise-rows")
+                            .onAppear {
+                                markExerciseRowsVisibleIfNeeded(count: snapshot.plannedExercises.count, source: "hydrated")
+                            }
                         }
                     }
                 }
-            }
-            .onAppear {
-                markFullContentVisibleIfNeeded(snapshot: snapshot)
+                .onAppear {
+                    markFullContentVisibleIfNeeded(snapshot: snapshot)
+                }
             }
         }
 
@@ -788,6 +791,18 @@ struct WorkoutPreviewView: View {
         }
         .onAppear {
             markInitialPreviewContentIfNeeded()
+        }
+        .task {
+            guard !exerciseOrderMounted else { return }
+            // Order rows and their drag geometry mount together after the first
+            // frame. SwiftUI cancels this task if Preview disappears first.
+            do {
+                try await Task.sleep(for: .milliseconds(50))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            exerciseOrderMounted = true
         }
         .coordinateSpace(name: WorkoutPreviewExerciseOrderCoordinateSpace.name)
         .background {
