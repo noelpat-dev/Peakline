@@ -1222,7 +1222,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         let score = app.descendants(matching: .any)["today-readiness-score-value"]
 
         XCTAssertTrue(score.waitForExistence(timeout: 10))
-        XCTAssertEqual(score.label, "—")
+        XCTAssertEqual(score.label, "Not available")
         XCTAssertFalse(provisional.exists, "Zero-evidence readiness should show an unavailable score without a provisional badge")
         XCTAssertTrue(coverage.waitForExistence(timeout: 3))
         XCTAssertEqual(coverage.label, "0 of 5 signals included")
@@ -1256,7 +1256,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
         let score = app.descendants(matching: .any)["today-readiness-score-value"]
         XCTAssertTrue(score.waitForExistence(timeout: 10))
-        XCTAssertEqual(score.label, "—")
+        XCTAssertEqual(score.label, "Not available")
 
         tapTodayCheckIn()
         XCTAssertTrue(app.descendants(matching: .any)["check-in-sheet"].waitForExistence(timeout: 3))

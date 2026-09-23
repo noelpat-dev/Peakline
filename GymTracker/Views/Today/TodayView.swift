@@ -626,6 +626,11 @@ struct TodayView: View {
             durationText = "Not logged"
             volumeText = "Not logged"
         }
+        let topPR = finishedSession.flatMap { session in
+            TrainingAnalyticsService()
+                .prs(for: session, in: Array(completedSessions.prefix(40)))
+                .first?.displayValue
+        } ?? "No PR logged"
 
         let hydrationAdvice = hydrationSummary.remainingML > 0
             ? "\(HydrationService.formatAmount(hydrationSummary.remainingML)) hydration left"
@@ -642,7 +647,7 @@ struct TodayView: View {
             completedAt: finishedAt,
             sessionTime: durationText,
             sessionVolume: volumeText,
-            topPR: "No PR logged",
+            topPR: topPR,
             windDown: "\(hydrationAdvice). Aim for \(sleepGoal) of sleep tonight."
         )
         isRoutePresentationReady = hasLoadedReadiness

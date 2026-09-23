@@ -192,6 +192,7 @@ struct DashboardSection<Content: View>: View {
     let subtitle: String?
     let actionTitle: String?
     let action: (() -> Void)?
+    let usesSummitWaypointTitle: Bool
     let content: Content
 
     init(
@@ -199,12 +200,14 @@ struct DashboardSection<Content: View>: View {
         subtitle: String? = nil,
         actionTitle: String? = nil,
         action: (() -> Void)? = nil,
+        usesSummitWaypointTitle: Bool = false,
         @ViewBuilder content: () -> Content
     ) {
         self.title = title
         self.subtitle = subtitle
         self.actionTitle = actionTitle
         self.action = action
+        self.usesSummitWaypointTitle = usesSummitWaypointTitle
         self.content = content()
     }
 
@@ -212,9 +215,16 @@ struct DashboardSection<Content: View>: View {
         VStack(alignment: .leading, spacing: appTheme.metrics.sectionSpacing) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(AppTypography.sectionTitle)
-                        .foregroundStyle(appTheme.colors.textPrimary)
+                    if usesSummitWaypointTitle {
+                        Text(title)
+                            .modifier(AppTypography.waypointLabel)
+                            .accessibilityLabel(title)
+                            .accessibilityAddTraits(.isHeader)
+                    } else {
+                        Text(title)
+                            .font(AppTypography.sectionTitle)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                    }
 
                     if let subtitle, !subtitle.isEmpty {
                         Text(subtitle)

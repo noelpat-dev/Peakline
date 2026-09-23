@@ -502,7 +502,7 @@ struct SleepDashboardView: View {
     }
 
     private var readinessSupportSection: some View {
-        DashboardSection(title: "Readiness & training support") {
+        DashboardSection(title: "Readiness & training support", usesSummitWaypointTitle: true) {
             SleepCard(style: .compact) {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -810,7 +810,7 @@ struct SleepDashboardView: View {
     }
 
     private var weeklyChartCard: some View {
-        DashboardSection(title: "Last 7 Days") {
+        DashboardSection(title: "Last 7 Days", usesSummitWaypointTitle: true) {
             SleepCard {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
@@ -866,7 +866,7 @@ struct SleepDashboardView: View {
     }
 
     private var napsSection: some View {
-        DashboardSection(title: "Naps") {
+        DashboardSection(title: "Naps", usesSummitWaypointTitle: true) {
             VStack(spacing: 12) {
                 HStack {
                     Spacer(minLength: 0)
@@ -917,7 +917,7 @@ struct SleepDashboardView: View {
     }
 
     private var consistencyAndDebt: some View {
-        DashboardSection(title: "Recovery Trends") {
+        DashboardSection(title: "Recovery Trends", usesSummitWaypointTitle: true) {
             SleepCard {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 10) {
@@ -947,7 +947,7 @@ struct SleepDashboardView: View {
     }
 
     private var coachingInsightsSection: some View {
-        DashboardSection(title: "Coaching Insights") {
+        DashboardSection(title: "Coaching Insights", usesSummitWaypointTitle: true) {
             VStack(spacing: 10) {
                 if dashboardSummary.coachingInsights.isEmpty {
                     SleepCard(style: .compact) {
@@ -967,7 +967,7 @@ struct SleepDashboardView: View {
     }
 
     private var historySection: some View {
-        DashboardSection(title: "History") {
+        DashboardSection(title: "History", usesSummitWaypointTitle: true) {
             if completedSessions.isEmpty {
                 SleepCard(style: .compact) {
                     SleepRow(
