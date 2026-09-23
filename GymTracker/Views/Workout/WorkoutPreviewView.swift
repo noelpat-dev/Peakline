@@ -621,10 +621,7 @@ struct WorkoutPreviewView: View {
     private func hydratedPreviewContent(snapshot: WorkoutPreviewPreparedSnapshot) -> some View {
         FitnessScreen(
             title: "\(split.name) Preview",
-            subtitle: PeaklineText.joinedMetadata([
-                "\(selectedMode.displayName) mode",
-                "~\(snapshot.estimatedDuration.lowerBound)–\(snapshot.estimatedDuration.upperBound) min"
-            ]),
+            subtitle: "\(selectedMode.displayName) mode",
             systemImage: "figure.strengthtraining.traditional",
             contentLayout: .eager,
             locksHorizontalScrolling: true
@@ -695,64 +692,50 @@ struct WorkoutPreviewView: View {
             }
         }
 
-        DashboardSection(title: "Exercise Order") {
-        HStack {
-            Spacer()
-            Button("Select All") {
-                AppMotion.withoutAnimation {
-                    selectedExerciseIds = snapshot.orderedExercises.map(\.id)
-                }
-            }
-            .font(AppTypography.bodyEmphasis)
-            .tint(appTheme.actionColor)
-        }
+        TrailPage {
+            TrailSection(index: 1, label: "Exercise Order") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Spacer()
+                        Button("Select All") {
+                            AppMotion.withoutAnimation {
+                                selectedExerciseIds = snapshot.orderedExercises.map(\.id)
+                            }
+                        }
+                        .font(AppTypography.bodyEmphasis)
+                        .tint(appTheme.actionColor)
+                        .frame(minHeight: 44)
+                    }
 
-        if snapshot.plannedExercises.isEmpty {
-            DashboardEmptyStateCard(
-                title: "No exercises selected",
-                message: "Choose at least one exercise before starting.",
-                systemImage: "list.bullet"
-            )
-        } else {
-            VStack(spacing: 0) {
-                ForEach(Array(snapshot.plannedExercises.enumerated()), id: \.element.id) { index, exercise in
-                    previewExerciseCard(
-                        exercise: exercise,
-                        position: index,
-                        totalCount: snapshot.plannedExercises.count,
-                        previousExerciseID: index > 0 ? snapshot.plannedExercises[index - 1].id : nil,
-                        nextExerciseID: index < snapshot.plannedExercises.count - 1 ? snapshot.plannedExercises[index + 1].id : nil,
-                        suggestions: snapshot.suggestions
-                    )
-
-                    if index < snapshot.plannedExercises.count - 1 {
-                        Divider()
-                            .padding(.leading, 72)
+                    if snapshot.plannedExercises.isEmpty {
+                        DashboardEmptyStateCard(
+                            title: "No exercises selected",
+                            message: "Choose at least one exercise before starting.",
+                            systemImage: "list.bullet"
+                        )
+                    } else {
+                        VStack(spacing: 0) {
+                            ForEach(Array(snapshot.plannedExercises.enumerated()), id: \.element.id) { index, exercise in
+                                previewExerciseCard(
+                                    exercise: exercise,
+                                    position: index,
+                                    totalCount: snapshot.plannedExercises.count,
+                                    previousExerciseID: index > 0 ? snapshot.plannedExercises[index - 1].id : nil,
+                                    nextExerciseID: index < snapshot.plannedExercises.count - 1 ? snapshot.plannedExercises[index + 1].id : nil,
+                                    suggestions: snapshot.suggestions
+                                )
+                            }
+                        }
+                        .accessibilityIdentifier("workout-preview-basic-exercise-rows")
+                        .onAppear {
+                            markExerciseRowsVisibleIfNeeded(count: snapshot.plannedExercises.count, source: "hydrated")
+                        }
                     }
                 }
             }
-            .background(
-                appTheme.cardBackground,
-                in: RoundedRectangle(
-                    cornerRadius: appTheme.metrics.standardCardRadius,
-                    style: .continuous
-                )
-            )
-            .overlay {
-                RoundedRectangle(
-                    cornerRadius: appTheme.metrics.standardCardRadius,
-                    style: .continuous
-                )
-                .stroke(appTheme.cardBorder.opacity(0.62), lineWidth: 1)
-            }
-            .accessibilityIdentifier("workout-preview-basic-exercise-rows")
             .onAppear {
-                markExerciseRowsVisibleIfNeeded(count: snapshot.plannedExercises.count, source: "hydrated")
+                markFullContentVisibleIfNeeded(snapshot: snapshot)
             }
-        }
-        }
-        .onAppear {
-            markFullContentVisibleIfNeeded(snapshot: snapshot)
         }
 
         LazyVStack(alignment: .leading, spacing: appTheme.metrics.screenContentSpacing) {
@@ -935,11 +918,18 @@ struct WorkoutPreviewView: View {
             }
             .foregroundStyle(appTheme.mutedText)
 
-            Text(value)
-                .font(AppTypography.bodyEmphasis)
-                .foregroundStyle(appTheme.colors.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
+            Group {
+                if label == "Mode" {
+                    Text(value)
+                        .font(AppTypography.bodyEmphasis)
+                } else {
+                    Text(value)
+                        .modifier(AppTypography.instrumentValue)
+                }
+            }
+            .foregroundStyle(appTheme.colors.textPrimary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
