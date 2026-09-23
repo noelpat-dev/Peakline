@@ -2,10 +2,8 @@ import SwiftData
 import SwiftUI
 
 struct TodayView: View {
-    @ScaledMetric(relativeTo: .title) private var headerSize: CGFloat = 28
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var readinessRefreshClock = ReadinessRefreshClock.shared
     @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
@@ -48,6 +46,9 @@ struct TodayView: View {
     @State private var coachSnapshot = CoachIntelligenceService.emptySnapshot()
     @State private var lastCoachSnapshotSignature: String?
     @State private var todaySnapshot = TodayDashboardSnapshot.empty
+    @State private var summitHorizon = TodaySummitHorizonPresentation.empty
+    @State private var routePresentation = TodayRoutePresentation.empty
+    @State private var isRoutePresentationReady = false
     @State private var trainingCallSnapshot = TrainingCallSnapshot.placeholder
     @State private var lastTodaySnapshotSignature: String?
     @State private var hydrationTargetML = HydrationSettingsStore().dailyTargetML()
@@ -86,6 +87,52 @@ struct TodayView: View {
     private let targetSuggestionService = TargetSuggestionService()
     private let accountService = FirebaseAccountService()
     private let backupCoordinator = BackupCoordinator()
+
+    private struct TodaySummitHorizonPresentation {
+        let week: [Double]
+        let todayIndex: Int
+        let prDayIndex: Int?
+        let condition: SummitCondition
+        let timeOfDay: SummitTimeOfDay
+        let isEmpty: Bool
+
+        static let empty = TodaySummitHorizonPresentation(
+            week: Array(repeating: 0, count: 7),
+            todayIndex: (Calendar.current.component(.weekday, from: .now) + 5) % 7,
+            prDayIndex: nil,
+            condition: .changeable,
+            timeOfDay: SummitTimeOfDay(date: .now),
+            isEmpty: true
+        )
+    }
+
+    private struct TodayRoutePresentation {
+        let dayName: String
+        let liftCount: Int
+        let estimatedMinutes: Int
+        let lifts: [(name: String, target: String)]
+        let remainingLiftNames: [String]
+        let completedAt: String?
+        let sessionTime: String
+        let sessionVolume: String
+        let topPR: String
+        let windDown: String
+
+        var isCompletedToday: Bool { completedAt != nil }
+
+        static let empty = TodayRoutePresentation(
+            dayName: "Your first climb",
+            liftCount: 0,
+            estimatedMinutes: 0,
+            lifts: [],
+            remainingLiftNames: [],
+            completedAt: nil,
+            sessionTime: "Not logged",
+            sessionVolume: "Not logged",
+            topPR: "No PR logged",
+            windDown: ""
+        )
+    }
 
     init(startupSnapshot: StartupSnapshotBundle? = nil, openHistory: @escaping () -> Void, openSettings: @escaping () -> Void) {
         self.openHistory = openHistory
@@ -377,6 +424,8 @@ struct TodayView: View {
             trainingCallSnapshot = nextTrainingCall
             lastTodaySnapshotSignature = signature
         }
+        refreshSummitPresentation()
+        refreshRoutePresentation(snapshot: nextSnapshot, trainingCall: nextTrainingCall)
         workoutDashboardWarmStartStore.update(
             trainingCall: nextTrainingCall,
             sourceSignature: signature
@@ -458,7 +507,8 @@ struct TodayView: View {
     }
 
     private func makeCompletedDaysThisWeek(from dates: [Date]) -> [Bool] {
-        let calendar = Calendar.current
+        var calendar = Calendar.current
+        calendar.firstWeekday = 2
         guard let weekStart = calendar.dateInterval(of: .weekOfYear, for: .now)?.start else {
             return Array(repeating: false, count: 7)
         }
@@ -468,6 +518,148 @@ struct TodayView: View {
                 return false
             }
             return dates.contains { $0 <= .now && calendar.isDate($0, inSameDayAs: day) }
+        }
+    }
+
+    private func refreshSummitPresentation(readiness: ReadinessScore? = nil) {
+        var calendar = Calendar.current
+        calendar.firstWeekday = 2
+        let weekInterval = calendar.dateInterval(of: .weekOfYear, for: .now)
+        let weekStart = weekInterval?.start ?? calendar.startOfDay(for: .now)
+        let weekEnd = weekInterval?.end ?? .now
+        var dailyLoads = Array(repeating: 0.0, count: 7)
+
+        for session in completedSessions.prefix(40) {
+            guard session.date >= weekStart, session.date < weekEnd, session.date <= .now else { continue }
+            let weekday = calendar.component(.weekday, from: session.date)
+            let dayIndex = (weekday + 5) % 7
+            let sessionVolume = session.exerciseLogs
+                .flatMap(\.setLogs)
+                .filter { $0.completed && !$0.isWarmup }
+                .reduce(0.0) { $0 + ($1.weight * Double($1.reps)) }
+            dailyLoads[dayIndex] += sessionVolume > 0 ? sessionVolume : 1
+        }
+
+        let maximumLoad = dailyLoads.max() ?? 0
+        let normalizedLoads = dailyLoads.map { maximumLoad > 0 ? $0 / maximumLoad : 0 }
+        let score = readiness ?? readinessScore
+        let condition: SummitCondition = score.availableSignalCount > 0
+            ? summitCondition(for: score.category)
+            : .changeable
+
+        summitHorizon = TodaySummitHorizonPresentation(
+            week: normalizedLoads,
+            todayIndex: (calendar.component(.weekday, from: .now) + 5) % 7,
+            // TodayDashboardSnapshot has no personal-record day field yet.
+            prDayIndex: nil,
+            condition: condition,
+            timeOfDay: SummitTimeOfDay(date: .now),
+            isEmpty: dailyLoads.allSatisfy { $0 == 0 }
+        )
+    }
+
+    private func refreshRoutePresentation(
+        snapshot: TodayDashboardSnapshot? = nil,
+        trainingCall: TrainingCallSnapshot? = nil
+    ) {
+        guard hasLoadedReadiness else {
+            isRoutePresentationReady = false
+            return
+        }
+
+        let activeTrainingCall = trainingCall ?? self.trainingCall
+        let dashboardSnapshot = snapshot ?? currentTodaySnapshot
+        let suggested = dashboardSnapshot.suggestedSplit
+            ?? activeTrainingCall.recommendedSplitName.flatMap { name in
+                activeSplits.first {
+                    $0.name.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+                }
+            }
+        let orderedExercises = suggested?.exercises.sorted { $0.orderIndex < $1.orderIndex } ?? []
+        let plannedExercises = modePlanner.plannedExercises(
+            from: orderedExercises.map(WorkoutSelectableExercise.init),
+            mode: activeTrainingCall.recommendedMode
+        )
+        let selectedExercises = plannedExercises.compactMap { planned in
+            orderedExercises.first(where: { $0.id == planned.id })
+        }
+        let visibleLifts = selectedExercises.prefix(2).map { exercise -> (name: String, target: String) in
+            let original = targetSuggestionService.suggestion(
+                for: exercise,
+                completedSessions: Array(completedSessions.prefix(40))
+            )
+            let suggestion = modePlanner.modeAdjustedSuggestion(original, mode: activeTrainingCall.recommendedMode)
+            let target: String
+            if let weight = suggestion.suggestedWeight, let reps = suggestion.suggestedReps {
+                target = PeaklineText.loadReps(weight: formattedWeight(weight), reps: reps)
+            } else if let weight = suggestion.suggestedWeight {
+                target = "\(formattedWeight(weight)) kg"
+            } else if let reps = suggestion.suggestedReps {
+                target = PeaklineText.count(reps, singular: "rep")
+            } else {
+                target = PeaklineText.repRange(minimum: exercise.minReps, maximum: exercise.maxReps)
+            }
+            return (exercise.exerciseNameSnapshot, target)
+        }
+        let remainingLiftNames = Array(selectedExercises.dropFirst(2).map(\.exerciseNameSnapshot))
+
+        let finishedSession = completedSessions
+            .filter { Calendar.current.isDate($0.date, inSameDayAs: .now) }
+            .max { $0.date < $1.date }
+        let finishedAt = finishedSession.map { session in
+            let date = session.endedAt ?? session.date
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_GB")
+            formatter.dateFormat = "HH:mm"
+            return formatter.string(from: date)
+        }
+        let durationText: String
+        let volumeText: String
+        if let finishedSession {
+            let elapsed = max(0, Int(((finishedSession.endedAt ?? finishedSession.date).timeIntervalSince(finishedSession.date) / 60).rounded()))
+            durationText = elapsed > 0 ? "\(elapsed) min" : "Logged"
+            let volume = workoutVolume(finishedSession)
+            volumeText = volume > 0
+                ? "\(Int(volume.rounded()).formatted(.number.grouping(.automatic))) kg"
+                : "Not logged"
+        } else {
+            durationText = "Not logged"
+            volumeText = "Not logged"
+        }
+
+        let hydrationAdvice = hydrationSummary.remainingML > 0
+            ? "\(HydrationService.formatAmount(hydrationSummary.remainingML)) hydration left"
+            : "Hydration goal met"
+        let sleepGoal = SleepScoringService.durationText(minutes: sleepSettings.targetSleepMinutes)
+        let dayName = suggested?.name ?? (hasBaseCampState ? "Your first climb" : "Recovery day")
+
+        routePresentation = TodayRoutePresentation(
+            dayName: dayName,
+            liftCount: selectedExercises.count,
+            estimatedMinutes: selectedExercises.isEmpty ? 0 : (selectedExercises.count * 9) + 1,
+            lifts: visibleLifts,
+            remainingLiftNames: remainingLiftNames,
+            completedAt: finishedAt,
+            sessionTime: durationText,
+            sessionVolume: volumeText,
+            topPR: "No PR logged",
+            windDown: "\(hydrationAdvice). Aim for \(sleepGoal) of sleep tonight."
+        )
+        isRoutePresentationReady = hasLoadedReadiness
+    }
+
+    private func workoutVolume(_ session: WorkoutSession) -> Double {
+        session.exerciseLogs
+            .flatMap(\.setLogs)
+            .filter { $0.completed && !$0.isWarmup }
+            .reduce(0.0) { $0 + ($1.weight * Double($1.reps)) }
+    }
+
+    private func summitCondition(for category: ReadinessCategory) -> SummitCondition {
+        switch category {
+        case .peak, .ready: .clear
+        case .cautious, .low: .changeable
+        case .recovery: .storm
         }
     }
 
@@ -481,86 +673,32 @@ struct TodayView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: appTheme.metrics.spacing12) {
-                    todayHeader
+                TrailPage {
+                    VStack(alignment: .leading, spacing: 0) {
+                        todayHeader
 
-                    if let backupWarning {
-                        BackupHealthWarningCard(message: backupWarning)
+                        if let backupWarning {
+                            BackupHealthWarningCard(message: backupWarning)
+                                .padding(.horizontal, appTheme.metrics.spacing16)
+                                .padding(.top, appTheme.metrics.spacing8)
+                        }
+
+                        todayReadinessSection
+                            .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 0), index: 0)
+
+                        todayRouteSection
+                            .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 1), index: 1)
+
+                        if !hasBaseCampState {
+                            campSuppliesSection
+                                .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 2), index: 2)
+                        }
+
+                        weeklyActivitySection
+                            .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 3), index: 3)
                     }
-
-                    TodayReadinessHero(
-                        scoreText: readinessScoreText,
-                        status: readinessStatusText,
-                        summary: readinessSummaryText,
-                        coverage: readinessCoverageText,
-                        isProvisional: readinessIsProvisional,
-                        action: openCoachRoute
-                    )
-                    .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 0), index: 0)
-                    .todayReentryWash(isActive: reentryWashCards.contains(.readiness))
-
-                    LazyVGrid(columns: todayGridColumns, spacing: appTheme.metrics.spacing10) {
-                        TodayMetricCard(
-                            title: unfinishedSessions.isEmpty ? "Next Lift" : "Active Workout",
-                            systemImage: "figure.strengthtraining.traditional",
-                            value: nextLiftValueText,
-                            detail: nextLiftDetailText,
-                            footer: nextLiftFooterText,
-                            isMetric: false,
-                            isEnabled: !unfinishedSessions.isEmpty || suggestedSplit != nil,
-                            action: nextLiftAction
-                        )
-                        .accessibilityIdentifier("quick-action-workout")
-
-                        TodayMetricCard(
-                            title: "Sleep",
-                            systemImage: "moon.zzz",
-                            value: sleepValueText,
-                            detail: sleepDetailText,
-                            footer: sleepFooterText,
-                            isMetric: true,
-                            action: { openRoute(.sleep) }
-                        )
-                        .accessibilityIdentifier("quick-action-sleep")
-                        .todayReentryWash(isActive: reentryWashCards.contains(.recovery))
-
-                        TodayMetricCard(
-                            title: "Hydration",
-                            systemImage: "drop",
-                            value: hydrationValueText,
-                            detail: hydrationDetailText,
-                            footer: hydrationFooterText,
-                            isMetric: true,
-                            action: { openRoute(.hydration) }
-                        )
-                        .accessibilityIdentifier("quick-action-hydration")
-
-                        TodayMetricCard(
-                            title: "Nutrition",
-                            systemImage: "fork.knife",
-                            value: nutritionValueText,
-                            detail: nutritionDetailText,
-                            footer: "Open Nutrition",
-                            isMetric: true,
-                            action: { openRoute(.nutrition) }
-                        )
-                        .accessibilityIdentifier("quick-action-nutrition")
-                        .todayReentryWash(isActive: reentryWashCards.contains(.nutrition))
-                    }
-                    .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 1), index: 1)
-
-                    TodayWeeklyActivityCard(completedDays: completedDaysThisWeek) {
-                        openHistory()
-                    }
-                    .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 2), index: 2)
-
-                    TodayPlanButton(
-                        isEnabled: suggestedSplit != nil,
-                        action: previewSuggestedSplit
-                    )
-                    .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 3), index: 3)
                 }
-                .padding(appTheme.metrics.screenPadding)
+                .padding(.horizontal, appTheme.metrics.screenPadding)
                 .padding(.bottom, appTheme.metrics.screenBottomPadding)
             }
             .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
@@ -824,85 +962,89 @@ struct TodayView: View {
     }
 
     private var todayHeader: some View {
-        HStack(alignment: .top, spacing: appTheme.metrics.spacing12) {
-            VStack(alignment: .leading, spacing: appTheme.metrics.spacing4) {
-                Text("Peakline")
-                    .font(AppTypography.rounded(size: headerSize, weight: .bold))
-                    .foregroundStyle(appTheme.colors.textPrimary)
-                    .lineLimit(1)
+        ZStack(alignment: .topLeading) {
+            SummitHorizonView(
+                week: summitHorizon.week,
+                todayIndex: summitHorizon.todayIndex,
+                prDayIndex: summitHorizon.prDayIndex,
+                condition: summitHorizon.condition,
+                timeOfDay: summitHorizon.timeOfDay,
+                isEmpty: summitHorizon.isEmpty,
+                animatesIntro: true
+            )
 
-                Text("Today · \(todayDateText)")
-                    .font(AppTypography.metadata)
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: appTheme.metrics.spacing8)
-
-            Menu {
-                Button {
-                    openRoute(.workout)
-                } label: {
-                    Label(
-                        unfinishedSessions.isEmpty ? "Start Workout" : "Resume Workout",
-                        systemImage: unfinishedSessions.isEmpty ? "play.fill" : "arrow.clockwise.circle"
-                    )
-                }
-
-                Button {
-                    previewSuggestedSplit()
-                } label: {
-                    Label("Review Today’s Plan", systemImage: "list.bullet")
-                }
-                .disabled(suggestedSplit == nil)
-                .accessibilityHint(
-                    suggestedSplit == nil
-                        ? "Unavailable until an active split is available"
-                        : "Opens your prepared workout preview"
-                )
-
-                Button {
-                    openRoute(.nutrition)
-                } label: {
-                    Label("Nutrition", systemImage: "fork.knife")
-                }
-
-                Button {
-                    openRoute(.progress)
-                } label: {
-                    Label("Progress & Charts", systemImage: "chart.xyaxis.line")
-                }
-
-                Button {
-                    openCoachRoute()
-                } label: {
-                    Label("Coach Brief", systemImage: "doc.text")
-                }
-
-                Button {
-                    presentCheckIn()
-                } label: {
-                    Label("Check In", systemImage: "checkmark.circle")
-                }
-
-                Divider()
-
-                Button {
-                    openSettings()
-                } label: {
-                    Label("Settings", systemImage: "gearshape")
-                }
-            } label: {
-                Image(systemName: "person.crop.circle")
-                    .font(AppTypography.rounded(size: 28, weight: .semibold))
-                    .foregroundStyle(appTheme.colors.textSecondary)
-                    .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
-                    .background(appTheme.colors.cardBackgroundElevated, in: Circle())
-            }
-            .accessibilityLabel("Profile and more options")
-            .accessibilityIdentifier("today-profile-menu")
+            SummitHeaderOverlay(
+                title: "Peakline",
+                subtitle: todayDateText,
+                profileButton: todayProfileMenu
+            )
         }
-        .padding(.top, appTheme.metrics.spacing4)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var todayProfileMenu: some View {
+        Menu {
+            Button {
+                openRoute(.workout)
+            } label: {
+                Label(
+                    unfinishedSessions.isEmpty ? "Start Workout" : "Resume Workout",
+                    systemImage: unfinishedSessions.isEmpty ? "play.fill" : "arrow.clockwise.circle"
+                )
+            }
+
+            Button {
+                previewSuggestedSplit()
+            } label: {
+                Label("Review Today’s Plan", systemImage: "list.bullet")
+            }
+            .disabled(suggestedSplit == nil)
+            .accessibilityHint(
+                suggestedSplit == nil
+                    ? "Unavailable until an active split is available"
+                    : "Opens your prepared workout preview"
+            )
+
+            Button {
+                openRoute(.nutrition)
+            } label: {
+                Label("Nutrition", systemImage: "fork.knife")
+            }
+
+            Button {
+                openRoute(.progress)
+            } label: {
+                Label("Progress & Charts", systemImage: "chart.xyaxis.line")
+            }
+
+            Button {
+                openCoachRoute()
+            } label: {
+                Label("Coach Brief", systemImage: "doc.text")
+            }
+
+            Button {
+                presentCheckIn()
+            } label: {
+                Label("Check In", systemImage: "checkmark.circle")
+            }
+
+            Divider()
+
+            Button {
+                openSettings()
+            } label: {
+                Label("Settings", systemImage: "gearshape")
+            }
+        } label: {
+            Image(systemName: "person.crop.circle")
+                .font(AppTypography.rounded(size: 28, weight: .semibold))
+                .foregroundStyle(appTheme.colors.textSecondary)
+                .frame(width: appTheme.metrics.minimumHitTarget, height: appTheme.metrics.minimumHitTarget)
+                .contentShape(Circle())
+        }
+        .accessibilityLabel("Profile and more options")
+        .accessibilityIdentifier("today-profile-menu")
     }
 
     private var hasLoadedReadiness: Bool {
@@ -913,31 +1055,58 @@ struct TodayView: View {
         hasLoadedReadiness && readinessScore.availableSignalCount > 0
     }
 
-    private var todayGridColumns: [GridItem] {
-        if dynamicTypeSize.isAccessibilitySize {
-            return [GridItem(.flexible())]
-        }
-
-        return [
-            GridItem(.flexible(), spacing: appTheme.metrics.spacing12, alignment: .top),
-            GridItem(.flexible(), spacing: appTheme.metrics.spacing12, alignment: .top)
-        ]
+    private var hasBaseCampState: Bool {
+        hasLoadedReadiness
+            && !hasReadinessEvidence
+            && completedSessions.isEmpty
+            && unfinishedSessions.isEmpty
     }
 
     private var readinessScoreText: String {
-        hasReadinessEvidence ? "\(readinessScore.value)" : "—"
+        hasReadinessEvidence ? "\(readinessScore.value)" : "Not available"
+    }
+
+    private var readinessScoreValue: Int? {
+        hasReadinessEvidence ? readinessScore.value : nil
     }
 
     private var readinessStatusText: String {
-        guard hasReadinessEvidence else { return "Readiness not available" }
-        return readinessScore.isProvisional ? "Build your daily picture" : readinessScore.recommendation.title
+        guard hasReadinessEvidence else { return "Summit conditions unknown" }
+        return switch readinessScore.category {
+        case .peak, .ready: "Clear skies"
+        case .cautious, .low: "Changeable"
+        case .recovery: "Storm warning"
+        }
     }
 
     private var readinessSummaryText: String {
         guard hasReadinessEvidence else {
-            return "Add local recovery signals to see today’s readiness score."
+            return "Add recovery signals to see today's forecast."
         }
-        return readinessScore.recommendation.summary
+        let coachGuidance = readinessScore.recommendation.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        return coachGuidance.isEmpty ? readinessFallbackAdvice : coachGuidance
+    }
+
+    private var readinessFallbackAdvice: String {
+        switch readinessScore.category {
+        case .peak: "Summit push. A good day to go for a PR."
+        case .ready: "Good climbing weather. Train as planned."
+        case .cautious: "Steady climb. Train as planned, skip the max attempts."
+        case .low: "Take it steady. Trim volume and keep effort moderate."
+        case .recovery: "Stay at base camp. Mobility or an easy walk today."
+        }
+    }
+
+    private var readinessSignals: [(label: String, value: String?)] {
+        let trainingFactor = readinessScore.factors.first {
+            $0.kind == .training && $0.isDataAvailable
+        }
+        let trainingValue = trainingFactor?.score.map { "\($0)/100" } ?? trainingFactor?.detail
+        let sleepValue = sleepSummary.primarySession == nil ? nil : sleepValueText
+        let waterValue = hydrationSummary.totalML > 0
+            ? HydrationService.formatAmount(hydrationSummary.totalML)
+            : nil
+        return [("Sleep", sleepValue), ("Training", trainingValue), ("Water", waterValue)]
     }
 
     private var readinessCoverageText: String {
@@ -949,48 +1118,15 @@ struct TodayView: View {
         hasReadinessEvidence && readinessScore.isProvisional
     }
 
-    private var nextLiftValueText: String {
-        unfinishedSessions.isEmpty ? currentTodaySnapshot.nextLift.value : "Resume Workout"
-    }
-
-    private var nextLiftDetailText: String {
-        unfinishedSessions.first?.splitNameSnapshot ?? currentTodaySnapshot.nextLift.detail
-    }
-
-    private var nextLiftFooterText: String? {
-        unfinishedSessions.isEmpty ? currentTodaySnapshot.nextLift.footer : "Continue your active session"
-    }
-
     private var nextLiftAction: () -> Void {
-        unfinishedSessions.isEmpty ? previewSuggestedSplit : { openRoute(.workout) }
+        unfinishedSessions.isEmpty && suggestedSplit != nil
+            ? previewSuggestedSplit
+            : { openRoute(.workout) }
     }
 
     private var sleepValueText: String {
-        guard sleepSummary.primarySession != nil else { return "—" }
+        guard sleepSummary.primarySession != nil else { return "Not logged" }
         return SleepScoringService.durationText(minutes: sleepSummary.totalSleepMinutes)
-    }
-
-    private var sleepDetailText: String {
-        guard sleepSummary.primarySession != nil else { return "No sleep recorded last night" }
-        return sleepSummary.recoveryState.displayName
-    }
-
-    private var sleepFooterText: String? {
-        guard let quality = sleepSummary.qualityRating else { return "Open Sleep" }
-        return "Quality \(SleepQualityPicker.label(for: quality))"
-    }
-
-    private var hydrationValueText: String {
-        hydrationSummary.totalML > 0 ? HydrationService.formatAmount(hydrationSummary.totalML) : "—"
-    }
-
-    private var hydrationDetailText: String {
-        hydrationSummary.totalML > 0 ? hydrationSummary.status.displayName : "No water logged yet"
-    }
-
-    private var hydrationFooterText: String? {
-        let percentage = Int((hydrationSummary.progress * 100).rounded())
-        return "\(HydrationService.formatAmount(hydrationSummary.targetML)) goal · \(percentage)%"
     }
 
     private var nutritionTotals: NutritionMacroSnapshot {
@@ -1000,18 +1136,298 @@ struct TodayView: View {
         return currentTodaySnapshot.nutritionTotals
     }
 
-    private var nutritionValueText: String {
-        "\(Int(nutritionTotals.calories.rounded())) kcal"
-    }
-
-    private var nutritionDetailText: String {
-        let totals = nutritionTotals
-        guard totals.calories > 0 || totals.protein > 0 else { return "No food logged yet" }
-        return "\(Int(totals.protein.rounded())) g protein today"
-    }
-
     private var completedDaysThisWeek: [Bool] {
         currentTodaySnapshot.completedDaysThisWeek
+    }
+
+    private var todayReadinessSection: some View {
+        TrailSection(index: 1, label: hasBaseCampState ? "BASE CAMP" : "SUMMIT CONDITIONS") {
+            VStack(alignment: .leading, spacing: appTheme.metrics.spacing12) {
+                TodayReadinessHero(
+                    scoreText: readinessScoreText,
+                    scoreValue: readinessScoreValue,
+                    status: hasBaseCampState ? "Pack for the climb" : readinessStatusText,
+                    summary: hasBaseCampState ? baseCampProgressText : readinessSummaryText,
+                    coverage: readinessCoverageText,
+                    isProvisional: readinessIsProvisional,
+                    signals: hasReadinessEvidence ? readinessSignals : [],
+                    action: openCoachRoute
+                )
+                .todayReentryWash(isActive: reentryWashCards.contains(.readiness))
+
+                if hasBaseCampState {
+                    baseCampChecklist
+                }
+            }
+        }
+    }
+
+    private var todayRouteSection: some View {
+        TrailSection(index: 2, label: hasBaseCampState ? "YOUR FIRST CLIMB" : "TODAY'S ROUTE") {
+            VStack(alignment: .leading, spacing: appTheme.metrics.spacing12) {
+                Button(action: nextLiftAction) {
+                    HStack(alignment: .firstTextBaseline, spacing: appTheme.metrics.spacing8) {
+                        Text(isRoutePresentationReady ? routePresentation.dayName : "Preparing today's route")
+                            .font(AppTypography.sectionTitle)
+                            .foregroundStyle(appTheme.colors.textPrimary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Spacer(minLength: appTheme.metrics.spacing4)
+
+                        Text(routeSummaryText)
+                            .modifier(AppTypography.instrumentValue)
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .multilineTextAlignment(.trailing)
+
+                        Image(systemName: "chevron.right")
+                            .font(AppTypography.metadataEmphasis)
+                            .foregroundStyle(appTheme.colors.textTertiary)
+                            .accessibilityHidden(true)
+                    }
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens your prepared workout preview")
+                .accessibilityIdentifier("quick-action-workout")
+
+                if !isRoutePresentationReady {
+                    TrailStop(
+                        title: "Preparing your route",
+                        detail: "Your current plan will appear here."
+                    )
+                } else if routePresentation.isCompletedToday {
+                    completedTodayRoute
+                } else {
+                    plannedTodayRoute
+                }
+            }
+        }
+    }
+
+    private var routeSummaryText: String {
+        guard isRoutePresentationReady else { return "PREPARING" }
+        guard routePresentation.liftCount > 0 else { return "NO PLAN" }
+        return "\(routePresentation.liftCount) LIFTS · ~\(routePresentation.estimatedMinutes) MIN"
+    }
+
+    private var coachHasPRTarget: Bool {
+        guard isRoutePresentationReady,
+              let recommendationType = coachNavigationSnapshot?.dailyDecision.primaryTarget?.recommendationType else {
+            return false
+        }
+
+        switch recommendationType {
+        case .increaseLoad, .addReps: return true
+        default: return false
+        }
+    }
+
+    @ViewBuilder
+    private var plannedTodayRoute: some View {
+        if routePresentation.lifts.isEmpty {
+            TrailStop(
+                title: hasBaseCampState ? "Choose your first split" : "Recovery day",
+                detail: hasBaseCampState
+                    ? "Set up a training split to prepare your first climb."
+                    : "A route will appear when a training split is ready."
+            )
+        } else {
+            ForEach(Array(routePresentation.lifts.enumerated()), id: \.offset) { _, lift in
+                TrailStop(title: lift.name, detail: lift.target)
+            }
+
+            if !routePresentation.remainingLiftNames.isEmpty {
+                TrailStop(
+                    title: "+ \(routePresentation.remainingLiftNames.count) more",
+                    detail: routePresentation.remainingLiftNames.joined(separator: " · ")
+                )
+            }
+        }
+
+        if !routePresentation.lifts.isEmpty, coachHasPRTarget {
+            TrailSignTag(text: "PR ATTEMPT")
+        }
+
+        SummitPrimaryButton(title: "Start \(routePresentation.dayName)", action: nextLiftAction)
+            .disabled(!hasBaseCampState && routePresentation.lifts.isEmpty)
+            .accessibilityIdentifier("today-review-plan")
+    }
+
+    private var completedTodayRoute: some View {
+        VStack(alignment: .leading, spacing: appTheme.metrics.spacing10) {
+            HStack(spacing: appTheme.metrics.spacing8) {
+                Image(systemName: "flag.fill")
+                    .foregroundStyle(appTheme.colors.alpenglow)
+                    .accessibilityHidden(true)
+                Text("Summit reached")
+                    .font(AppTypography.sectionTitle)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                Spacer(minLength: appTheme.metrics.spacing8)
+                Text("Finished \(routePresentation.completedAt ?? "")")
+                    .font(AppTypography.metadata)
+                    .foregroundStyle(appTheme.colors.textSecondary)
+            }
+
+            HStack(alignment: .top, spacing: 0) {
+                completedRouteMetric(label: "TIME", value: routePresentation.sessionTime)
+                completedRouteSeparator
+                completedRouteMetric(label: "VOLUME", value: routePresentation.sessionVolume)
+                completedRouteSeparator
+                completedRouteMetric(
+                    label: "TOP PR",
+                    value: routePresentation.topPR,
+                    usesAlpenglow: routePresentation.topPR != "No PR logged"
+                )
+            }
+
+            Text(routePresentation.windDown)
+                .font(AppTypography.body)
+                .foregroundStyle(appTheme.colors.textSecondary.opacity(0.85))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func completedRouteMetric(label: String, value: String, usesAlpenglow: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: appTheme.metrics.spacing4) {
+            Text(value)
+                .modifier(AppTypography.instrumentValue)
+                .foregroundStyle(usesAlpenglow ? appTheme.colors.alpenglow : appTheme.colors.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+            Text(label)
+                .modifier(AppTypography.waypointLabelSmall)
+                .foregroundStyle(appTheme.colors.textSecondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var completedRouteSeparator: some View {
+        Rectangle()
+            .fill(appTheme.colors.textTertiary.opacity(0.72))
+            .frame(width: 0.5, height: 36)
+            .padding(.horizontal, appTheme.metrics.spacing10)
+            .accessibilityHidden(true)
+    }
+
+    private var campSuppliesSection: some View {
+        TrailSection(index: 3, label: "CAMP SUPPLIES") {
+            TodayCampSuppliesRow(
+                items: [
+                    (symbol: "tent", caption: "Sleep", value: sleepSupplyValue, identifier: "quick-action-sleep"),
+                    (symbol: "waterbottle", caption: "Water", value: waterSupplyValue, identifier: "quick-action-hydration"),
+                    (symbol: "flame", caption: "Fuel", value: fuelSupplyValue, identifier: "quick-action-nutrition")
+                ],
+                onTap: { index in
+                    switch index {
+                    case 0: openRoute(.sleep)
+                    case 1: openRoute(.hydration)
+                    default: openRoute(.nutrition)
+                    }
+                }
+            )
+            .todayReentryWash(isActive: reentryWashCards.contains(.recovery) || reentryWashCards.contains(.nutrition))
+        }
+    }
+
+    private var sleepSupplyValue: String? {
+        guard sleepSummary.primarySession != nil else { return nil }
+        return SleepScoringService.durationText(minutes: sleepSummary.totalSleepMinutes)
+    }
+
+    private var waterSupplyValue: String? {
+        guard hydrationSummary.totalML > 0 else { return nil }
+        return HydrationService.formatAmount(hydrationSummary.totalML)
+    }
+
+    private var fuelSupplyValue: String? {
+        guard nutritionTotals.calories > 0 else { return nil }
+        return "\(Int(nutritionTotals.calories.rounded())) kcal"
+    }
+
+    private var weeklyActivitySection: some View {
+        TrailSection(index: 4, label: "THIS WEEK") {
+            Button {
+                openHistory()
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: appTheme.metrics.spacing8) {
+                    Text("\(completedDaysThisWeek.filter { $0 }.count)/7")
+                        .modifier(AppTypography.instrumentLarge)
+                        .foregroundStyle(appTheme.colors.textPrimary)
+                    Text("days")
+                        .font(AppTypography.body)
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                    Spacer(minLength: appTheme.metrics.spacing8)
+                    Image(systemName: "chevron.right")
+                        .font(AppTypography.metadataEmphasis)
+                        .foregroundStyle(appTheme.colors.textTertiary)
+                        .accessibilityHidden(true)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Weekly activity")
+            .accessibilityValue("\(completedDaysThisWeek.filter { $0 }.count) of 7 days completed")
+            .accessibilityHint("Opens your activity history")
+            .accessibilityIdentifier("today-weekly-activity")
+        }
+    }
+
+    private var baseCampChecklistItems: [(title: String, detail: String, done: Bool, action: () -> Void)] {
+        let healthConnected = sleepSummary.primarySession != nil
+        let splitChosen = !activeSplits.isEmpty
+        let firstWaterLogged = hydrationSummary.totalML > 0
+        let firstWorkout = !completedSessions.isEmpty
+        let sleepGoalSet = sleepSettings.targetSleepMinutes > 0
+
+        return [
+            ("Health connected", healthConnected ? "Sleep signal available" : "Connect Apple Health", healthConnected, { openRoute(.sleep) }),
+            ("Split chosen", splitChosen ? "Training plan ready" : "Choose a training split", splitChosen, {
+                if suggestedSplit == nil { openRoute(.workout) } else { previewSuggestedSplit() }
+            }),
+            ("First water logged", firstWaterLogged ? HydrationService.formatAmount(hydrationSummary.totalML) : "Log your first glass", firstWaterLogged, { openRoute(.hydration) }),
+            ("First workout", firstWorkout ? "Workout saved" : "Start your first workout", firstWorkout, { openRoute(.workout) }),
+            ("Sleep goal set", sleepGoalSet ? SleepScoringService.durationText(minutes: sleepSettings.targetSleepMinutes) : "Choose a nightly target", sleepGoalSet, { openRoute(.sleep) })
+        ]
+    }
+
+    private var baseCampProgressText: String {
+        "\(baseCampChecklistItems.filter(\.done).count) of \(baseCampChecklistItems.count) supplies packed."
+    }
+
+    private var baseCampChecklist: some View {
+        VStack(alignment: .leading, spacing: appTheme.metrics.spacing8) {
+            GeometryReader { geometry in
+                let progress = CGFloat(baseCampChecklistItems.filter(\.done).count) / CGFloat(max(baseCampChecklistItems.count, 1))
+                ZStack(alignment: .leading) {
+                    Rectangle()
+                        .fill(appTheme.colors.textTertiary.opacity(0.24))
+                    Rectangle()
+                        .fill(appTheme.colors.textPrimary)
+                        .frame(width: geometry.size.width * progress)
+                }
+            }
+            .frame(height: 2)
+            .accessibilityHidden(true)
+
+            ForEach(Array(baseCampChecklistItems.enumerated()), id: \.offset) { _, item in
+                Button(action: item.action) {
+                    TrailStop(title: item.title, detail: item.detail, done: item.done) {
+                        Image(systemName: item.done ? "checkmark.circle.fill" : "chevron.right")
+                            .font(AppTypography.metadataEmphasis)
+                            .foregroundStyle(item.done ? appTheme.colors.textTertiary : appTheme.colors.textSecondary)
+                            .accessibilityHidden(true)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .frame(minHeight: 44)
+            }
+        }
     }
 
     private func presentCheckIn() {
@@ -1170,6 +1586,8 @@ struct TodayView: View {
             trainingCallSnapshot = nextTrainingCall
             todaySnapshot.nextLift = nextLift
         }
+        refreshSummitPresentation(readiness: nextSnapshot.readiness)
+        refreshRoutePresentation(trainingCall: nextTrainingCall)
         workoutDashboardWarmStartStore.update(
             trainingCall: nextTrainingCall,
             sourceSignature: "\(lastTodaySnapshotSignature ?? "today-pending")|\(signature)"
