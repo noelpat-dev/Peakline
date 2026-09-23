@@ -298,11 +298,16 @@ private enum SummitFixture {
         return values.map { $0 / largest }
     }
 
-    static func bestSets(_ values: [(Double, Int, Int, Int, Bool)], offset: Int) -> [SummitBestSet] {
+    static func bestSets(
+        _ values: [(Double, Int, Int, Int, Bool)],
+        offset: Int,
+        isBodyweight: Bool = false
+    ) -> [SummitBestSet] {
         values.enumerated().map { index, value in
             SummitBestSet(
                 id: id(offset + index), weightKg: value.0, reps: value.1,
-                date: date(value.2, value.3), isPR: value.4
+                date: date(value.2, value.3), isPR: value.4,
+                isBodyweight: isBodyweight
             )
         }
     }
@@ -394,7 +399,7 @@ extension SummitSnapshot {
             SummitLiftPeak(id: SummitFixture.id(106), name: "Weighted pull-up", shortName: "PULL",
                 e1RMNow: 112, e1RMThen: 105,
                 weeklyBest: [103,104,105,105,106,107,108,108,109,110,111,112],
-                bestSets: SummitFixture.bestSets([(25,5,22,9,false),(22.5,5,8,9,false),(20,6,25,8,false)], offset: 216),
+                bestSets: SummitFixture.bestSets([(25,5,22,9,false),(22.5,5,8,9,false),(20,6,25,8,false)], offset: 216, isBodyweight: true),
                 hasRecentPR: false)
         ]
         return SummitSnapshot(
