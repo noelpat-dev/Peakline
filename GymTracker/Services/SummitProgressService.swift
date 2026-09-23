@@ -83,6 +83,13 @@ enum SummitProgressService {
         let nextCamp = nextIndex.map { route.camps[$0] }
         let nextAscent = nextIndex.map { cumulativeAscents[$0] }
         let routeAscent = cumulativeAscents.last ?? 0
+        let currentAltitude: Int
+        if let reachedIndex = cumulativeAscents.lastIndex(where: { $0 <= ascent }) {
+            let metresSinceCamp = nextAscent.map { min(ascent - cumulativeAscents[reachedIndex], $0 - cumulativeAscents[reachedIndex]) } ?? 0
+            currentAltitude = route.camps[reachedIndex].altitude + metresSinceCamp
+        } else {
+            currentAltitude = route.camps.first?.altitude ?? 0
+        }
         let recent = recentSessionMetres.suffix(8)
         let estimatedSessionsLeft: Int?
         if recentSessionMetres.count >= 3 {
@@ -98,7 +105,7 @@ enum SummitProgressService {
             route: route,
             startDate: startDate,
             climbedSinceStart: ascent,
-            currentAltitude: (route.camps.first?.altitude ?? 0) + ascent,
+            currentAltitude: currentAltitude,
             reachedCampIDs: reachedCampIDs,
             nextCamp: nextCamp,
             metresToNextCamp: nextAscent.map { $0 - ascent },

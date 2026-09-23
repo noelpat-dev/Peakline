@@ -59,6 +59,7 @@ final class SummitProgressServiceTests: XCTestCase {
     func testExpeditionPassesBarrancoAfterReachingLavaTower() {
         let progress = expedition(climbed: 2_830)
 
+        XCTAssertEqual(progress.currentAltitude, 3_960)
         XCTAssertTrue(progress.reachedCampIDs.contains("lava-tower"))
         XCTAssertTrue(progress.reachedCampIDs.contains("barranco-camp"))
         XCTAssertEqual(progress.nextCamp?.id, "karanga-camp")
@@ -68,6 +69,7 @@ final class SummitProgressServiceTests: XCTestCase {
     func testExpeditionPastUhuruHasNoRemainingAscent() {
         let progress = expedition(climbed: 6_000)
 
+        XCTAssertEqual(progress.currentAltitude, 5_895)
         XCTAssertNil(progress.nextCamp)
         XCTAssertNil(progress.metresToNextCamp)
         XCTAssertEqual(progress.remainingAscent, 0)
