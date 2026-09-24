@@ -181,6 +181,141 @@ final class WorkoutLoggingUITests: XCTestCase {
         )
     }
 
+    func testSummitPeakCrossingShowsReachedViewThenDoneOpensSummary() throws {
+        openForcedSummitReached()
+
+        XCTAssertTrue(
+            app.staticTexts["SUMMIT REACHED"].waitForExistence(timeout: 10),
+            "Expected the forced peak crossing to present SummitReachedView after workout completion"
+        )
+        XCTAssertTrue(app.descendants(matching: .any)["workout-completion-copy"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any).matching(
+                NSPredicate(format: "label BEGINSWITH[c] %@", "Send a postcard from")
+            ).firstMatch.exists,
+            "Expected the summit screen to expose its direct postcard share action"
+        )
+        // Capture the settled screen before querying lower content can move the scroll position.
+        RunLoop.current.run(until: Date().addingTimeInterval(2.3))
+        attachScreenshot(named: "fix1-summit-reached-default-dark")
+        XCTAssertFalse(app.navigationBars["Push - Full"].exists, "The logger title must be hidden")
+        XCTAssertFalse(app.tabBars.firstMatch.exists, "The tab bar must be hidden")
+        XCTAssertTrue(app.staticTexts["Snowdon"].isHittable, "Expected the peak title on screen")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["1,085 metres"].isHittable,
+            "Expected the completed metres on screen"
+        )
+        let statistics = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label BEGINSWITH[c] %@", "Altitude gained today")
+        ).firstMatch
+        XCTAssertTrue(statistics.exists && statistics.isHittable, "Expected the complete stats row on screen")
+        let fact = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS[c] %@", "The highest point in Wales")
+        ).firstMatch
+        XCTAssertTrue(fact.exists && fact.isHittable, "Expected the full fact line on screen")
+        let nextSummit = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label BEGINSWITH[c] %@", "Next summit,")
+        ).firstMatch
+        XCTAssertTrue(nextSummit.exists && nextSummit.isHittable, "Expected the next-summit tape on screen")
+        let personalRecord = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS[c] %@", "new personal record")
+        ).firstMatch
+        XCTAssertTrue(personalRecord.exists && personalRecord.isHittable, "Expected the fixture's PR row on screen")
+        let done = app.buttons["Done"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 5), "Expected SummitReachedView to offer Done")
+        done.tap()
+        XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 10))
+    }
+
+    func testSummitReachedAccessibilityMediumKeepsContentScrollable() throws {
+        openForcedSummitReached(accessibilityMedium: true)
+
+        XCTAssertTrue(app.staticTexts["SUMMIT REACHED"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.navigationBars["Push - Full"].exists)
+        XCTAssertFalse(app.tabBars.firstMatch.exists)
+        XCTAssertTrue(app.buttons["Done"].firstMatch.isHittable)
+        RunLoop.current.run(until: Date().addingTimeInterval(2.3))
+        attachScreenshot(named: "fix1-summit-reached-accessibility-medium-top-dark")
+
+        let fact = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS[c] %@", "The highest point in Wales")
+        ).firstMatch
+        let statistics = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label BEGINSWITH[c] %@", "Altitude gained today")
+        ).firstMatch
+        let personalRecord = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS[c] %@", "new personal record")
+        ).firstMatch
+        let nextSummit = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label BEGINSWITH[c] %@", "Next summit,")
+        ).firstMatch
+        let postcard = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label BEGINSWITH[c] %@", "Send a postcard from")
+        ).firstMatch
+        XCTAssertTrue(postcard.exists && postcard.isHittable, "The postcard action must remain pinned")
+        for (element, description) in [
+            (app.staticTexts["Snowdon"], "peak title"),
+            (app.descendants(matching: .any)["1,085 metres"], "completed metres"),
+            (fact, "full fact line"),
+            (statistics, "stats row"),
+            (personalRecord, "fixture PR row"),
+            (nextSummit, "next-summit tape")
+        ] {
+            XCTAssertTrue(element.waitForExistence(timeout: 8), "Expected \(description) to exist")
+        }
+        XCTAssertTrue(app.staticTexts["Snowdon"].isHittable)
+        XCTAssertTrue(app.descendants(matching: .any)["1,085 metres"].isHittable)
+        XCTAssertTrue(fact.isHittable && statistics.isHittable, "Expected the opening content above the footer")
+        for _ in 0..<6 {
+            if personalRecord.frame.maxY < postcard.frame.minY,
+               nextSummit.frame.maxY < postcard.frame.minY {
+                break
+            }
+            app.swipeUp()
+        }
+        XCTAssertTrue(personalRecord.isHittable && nextSummit.isHittable)
+        XCTAssertLessThan(personalRecord.frame.maxY, postcard.frame.minY, "PR row must clear the pinned footer")
+        XCTAssertLessThan(nextSummit.frame.maxY, postcard.frame.minY, "Tape must clear the pinned footer")
+        XCTAssertTrue(app.buttons["Done"].firstMatch.isHittable, "The footer must remain pinned")
+        attachScreenshot(named: "fix1-summit-reached-accessibility-medium-bottom-dark")
+    }
+
+    private func openForcedSummitReached(accessibilityMedium: Bool = false) {
+        var arguments = [
+            "-SummitForceCrossing",
+            "-UITestPRCelebrationFixture",
+            "-UITestAppearance", "dark"
+        ]
+        if accessibilityMedium {
+            arguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityM"]
+        }
+        launch(arguments: arguments)
+
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 12))
+        XCTAssertTrue(
+            app.descendants(matching: .any).matching(
+                NSPredicate(format: "label BEGINSWITH[c] %@", "Altitude,")
+            ).firstMatch.waitForExistence(timeout: 15),
+            "Expected the Summit snapshot before starting the peak-crossing workout"
+        )
+        tapTab(at: 1, expectedTitle: "Workout")
+        tapElement(identifier: "start-split-Push", maxSwipes: 8)
+        XCTAssertTrue(app.navigationBars["Preview"].waitForExistence(timeout: 10))
+        tapElement(identifier: "workout-preview-start", maxSwipes: 5)
+        XCTAssertTrue(app.staticTexts["Workout Order"].waitForExistence(timeout: 10))
+
+        tapElement(identifier: "workout-logger-add-set", maxSwipes: 8)
+        XCTAssertTrue(app.descendants(matching: .any)["set-row-1"].waitForExistence(timeout: 5))
+        tapButton(identifier: "stepper-weight-increment", times: 2)
+        tapButton(identifier: "stepper-reps-increment", times: 2)
+
+        tapElement(identifier: "workout-logger-finish", maxSwipes: 8, swipeUp: false)
+        if app.buttons["Finish Anyway"].waitForExistence(timeout: 3) {
+            app.buttons["Finish Anyway"].tap()
+        }
+        tapModalElement(identifier: "workout-rating-3")
+    }
+
     func testSubstitutePresentsOnFirstTapAndCanReopen() throws {
         launch()
         XCTAssertTrue(
@@ -286,6 +421,13 @@ final class WorkoutLoggingUITests: XCTestCase {
         for _ in 0..<times {
             button.tap()
         }
+    }
+
+    private func attachScreenshot(named name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     private func assertAccessibilityLabel(identifier: String, expectedLabel: String) {

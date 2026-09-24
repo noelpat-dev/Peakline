@@ -10,6 +10,7 @@ struct WorkoutLoggerView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(SummitSnapshotProvider.self) private var summitProvider
     @Bindable var session: WorkoutSession
     var isEditingCompletedWorkout = false
     var onSummaryDone: (() -> Void)?
@@ -24,6 +25,7 @@ struct WorkoutLoggerView: View {
     @State private var transitionFeedbackDismissTask: Task<Void, Never>?
     @State private var summaryRoute: WorkoutSummaryRoute?
     @State private var summaryRenderSnapshot: SessionSummaryRenderSnapshot?
+    @State private var summitMoment: SummitMoment?
     @State private var restTimerState = RestTimerState()
     @State private var showingSkippedExerciseConfirmation = false
     @State private var showingSkippedReasonSheet = false
@@ -377,26 +379,44 @@ struct WorkoutLoggerView: View {
         .accessibilityIdentifier("workout-logger-screen")
     }
 
+    @ViewBuilder
     private var motivationOverlay: some View {
-        WorkoutCelebrationOverlay(
-            title: celebrationPresentation.title,
-            message: celebrationPresentation.message,
-            icon: celebrationPresentation.systemImage,
-            primaryActionTitle: celebrationPresentation.primaryActionTitle,
-            primaryActionIcon: celebrationPresentation.systemImage,
-            style: celebrationPresentation.style,
-            isVisible: overlayVisible,
-            isPrimaryActionDisabled: overlayActionInFlight
-        ) {
-            dismissMotivationOverlay()
+        if let summitMoment {
+            SummitReachedView(
+                moment: summitMoment,
+                unitSystem: summitProvider.unitSystem,
+                onDone: dismissMotivationOverlay
+            )
+            .toolbar(.hidden, for: .navigationBar)
+            .toolbar(.hidden, for: .tabBar)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .allowsHitTesting(true)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(celebrationAccessibilityLabel)
+            .accessibilityValue("\(celebrationPresentation.title)|\(celebrationPresentation.message)")
+            .accessibilityIdentifier("workout-completion-copy")
+        } else {
+            WorkoutCelebrationOverlay(
+                title: celebrationPresentation.title,
+                message: celebrationPresentation.message,
+                icon: celebrationPresentation.systemImage,
+                primaryActionTitle: celebrationPresentation.primaryActionTitle,
+                primaryActionIcon: celebrationPresentation.systemImage,
+                style: celebrationPresentation.style,
+                isVisible: overlayVisible,
+                isPrimaryActionDisabled: overlayActionInFlight
+            ) {
+                dismissMotivationOverlay()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .allowsHitTesting(true)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(celebrationAccessibilityLabel)
+            .accessibilityValue("\(celebrationPresentation.title)|\(celebrationPresentation.message)")
+            .accessibilityIdentifier(overlayPhase == .nextExercise ? "workout-transition-copy" : "workout-completion-copy")
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .contentShape(Rectangle())
-        .allowsHitTesting(true)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(celebrationAccessibilityLabel)
-        .accessibilityValue("\(celebrationPresentation.title)|\(celebrationPresentation.message)")
-        .accessibilityIdentifier(overlayPhase == .nextExercise ? "workout-transition-copy" : "workout-completion-copy")
     }
 
     private var celebrationAccessibilityLabel: String {
@@ -1007,7 +1027,39 @@ struct WorkoutLoggerView: View {
             AppHaptics.success()
             pendingSkippedReasonSelections = [:]
             let prs = summaryRenderSnapshot?.sessionPRs ?? []
-            if prs.isEmpty {
+            let summitMoment: SummitMoment?
+            if let before = summitProvider.totalMetres {
+                let after = before + summitProvider.metres(forCompleted: session)
+                if let peak = SummitProgressService.didPassPeak(before: before, after: after) {
+                    summitMoment = makeSummitMoment(
+                        peak: peak,
+                        before: before,
+                        after: after,
+                        prs: prs
+                    )
+                } else {
+                    summitMoment = nil
+                }
+            } else {
+                summitMoment = nil
+            }
+
+            self.summitMoment = summitMoment
+            if summitMoment != nil {
+                configureCelebration(
+                    .completion(
+                        rating: rating,
+                        durationText: durationText(seconds: activeSeconds),
+                        prs: prs
+                    )
+                )
+                AppMotion.withoutAnimation {
+                    overlayPhase = .completion
+                    overlayVisible = true
+                    overlayActionInFlight = false
+                }
+                PerformanceTracer.mark(.workoutLoggerFinish, "summit_completion_overlay_requested")
+            } else if prs.isEmpty {
                 AppMotion.withoutAnimation {
                     overlayPhase = .idle
                     overlayVisible = false
@@ -1039,6 +1091,62 @@ struct WorkoutLoggerView: View {
             withAnimation(AppMotion.popupEntrance(reduceMotion: reduceMotion)) {
                 overlayVisible = true
             }
+        }
+    }
+
+    private func makeSummitMoment(
+        peak: SummitPeak,
+        before: Int,
+        after: Int,
+        prs: [PRRecord]
+    ) -> SummitMoment {
+        let existingClimbs = summitProvider.snapshot?.log ?? []
+        let firstExistingSessionDate = existingClimbs.last?.date ?? session.date
+        let previousPeakMetres = SummitProgressService.altitude(
+            totalMetres: max(0, peak.metres - 1),
+            gainedToday: nil
+        ).passed.last?.metres ?? 0
+        let nextAltitude = SummitProgressService.altitude(totalMetres: after, gainedToday: nil)
+        let setCount = session.exerciseLogs.reduce(0) { count, exerciseLog in
+            count + exerciseLog.setLogs.filter { $0.completed && !$0.isWarmup }.count
+        }
+
+        return SummitMoment(
+            peak: peak,
+            previousPeakMetres: previousPeakMetres,
+            totalMetres: after,
+            gainedMetres: after - before,
+            durationMinutes: session.durationMinutes,
+            setCount: setCount,
+            prs: summitPRs(from: prs),
+            next: nextAltitude.next,
+            metresToNext: nextAltitude.metresToNext,
+            firstSessionDate: min(firstExistingSessionDate, session.date),
+            sessionCount: existingClimbs.count + 1,
+            date: session.date
+        )
+    }
+
+    private func summitPRs(from records: [PRRecord]) -> [SummitPR] {
+        var includedSetIDs = Set<UUID>()
+        return records.compactMap { record in
+            guard
+                record.sessionId == session.id,
+                let setLogId = record.setLogId,
+                let exerciseLog = session.exerciseLogs.first(where: { $0.id == record.exerciseLogId }),
+                let set = exerciseLog.setLogs.first(where: { $0.id == setLogId }),
+                includedSetIDs.insert(set.id).inserted
+            else {
+                return nil
+            }
+
+            let isBodyweight = exercises.first(where: { $0.id == exerciseLog.exerciseId })?.equipment == .bodyweight
+            return SummitPR(
+                exerciseName: record.exerciseName,
+                weightKg: SummitWeightFormatting.kilograms(set.weight, unitSystem: summitProvider.unitSystem),
+                reps: set.reps,
+                isBodyweight: isBodyweight
+            )
         }
     }
 

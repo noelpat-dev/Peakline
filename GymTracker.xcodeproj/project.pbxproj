@@ -220,6 +220,20 @@
 		0010000000000000000D0005 /* PortableArchiveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000D0005 /* PortableArchiveService.swift */; };
 		0010000000000000000D0006 /* CompleteQueryServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000D0006 /* CompleteQueryServiceTests.swift */; };
 		0010000000000000000D0007 /* PortableArchiveServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000D0007 /* PortableArchiveServiceTests.swift */; };
+		A3A000000000000000000001 /* SummitModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A100000000000000000001 /* SummitModels.swift */; };
+		A3A000000000000000000002 /* SummitProgressService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A100000000000000000002 /* SummitProgressService.swift */; };
+		A3A000000000000000000003 /* SummitSnapshotBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A100000000000000000003 /* SummitSnapshotBuilder.swift */; };
+		A3A000000000000000000004 /* SummitProgressServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A100000000000000000004 /* SummitProgressServiceTests.swift */; };
+		A3A000000000000000000005 /* SummitSnapshotBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A100000000000000000005 /* SummitSnapshotBuilderTests.swift */; };
+		A3A000000000000000000006 /* SummitLogViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A100000000000000000006 /* SummitLogViews.swift */; };
+		A3A000000000000000000007 /* SummitRangeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A100000000000000000007 /* SummitRangeView.swift */; };
+		A3A000000000000000000008 /* SummitMomentViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A100000000000000000008 /* SummitMomentViews.swift */; };
+		A3A000000000000000000009 /* SummitTrailViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A100000000000000000009 /* SummitTrailViews.swift */; };
+		A3A00000000000000000000A /* SummitIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A10000000000000000000A /* SummitIcons.swift */; };
+		A3A00000000000000000000B /* SummitAppIconPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A10000000000000000000B /* SummitAppIconPicker.swift */; };
+		A3A00000000000000000000C /* SummitGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A10000000000000000000C /* SummitGalleryView.swift */; };
+		A3A00000000000000000000D /* SummitSnapshotProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A10000000000000000000D /* SummitSnapshotProvider.swift */; };
+		A3A00000000000000000000E /* SummitSnapshotProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A10000000000000000000E /* SummitSnapshotProviderTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -411,6 +425,20 @@
 		0020000000000000000D0005 /* PortableArchiveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Export/PortableArchiveService.swift; sourceTree = "<group>"; };
 		0020000000000000000D0006 /* CompleteQueryServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompleteQueryServiceTests.swift; sourceTree = "<group>"; };
 		0020000000000000000D0007 /* PortableArchiveServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortableArchiveServiceTests.swift; sourceTree = "<group>"; };
+		A3A100000000000000000001 /* SummitModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummitModels.swift; sourceTree = "<group>"; };
+		A3A100000000000000000002 /* SummitProgressService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummitProgressService.swift; sourceTree = "<group>"; };
+		A3A100000000000000000003 /* SummitSnapshotBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummitSnapshotBuilder.swift; sourceTree = "<group>"; };
+		A3A100000000000000000004 /* SummitProgressServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummitProgressServiceTests.swift; sourceTree = "<group>"; };
+		A3A100000000000000000005 /* SummitSnapshotBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummitSnapshotBuilderTests.swift; sourceTree = "<group>"; };
+		A3A100000000000000000006 /* SummitLogViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummitLogViews.swift; sourceTree = "<group>"; };
+		A3A100000000000000000007 /* SummitRangeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummitRangeView.swift; sourceTree = "<group>"; };
+		A3A100000000000000000008 /* SummitMomentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummitMomentViews.swift; sourceTree = "<group>"; };
+		A3A100000000000000000009 /* SummitTrailViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummitTrailViews.swift; sourceTree = "<group>"; };
+		A3A10000000000000000000A /* SummitIcons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummitIcons.swift; sourceTree = "<group>"; };
+		A3A10000000000000000000B /* SummitAppIconPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummitAppIconPicker.swift; sourceTree = "<group>"; };
+		A3A10000000000000000000C /* SummitGalleryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummitGalleryView.swift; sourceTree = "<group>"; };
+		A3A10000000000000000000D /* SummitSnapshotProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummitSnapshotProvider.swift; sourceTree = "<group>"; };
+		A3A10000000000000000000E /* SummitSnapshotProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummitSnapshotProviderTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -497,6 +525,7 @@
 		004000000000000000000004 /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				A3A100000000000000000001 /* SummitModels.swift */,
 				FD7027B4DC340CA2319550FE /* ExerciseGuideCatalog.swift */,
 				002000000000000000000003 /* Enums.swift */,
 				002000000000000000000004 /* UserProfile.swift */,
@@ -627,6 +656,9 @@
 		004000000000000000000011 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				A3A100000000000000000002 /* SummitProgressService.swift */,
+				A3A100000000000000000003 /* SummitSnapshotBuilder.swift */,
+				A3A10000000000000000000D /* SummitSnapshotProvider.swift */,
 				00200000000000000000000C /* SeedDataService.swift */,
 				00200000000000000000001A /* CoachRecommendationEngine.swift */,
 				00200000000000000000001F /* TargetSuggestionService.swift */,
@@ -708,6 +740,13 @@
 		004000000000000000000014 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				A3A100000000000000000006 /* SummitLogViews.swift */,
+				A3A100000000000000000007 /* SummitRangeView.swift */,
+				A3A100000000000000000008 /* SummitMomentViews.swift */,
+				A3A100000000000000000009 /* SummitTrailViews.swift */,
+				A3A10000000000000000000A /* SummitIcons.swift */,
+				A3A10000000000000000000B /* SummitAppIconPicker.swift */,
+				A3A10000000000000000000C /* SummitGalleryView.swift */,
 				002000000000000000000018 /* AppTheme.swift */,
 				0020000000000000000000E8 /* StatusBadge.swift */,
 				0020000000000000000000E9 /* NoticeCard.swift */,
@@ -772,6 +811,9 @@
 		004000000000000000000018 /* GymTrackerTests */ = {
 			isa = PBXGroup;
 			children = (
+				A3A100000000000000000004 /* SummitProgressServiceTests.swift */,
+				A3A100000000000000000005 /* SummitSnapshotBuilderTests.swift */,
+				A3A10000000000000000000E /* SummitSnapshotProviderTests.swift */,
 				8C3AD24E9453E3998DFECC18 /* ExerciseGuideCatalogTests.swift */,
 				0020000000000000000000A1 /* CoachIntelligenceServiceTests.swift */,
 				0020000000000000000000A2 /* WorkoutReliabilityTests.swift */,
@@ -973,6 +1015,17 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A3A000000000000000000001 /* SummitModels.swift in Sources */,
+				A3A000000000000000000002 /* SummitProgressService.swift in Sources */,
+				A3A000000000000000000003 /* SummitSnapshotBuilder.swift in Sources */,
+				A3A000000000000000000006 /* SummitLogViews.swift in Sources */,
+				A3A000000000000000000007 /* SummitRangeView.swift in Sources */,
+				A3A000000000000000000008 /* SummitMomentViews.swift in Sources */,
+				A3A000000000000000000009 /* SummitTrailViews.swift in Sources */,
+				A3A00000000000000000000A /* SummitIcons.swift in Sources */,
+				A3A00000000000000000000B /* SummitAppIconPicker.swift in Sources */,
+				A3A00000000000000000000C /* SummitGalleryView.swift in Sources */,
+				A3A00000000000000000000D /* SummitSnapshotProvider.swift in Sources */,
 				16A3B42C69B46AC4863F4671 /* ExerciseArtworkCreditsView.swift in Sources */,
 				FE148485CF56AB9C00DBC7E4 /* ExerciseGuideView.swift in Sources */,
 				D6E1E5922D596DB71B3D2162 /* ExerciseGuideCatalog.swift in Sources */,
@@ -1138,6 +1191,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A3A000000000000000000004 /* SummitProgressServiceTests.swift in Sources */,
+				A3A000000000000000000005 /* SummitSnapshotBuilderTests.swift in Sources */,
+				A3A00000000000000000000E /* SummitSnapshotProviderTests.swift in Sources */,
 				645492999B905193C20BC3E3 /* ExerciseGuideCatalogTests.swift in Sources */,
 				0010000000000000000000A1 /* CoachIntelligenceServiceTests.swift in Sources */,
 				0010000000000000000000A2 /* WorkoutReliabilityTests.swift in Sources */,
@@ -1312,6 +1368,7 @@
 			baseConfigurationReference = A1B2C3D4E5F60123456789AB /* Peakline.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconNight AppIconAlpenglow AppIconEverest";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = GymTracker/GymTracker.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -1353,6 +1410,7 @@
 			baseConfigurationReference = A1B2C3D4E5F60123456789AB /* Peakline.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconNight AppIconAlpenglow AppIconEverest";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = GymTracker/GymTracker.entitlements;
 				CODE_SIGN_STYLE = Automatic;

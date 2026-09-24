@@ -64,10 +64,21 @@ final class AppNotificationDelegate: NSObject, UIApplicationDelegate, UNUserNoti
 @main
 struct GymTrackerApp: App {
     @UIApplicationDelegateAdaptor(AppNotificationDelegate.self) private var appDelegate
+    @State private var summitProvider = SummitSnapshotProvider()
 
     var body: some Scene {
         WindowGroup {
+#if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-SummitGallery") {
+                SummitGalleryView()
+            } else {
+                PeaklineModelContainerHost()
+                    .environment(summitProvider)
+            }
+#else
             PeaklineModelContainerHost()
+                .environment(summitProvider)
+#endif
         }
     }
 }
