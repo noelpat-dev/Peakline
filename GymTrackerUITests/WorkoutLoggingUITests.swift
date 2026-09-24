@@ -30,7 +30,7 @@ final class WorkoutLoggingUITests: XCTestCase {
             springboard.staticTexts["Bench press"].waitForExistence(timeout: 5),
             "Expected the workout name in the expanded Dynamic Island"
         )
-        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
         let screenshot = XCTAttachment(screenshot: springboard.screenshot())
         screenshot.name = "live-activity-expanded-island"
         screenshot.lifetime = .keepAlways
@@ -59,6 +59,7 @@ final class WorkoutLoggingUITests: XCTestCase {
         XCTAssertTrue(springboard.staticTexts["Bench press"].waitForExistence(timeout: 5))
         XCTAssertTrue(springboard.staticTexts["REST"].exists)
         XCTAssertTrue(springboard.staticTexts["▲ +32 M"].exists)
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
         let expandedScreenshot = XCTAttachment(screenshot: springboard.screenshot())
         expandedScreenshot.name = "live-activity-expanded-rest"
         expandedScreenshot.lifetime = .keepAlways
