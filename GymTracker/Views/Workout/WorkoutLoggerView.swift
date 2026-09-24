@@ -26,7 +26,6 @@ struct WorkoutLoggerView: View {
     @State private var summaryRoute: WorkoutSummaryRoute?
     @State private var summaryRenderSnapshot: SessionSummaryRenderSnapshot?
     @State private var summitMoment: SummitMoment?
-    @State private var showingSummitPostcard = false
     @State private var restTimerState = RestTimerState()
     @State private var showingSkippedExerciseConfirmation = false
     @State private var showingSkippedReasonSheet = false
@@ -386,7 +385,6 @@ struct WorkoutLoggerView: View {
             SummitReachedView(
                 moment: summitMoment,
                 unitSystem: summitProvider.unitSystem,
-                onShare: { showingSummitPostcard = true },
                 onDone: dismissMotivationOverlay
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -396,11 +394,6 @@ struct WorkoutLoggerView: View {
             .accessibilityLabel(celebrationAccessibilityLabel)
             .accessibilityValue("\(celebrationPresentation.title)|\(celebrationPresentation.message)")
             .accessibilityIdentifier("workout-completion-copy")
-            .sheet(isPresented: $showingSummitPostcard) {
-                SummitPostcardShareButton(moment: summitMoment)
-                    .padding(appTheme.metrics.spacing16)
-                    .presentationDetents([.medium])
-            }
         } else {
             WorkoutCelebrationOverlay(
                 title: celebrationPresentation.title,

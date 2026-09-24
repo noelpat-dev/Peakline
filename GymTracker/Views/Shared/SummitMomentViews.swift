@@ -14,11 +14,9 @@ struct SummitReachedView: View {
     @ScaledMetric(relativeTo: .title) private var metresUnitSize: CGFloat = 26
     @ScaledMetric(relativeTo: .body) private var descriptionSize: CGFloat = 15
     @ScaledMetric(relativeTo: .title2) private var statisticValueSize: CGFloat = 22
-    @ScaledMetric(relativeTo: .headline) private var actionTitleSize: CGFloat = 16
 
     let moment: SummitMoment
     let unitSystem: UnitSystem
-    let onShare: () -> Void
     let onDone: () -> Void
 
     @State private var ringProgress: CGFloat = 0
@@ -30,12 +28,10 @@ struct SummitReachedView: View {
     init(
         moment: SummitMoment,
         unitSystem: UnitSystem,
-        onShare: @escaping () -> Void,
         onDone: @escaping () -> Void
     ) {
         self.moment = moment
         self.unitSystem = unitSystem
-        self.onShare = onShare
         self.onDone = onDone
         _displayedMetres = State(initialValue: moment.previousPeakMetres)
     }
@@ -271,22 +267,7 @@ struct SummitReachedView: View {
 
     private var footer: some View {
         VStack(spacing: 10) {
-            Button(action: onShare) {
-                HStack(spacing: 8) {
-                    Image(systemName: "envelope")
-                        .font(.system(size: 16, weight: .medium))
-                        .accessibilityHidden(true)
-                    Text("Send a postcard")
-                        .font(.system(size: actionTitleSize, weight: .semibold))
-                }
-                .foregroundStyle(appTheme.colors.textPrimary)
-                .frame(maxWidth: .infinity, minHeight: 50)
-                .background {
-                    Capsule().stroke(appTheme.colors.textPrimary.opacity(0.7), lineWidth: 1)
-                }
-                .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
+            SummitPostcardShareButton(moment: moment)
 
             SummitPrimaryButton(title: "Done", action: onDone)
         }
@@ -1056,22 +1037,22 @@ private extension SummitMoment {
 }
 
 #Preview("Summit · Light") {
-    SummitReachedView(moment: .preview, unitSystem: .metric, onShare: {}, onDone: {})
+    SummitReachedView(moment: .preview, unitSystem: .metric, onDone: {})
         .preferredColorScheme(.light)
 }
 
 #Preview("Summit · Dark") {
-    SummitReachedView(moment: .preview, unitSystem: .metric, onShare: {}, onDone: {})
+    SummitReachedView(moment: .preview, unitSystem: .metric, onDone: {})
         .preferredColorScheme(.dark)
 }
 
 #Preview("Summit · Empty") {
-    SummitReachedView(moment: .emptyPreview, unitSystem: .imperial, onShare: {}, onDone: {})
+    SummitReachedView(moment: .emptyPreview, unitSystem: .imperial, onDone: {})
         .preferredColorScheme(.dark)
 }
 
 #Preview("Summit · Accessibility") {
-    SummitReachedView(moment: .preview, unitSystem: .metric, onShare: {}, onDone: {})
+    SummitReachedView(moment: .preview, unitSystem: .metric, onDone: {})
         .environment(\.dynamicTypeSize, .accessibility2)
         .preferredColorScheme(.light)
 }

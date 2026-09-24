@@ -120,19 +120,14 @@ struct SummitGalleryView: View {
 
 private struct SummitReachedGalleryScreen: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var showingPostcard = false
     let unitSystem: UnitSystem
 
     var body: some View {
         SummitReachedView(
             moment: .preview,
             unitSystem: unitSystem,
-            onShare: { showingPostcard = true },
             onDone: { dismiss() }
         )
-        .sheet(isPresented: $showingPostcard) {
-            SummitPostcardGalleryScreen()
-        }
     }
 }
 
