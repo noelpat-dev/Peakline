@@ -306,6 +306,7 @@ private struct ExpandedIslandTrailing: View {
                 size: 12,
                 minimumScaleFactor: 0.75
             )
+            .padding(.trailing, 12)
         }
     }
 }
