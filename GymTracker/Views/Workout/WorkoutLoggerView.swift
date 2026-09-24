@@ -1107,6 +1107,10 @@ struct WorkoutLoggerView: View {
     ) -> SummitMoment {
         let existingClimbs = summitProvider.snapshot?.log ?? []
         let firstExistingSessionDate = existingClimbs.last?.date ?? session.date
+        let previousPeakMetres = SummitProgressService.altitude(
+            totalMetres: max(0, peak.metres - 1),
+            gainedToday: nil
+        ).passed.last?.metres ?? 0
         let nextAltitude = SummitProgressService.altitude(totalMetres: after, gainedToday: nil)
         let setCount = session.exerciseLogs.reduce(0) { count, exerciseLog in
             count + exerciseLog.setLogs.filter { $0.completed && !$0.isWarmup }.count
@@ -1114,7 +1118,7 @@ struct WorkoutLoggerView: View {
 
         return SummitMoment(
             peak: peak,
-            previousPeakMetres: before,
+            previousPeakMetres: previousPeakMetres,
             totalMetres: after,
             gainedMetres: after - before,
             durationMinutes: session.durationMinutes,
