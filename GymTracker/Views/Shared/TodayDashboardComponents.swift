@@ -228,7 +228,7 @@ struct TodayReadinessHero: View {
                     Text(summary)
                         .font(AppTypography.body)
                         .foregroundStyle(appTheme.colors.textSecondary.opacity(0.85))
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 4)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 

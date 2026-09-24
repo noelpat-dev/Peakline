@@ -1430,9 +1430,14 @@ struct TodayView: View {
                         onTakeLowerRoute: previewLowerRoute,
                         onClimbAnyway: nextLiftAction
                     )
-                }
 
-                if !isRoutePresentationReady {
+                    switch summitRoutePlan {
+                    case .lowerRoute(_, _):
+                        EmptyView()
+                    case .planned, .steady(_):
+                        plannedTodayRoute
+                    }
+                } else if !isRoutePresentationReady {
                     TrailStop(
                         title: "Preparing your route",
                         detail: "Your current plan will appear here."
@@ -1614,19 +1619,17 @@ struct TodayView: View {
                     Button {
                         openRoute(.expedition)
                     } label: {
-                        FitnessCard {
-                            AltimeterView(
-                                metres: snapshot.altitude.totalMetres,
-                                gainedToday: snapshot.altitude.gainedToday,
-                                nextMilestone: snapshot.altitude.next.map {
-                                    (name: $0.name, metres: $0.metres)
-                                },
-                                passedMilestones: snapshot.altitude.passed.map {
-                                    (name: $0.name, metres: $0.metres)
-                                },
-                                animatesIntro: false
-                            )
-                        }
+                        AltimeterView(
+                            metres: snapshot.altitude.totalMetres,
+                            gainedToday: snapshot.altitude.gainedToday,
+                            nextMilestone: snapshot.altitude.next.map {
+                                (name: $0.name, metres: $0.metres)
+                            },
+                            passedMilestones: snapshot.altitude.passed.map {
+                                (name: $0.name, metres: $0.metres)
+                            },
+                            animatesIntro: false
+                        )
                     }
                     .buttonStyle(.plain)
                     .accessibilityElement(children: .ignore)
@@ -1663,18 +1666,16 @@ struct TodayView: View {
 
     private var altitudePlaceholder: some View {
         VStack(alignment: .leading, spacing: appTheme.metrics.spacing8) {
-            FitnessCard {
-                VStack(alignment: .leading, spacing: appTheme.metrics.spacing12) {
-                    RoundedRectangle(cornerRadius: 6)
-                        .frame(width: 112, height: 58)
-                    RoundedRectangle(cornerRadius: 8)
-                        .frame(height: 66)
-                    RoundedRectangle(cornerRadius: 4)
-                        .frame(width: 190, height: 24)
-                }
-                .foregroundStyle(appTheme.colors.textTertiary.opacity(0.16))
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: appTheme.metrics.spacing12) {
+                RoundedRectangle(cornerRadius: 6)
+                    .frame(width: 112, height: 58)
+                RoundedRectangle(cornerRadius: 8)
+                    .frame(height: 66)
+                RoundedRectangle(cornerRadius: 4)
+                    .frame(width: 190, height: 24)
             }
+            .foregroundStyle(appTheme.colors.textTertiary.opacity(0.16))
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: appTheme.metrics.spacing12) {
                 VStack(alignment: .leading, spacing: appTheme.metrics.spacing8) {
