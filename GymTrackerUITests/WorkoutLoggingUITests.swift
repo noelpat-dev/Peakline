@@ -189,6 +189,12 @@ final class WorkoutLoggingUITests: XCTestCase {
         ])
 
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 12))
+        XCTAssertTrue(
+            app.descendants(matching: .any).matching(
+                NSPredicate(format: "label BEGINSWITH[c] %@", "Altitude,")
+            ).firstMatch.waitForExistence(timeout: 15),
+            "Expected the Summit snapshot before starting the peak-crossing workout"
+        )
         tapTab(at: 1, expectedTitle: "Workout")
         tapElement(identifier: "start-split-Push", maxSwipes: 8)
         XCTAssertTrue(app.navigationBars["Preview"].waitForExistence(timeout: 10))

@@ -297,6 +297,12 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
             NSPredicate(format: "label CONTAINS[c] %@", "Lower route open. Recovery climb")
         ).firstMatch
         XCTAssertTrue(lowerRoute.waitForExistence(timeout: 12), "Expected the recovery fixture to expose its lower route")
+        var swipes = 0
+        while !lowerRoute.isHittable && swipes < 8 {
+            app.swipeUp()
+            swipes += 1
+        }
+        XCTAssertTrue(lowerRoute.isHittable, "Expected the recovery fork to be visible in the screenshot")
         attachScreenshot(named: "wave3b-today-recovery-storm-dark")
 
         tapButton(containing: "Take the lower route", maxSwipes: 8)
@@ -374,7 +380,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 12))
         _ = summitAltitudeButton()
-        let cairnButton = app.buttons.matching(
+        let cairnButton = app.descendants(matching: .any).matching(
             NSPredicate(format: "label BEGINSWITH[c] %@", "Cairn,")
         ).firstMatch
         XCTAssertTrue(cairnButton.waitForExistence(timeout: 8), "Expected the Cairn row in ALTITUDE")
@@ -396,16 +402,16 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         openSettingsFromToday()
         tapElement(identifier: "settings-app-icon", maxSwipes: 10)
         XCTAssertTrue(app.staticTexts["App icon"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["Topo, Unlocked"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["Topo, Unlocked"].waitForExistence(timeout: 5))
         XCTAssertTrue(
-            app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Unlocks at")).firstMatch.waitForExistence(timeout: 5),
+            app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] %@", "Unlocks at")).firstMatch.waitForExistence(timeout: 5),
             "Expected the picker to show locked designs with their unlock thresholds"
         )
         attachScreenshot(named: "wave3b-settings-app-icon-picker-light")
     }
 
     private func summitAltitudeButton() -> XCUIElement {
-        let altitudeButton = app.buttons.matching(
+        let altitudeButton = app.descendants(matching: .any).matching(
             NSPredicate(format: "label BEGINSWITH[c] %@", "Altitude,")
         ).firstMatch
         var swipes = 0
