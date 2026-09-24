@@ -401,12 +401,19 @@ struct TodayView: View {
         currentTodaySnapshot.hydrationSummary
     }
 
+#if DEBUG
+    private var isSummitReadyFixtureEnabled: Bool {
+        let launchArguments = ProcessInfo.processInfo.arguments
+        return launchArguments.contains("-UITestInMemoryStore")
+            && launchArguments.contains("-SummitReadyFixture")
+    }
+#endif
+
     private var readinessScore: ReadinessScore {
         let score = currentCoachSnapshot.readiness
 #if DEBUG
         let launchArguments = ProcessInfo.processInfo.arguments
-        if launchArguments.contains("-UITestInMemoryStore"),
-           launchArguments.contains("-SummitReadyFixture") {
+        if isSummitReadyFixtureEnabled {
             return ReadinessScore(
                 value: 75,
                 category: .ready,
@@ -1960,13 +1967,31 @@ struct TodayView: View {
         decision: TrainingDecision,
         coachSnapshot: CoachIntelligenceSnapshot
     ) -> TrainingCallSnapshot {
-        trainingCallBuilder.make(
+        let snapshot = trainingCallBuilder.make(
             decision: decision,
             activeSplits: activeSplits,
             completedSessions: Array(completedSessions.prefix(40)),
             readiness: coachSnapshot.readiness,
             fatigueRisk: coachSnapshot.fatigueRisk
         )
+#if DEBUG
+        guard isSummitReadyFixtureEnabled else { return snapshot }
+        return TrainingCallSnapshot(
+            recommendedSplitName: snapshot.recommendedSplitName,
+            recommendedMode: .full,
+            action: snapshot.action == .recover ? .repeatTarget : snapshot.action,
+            title: "Train as planned",
+            reason: "The ready-day fixture follows the recommended split in the normal full session mode.",
+            confidence: snapshot.confidence,
+            targetSummary: nil,
+            sourceSignals: snapshot.sourceSignals,
+            missingOrStaleInputs: snapshot.missingOrStaleInputs,
+            guardrailNotes: [],
+            isConservative: false
+        )
+#else
+        return snapshot
+#endif
     }
 
     private var suggestedSplit: TrainingSplit? {
