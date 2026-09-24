@@ -197,6 +197,11 @@ final class WorkoutLoggingUITests: XCTestCase {
         )
         XCTAssertFalse(app.navigationBars["Push - Full"].exists, "The logger title must be hidden")
         XCTAssertFalse(app.tabBars.firstMatch.exists, "The tab bar must be hidden")
+        XCTAssertTrue(app.staticTexts["Snowdon"].isHittable, "Expected the peak title on screen")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["1,085 metres"].isHittable,
+            "Expected the completed metres on screen"
+        )
         let statistics = app.descendants(matching: .any).matching(
             NSPredicate(format: "label BEGINSWITH[c] %@", "Altitude gained today")
         ).firstMatch
@@ -212,9 +217,7 @@ final class WorkoutLoggingUITests: XCTestCase {
         let personalRecord = app.descendants(matching: .any).matching(
             NSPredicate(format: "label CONTAINS[c] %@", "new personal record")
         ).firstMatch
-        if personalRecord.exists {
-            XCTAssertTrue(personalRecord.isHittable, "The fixture's PR row must be on screen")
-        }
+        XCTAssertTrue(personalRecord.exists && personalRecord.isHittable, "Expected the fixture's PR row on screen")
         // The metre counter finishes after the static title and controls mount.
         RunLoop.current.run(until: Date().addingTimeInterval(2.3))
         attachScreenshot(named: "fix1-summit-reached-default-dark")
@@ -234,15 +237,34 @@ final class WorkoutLoggingUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Done"].firstMatch.isHittable)
         attachScreenshot(named: "fix1-summit-reached-accessibility-medium-top-dark")
 
+        let fact = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS[c] %@", "The highest point in Wales")
+        ).firstMatch
+        let statistics = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label BEGINSWITH[c] %@", "Altitude gained today")
+        ).firstMatch
+        let personalRecord = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS[c] %@", "new personal record")
+        ).firstMatch
         let nextSummit = app.descendants(matching: .any).matching(
             NSPredicate(format: "label BEGINSWITH[c] %@", "Next summit,")
         ).firstMatch
-        var swipes = 0
-        while !nextSummit.isHittable && swipes < 8 {
-            app.swipeUp()
-            swipes += 1
+        for (element, description) in [
+            (app.staticTexts["Snowdon"], "peak title"),
+            (app.descendants(matching: .any)["1,085 metres"], "completed metres"),
+            (fact, "full fact line"),
+            (statistics, "stats row"),
+            (personalRecord, "fixture PR row"),
+            (nextSummit, "next-summit tape")
+        ] {
+            XCTAssertTrue(element.waitForExistence(timeout: 8), "Expected \(description) to exist")
+            var swipes = 0
+            while !element.isHittable && swipes < 8 {
+                app.swipeUp()
+                swipes += 1
+            }
+            XCTAssertTrue(element.isHittable, "Expected \(description) to remain reachable by scrolling")
         }
-        XCTAssertTrue(nextSummit.isHittable, "Expected the tape to remain reachable by scrolling")
         XCTAssertTrue(app.buttons["Done"].firstMatch.isHittable, "The footer must remain pinned")
         attachScreenshot(named: "fix1-summit-reached-accessibility-medium-bottom-dark")
     }
@@ -250,7 +272,7 @@ final class WorkoutLoggingUITests: XCTestCase {
     private func openForcedSummitReached(accessibilityMedium: Bool = false) {
         var arguments = [
             "-SummitForceCrossing",
-            "-UITestCoachFatigueFixture",
+            "-UITestPRCelebrationFixture",
             "-UITestAppearance", "dark"
         ]
         if accessibilityMedium {
