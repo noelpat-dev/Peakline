@@ -29,6 +29,96 @@ final class CoachIntelligenceServiceTests: XCTestCase {
         XCTAssertEqual(ReadinessCategory(score: 39), .recovery)
     }
 
+    func testSummitTimeOfDayBoundaries() throws {
+        let localCalendar = Calendar.current
+        let cases: [(hour: Int, minute: Int, expected: SummitTimeOfDay)] = [
+            (4, 59, .night),
+            (5, 0, .dawn),
+            (8, 59, .dawn),
+            (9, 0, .day),
+            (18, 59, .day),
+            (19, 0, .night)
+        ]
+
+        for testCase in cases {
+            let date = try XCTUnwrap(localCalendar.date(from: DateComponents(
+                year: 2026,
+                month: 5,
+                day: 22,
+                hour: testCase.hour,
+                minute: testCase.minute
+            )))
+
+            XCTAssertEqual(
+                SummitTimeOfDay(date: date),
+                testCase.expected,
+                "Unexpected Summit time for \(testCase.hour):\(testCase.minute)"
+            )
+        }
+    }
+
+    func testSummitZeroLoadFrontRidgePointsStayAtBaseline() {
+        let points = SummitHorizonView.frontRidgePoints(for: Array(repeating: 0, count: 7))
+
+        XCTAssertFalse(points.isEmpty)
+        XCTAssertTrue(points.allSatisfy { $0.y == SummitHorizonView.frontRidgeBaseline })
+    }
+
+    func testSummitSkyPlacementSelectsFlattestThreeDaySpan() {
+        XCTAssertEqual(
+            SummitHorizonView.skySpanStartIndex(for: [1, 1, 0, 0, 0, 0, 0]),
+            2,
+            "Expected the sky to sit over Wednesday through Friday"
+        )
+        XCTAssertEqual(
+            SummitHorizonView.skySpanStartIndex(for: [0, 0, 0, 0, 0, 1, 1]),
+            0,
+            "Expected the sky to sit over Monday through Wednesday"
+        )
+    }
+
+    func testTodayReadinessMappingCoversEveryCategory() {
+        let cases: [(category: ReadinessCategory, condition: SummitCondition, headline: String, advice: String)] = [
+            (.peak, .clear, "Clear skies", "Summit push. A good day to go for a PR."),
+            (.ready, .clear, "Clear skies", "Good climbing weather. Train as planned."),
+            (.cautious, .changeable, "Changeable", "Steady climb. Train as planned, skip the max attempts."),
+            (.low, .changeable, "Changeable", "Take it steady. Trim volume and keep effort moderate."),
+            (.recovery, .storm, "Storm warning", "Stay at base camp. Mobility or an easy walk today.")
+        ]
+
+        for testCase in cases {
+            XCTAssertEqual(
+                TodayReadinessMapping.summitCondition(for: testCase.category),
+                testCase.condition,
+                "Unexpected Summit condition for \(testCase.category)"
+            )
+            XCTAssertEqual(
+                TodayReadinessMapping.headline(for: testCase.category),
+                testCase.headline,
+                "Unexpected headline for \(testCase.category)"
+            )
+            XCTAssertEqual(
+                TodayReadinessMapping.fallbackAdvice(for: testCase.category),
+                testCase.advice,
+                "Unexpected fallback advice for \(testCase.category)"
+            )
+        }
+    }
+
+    func testTodayRouteStopsCapsVisibleNamesAndCountsRemainingNames() {
+        let presentation = TodayRouteStopsPresentation(names: ["Squat", "Bench", "Deadlift", "Row"])
+
+        XCTAssertEqual(presentation.visibleNames, ["Squat", "Bench"])
+        XCTAssertEqual(presentation.remainingNames, ["Deadlift", "Row"])
+        XCTAssertEqual(presentation.remainingCount, 2)
+        XCTAssertEqual(presentation.remainingLine, "+ 2 more · Deadlift · Row")
+
+        let twoStops = TodayRouteStopsPresentation(names: ["Squat", "Bench"])
+        XCTAssertEqual(twoStops.visibleNames, ["Squat", "Bench"])
+        XCTAssertEqual(twoStops.remainingCount, 0)
+        XCTAssertNil(twoStops.remainingLine)
+    }
+
     func testReadinessRefreshClockStartIsIdempotent() {
         let clock = ReadinessRefreshClock.shared
 

@@ -219,6 +219,10 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
         XCTAssertTrue(
+            app.descendants(matching: .any)["startup-brand-screen"].waitForNonExistence(timeout: 3),
+            "Expected the branded splash to be gone before opening readiness"
+        )
+        XCTAssertTrue(
             app.descendants(matching: .any)["startup-critical-ready"].waitForExistence(timeout: 5),
             "Expected the DEBUG performance summary to remain mounted for the full route journey"
         )
@@ -227,7 +231,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
             "Expected Today to expose the redesigned readiness hero"
         )
 
-        tapElement(identifier: "today-readiness-hero", maxSwipes: 4)
+        tapElement(identifier: "readiness-signal-coverage", maxSwipes: 4)
         XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Coach to open")
         let coachCall = app.descendants(matching: .any)["coach-todays-call"]
         XCTAssertTrue(coachCall.waitForExistence(timeout: 12))
@@ -1217,17 +1221,22 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     func testReadinessV2ShowsProvisionalCoverageAndMissingSignals() throws {
         launch()
 
+        XCTAssertTrue(
+            app.descendants(matching: .any)["startup-brand-screen"].waitForNonExistence(timeout: 3),
+            "Expected the branded splash to be gone before opening readiness"
+        )
+
         let provisional = app.descendants(matching: .any)["readiness-provisional-status"].firstMatch
         let coverage = app.descendants(matching: .any)["readiness-signal-coverage"]
         let score = app.descendants(matching: .any)["today-readiness-score-value"]
 
         XCTAssertTrue(score.waitForExistence(timeout: 10))
-        XCTAssertEqual(score.label, "—")
+        XCTAssertEqual(score.label, "Not available")
         XCTAssertFalse(provisional.exists, "Zero-evidence readiness should show an unavailable score without a provisional badge")
         XCTAssertTrue(coverage.waitForExistence(timeout: 3))
         XCTAssertEqual(coverage.label, "0 of 5 signals included")
 
-        tapElement(identifier: "today-readiness-hero", maxSwipes: 4)
+        tapElement(identifier: "readiness-signal-coverage", maxSwipes: 4)
         XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Coach to open")
         let coachHeadline = app.descendants(matching: .any)["coach-todays-call"]
         XCTAssertTrue(coachHeadline.waitForExistence(timeout: 2))
@@ -1256,7 +1265,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
         let score = app.descendants(matching: .any)["today-readiness-score-value"]
         XCTAssertTrue(score.waitForExistence(timeout: 10))
-        XCTAssertEqual(score.label, "—")
+        XCTAssertEqual(score.label, "Not available")
 
         tapTodayCheckIn()
         XCTAssertTrue(app.descendants(matching: .any)["check-in-sheet"].waitForExistence(timeout: 3))
@@ -1360,12 +1369,27 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         }
 
         tapElement(identifier: "today-profile-menu", maxSwipes: 2)
-        tapButton(containing: "Check In", maxSwipes: 2)
+        tapTodayProfileMenuAction(title: "Check In")
     }
 
     private func tapTodayMenuAction(title: String) {
         tapElement(identifier: "today-profile-menu", maxSwipes: 2)
-        tapButton(containing: title, maxSwipes: 2)
+        tapTodayProfileMenuAction(title: title)
+    }
+
+    private func tapTodayProfileMenuAction(title: String) {
+        readyTodayProfileMenuAction(title: title).tap()
+    }
+
+    private func readyTodayProfileMenuAction(title: String) -> XCUIElement {
+        // Swiping to find a native menu item dismisses the menu before it appears.
+        let action = buttonContaining(title)
+        XCTAssertTrue(action.waitForExistence(timeout: 5), "Expected Today menu action \(title) to exist")
+        XCTAssertTrue(
+            waitUntil(timeout: 3) { action.isHittable },
+            "Expected Today menu action \(title) to be hittable"
+        )
+        return action
     }
 
     private func openSettingsFromToday() {
@@ -1376,7 +1400,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
             tapTab(at: 0, expectedTitle: "Today")
         }
         tapElement(identifier: "today-profile-menu", maxSwipes: 2)
-        tapButton(containing: "Settings", maxSwipes: 2)
+        tapTodayProfileMenuAction(title: "Settings")
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 8))
     }
 
@@ -1476,9 +1500,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         let startedAt: Date
         if let menuTitle = todayMenuTitle(for: identifier) {
             tapElement(identifier: "today-profile-menu", maxSwipes: 2)
-            let menuAction = buttonContaining(menuTitle)
-            XCTAssertTrue(menuAction.waitForExistence(timeout: 3), "Expected Today menu action \(menuTitle) to exist")
-            XCTAssertTrue(menuAction.isHittable, "Expected Today menu action \(menuTitle) to be hittable")
+            let menuAction = readyTodayProfileMenuAction(title: menuTitle)
             startedAt = Date()
             menuAction.tap()
         } else {

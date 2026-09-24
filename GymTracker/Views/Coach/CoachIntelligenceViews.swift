@@ -1,6 +1,20 @@
 import SwiftData
 import SwiftUI
 
+struct RecoveryAwareCoachTag: View {
+    let state: CoachBadgeState
+
+    @ViewBuilder
+    var body: some View {
+        switch state {
+        case .recovery:
+            TrailSignTag(text: state.label)
+        default:
+            CoachBadgeView(state: state)
+        }
+    }
+}
+
 struct TrainingCallAuditCard: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -57,7 +71,7 @@ struct TrainingCallAuditCard: View {
                 }
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(title). \(snapshot.headline). \(snapshot.reason)")
+            .accessibilityLabel("\(title). \(snapshot.headline). Confidence: \(snapshot.confidence.displayName). \(snapshot.reason)")
         }
     }
 
@@ -66,8 +80,8 @@ struct TrainingCallAuditCard: View {
             FitnessIconBadge(
                 systemImage: snapshot.recommendedMode.systemImage,
                 size: 42,
-                tint: accent,
-                background: accent.opacity(0.14)
+                tint: appTheme.colors.textSecondary,
+                background: appTheme.colors.cardBackgroundElevated
             )
 
             VStack(alignment: .leading, spacing: 5) {
@@ -76,14 +90,18 @@ struct TrainingCallAuditCard: View {
                     .foregroundStyle(appTheme.colors.textPrimary)
 
                 if isExpandable {
-                    Text(snapshot.confidence.displayName)
-                        .font(AppTypography.metadataEmphasis)
-                        .foregroundStyle(accent)
+                    TrailSignTag(text: snapshot.confidence.displayName)
                 } else {
-                    Text("\(snapshot.headline) - \(snapshot.confidence.displayName)")
-                        .font(AppTypography.bodyEmphasis)
-                        .foregroundStyle(accent)
-                        .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(snapshot.headline)
+                            .font(AppTypography.bodyEmphasis)
+                            .foregroundStyle(accent)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        TrailSignTag(text: snapshot.confidence.displayName)
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(snapshot.headline). Confidence: \(snapshot.confidence.displayName)")
                 }
             }
 
@@ -95,7 +113,7 @@ struct TrainingCallAuditCard: View {
                     .foregroundStyle(appTheme.colors.textTertiary)
                     .frame(width: 44, height: 44)
             } else {
-                CoachBadgeView(state: badgeState)
+                RecoveryAwareCoachTag(state: badgeState)
                     .fixedSize(horizontal: true, vertical: false)
             }
         }
@@ -200,12 +218,12 @@ struct ReadinessDetailHeaderCard: View {
             VStack(alignment: .leading, spacing: 18) {
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .center, spacing: 16) {
-                        scoreArc
+                        scoreInstrument
                         headerText
                     }
 
                     VStack(alignment: .leading, spacing: 14) {
-                        scoreArc
+                        scoreInstrument
                         headerText
                     }
                 }
@@ -219,12 +237,20 @@ struct ReadinessDetailHeaderCard: View {
         }
     }
 
-    private var scoreArc: some View {
-        ProgressArcView(
-            value: Double(readiness.value) / 100.0,
-            label: "Readiness",
-            caption: readiness.category.displayName
-        )
+    private var scoreInstrument: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text("\(readiness.value)")
+                    .modifier(AppTypography.instrumentLarge)
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                Text("/100")
+                    .modifier(AppTypography.instrumentUnit)
+            }
+            InstrumentGauge(value: readiness.value)
+            Text(readiness.category.displayName)
+                .modifier(AppTypography.waypointLabelSmall)
+        }
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Readiness score \(readiness.value) out of 100, \(readiness.category.displayName)")
     }
 
@@ -241,7 +267,7 @@ struct ReadinessDetailHeaderCard: View {
                     : readiness.category.meaning
             )
                 .font(AppTypography.bodyEmphasis)
-                .foregroundStyle(readinessColor(for: readiness.category, theme: appTheme))
+                .foregroundStyle(appTheme.colors.textSecondary)
 
             Text(readiness.recommendation.summary)
                 .font(AppTypography.body)
@@ -397,7 +423,7 @@ struct ReadinessContextCard: View {
                             : "Daily readiness \(readiness.value) - \(readiness.category.displayName)"
                     )
                         .font(AppTypography.chip)
-                        .foregroundStyle(readinessColor(for: readiness.category, theme: appTheme))
+                        .foregroundStyle(appTheme.colors.textPrimary)
                 }
 
                 Spacer(minLength: 8)
@@ -447,14 +473,16 @@ struct WeeklyCoachSummaryCard: View {
                         label: "Avg Ready",
                         value: summary.averageReadiness.map { "\($0)" } ?? "--",
                         caption: "Last 7 days",
-                        systemImage: "gauge.with.dots.needle.bottom.50percent"
+                        systemImage: "gauge.with.dots.needle.bottom.50percent",
+                        usesInstrumentStyle: true
                     )
 
                     MetricTile(
                         label: "Sessions",
                         value: "\(summary.trainingSessionsCompleted)",
                         caption: "Last 7 days",
-                        systemImage: "figure.strengthtraining.traditional"
+                        systemImage: "figure.strengthtraining.traditional",
+                        usesInstrumentStyle: true
                     )
                 }
 

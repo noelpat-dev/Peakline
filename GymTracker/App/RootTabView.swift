@@ -1,4 +1,5 @@
 import Observation
+import os
 import SwiftData
 import SwiftUI
 
@@ -154,6 +155,7 @@ struct RootTabView: View {
     var body: some View {
         RootTabContainer(
             startupSnapshot: startupSnapshot,
+            startupRevealComplete: startupRevealComplete,
             selectionState: tabSelectionState,
             onTabSelectionStarted: rootTabSelectionStarted,
             onTabSelectionSettled: rootTabSelectionSettled,
@@ -270,10 +272,15 @@ struct RootTabView: View {
         }
         .onChange(of: startupRevealComplete) { _, isComplete in
             guard isComplete else { return }
-            startDeferredServicesIfNeeded()
-            refreshOverallReadinessIfNeeded(reason: "startup_reveal_complete")
-            scheduleWarmSleepAnalyticsRefresh(reason: "startup_reveal_complete")
-            presentSleepDeepLinkIfReady(sleepDeepLinkRouter.pendingRequest)
+            RootTabStartupSignposts.trace("startup.post_reveal.root_callback") {
+                startDeferredServicesIfNeeded()
+                RootTabStartupSignposts.trace("startup.post_reveal.readiness") {
+                    refreshOverallReadinessIfNeeded(reason: "startup_reveal_complete")
+                }
+                scheduleWarmSleepAnalyticsRefresh(reason: "startup_reveal_complete")
+                presentSleepDeepLinkIfReady(sleepDeepLinkRouter.pendingRequest)
+            }
+            PerformanceTracer.mark(.startupTodayInteractive, "root_reveal_propagated")
         }
         .onAppear {
             startRootTabPrewarmIfNeeded()
@@ -594,7 +601,17 @@ struct RootTabView: View {
                 return
             }
 
-            guard refreshWarmSleepAnalytics(reason: reason) else { return }
+            let didRefreshWarmSleepAnalytics: Bool
+            if reason == "startup_reveal_complete" {
+                didRefreshWarmSleepAnalytics = RootTabStartupSignposts.trace(
+                    "startup.post_reveal.warm_sleep_sync"
+                ) {
+                    refreshWarmSleepAnalytics(reason: reason)
+                }
+            } else {
+                didRefreshWarmSleepAnalytics = refreshWarmSleepAnalytics(reason: reason)
+            }
+            guard didRefreshWarmSleepAnalytics else { return }
             guard !Task.isCancelled,
                   !rootTabTransitionGate.isActive,
                   !isWorkoutCompletionPresentationActive,
@@ -731,7 +748,15 @@ struct RootTabView: View {
         let sourceSignature = previewWarmSourceSignature
         let snapshots: [WorkoutAnalyticsSession]
         do {
-            snapshots = try WorkoutAnalyticsSnapshotBuilder.snapshots(from: recentSessions, in: modelContext)
+            if reason == "startup_reveal_complete" {
+                snapshots = try RootTabStartupSignposts.trace(
+                    "startup.post_reveal.progress_projection"
+                ) {
+                    try WorkoutAnalyticsSnapshotBuilder.snapshots(from: recentSessions, in: modelContext)
+                }
+            } else {
+                snapshots = try WorkoutAnalyticsSnapshotBuilder.snapshots(from: recentSessions, in: modelContext)
+            }
         } catch {
             PerformanceTracer.mark(.appLifecycle, "warm_progress_refresh failed reason=\(reason) error=\(error.localizedDescription)")
             return
@@ -1067,6 +1092,26 @@ struct RootTabView: View {
     }
 }
 
+private enum RootTabStartupSignposts {
+    #if DEBUG
+    private static let log = OSLog(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.noel.GymTracker",
+        category: "StartupReveal"
+    )
+    #endif
+
+    static func trace<T>(_ name: StaticString, _ work: () throws -> T) rethrows -> T {
+        #if DEBUG
+        let signpostID = OSSignpostID(log: log)
+        os_signpost(.begin, log: log, name: name, signpostID: signpostID)
+        defer {
+            os_signpost(.end, log: log, name: name, signpostID: signpostID)
+        }
+        #endif
+        return try work()
+    }
+}
+
 /// A deliberately non-observable coordination object. Mutating the gate must
 /// not invalidate RootTabView while a native tab transition is being measured.
 private final class RootTabTransitionGate {
@@ -1153,6 +1198,7 @@ private final class RootTabSelectionState {
 
 private struct RootTabContainer: View {
     let startupSnapshot: StartupSnapshotBundle
+    let startupRevealComplete: Bool
     @Bindable var selectionState: RootTabSelectionState
     let onTabSelectionStarted: () -> Void
     let onTabSelectionSettled: () -> Void
@@ -1165,9 +1211,12 @@ private struct RootTabContainer: View {
 
     var body: some View {
         TabView(selection: selectedTabBinding) {
-            RootTabContentHost(key: "today|\(startupSnapshot.sourceSignature)") {
+            RootTabContentHost(
+                key: "today|\(startupSnapshot.sourceSignature)|reveal:\(startupRevealComplete)"
+            ) {
                 TodayView(
                     startupSnapshot: startupSnapshot,
+                    startupRevealComplete: startupRevealComplete,
                     openHistory: { selectedTabBinding.wrappedValue = .history },
                     openSettings: onSettingsRequested
                 )
@@ -1175,7 +1224,7 @@ private struct RootTabContainer: View {
                 .equatable()
                 .onAppear { scheduleStableFrame(for: .today) }
                 .tabItem {
-                    Label("Today", systemImage: "house")
+                    Label("Today", systemImage: "mountain.2")
                         .environment(\.symbolVariants, .none)
                 }
                 .tag(RootTab.today)
@@ -1206,7 +1255,7 @@ private struct RootTabContainer: View {
                 .equatable()
                 .onAppear { scheduleStableFrame(for: .splits) }
                 .tabItem {
-                    Label("Splits", systemImage: "list.bullet.rectangle")
+                    Label("Splits", systemImage: "map")
                         .environment(\.symbolVariants, .none)
                 }
                 .tag(RootTab.splits)
@@ -1218,7 +1267,7 @@ private struct RootTabContainer: View {
                 .equatable()
                 .onAppear { scheduleStableFrame(for: .history) }
                 .tabItem {
-                    Label("History", systemImage: "clock.arrow.circlepath")
+                    Label("History", systemImage: "book.closed")
                         .environment(\.symbolVariants, .none)
                 }
                 .tag(RootTab.history)
@@ -1326,8 +1375,7 @@ private struct DeferredWorkoutTabHost: View {
                         if let recommendedSplit = initialFirstFrameSnapshot.dashboard.recommendedSplit {
                             WorkoutDashboardHero(
                                 splitName: recommendedSplit.name,
-                                iconKey: ExerciseIconMapper.splitIconKey(for: recommendedSplit.name),
-                                status: preparedStatus,
+                                routeStops: recommendedSplit.routeStops,
                                 exerciseCount: recommendedSplit.exerciseCount,
                                 durationText: recommendedSplit.estimatedDurationText,
                                 modeText: initialFirstFrameSnapshot.dashboard.trainingCall.recommendedMode.displayName,
@@ -1365,26 +1413,6 @@ private struct DeferredWorkoutTabHost: View {
         }
     }
 
-    private var preparedStatus: CoachBadgeState {
-        if initialOverallReadinessIsProvisional {
-            return .provisional
-        }
-
-        if initialFirstFrameSnapshot.dashboard.trainingCall.recommendedMode == .recovery {
-            return .recovery
-        }
-
-        switch initialFirstFrameSnapshot.dashboard.trainingCall.action {
-        case .recover:
-            return .recovery
-        case .push:
-            return .ready
-        case .repeatTarget:
-            return .repeatTarget
-        case .rebalance, .buildBaseline:
-            return .baseline
-        }
-    }
 }
 
 /// Keeps the native Splits tab's first frame lightweight. The tab still owns

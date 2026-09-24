@@ -74,6 +74,7 @@ struct CoachContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject private var readinessRefreshClock = ReadinessRefreshClock.shared
     @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
 
@@ -387,31 +388,42 @@ struct CoachContentView: View {
             FitnessInformationalActionCard(style: .hero) {
                 VStack(alignment: .leading, spacing: 14) {
                     VStack(alignment: .leading, spacing: 10) {
-                        HStack(alignment: .center, spacing: 12) {
-                            ExerciseIconTile(
-                                iconKey: ExerciseIconMapper.splitIconKey(for: dailyDecision.recommendedSplitName ?? ""),
-                                title: nil,
-                                size: 60,
-                                style: .compact
-                            )
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(alignment: .center, spacing: 12) {
+                                ExerciseIconTile(
+                                    iconKey: ExerciseIconMapper.splitIconKey(for: dailyDecision.recommendedSplitName ?? ""),
+                                    title: nil,
+                                    size: 60,
+                                    style: .compact
+                                )
 
-                            Text("Today's Call")
-                                .font(AppTypography.eyebrow)
-                                .foregroundStyle(appTheme.colors.textTertiary)
-                                .textCase(.uppercase)
+                                Text("Today's Call")
+                                    .modifier(AppTypography.waypointLabel)
+                                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
 
-                            Spacer(minLength: 8)
+                            ViewThatFits(in: .horizontal) {
+                                HStack(alignment: .center, spacing: 8) {
+                                    Spacer(minLength: 0)
+                                    RecoveryAwareCoachTag(state: dailyDecision.badgeState)
+                                    if dailyDecision.confidenceLabel.caseInsensitiveCompare(
+                                        dailyDecision.badgeState.label
+                                    ) != .orderedSame {
+                                        TrailSignTag(text: dailyDecision.confidenceLabel)
+                                    }
+                                }
 
-                            VStack(alignment: .trailing, spacing: 5) {
-                                CoachBadgeView(state: dailyDecision.badgeState)
-                                if dailyDecision.confidenceLabel.caseInsensitiveCompare(
-                                    dailyDecision.badgeState.label
-                                ) != .orderedSame {
-                                    Text(dailyDecision.confidenceLabel)
-                                        .font(AppTypography.metadataEmphasis)
-                                        .foregroundStyle(appTheme.colors.textTertiary)
+                                VStack(alignment: .trailing, spacing: 5) {
+                                    RecoveryAwareCoachTag(state: dailyDecision.badgeState)
+                                    if dailyDecision.confidenceLabel.caseInsensitiveCompare(
+                                        dailyDecision.badgeState.label
+                                    ) != .orderedSame {
+                                        TrailSignTag(text: dailyDecision.confidenceLabel)
+                                    }
                                 }
                             }
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                         }
 
                         Text(dailyDecision.headline)
@@ -434,9 +446,7 @@ struct CoachContentView: View {
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Start here")
-                                .font(AppTypography.metadataEmphasis)
-                                .foregroundStyle(appTheme.colors.textTertiary)
-                                .textCase(.uppercase)
+                                .modifier(AppTypography.waypointLabelSmall)
 
                             Text(displayedNextStep)
                                 .font(AppTypography.bodyEmphasis)
@@ -461,7 +471,7 @@ struct CoachContentView: View {
             .accessibilityIdentifier("coach-hero-card")
 
             if previewRoute == nil {
-                DashboardSection(title: "Why this plan") {
+                DashboardSection(title: "Why this plan", usesSummitWaypointTitle: true) {
                     TrainingCallAuditCard(
                         snapshot: dailyDecision.trainingCall,
                         title: "Evidence",
@@ -475,7 +485,7 @@ struct CoachContentView: View {
 
             if previewRoute == nil, isSupportingDashboardMounted {
                 CoachSupportingDashboard {
-                    DashboardSection(title: "Main Target") {
+                    DashboardSection(title: "Main Target", usesSummitWaypointTitle: true) {
                         if let primaryTarget = dailyDecision.primaryTarget {
                             FitnessCard {
                                 VStack(alignment: .leading, spacing: 12) {
@@ -506,7 +516,7 @@ struct CoachContentView: View {
                         }
                     }
 
-                    DashboardSection(title: "Workout Mode") {
+                    DashboardSection(title: "Workout Mode", usesSummitWaypointTitle: true) {
                         FitnessCard {
                             VStack(alignment: .leading, spacing: 14) {
                                 HStack(alignment: .top, spacing: 12) {
@@ -527,7 +537,7 @@ struct CoachContentView: View {
                                     }
 
                                     Spacer(minLength: 8)
-                                    CoachBadgeView(state: badgeState(for: dailyDecision.recommendedMode))
+                                    RecoveryAwareCoachTag(state: badgeState(for: dailyDecision.recommendedMode))
                                 }
 
                                 WorkoutModePicker(selection: .constant(dailyDecision.recommendedMode))
@@ -540,7 +550,7 @@ struct CoachContentView: View {
                         }
                     }
 
-                    DashboardSection(title: "Coach Controls") {
+                    DashboardSection(title: "Coach Controls", usesSummitWaypointTitle: true) {
                         VStack(spacing: 12) {
                             Button {
                                 openCoachRoute(.preferences)
@@ -572,21 +582,23 @@ struct CoachContentView: View {
                         }
                     }
 
-                    DashboardSection(title: "Weekly Review") {
+                    DashboardSection(title: "Weekly Review", usesSummitWaypointTitle: true) {
                         FitnessInformationalActionCard {
                             HStack(spacing: 10) {
                                 MetricTile(
                                     label: "Workouts",
                                     value: "\(weeklyWorkoutCount)",
                                     caption: "This week",
-                                    systemImage: "figure.strengthtraining.traditional"
+                                    systemImage: "figure.strengthtraining.traditional",
+                                    usesInstrumentStyle: true
                                 )
 
                                 MetricTile(
                                     label: "Sets",
                                     value: "\(weeklyWorkingSetCount)",
                                     caption: "Working sets",
-                                    systemImage: "checkmark.circle"
+                                    systemImage: "checkmark.circle",
+                                    usesInstrumentStyle: true
                                 )
                             }
 
@@ -611,15 +623,15 @@ struct CoachContentView: View {
 
                     ReadinessDetailHeaderCard(readiness: intelligence.readiness)
 
-                    DashboardSection(title: "Readiness Summary") {
+                    DashboardSection(title: "Readiness Summary", usesSummitWaypointTitle: true) {
                         ReadinessRecommendationCard(readiness: intelligence.readiness)
                     }
 
-                    DashboardSection(title: "Weekly Summary") {
+                    DashboardSection(title: "Weekly Summary", usesSummitWaypointTitle: true) {
                         WeeklyCoachSummaryCard(summary: intelligence.weeklySummary)
                     }
 
-                    DashboardSection(title: "Recent Coach Actions") {
+                    DashboardSection(title: "Recent Coach Actions", usesSummitWaypointTitle: true) {
                         CoachActionHistoryTimeline(entries: Array(coachActionHistory.prefix(5)))
 
                         Button {
@@ -633,7 +645,7 @@ struct CoachContentView: View {
                         .accessibilityIdentifier("coach-history-detail-open")
                     }
 
-                    DashboardSection(title: "Sleep Coaching") {
+                    DashboardSection(title: "Sleep Coaching", usesSummitWaypointTitle: true) {
                         if intelligence.readiness.isProvisional {
                             FitnessCard {
                                 Text("Sleep is one supportive signal. Training guidance waits until daily readiness has enough evidence.")
@@ -647,7 +659,7 @@ struct CoachContentView: View {
                                         Text(recommendation.title)
                                             .font(AppTypography.sectionTitle)
                                         Spacer()
-                                        CoachBadgeView(state: badgeState(for: recommendation.level))
+                                        RecoveryAwareCoachTag(state: badgeState(for: recommendation.level))
                                     }
 
                                     Text(recommendation.message)
@@ -689,7 +701,7 @@ struct CoachContentView: View {
                         }
                     }
 
-                    DashboardSection(title: "Recovery Warnings") {
+                    DashboardSection(title: "Recovery Warnings", usesSummitWaypointTitle: true) {
                         if summary.recoveryWarnings.isEmpty {
                             FitnessCard {
                                 HStack(spacing: 10) {
@@ -719,21 +731,21 @@ struct CoachContentView: View {
                         }
                     }
 
-                    DashboardSection(title: "Fatigue / Deload Risk") {
+                    DashboardSection(title: "Fatigue / Deload Risk", usesSummitWaypointTitle: true) {
                         FatigueRiskCard(risk: intelligence.fatigueRisk)
                     }
 
                     if !intelligence.liftInsights.isEmpty {
-                        DashboardSection(title: "Lift-Specific Insights") {
+                        DashboardSection(title: "Lift-Specific Insights", usesSummitWaypointTitle: true) {
                             LiftProgressInsightsCard(insights: intelligence.liftInsights)
                         }
                     }
 
-                    DashboardSection(title: "Muscle Fatigue Map") {
+                    DashboardSection(title: "Muscle Fatigue Map", usesSummitWaypointTitle: true) {
                         MuscleFatigueMapCard(items: intelligence.muscleFatigue)
                     }
 
-                    DashboardSection(title: "Weekly Insights") {
+                    DashboardSection(title: "Weekly Insights", usesSummitWaypointTitle: true) {
                         CoachInsightsFeedView(insights: intelligence.insights)
                     }
 
@@ -744,11 +756,11 @@ struct CoachContentView: View {
                         title: "Watchlist", insights: weeklyReview?.watchlist ?? [],
                         empty: "No major fatigue or plateau warnings right now.")
 
-                    DashboardSection(title: "Key Habit Contributors") {
+                    DashboardSection(title: "Key Habit Contributors", usesSummitWaypointTitle: true) {
                         CoachHabitContributorsCard(trends: intelligence.trends)
                     }
 
-                    DashboardSection(title: "Signal Breakdown") {
+                    DashboardSection(title: "Signal Breakdown", usesSummitWaypointTitle: true) {
                         LazyVStack(spacing: 12) {
                             ForEach(intelligence.readiness.factors) { factor in
                                 ReadinessFactorCard(factor: factor)
@@ -756,7 +768,7 @@ struct CoachContentView: View {
                         }
                     }
 
-                    DashboardSection(title: "Saved Deload Blocks") {
+                    DashboardSection(title: "Saved Deload Blocks", usesSummitWaypointTitle: true) {
                         SavedDeloadBlocksList(
                             blocks: sortedDeloadBlocks,
                             complete: completeDeloadBlock,
@@ -764,7 +776,7 @@ struct CoachContentView: View {
                         )
                     }
 
-                    DashboardSection(title: "Recent PRs") {
+                    DashboardSection(title: "Recent PRs", usesSummitWaypointTitle: true) {
                         if recentPRs.isEmpty {
                             FitnessCard {
                                 Text("PRs will appear here when a completed working set beats prior history.")
@@ -792,7 +804,7 @@ struct CoachContentView: View {
 
                     #if DEBUG
                         if coachPreferencesSnapshot.showDiagnostics {
-                            DashboardSection(title: "Diagnostics") {
+                            DashboardSection(title: "Diagnostics", usesSummitWaypointTitle: true) {
                                 CoachDiagnosticsCard(diagnostics: intelligence.diagnostics)
                             }
                         }
@@ -1646,7 +1658,7 @@ struct CoachContentView: View {
     }
 
     private func insightList(title: String, insights: [CoachInsight], empty: String) -> some View {
-        DashboardSection(title: title) {
+        DashboardSection(title: title, usesSummitWaypointTitle: true) {
             if insights.isEmpty {
                 FitnessCard {
                     Text(empty)

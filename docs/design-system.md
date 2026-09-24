@@ -53,6 +53,14 @@ Peakline is **premium athletic**: calm enough to trust, strong enough to motivat
 | Native controls with Peakline styling | Custom replacements for familiar iOS behaviour |
 | Sparse earned celebration | Ambient glow, constant bounce, or decorative motion |
 
+## Summit visual language (Wave 1 and 2)
+
+Today, Workout start and preview, and Splits use the page as a trail map: `TrailPage` draws the route line, `TrailSection` marks numbered waypoints, and `TrailStop` presents exercise or checklist steps without card chrome. `TrailSignTag` marks a day type or meaningful workout state; `SummitPrimaryButton` carries the main action. Coach and Sleep receive the Summit type and readiness treatment without a layout rewrite.
+
+The Today header uses `SummitHorizonView` with a weekly-load front ridge, condition and time-of-day sky, and a `SummitHeaderOverlay` for the wordmark, date, and profile action. `AppTypography` supplies condensed, monospaced instrument numbers and uppercase waypoint labels. The trail and ridge derive their monochrome strokes from semantic theme text colours. `InstrumentGauge` displays readiness without category tint.
+
+`alpenglow` is reserved for earned events: PR flags, a completed summit, milestone markers, a newly completed cairn stone, and altitude gained today. Ordinary readiness, training advice, and navigation remain monochrome; real errors and destructive actions keep their semantic colours. Intro motion plays once per app launch, and Reduce Motion presents the completed static state. Decorative drawings are hidden from accessibility, while sections and instrument values retain meaningful labels and Dynamic Type scaling.
+
 ## Screen Anatomy
 
 Default vertical order:
@@ -268,10 +276,10 @@ Earned celebration:
 
 Startup motion:
 
-- Show only the centred Peakline wordmark on the semantic primary background.
-- Use the existing restrained one-shot ascending-letter sequence with a small rise, tiny scale, and no bounce.
-- Yield as soon as correctness-critical preparation is ready; the decorative letter sequence is never a second readiness gate. Use the 280 ms opacity-led exit only for the transition that is already in progress. Match the native launch wordmark's resting size and centre; slow-progress content must not move it. Five seconds exposes truthful preparation progress; it never reveals unready content.
-- Reduce Motion keeps the wordmark static and removes exit scale.
+- Show the centred Peakline wordmark on the semantic primary background, with nine monochrome contour rings centred on the real tittle of the "i".
+- Use the one-shot topographic sequence: contours draw from the outside inward, contract toward the summit and fade; the "i" tittle pulses as a ripple expands, while the letters lift in a wave outward from it. Keep every layer on the resolved wordmark colour.
+- Every cold launch plays the full sequence (about 2.3 seconds) before the 280 ms opacity-led exit; the reveal requires both animation completion and correctness-critical readiness. Match the native launch wordmark's resting size and centre; outside the sequence the contours stay hidden so the static wordmark matches the launch screen, and slow-progress content must not move it. Five seconds is a ceiling that releases a ready root; it never reveals unready content.
+- Reduce Motion keeps the wordmark static, hides the contours and ripple, and removes exit scale.
 - Do not add a logo, blur, gradient, sound, haptic, repeating animation, or animated tracking.
 
 Banned motion patterns:
@@ -301,7 +309,7 @@ Accessibility is part of the visual standard, not a later QA pass.
 
 These patterns define composition and behaviour. Architecture and performance detail remains in the linked canonical documents.
 
-- **Today:** lead with current status and the next useful action, followed by compact recovery, nutrition, sleep, and hydration context. Hydration, nutrition, and weekly activity use neutral semantic accents in Black appearance; green remains reserved for readiness.
+- **Today:** lead with current status and the next useful action, followed by compact recovery, nutrition, sleep, and hydration context. The Summit horizon and trail sections carry weekly load, readiness, and the next route; readiness stays monochrome, while alpenglow marks earned achievements.
 - **Quick Actions:** route immediately to a usable value-backed screen. Start Workout must expose Preview navigation and start controls without waiting for unrelated data.
 - **Workout Preview:** show split, mode, Coach summary, Start, one eager full-detail exercise order, last best, targets, and adjustments from one pinned prepared generation. Place longer Coach explanation behind progressive disclosure so the essential hierarchy survives large Dynamic Type. Use a 120 ms hold on the handle to pick up a row, with row geometry ready before the first drag. Keep live finger translation outside the lift spring; quick taps and cancelled holds must not reorder. Lift only the active row, let it follow vertical finger movement, autoscroll near viewport edges, mark the exact landing edge with a thin accent insertion cue, and apply the order once on release with one damped settle. Avoid hard full-row target outlines, continuously reshuffling siblings during the drag, or clipping the lifted row. Under Reduce Motion, remove lift/scale animation while retaining direct finger tracking, the insertion cue, immediate reorder, and Move Up/Move Down accessibility actions. Keep row actions in the tapped row's anchored menu. Do not add bootstrap sleeps, temporary shells, live queries, or whole-screen replacement animation. Preserve existing identifiers including `quick-action-workout`, `workout-recommended-preview`, `workout-preview-hydrated-content`, `workout-preview-basic-exercise-rows`, `workout-preview-guidance-chips`, `workout-preview-reorder-handle`, and `workout-preview-start`.
 - **Check-In:** present the prepared draft from Today's page-level native sheet, use one large detent and native drag indicator, and animate only the changed rating. Do not duplicate Check-In in Coach or Weekly Review.

@@ -36,6 +36,7 @@ final class AppNotificationDelegate: NSObject, UIApplicationDelegate, UNUserNoti
         // Firebase's delegate swizzler to inspect the property-wrapper proxy.
         FirebaseBootstrap.configureIfPossible()
         UNUserNotificationCenter.current().delegate = self
+        PerformanceTracer.mark(.startupAppDelegateReady)
         return true
     }
 

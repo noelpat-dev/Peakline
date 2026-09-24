@@ -393,6 +393,7 @@ struct WorkoutPreviewView: View {
     @State private var didMarkStartButtonVisible = false
     @State private var didMarkExerciseRowsVisible = false
     @State private var didMarkFullContentVisible = false
+    @State private var exerciseOrderMounted = false
     @State private var exerciseRowFrames: [UUID: CGRect] = [:]
     @State private var gestureDropTarget: WorkoutPreviewExerciseDropTarget?
     @State private var previewViewportHeight: CGFloat = 0
@@ -621,10 +622,7 @@ struct WorkoutPreviewView: View {
     private func hydratedPreviewContent(snapshot: WorkoutPreviewPreparedSnapshot) -> some View {
         FitnessScreen(
             title: "\(split.name) Preview",
-            subtitle: PeaklineText.joinedMetadata([
-                "\(selectedMode.displayName) mode",
-                "~\(snapshot.estimatedDuration.lowerBound)–\(snapshot.estimatedDuration.upperBound) min"
-            ]),
+            subtitle: "\(selectedMode.displayName) mode",
             systemImage: "figure.strengthtraining.traditional",
             contentLayout: .eager,
             locksHorizontalScrolling: true
@@ -656,7 +654,7 @@ struct WorkoutPreviewView: View {
 
                         Spacer(minLength: 8)
 
-                        CoachBadgeView(state: snapshot.coachSummaryBadge)
+                        RecoveryAwareCoachTag(state: snapshot.coachSummaryBadge)
                     }
 
                 }
@@ -695,64 +693,52 @@ struct WorkoutPreviewView: View {
             }
         }
 
-        DashboardSection(title: "Exercise Order") {
-        HStack {
-            Spacer()
-            Button("Select All") {
-                AppMotion.withoutAnimation {
-                    selectedExerciseIds = snapshot.orderedExercises.map(\.id)
-                }
-            }
-            .font(AppTypography.bodyEmphasis)
-            .tint(appTheme.actionColor)
-        }
+        if exerciseOrderMounted {
+            TrailPage {
+                TrailSection(index: 1, label: "Exercise Order") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Spacer()
+                            Button("Select All") {
+                                AppMotion.withoutAnimation {
+                                    selectedExerciseIds = snapshot.orderedExercises.map(\.id)
+                                }
+                            }
+                            .font(AppTypography.bodyEmphasis)
+                            .tint(appTheme.actionColor)
+                            .frame(minHeight: 44)
+                        }
 
-        if snapshot.plannedExercises.isEmpty {
-            DashboardEmptyStateCard(
-                title: "No exercises selected",
-                message: "Choose at least one exercise before starting.",
-                systemImage: "list.bullet"
-            )
-        } else {
-            VStack(spacing: 0) {
-                ForEach(Array(snapshot.plannedExercises.enumerated()), id: \.element.id) { index, exercise in
-                    previewExerciseCard(
-                        exercise: exercise,
-                        position: index,
-                        totalCount: snapshot.plannedExercises.count,
-                        previousExerciseID: index > 0 ? snapshot.plannedExercises[index - 1].id : nil,
-                        nextExerciseID: index < snapshot.plannedExercises.count - 1 ? snapshot.plannedExercises[index + 1].id : nil,
-                        suggestions: snapshot.suggestions
-                    )
-
-                    if index < snapshot.plannedExercises.count - 1 {
-                        Divider()
-                            .padding(.leading, 72)
+                        if snapshot.plannedExercises.isEmpty {
+                            DashboardEmptyStateCard(
+                                title: "No exercises selected",
+                                message: "Choose at least one exercise before starting.",
+                                systemImage: "list.bullet"
+                            )
+                        } else {
+                            VStack(spacing: 0) {
+                                ForEach(Array(snapshot.plannedExercises.enumerated()), id: \.element.id) { index, exercise in
+                                    previewExerciseCard(
+                                        exercise: exercise,
+                                        position: index,
+                                        totalCount: snapshot.plannedExercises.count,
+                                        previousExerciseID: index > 0 ? snapshot.plannedExercises[index - 1].id : nil,
+                                        nextExerciseID: index < snapshot.plannedExercises.count - 1 ? snapshot.plannedExercises[index + 1].id : nil,
+                                        suggestions: snapshot.suggestions
+                                    )
+                                }
+                            }
+                            .accessibilityIdentifier("workout-preview-basic-exercise-rows")
+                            .onAppear {
+                                markExerciseRowsVisibleIfNeeded(count: snapshot.plannedExercises.count, source: "hydrated")
+                            }
+                        }
                     }
                 }
+                .onAppear {
+                    markFullContentVisibleIfNeeded(snapshot: snapshot)
+                }
             }
-            .background(
-                appTheme.cardBackground,
-                in: RoundedRectangle(
-                    cornerRadius: appTheme.metrics.standardCardRadius,
-                    style: .continuous
-                )
-            )
-            .overlay {
-                RoundedRectangle(
-                    cornerRadius: appTheme.metrics.standardCardRadius,
-                    style: .continuous
-                )
-                .stroke(appTheme.cardBorder.opacity(0.62), lineWidth: 1)
-            }
-            .accessibilityIdentifier("workout-preview-basic-exercise-rows")
-            .onAppear {
-                markExerciseRowsVisibleIfNeeded(count: snapshot.plannedExercises.count, source: "hydrated")
-            }
-        }
-        }
-        .onAppear {
-            markFullContentVisibleIfNeeded(snapshot: snapshot)
         }
 
         LazyVStack(alignment: .leading, spacing: appTheme.metrics.screenContentSpacing) {
@@ -805,6 +791,18 @@ struct WorkoutPreviewView: View {
         }
         .onAppear {
             markInitialPreviewContentIfNeeded()
+        }
+        .task {
+            guard !exerciseOrderMounted else { return }
+            // Order rows and their drag geometry mount together after the first
+            // frame. SwiftUI cancels this task if Preview disappears first.
+            do {
+                try await Task.sleep(for: .milliseconds(50))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            exerciseOrderMounted = true
         }
         .coordinateSpace(name: WorkoutPreviewExerciseOrderCoordinateSpace.name)
         .background {
@@ -897,7 +895,7 @@ struct WorkoutPreviewView: View {
 
                     Spacer(minLength: 8)
 
-                    CoachBadgeView(state: planReadinessBadge(snapshot: snapshot))
+                    RecoveryAwareCoachTag(state: planReadinessBadge(snapshot: snapshot))
                 }
 
                 HStack(alignment: .top, spacing: 12) {
@@ -935,11 +933,18 @@ struct WorkoutPreviewView: View {
             }
             .foregroundStyle(appTheme.mutedText)
 
-            Text(value)
-                .font(AppTypography.bodyEmphasis)
-                .foregroundStyle(appTheme.colors.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
+            Group {
+                if label == "Mode" {
+                    Text(value)
+                        .font(AppTypography.bodyEmphasis)
+                } else {
+                    Text(value)
+                        .modifier(AppTypography.instrumentValue)
+                }
+            }
+            .foregroundStyle(appTheme.colors.textPrimary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
