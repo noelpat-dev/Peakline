@@ -387,6 +387,8 @@ struct WorkoutLoggerView: View {
                 unitSystem: summitProvider.unitSystem,
                 onDone: dismissMotivationOverlay
             )
+            .toolbar(.hidden, for: .navigationBar)
+            .toolbar(.hidden, for: .tabBar)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
             .allowsHitTesting(true)

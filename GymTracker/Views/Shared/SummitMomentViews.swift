@@ -37,10 +37,12 @@ struct SummitReachedView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        GeometryReader { geometry in
+            let headerHeight = max(220, min(360, geometry.size.height - 560))
+
             ScrollView {
                 VStack(spacing: 0) {
-                    topographicHeader
+                    topographicHeader(height: headerHeight)
                     summitCopy
                     statistics
 
@@ -56,9 +58,10 @@ struct SummitReachedView: View {
                 }
                 .padding(.bottom, 22)
             }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                footer
+            }
             .scrollIndicators(.hidden)
-
-            footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
@@ -74,13 +77,14 @@ struct SummitReachedView: View {
         }
     }
 
-    private var topographicHeader: some View {
+    private func topographicHeader(height: CGFloat) -> some View {
         GeometryReader { geometry in
             let horizontalScale = geometry.size.width / 390
+            let verticalScale = geometry.size.height / 360
 
             ZStack(alignment: .topLeading) {
                 SummitReachedRingsCanvas(progress: ringProgress)
-                    .frame(width: geometry.size.width, height: 360)
+                    .frame(width: geometry.size.width, height: geometry.size.height)
                     .accessibilityHidden(true)
 
                 SummitTrimmedRoute(progress: routeProgress)
@@ -88,26 +92,26 @@ struct SummitReachedView: View {
                         appTheme.colors.textPrimary,
                         style: StrokeStyle(lineWidth: 1.4, lineCap: .round, dash: [4, 4])
                     )
-                    .frame(width: geometry.size.width, height: 360)
+                    .frame(width: geometry.size.width, height: geometry.size.height)
                     .accessibilityHidden(true)
 
                 Circle()
                     .fill(appTheme.colors.alpenglow)
                     .frame(width: 6.4, height: 6.4)
-                    .position(x: 214 * horizontalScale, y: 150)
+                    .position(x: 214 * horizontalScale, y: 150 * verticalScale)
                     .accessibilityHidden(true)
 
                 SummitReachedFlag(color: appTheme.colors.alpenglow)
                     .frame(width: 18, height: 30)
                     .scaleEffect(flagScale, anchor: .bottom)
-                    .position(x: 223 * horizontalScale, y: 135)
+                    .position(x: 223 * horizontalScale, y: 135 * verticalScale)
                     .accessibilityHidden(true)
 
                 Text(moment.peak.metres.formatted())
                     .font(Font.system(size: 11, weight: .semibold).width(.condensed).monospacedDigit())
                     .tracking(1.5)
                     .foregroundStyle(appTheme.colors.alpenglow)
-                    .position(x: 222 * horizontalScale, y: 164)
+                    .position(x: 222 * horizontalScale, y: 164 * verticalScale)
                     .accessibilityHidden(true)
 
                 Text(routeCaption)
@@ -118,12 +122,12 @@ struct SummitReachedView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 24)
                     .padding(.trailing, 18)
-                    .position(x: geometry.size.width / 2, y: 340)
+                    .position(x: geometry.size.width / 2, y: 340 * verticalScale)
                     .accessibilityLabel("Your route, \(moment.sessionCount.formatted()) ascents since \(SummitMomentDateFormat.dayMonth(moment.firstSessionDate))")
             }
-            .frame(width: geometry.size.width, height: 360, alignment: .topLeading)
+            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
         }
-        .frame(height: 360)
+        .frame(height: height)
     }
 
     private var routeCaption: String {
@@ -274,7 +278,7 @@ struct SummitReachedView: View {
         .padding(.horizontal, 24)
         .padding(.top, 12)
         .padding(.bottom, 14)
-        .background(appTheme.colors.backgroundPrimary)
+        .background(appTheme.colors.backgroundPrimary.ignoresSafeArea(edges: .bottom))
     }
 
     private func playIntroIfNeeded() async {
@@ -508,6 +512,7 @@ private struct SummitReachedRingsCanvas: View, Animatable {
     var body: some View {
         Canvas { context, size in
             let widthScale = size.width / 390
+            let heightScale = size.height / 360
             let elapsed = Double(progress) * 1.72
 
             for ring in SummitReachedGeometry.shared.rings {
@@ -519,9 +524,9 @@ private struct SummitReachedRingsCanvas: View, Animatable {
                     a: scale * widthScale,
                     b: 0,
                     c: 0,
-                    d: scale,
+                    d: scale * heightScale,
                     tx: 214 * (1 - scale) * widthScale,
-                    ty: 150 * (1 - scale)
+                    ty: 150 * (1 - scale) * heightScale
                 )
                 let path = ring.path.applying(transform)
                 let color = ring.index == 1 ? appTheme.colors.alpenglow : appTheme.colors.textPrimary
@@ -545,7 +550,7 @@ private struct SummitTrimmedRoute: Shape {
 
     func path(in rect: CGRect) -> Path {
         let scaled = SummitReachedGeometry.shared.route.applying(
-            CGAffineTransform(scaleX: rect.width / 390, y: 1)
+            CGAffineTransform(scaleX: rect.width / 390, y: rect.height / 360)
         )
         return scaled.trimmedPath(from: 0, to: min(max(progress, 0), 1))
     }
