@@ -526,7 +526,9 @@ struct SummitLogContent: View {
     }
 
     private var totalMetres: Int { monthEntries.reduce(0) { $0 + $1.metres } }
-    private var prCount: Int { monthEntries.reduce(0) { $0 + $1.prs.count } }
+    private var prCount: Int {
+        monthEntries.reduce(0) { $0 + $1.prs.count + ($1.passedPeak == nil ? 0 : 1) }
+    }
 
     var body: some View {
         VStack(spacing: 0) {

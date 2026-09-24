@@ -349,6 +349,7 @@ struct HistoryView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.modelContext) private var modelContext
+    @Environment(SummitSnapshotProvider.self) private var summitProvider: SummitSnapshotProvider?
     @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
 
     @Query
@@ -385,6 +386,7 @@ struct HistoryView: View {
     @State private var showingGoalEditor = false
     @State private var hasWarmSnapshotToValidate = false
     @State private var revealedAttendanceGeneration: String?
+    @State private var summitHistory = HistorySummitState.empty
 
     private let initialWarmSnapshot: HistoryWarmSnapshot?
 
@@ -494,6 +496,9 @@ struct HistoryView: View {
             }
             .onChange(of: displayedMonth) { _, _ in
                 scheduleMonthSnapshotRefresh()
+            }
+            .task(id: summitHistoryKey) {
+                rebuildSummitHistory()
             }
             .onChange(of: scenePhase) { _, phase in
                 handleScenePhaseChange(phase)
@@ -620,6 +625,7 @@ struct HistoryView: View {
                 displayedMonth: $displayedMonth,
                 selectedDate: $selectedCalendarDate
             )
+            HistorySummitMonthSection(ridge: summitHistory.ridge, stats: summitHistory.stats)
         }
         historyMonthOverviewSection
         if isSupplementaryContentMounted {
@@ -728,7 +734,14 @@ struct HistoryView: View {
             }
         } label: {
             HistoryScrollRowSurface {
-                HistorySessionRowCard(row: row)
+                HistorySessionRowCard(
+                    row: row,
+                    summit: HistorySessionSummitLine(
+                        climb: summitHistory.climbsByID[row.id],
+                        isReady: summitHistory.isReady,
+                        unitSystem: summitProvider?.unitSystem ?? .metric
+                    )
+                )
             }
         }
         .buttonStyle(HistoryScrollRowButtonStyle())
@@ -888,6 +901,30 @@ struct HistoryView: View {
 
     private func calendarKey(for month: Date) -> Date? {
         Calendar.current.dateInterval(of: .month, for: month)?.start
+    }
+
+    /// Changes when the displayed month or the published Summit snapshot
+    /// changes. Cheap to compute: it reads counts, not the whole snapshot.
+    private var summitHistoryKey: HistorySummitKey {
+        HistorySummitKey(
+            month: calendarKey(for: displayedMonth),
+            generation: summitProvider?.snapshot.map(HistorySummitState.generation(of:))
+        )
+    }
+
+    /// Builds the per-session lookup once per snapshot and the ridge once per
+    /// month, never per row or per render.
+    private func rebuildSummitHistory() {
+        guard let snapshot = summitProvider?.snapshot else {
+            summitHistory = .empty
+            return
+        }
+        summitHistory = summitHistory.updated(
+            snapshot: snapshot,
+            month: displayedMonth,
+            now: .now,
+            calendar: .current
+        )
     }
 
     private static func recentSnapshotsCover(
@@ -1688,6 +1725,7 @@ private struct HistorySessionRowCard: View {
     @Environment(\.appTheme) private var appTheme
 
     let row: HistorySessionRowSnapshot
+    var summit: HistorySessionSummitLine?
 
     var body: some View {
         HStack(alignment: .center, spacing: appTheme.metrics.spacing10) {
@@ -1717,6 +1755,10 @@ private struct HistorySessionRowCard: View {
                     .foregroundStyle(appTheme.colors.textSecondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if let summit {
+                    summit
+                }
             }
 
             Spacer(minLength: 0)
@@ -2724,5 +2766,144 @@ private struct ExerciseHistorySummary: View {
 
     private func formatWeight(_ value: Double) -> String {
         value.formatted(.number.precision(.fractionLength(value.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1)))
+    }
+}
+
+// MARK: - Summit log in History
+
+struct HistorySummitKey: Hashable {
+    let month: Date?
+    let generation: String?
+}
+
+/// Summit values for History, derived from the provider's published snapshot.
+/// The session lookup is rebuilt only when the snapshot changes; the ridge
+/// and stats only when the snapshot or the displayed month changes.
+struct HistorySummitState: Equatable {
+    struct MonthStats: Equatable {
+        let ascents: Int
+        let metres: Int
+        let prFlags: Int
+    }
+
+    var generation: String?
+    var monthStart: Date?
+    var climbsByID: [UUID: SummitSessionClimb]
+    var ridge: SummitMonthRidge?
+    var stats: MonthStats?
+
+    static let empty = HistorySummitState(generation: nil, monthStart: nil, climbsByID: [:], ridge: nil, stats: nil)
+
+    var isReady: Bool { generation != nil }
+
+    static func generation(of snapshot: SummitSnapshot) -> String {
+        "\(snapshot.log.count)-\(snapshot.altitude.totalMetres)-\(snapshot.log.first?.id.uuidString ?? "none")"
+    }
+
+    func updated(snapshot: SummitSnapshot, month: Date, now: Date, calendar: Calendar) -> HistorySummitState {
+        let newGeneration = Self.generation(of: snapshot)
+        let newMonthStart = calendar.dateInterval(of: .month, for: month)?.start
+        if newGeneration == generation, newMonthStart == monthStart { return self }
+
+        let lookup = newGeneration == generation
+            ? climbsByID
+            : Dictionary(snapshot.log.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let climbsOldestFirst = Array(snapshot.log.reversed())
+        let ridge = SummitSnapshotBuilder.monthRidge(
+            forMonthContaining: month,
+            climbs: climbsOldestFirst,
+            now: now,
+            calendar: calendar
+        )
+        let monthClimbs = snapshot.log.filter {
+            calendar.dateInterval(of: .month, for: $0.date)?.start == newMonthStart
+        }
+        let stats = MonthStats(
+            ascents: monthClimbs.count,
+            metres: monthClimbs.reduce(0) { $0 + $1.metres },
+            // Every flag on the ridge: PRs and passed summits.
+            prFlags: monthClimbs.reduce(0) { $0 + $1.prs.count + ($1.passedPeak == nil ? 0 : 1) }
+        )
+        return HistorySummitState(
+            generation: newGeneration,
+            monthStart: newMonthStart,
+            climbsByID: lookup,
+            ridge: ridge,
+            stats: stats
+        )
+    }
+}
+
+/// The month's ridge and totals above the History calendar. Holds its height
+/// before the Summit snapshot arrives so nothing below it moves.
+private struct HistorySummitMonthSection: View {
+    let ridge: SummitMonthRidge?
+    let stats: HistorySummitState.MonthStats?
+
+    var body: some View {
+        VStack(spacing: 12) {
+            if let ridge {
+                SummitMonthRidgeView(month: ridge)
+            } else {
+                Color.clear
+                    .frame(height: 118)
+                    .accessibilityHidden(true)
+            }
+            SummitLogStatsRow(
+                ascents: stats?.ascents ?? 0,
+                metres: stats?.metres ?? 0,
+                prFlags: stats?.prFlags ?? 0
+            )
+            .redacted(reason: stats == nil ? .placeholder : [])
+        }
+        .accessibilityIdentifier("history-summit-month")
+    }
+}
+
+/// One fixed line on a History row: metres climbed, plus the first PR or
+/// passed summit. Shows a placeholder until the snapshot is ready, so rows
+/// never change height when Summit data arrives.
+struct HistorySessionSummitLine: View {
+    @Environment(\.appTheme) private var appTheme
+
+    let climb: SummitSessionClimb?
+    let isReady: Bool
+    let unitSystem: UnitSystem
+
+    private var achievement: String? {
+        guard let climb else { return nil }
+        if let peak = climb.passedPeak {
+            return "Summit · \(peak.name)"
+        }
+        if let pr = climb.prs.first {
+            let load = SummitWeightFormatting.setLoad(pr.weightKg, isBodyweight: pr.isBodyweight, unitSystem: unitSystem)
+            return "PR · \(pr.exerciseName) \(load) × \(pr.reps)"
+        }
+        return nil
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(climb.map { "▲ +\($0.metres.formatted()) M" } ?? "▲ — M")
+                .font(Font.system(size: 13, weight: .semibold).width(.condensed).monospacedDigit())
+                .foregroundStyle(climb == nil ? appTheme.colors.textTertiary : appTheme.colors.textPrimary)
+            if let achievement {
+                Text(achievement)
+                    .font(AppTypography.metadata)
+                    .foregroundStyle(appTheme.colors.alpenglow)
+            }
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private var accessibilityText: String {
+        guard let climb else {
+            return isReady ? "No Summit data for this session" : "Summit data loading"
+        }
+        var text = "Climbed \(climb.metres) metres"
+        if let achievement { text += ", \(achievement)" }
+        return text
     }
 }
