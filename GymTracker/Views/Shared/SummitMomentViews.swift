@@ -558,10 +558,19 @@ private struct SummitTrimmedRoute: Shape {
 
 private struct SummitMomentTape: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let moment: SummitMoment
 
     private var next: SummitPeak? { moment.next }
+
+    private var nextSummitHeadline: String {
+        "NEXT · \(next?.name.uppercased() ?? "SUMMIT") · \(next?.metres.formatted() ?? "—") M"
+    }
+
+    private var metresToNextLabel: String {
+        "\(metresToNext.formatted()) M TO GO"
+    }
 
     private var lowerBound: Int {
         max(0, moment.peak.metres / 1_000 * 1_000)
@@ -579,16 +588,27 @@ private struct SummitMomentTape: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text("NEXT · \(next?.name.uppercased() ?? "SUMMIT") · \(next?.metres.formatted() ?? "—") M")
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(nextSummitHeadline)
+                        Text(metresToNextLabel)
+                    }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Text("\(metresToNext.formatted()) M TO GO")
-                    .fixedSize(horizontal: true, vertical: false)
+                    .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    HStack(spacing: 8) {
+                        Text(nextSummitHeadline)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(metresToNextLabel)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                }
             }
             .modifier(AppTypography.waypointLabelSmall)
             .foregroundStyle(appTheme.colors.textSecondary)
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+            .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.7)
             .accessibilityHidden(true)
 
             Canvas { context, size in
