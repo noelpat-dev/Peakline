@@ -343,12 +343,14 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
         plannedRoute.tap()
         XCTAssertTrue(waitForPreviewScreen(), "Expected the unchanged planned route to open Preview")
+        let fullMode = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] %@ AND label CONTAINS[c] %@", "Full", "Normal plan")
+        ).firstMatch
         XCTAssertTrue(
-            app.descendants(matching: .any).matching(
-                NSPredicate(format: "label CONTAINS[c] %@", "Full mode")
-            ).firstMatch.waitForExistence(timeout: 8),
+            fullMode.waitForExistence(timeout: 8),
             "Expected the ready-day planned route to keep the normal full workout mode"
         )
+        XCTAssertEqual(fullMode.value as? String, "Selected")
     }
 
     func testSummitAltitudeSectionShowsTheHydratedReading() throws {
