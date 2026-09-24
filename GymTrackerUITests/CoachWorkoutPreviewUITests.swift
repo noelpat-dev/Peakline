@@ -303,7 +303,18 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
             swipes += 1
         }
         XCTAssertTrue(lowerRoute.isHittable, "Expected the recovery fork to be visible in the screenshot")
-        attachScreenshot(named: "wave3b-today-recovery-storm-dark")
+        let advice = "Several signals support recovery today. Rest or use the lower-volume version of your planned session."
+        XCTAssertTrue(
+            app.buttons["today-readiness-hero"].label.contains(advice),
+            "Expected the full storm advice at the default text size"
+        )
+        XCTAssertTrue(app.buttons["quick-action-workout"].exists, "The route title must still open Preview")
+        XCTAssertFalse(app.buttons["today-review-plan"].exists, "The fork must replace the planned primary action")
+        XCTAssertFalse(app.staticTexts["Incline Chest Press (Smith)"].exists)
+        XCTAssertFalse(app.staticTexts["Bench Press"].exists)
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "+ 7 more")).firstMatch.exists)
+        XCTAssertTrue(app.buttons["Climb as planned anyway"].exists)
+        attachScreenshot(named: "fix1-storm-today-route-dark")
 
         let lowerAction = app.buttons["Take the lower route"]
         app.swipeUp()
@@ -312,7 +323,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
             swipes += 1
         }
         XCTAssertTrue(lowerAction.isHittable)
-        attachScreenshot(named: "wave3b-today-recovery-storm-actions-dark")
+        attachScreenshot(named: "fix1-storm-today-actions-dark")
         tapButton(containing: "Take the lower route", maxSwipes: 8)
         XCTAssertTrue(waitForPreviewScreen(), "Expected the lower route to open the prepared Preview")
         let recoveryMode = app.buttons.matching(
@@ -324,6 +335,31 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         )
         XCTAssertEqual(recoveryMode.value as? String, "Selected")
         attachScreenshot(named: "wave3b-recovery-preview-dark")
+    }
+
+    func testSummitStormPlannedActionsKeepFullPreview() throws {
+        launch(arguments: [
+            "-UITestCoachFatigueFixture",
+            "-SummitRecoveryFixture",
+            "-SummitCondition", "storm",
+            "-UITestAppearance", "dark"
+        ])
+
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 12))
+        tapElement(identifier: "quick-action-workout", maxSwipes: 8)
+        XCTAssertTrue(waitForPreviewScreen(), "Expected the retained route title to open Preview")
+        let fullMode = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] %@ AND label CONTAINS[c] %@", "Full", "Normal plan")
+        ).firstMatch
+        XCTAssertTrue(fullMode.waitForExistence(timeout: 8))
+        XCTAssertEqual(fullMode.value as? String, "Selected")
+
+        tapBackButton(from: "Preview")
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 8))
+        tapButton(containing: "Climb as planned anyway", maxSwipes: 10)
+        XCTAssertTrue(waitForPreviewScreen(), "Expected the secondary planned action to open Preview")
+        XCTAssertTrue(fullMode.waitForExistence(timeout: 8))
+        XCTAssertEqual(fullMode.value as? String, "Selected")
     }
 
     func testSummitClearReadyConditionKeepsThePlannedRoute() throws {
@@ -345,13 +381,14 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
             swipes += 1
         }
         XCTAssertTrue(plannedRoute.isHittable)
+        XCTAssertTrue(app.buttons["today-review-plan"].exists, "Ready must retain its planned primary action")
         XCTAssertFalse(
             app.descendants(matching: .any).matching(
                 NSPredicate(format: "label CONTAINS[c] %@", "Lower route open")
             ).firstMatch.exists,
             "Ready should keep the existing route without a recovery fork"
         )
-        attachScreenshot(named: "wave3b-today-ready-clear-route-light")
+        attachScreenshot(named: "fix1-ready-today-route-light")
 
         plannedRoute.tap()
         XCTAssertTrue(waitForPreviewScreen(), "Expected the unchanged planned route to open Preview")
@@ -370,7 +407,15 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 12))
         _ = summitAltitudeButton()
-        attachScreenshot(named: "wave3b-altitude-section-light")
+        attachScreenshot(named: "fix1-altitude-section-light")
+    }
+
+    func testSummitAltitudeSectionDarkHasNoCardFill() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture", "-UITestAppearance", "dark"])
+
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 12))
+        _ = summitAltitudeButton()
+        attachScreenshot(named: "fix1-altitude-section-dark")
     }
 
     func testSummitExpeditionShowsBeforeAndAfterSetOff() throws {

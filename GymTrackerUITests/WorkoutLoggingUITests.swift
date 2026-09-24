@@ -182,11 +182,81 @@ final class WorkoutLoggingUITests: XCTestCase {
     }
 
     func testSummitPeakCrossingShowsReachedViewThenDoneOpensSummary() throws {
-        launch(arguments: [
+        openForcedSummitReached()
+
+        XCTAssertTrue(
+            app.staticTexts["SUMMIT REACHED"].waitForExistence(timeout: 10),
+            "Expected the forced peak crossing to present SummitReachedView after workout completion"
+        )
+        XCTAssertTrue(app.descendants(matching: .any)["workout-completion-copy"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any).matching(
+                NSPredicate(format: "label BEGINSWITH[c] %@", "Send a postcard from")
+            ).firstMatch.exists,
+            "Expected the summit screen to expose its direct postcard share action"
+        )
+        XCTAssertFalse(app.navigationBars["Push - Full"].exists, "The logger title must be hidden")
+        XCTAssertFalse(app.tabBars.firstMatch.exists, "The tab bar must be hidden")
+        let statistics = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label BEGINSWITH[c] %@", "Altitude gained today")
+        ).firstMatch
+        XCTAssertTrue(statistics.exists && statistics.isHittable, "Expected the complete stats row on screen")
+        let fact = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS[c] %@", "The highest point in Wales")
+        ).firstMatch
+        XCTAssertTrue(fact.exists && fact.isHittable, "Expected the full fact line on screen")
+        let nextSummit = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label BEGINSWITH[c] %@", "Next summit,")
+        ).firstMatch
+        XCTAssertTrue(nextSummit.exists && nextSummit.isHittable, "Expected the next-summit tape on screen")
+        let personalRecord = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS[c] %@", "new personal record")
+        ).firstMatch
+        if personalRecord.exists {
+            XCTAssertTrue(personalRecord.isHittable, "The fixture's PR row must be on screen")
+        }
+        // The metre counter finishes after the static title and controls mount.
+        RunLoop.current.run(until: Date().addingTimeInterval(2.3))
+        attachScreenshot(named: "fix1-summit-reached-default-dark")
+
+        let done = app.buttons["Done"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 5), "Expected SummitReachedView to offer Done")
+        done.tap()
+        XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 10))
+    }
+
+    func testSummitReachedAccessibilityMediumKeepsContentScrollable() throws {
+        openForcedSummitReached(accessibilityMedium: true)
+
+        XCTAssertTrue(app.staticTexts["SUMMIT REACHED"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.navigationBars["Push - Full"].exists)
+        XCTAssertFalse(app.tabBars.firstMatch.exists)
+        XCTAssertTrue(app.buttons["Done"].firstMatch.isHittable)
+        attachScreenshot(named: "fix1-summit-reached-accessibility-medium-top-dark")
+
+        let nextSummit = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label BEGINSWITH[c] %@", "Next summit,")
+        ).firstMatch
+        var swipes = 0
+        while !nextSummit.isHittable && swipes < 8 {
+            app.swipeUp()
+            swipes += 1
+        }
+        XCTAssertTrue(nextSummit.isHittable, "Expected the tape to remain reachable by scrolling")
+        XCTAssertTrue(app.buttons["Done"].firstMatch.isHittable, "The footer must remain pinned")
+        attachScreenshot(named: "fix1-summit-reached-accessibility-medium-bottom-dark")
+    }
+
+    private func openForcedSummitReached(accessibilityMedium: Bool = false) {
+        var arguments = [
             "-SummitForceCrossing",
             "-UITestCoachFatigueFixture",
             "-UITestAppearance", "dark"
-        ])
+        ]
+        if accessibilityMedium {
+            arguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityM"]
+        }
+        launch(arguments: arguments)
 
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 12))
         XCTAssertTrue(
@@ -211,26 +281,6 @@ final class WorkoutLoggingUITests: XCTestCase {
             app.buttons["Finish Anyway"].tap()
         }
         tapModalElement(identifier: "workout-rating-3")
-
-        XCTAssertTrue(
-            app.staticTexts["SUMMIT REACHED"].waitForExistence(timeout: 10),
-            "Expected the forced peak crossing to present SummitReachedView after workout completion"
-        )
-        XCTAssertTrue(app.descendants(matching: .any)["workout-completion-copy"].exists)
-        XCTAssertTrue(
-            app.descendants(matching: .any).matching(
-                NSPredicate(format: "label BEGINSWITH[c] %@", "Send a postcard from")
-            ).firstMatch.exists,
-            "Expected the summit screen to expose its direct postcard share action"
-        )
-        // The metre counter finishes after the static title and controls mount.
-        RunLoop.current.run(until: Date().addingTimeInterval(2.3))
-        attachScreenshot(named: "wave3b-summit-reached-dark")
-
-        let done = app.buttons["Done"].firstMatch
-        XCTAssertTrue(done.waitForExistence(timeout: 5), "Expected SummitReachedView to offer Done")
-        done.tap()
-        XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 10))
     }
 
     func testSubstitutePresentsOnFirstTapAndCanReopen() throws {
