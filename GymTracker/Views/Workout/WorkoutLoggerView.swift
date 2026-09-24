@@ -297,8 +297,14 @@ struct WorkoutLoggerView: View {
             guard !Task.isCancelled else { return }
             loadReferenceDataIfNeeded()
             guard !Task.isCancelled else { return }
+            if !isEditingCompletedWorkout && !session.completed {
+                WorkoutLiveActivityController.shared.start(session: session, exercises: exercises, modelContext: modelContext)
+            }
             refreshTemplateNotesCache(force: true)
             refreshPreviousPerformanceCache(force: true)
+        }
+        .onChange(of: restTimerState) { _, state in
+            refreshLiveActivity(restEndsAt: state.isRunning ? state.endDate : nil)
         }
         .onChange(of: previousPerformanceInputSignature) { _, _ in
             guard !isCompletionCommitted else { return }
@@ -486,6 +492,7 @@ struct WorkoutLoggerView: View {
                 isCompletedWorkout: isEditingCompletedWorkout || session.completed,
                 canSubstitute: hasSubstitutionCandidates(for: currentExerciseLog),
                 requestSubstitution: { requestSubstitution(for: currentExerciseLog) },
+                onSetChanged: { refreshLiveActivity(changedSetID: $0) },
                 reportPersistenceError: { message in
                     refreshOrderedExerciseLogsCache(force: true)
                     completionErrorMessage = message
@@ -540,6 +547,7 @@ struct WorkoutLoggerView: View {
                     isCompletedWorkout: isEditingCompletedWorkout || session.completed,
                     canSubstitute: hasSubstitutionCandidates(for: exerciseLog),
                     requestSubstitution: { requestSubstitution(for: exerciseLog) },
+                    onSetChanged: { refreshLiveActivity(changedSetID: $0) },
                     reportPersistenceError: { message in
                         refreshOrderedExerciseLogsCache(force: true)
                         completionErrorMessage = message
@@ -679,6 +687,15 @@ struct WorkoutLoggerView: View {
         }
     }
 
+    private func refreshLiveActivity(restEndsAt: Date? = nil, changedSetID: UUID? = nil) {
+        guard !isEditingCompletedWorkout && !session.completed else { return }
+        WorkoutLiveActivityController.shared.update(
+            session: session,
+            restEndsAt: restEndsAt ?? (restTimerState.isRunning ? restTimerState.endDate : nil),
+            changedSetID: changedSetID
+        )
+    }
+
     private func addSelectedExercise() {
         PerformanceTracer.trace(.workoutLoggerAddExercise) {
             guard
@@ -706,6 +723,7 @@ struct WorkoutLoggerView: View {
                 if orderedExerciseLogs.count == 1 {
                     currentExerciseIndex = 0
                 }
+                refreshLiveActivity()
             } catch {
                 refreshOrderedExerciseLogsCache(force: true)
                 completionErrorMessage = "Peakline could not add this exercise. Please try again."
@@ -741,6 +759,7 @@ struct WorkoutLoggerView: View {
                     currentExerciseIndex = updatedCurrentIndex
                 }
             }
+            refreshLiveActivity()
         } catch {
             refreshOrderedExerciseLogsCache(force: true)
             completionErrorMessage = "Peakline could not save this exercise order. Please try again."
@@ -997,6 +1016,7 @@ struct WorkoutLoggerView: View {
                 }
             }
             WorkoutWarmStartInvalidation.shared.invalidate(reason: .workoutCompleted)
+            WorkoutLiveActivityController.shared.end(sessionID: session.id, reason: .finished)
             PerformanceTracer.mark(.workoutLoggerFinish, "local_save_complete")
             let summarySessions = [session] + completedSessions.filter { $0.id != session.id }
             summaryRenderSnapshot = SessionSummaryRenderSnapshot.build(
@@ -1132,6 +1152,7 @@ struct WorkoutLoggerView: View {
             refreshOrderedExerciseLogsCache(force: true)
             refreshPreviousPerformanceCache(force: true)
             refreshTemplateNotesCache(force: true)
+            refreshLiveActivity()
         } catch {
             refreshOrderedExerciseLogsCache(force: true)
             refreshPreviousPerformanceCache(force: true)
@@ -1166,6 +1187,7 @@ struct WorkoutLoggerView: View {
                     session.pausedAt = now
                 }
             }
+            refreshLiveActivity()
         } catch {
             completionErrorMessage = "Peakline could not save the pause change. Please try again."
         }
@@ -1802,6 +1824,7 @@ private struct ExerciseLoggerSection: View {
     let isCompletedWorkout: Bool
     let canSubstitute: Bool
     let requestSubstitution: () -> Void
+    let onSetChanged: (UUID?) -> Void
     let reportPersistenceError: (String) -> Void
 
     @State private var showingNotes = false
@@ -1922,8 +1945,16 @@ private struct ExerciseLoggerSection: View {
 
                     CompactTargetSetStepper(
                         value: exerciseLog.targetSets,
-                        decrement: { exerciseLog.targetSets = max(1, exerciseLog.targetSets - 1) },
-                        increment: { exerciseLog.targetSets = min(10, exerciseLog.targetSets + 1) }
+                        decrement: {
+                            let previous = exerciseLog.targetSets
+                            exerciseLog.targetSets = max(1, previous - 1)
+                            if exerciseLog.targetSets != previous { onSetChanged(nil) }
+                        },
+                        increment: {
+                            let previous = exerciseLog.targetSets
+                            exerciseLog.targetSets = min(10, previous + 1)
+                            if exerciseLog.targetSets != previous { onSetChanged(nil) }
+                        }
                     )
                 }
             }
@@ -1946,6 +1977,7 @@ private struct ExerciseLoggerSection: View {
                     setLog: setLog,
                     didMutate: { transaction in
                         persistValueMutation(transaction: transaction)
+                        onSetChanged(setLog.id)
                     },
                     deleteAction: { delete(setLog) }
                 )
@@ -2023,7 +2055,9 @@ private struct ExerciseLoggerSection: View {
 
         set.exerciseLog = exerciseLog
         exerciseLog.setLogs.append(set)
-        persistMutation(transaction: transaction)
+        if persistMutation(transaction: transaction) {
+            onSetChanged(nil)
+        }
     }
 
     private func setWeight(copyPrevious: Bool, currentPrevious: SetLog?, sessionPrevious: PreviousSetSnapshot?) -> Double {
@@ -2056,6 +2090,7 @@ private struct ExerciseLoggerSection: View {
 
         do {
             try transaction.perform(in: modelContext) {}
+            onSetChanged(setLog.id)
             if isCompletedWorkout {
                 WorkoutWarmStartInvalidation.shared.invalidate(reason: .completedWorkoutSetEdited)
             }
@@ -2080,17 +2115,22 @@ private struct ExerciseLoggerSection: View {
             log.orderIndex = index
         }
 
-        persistMutation(transaction: transaction)
+        if persistMutation(transaction: transaction) {
+            onSetChanged(nil)
+        }
     }
 
-    private func persistMutation(transaction: WorkoutLoggerPersistenceTransaction) {
+    @discardableResult
+    private func persistMutation(transaction: WorkoutLoggerPersistenceTransaction) -> Bool {
         do {
             try transaction.perform(in: modelContext) {}
             if isCompletedWorkout {
                 WorkoutWarmStartInvalidation.shared.invalidate(reason: .completedWorkoutSetEdited)
             }
+            return true
         } catch {
             reportPersistenceError("Peakline could not save this set change. Please try again.")
+            return false
         }
     }
 

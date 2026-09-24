@@ -1403,6 +1403,7 @@ struct StartWorkoutContentView: View {
 
     private func discardPendingWorkout() {
         guard let pendingDiscardSession else { return }
+        WorkoutLiveActivityController.shared.end(sessionID: pendingDiscardSession.id, reason: .discarded)
         modelContext.delete(pendingDiscardSession)
         try? modelContext.save()
         self.pendingDiscardSession = nil

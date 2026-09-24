@@ -70,6 +70,8 @@ struct GymTrackerApp: App {
 #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-SummitGallery") {
                 SummitGalleryView()
+            } else if ProcessInfo.processInfo.arguments.contains("-LiveActivityDemo") {
+                LiveActivityDemoHost()
             } else {
                 PeaklineModelContainerHost()
             }
@@ -79,3 +81,23 @@ struct GymTrackerApp: App {
         }
     }
 }
+
+#if DEBUG
+private struct LiveActivityDemoHost: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Live Activity Demo")
+            Button("Show PR") {
+                WorkoutLiveActivityController.shared.flashDemoPR()
+            }
+        }
+        .task {
+            let arguments = ProcessInfo.processInfo.arguments
+            WorkoutLiveActivityController.shared.startDemo(
+                resting: !arguments.contains("-LiveActivityDemoNoRest"),
+                showingPR: arguments.contains("-LiveActivityDemoPR")
+            )
+        }
+    }
+}
+#endif
