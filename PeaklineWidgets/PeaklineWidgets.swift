@@ -373,6 +373,9 @@ private struct ExpandedWorkoutProgressView: View {
             .monospacedDigit()
             .tracking(0.8)
             .foregroundStyle(SummitWidgetStyle.secondary)
+            // The trail's end flag rises into this row's trailing corner;
+            // keep the prescription clear of it without adding height.
+            .padding(.trailing, 18)
             .frame(maxWidth: .infinity)
 
             WorkoutTrailView(
