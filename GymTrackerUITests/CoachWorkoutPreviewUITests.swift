@@ -306,6 +306,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         attachScreenshot(named: "wave3b-today-recovery-storm-dark")
 
         let lowerAction = app.buttons["Take the lower route"]
+        app.swipeUp()
         while !lowerAction.isHittable && swipes < 12 {
             app.swipeUp()
             swipes += 1
