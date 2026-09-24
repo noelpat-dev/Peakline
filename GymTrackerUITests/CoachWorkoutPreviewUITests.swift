@@ -307,10 +307,14 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
         tapButton(containing: "Take the lower route", maxSwipes: 8)
         XCTAssertTrue(waitForPreviewScreen(), "Expected the lower route to open the prepared Preview")
+        let recoveryMode = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] %@ AND label CONTAINS[c] %@", "Recovery", "Lower volume")
+        ).firstMatch
         XCTAssertTrue(
-            app.staticTexts["Recovery mode"].waitForExistence(timeout: 8),
+            recoveryMode.waitForExistence(timeout: 8),
             "Expected the lower route Preview to select Recovery mode"
         )
+        XCTAssertEqual(recoveryMode.value as? String, "Selected")
         attachScreenshot(named: "wave3b-recovery-preview-dark")
     }
 
