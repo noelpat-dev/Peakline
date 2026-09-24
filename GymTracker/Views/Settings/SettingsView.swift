@@ -82,6 +82,7 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.appTheme) private var appTheme
     @Environment(\.dismiss) private var dismiss
+    @Environment(SummitSnapshotProvider.self) private var summitProvider
     @AppStorage("appAppearance") private var storedAppearance = AppAppearance.system.rawValue
     @State private var profile: UserProfile?
     @State private var showingProfileEditor = false
@@ -210,6 +211,20 @@ struct SettingsView: View {
                     }
                     .buttonStyle(PressableCardButtonStyle())
                     .accessibilityIdentifier("settings-appearance")
+
+                    NavigationLink {
+                        SummitAppIconPicker(totalMetres: summitProvider.totalMetres ?? 0)
+                            .navigationTitle("App icon")
+                            .navigationBarTitleDisplayMode(.inline)
+                    } label: {
+                        SettingsCardRow(
+                            title: "App icon",
+                            subtitle: "Choose an unlocked Summit design.",
+                            systemImage: "app.fill"
+                        )
+                    }
+                    .buttonStyle(PressableCardButtonStyle())
+                    .accessibilityIdentifier("settings-app-icon")
                 }
 
                     case .appleHealth:
