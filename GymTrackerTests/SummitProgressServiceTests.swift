@@ -155,9 +155,20 @@ final class SummitProgressServiceTests: XCTestCase {
             .lowerRoute(
                 plannedTitle: "Planned session",
                 alternative: SummitLowerRoute(
-                    title: "Mobility + zone 2 walk",
-                    detail: "Hips and T-spine, then an easy 20 min walk",
-                    minutes: 30
+                    title: "Recovery climb",
+                    detail: "Planned session at lower volume",
+                    minutes: 35
+                )
+            )
+        )
+        XCTAssertEqual(
+            SummitProgressService.routePlan(category: .recovery, plannedTitle: "Push", plannedMinutes: 52),
+            .lowerRoute(
+                plannedTitle: "Push",
+                alternative: SummitLowerRoute(
+                    title: "Recovery climb",
+                    detail: "Push at lower volume",
+                    minutes: 52
                 )
             )
         )

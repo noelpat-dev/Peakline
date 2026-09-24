@@ -201,7 +201,11 @@ enum SummitProgressService {
         )
     }
 
-    static func routePlan(category: ReadinessCategory, plannedTitle: String?) -> SummitRoutePlan {
+    static func routePlan(
+        category: ReadinessCategory,
+        plannedTitle: String?,
+        plannedMinutes: Int? = nil
+    ) -> SummitRoutePlan {
         switch category {
         case .peak, .ready:
             return .planned
@@ -210,12 +214,13 @@ enum SummitProgressService {
         case .low:
             return .steady(note: "Trim volume and keep effort moderate.")
         case .recovery:
+            let title = plannedTitle ?? "Planned session"
             return .lowerRoute(
-                plannedTitle: plannedTitle ?? "Planned session",
+                plannedTitle: title,
                 alternative: SummitLowerRoute(
-                    title: "Mobility + zone 2 walk",
-                    detail: "Hips and T-spine, then an easy 20 min walk",
-                    minutes: 30
+                    title: "Recovery climb",
+                    detail: "\(title) at lower volume",
+                    minutes: plannedMinutes ?? 35
                 )
             )
         }
