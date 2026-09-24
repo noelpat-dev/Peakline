@@ -314,21 +314,32 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         attachScreenshot(named: "wave3b-recovery-preview-dark")
     }
 
-    func testSummitClearConditionKeepsTheRecoveryRouteAvailable() throws {
+    func testSummitClearReadyConditionKeepsThePlannedRoute() throws {
         launch(arguments: [
             "-UITestCoachFatigueFixture",
-            "-SummitRecoveryFixture",
+            "-SummitReadyFixture",
             "-SummitCondition", "clear",
             "-UITestAppearance", "light"
         ])
 
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 12))
-        let lowerRoute = app.descendants(matching: .any).matching(
-            NSPredicate(format: "label CONTAINS[c] %@", "Lower route open. Recovery climb")
-        ).firstMatch
-        XCTAssertTrue(lowerRoute.waitForExistence(timeout: 12), "The clear horizon should leave the recovery route unchanged")
-        XCTAssertTrue(app.buttons["quick-action-workout"].waitForExistence(timeout: 5))
-        attachScreenshot(named: "wave3b-today-recovery-clear-light")
+        attachScreenshot(named: "wave3b-today-ready-clear-light")
+
+        let plannedRoute = app.descendants(matching: .any)["quick-action-workout"]
+        XCTAssertTrue(plannedRoute.waitForExistence(timeout: 8), "Expected the existing planned route")
+        var swipes = 0
+        while !plannedRoute.isHittable && swipes < 8 {
+            app.swipeUp()
+            swipes += 1
+        }
+        XCTAssertTrue(plannedRoute.isHittable)
+        XCTAssertFalse(
+            app.descendants(matching: .any).matching(
+                NSPredicate(format: "label CONTAINS[c] %@", "Lower route open")
+            ).firstMatch.exists,
+            "Ready should keep the existing route without a recovery fork"
+        )
+        attachScreenshot(named: "wave3b-today-ready-clear-route-light")
     }
 
     func testSummitAltitudeSectionShowsTheHydratedReading() throws {
