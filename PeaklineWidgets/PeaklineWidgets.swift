@@ -301,7 +301,11 @@ private struct ExpandedIslandTrailing: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         } else {
-            MetresLabel(metres: state.metresGained, size: 12)
+            MetresLabel(
+                metres: state.metresGained,
+                size: 12,
+                minimumScaleFactor: 0.75
+            )
         }
     }
 }
@@ -379,8 +383,12 @@ private struct ExpandedWorkoutProgressView: View {
 
             HStack {
                 Text("SET \(state.overallSetIndex) OF \(state.overallSetCount)")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 Spacer()
                 Text("\(state.exercisesLeft) EXERCISES LEFT")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
             .font(.system(size: 9, weight: .medium, design: .rounded))
             .fontWidth(.condensed)
@@ -389,6 +397,7 @@ private struct ExpandedWorkoutProgressView: View {
             .foregroundStyle(SummitWidgetStyle.quiet)
         }
         .padding(.top, 8)
+        .padding(.horizontal, 12)
     }
 
     private var nextPrescription: String? {
@@ -440,6 +449,13 @@ private struct IslandTimerText: View {
 private struct MetresLabel: View {
     let metres: Int
     let size: CGFloat
+    let minimumScaleFactor: CGFloat
+
+    init(metres: Int, size: CGFloat, minimumScaleFactor: CGFloat = 1) {
+        self.metres = metres
+        self.size = size
+        self.minimumScaleFactor = minimumScaleFactor
+    }
 
     var body: some View {
         Text("▲ +\(metres) M")
@@ -448,6 +464,7 @@ private struct MetresLabel: View {
             .monospacedDigit()
             .foregroundStyle(SummitWidgetStyle.alpenglow)
             .lineLimit(1)
+            .minimumScaleFactor(minimumScaleFactor)
     }
 }
 
