@@ -13,6 +13,225 @@ final class WorkoutLoggingUITests: XCTestCase {
         app.launch()
     }
 
+    func testLiveActivityDemoExpandsOnIsland() throws {
+        app.launchArguments = ["-LiveActivityDemo", "-LiveActivityDemoNoRest"]
+        app.launch()
+        if !app.staticTexts["Live Activity Demo"].waitForExistence(timeout: 3) {
+            app.terminate()
+            app.launch()
+        }
+        XCTAssertTrue(app.staticTexts["Live Activity Demo"].waitForExistence(timeout: 10))
+
+        XCUIDevice.shared.press(.home)
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let island = springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.045))
+        island.press(forDuration: 1.2)
+        XCTAssertTrue(
+            springboard.staticTexts["Bench press"].waitForExistence(timeout: 5),
+            "Expected the workout name in the expanded Dynamic Island"
+        )
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        let screenshot = XCTAttachment(screenshot: springboard.screenshot())
+        screenshot.name = "live-activity-expanded-island"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
+    func testLiveActivityRestIslandShowsCountdownAndMetrics() throws {
+        app.launchArguments = ["-LiveActivityDemo"]
+        app.launch()
+        if !app.staticTexts["Live Activity Demo"].waitForExistence(timeout: 3) {
+            app.terminate()
+            app.launch()
+        }
+        XCTAssertTrue(app.staticTexts["Live Activity Demo"].waitForExistence(timeout: 10))
+
+        XCUIDevice.shared.press(.home)
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        XCTAssertTrue(springboard.staticTexts["7/18"].waitForExistence(timeout: 10))
+        let compactScreenshot = XCTAttachment(screenshot: springboard.screenshot())
+        compactScreenshot.name = "live-activity-compact-rest"
+        compactScreenshot.lifetime = .keepAlways
+        add(compactScreenshot)
+
+        springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.045))
+            .press(forDuration: 1.2)
+        XCTAssertTrue(springboard.staticTexts["Bench press"].waitForExistence(timeout: 5))
+        XCTAssertTrue(springboard.staticTexts["REST"].exists)
+        XCTAssertTrue(springboard.staticTexts["▲ +32 M"].exists)
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        let expandedScreenshot = XCTAttachment(screenshot: springboard.screenshot())
+        expandedScreenshot.name = "live-activity-expanded-rest"
+        expandedScreenshot.lifetime = .keepAlways
+        add(expandedScreenshot)
+    }
+
+    func testLiveActivityPRFlagAppearsAndExpires() throws {
+        app.launchArguments = ["-LiveActivityDemo", "-LiveActivityDemoNoRest"]
+        app.launch()
+        if !app.buttons["Show PR"].waitForExistence(timeout: 3) {
+            app.terminate()
+            app.launch()
+        }
+        let trigger = app.buttons["Show PR"]
+        XCTAssertTrue(trigger.waitForExistence(timeout: 10))
+        trigger.tap()
+
+        XCUIDevice.shared.press(.home)
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.045)).press(forDuration: 1.2)
+        let flag = springboard.staticTexts["NEW PR FLAG"]
+        XCTAssertTrue(flag.waitForExistence(timeout: 4), "PR flag should appear in the expanded Island")
+        let screenshot = XCTAttachment(screenshot: springboard.screenshot())
+        screenshot.name = "live-activity-pr-flag"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        XCTAssertTrue(
+            waitUntil(timeout: 10) { !flag.exists },
+            "PR flag should retire after its eight-second window"
+        )
+    }
+
+    func testLiveActivityFollowsTwoLoggedSetsAndFinish() throws {
+        launch(arguments: ["-UITestAppearance", "dark"])
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
+        tapTab(at: 1, expectedTitle: "Workout")
+        tapElement(identifier: "start-split-Push", maxSwipes: 8)
+        tapElement(identifier: "workout-preview-start", maxSwipes: 4)
+        XCTAssertTrue(app.descendants(matching: .any)["workout-logger-screen"].waitForExistence(timeout: 10))
+
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let compactProgress = springboard.staticTexts.matching(
+            NSPredicate(format: "label MATCHES %@", "[0-9]+/[0-9]+")
+        ).firstMatch
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(compactProgress.waitForExistence(timeout: 10), "Activity should start with the workout")
+        app.activate()
+
+        tapElement(identifier: "workout-logger-add-set", maxSwipes: 8)
+        tapButton(identifier: "stepper-weight-increment", times: 2)
+        tapButton(identifier: "stepper-reps-increment", times: 6)
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "1 of [0-9]+ working sets? entered"))
+                .firstMatch.waitForExistence(timeout: 5)
+        )
+
+        tapElement(identifier: "workout-logger-add-set", maxSwipes: 8)
+        let secondRepsIncrement = app.buttons.matching(identifier: "stepper-reps-increment").element(boundBy: 1)
+        for _ in 0..<5 where !secondRepsIncrement.isHittable { app.swipeUp() }
+        XCTAssertTrue(secondRepsIncrement.waitForExistence(timeout: 5))
+        secondRepsIncrement.tap()
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "2 of [0-9]+ working sets? entered"))
+                .firstMatch.waitForExistence(timeout: 5)
+        )
+
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(compactProgress.waitForExistence(timeout: 8), "Activity should still exist after two sets")
+        springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.045)).press(forDuration: 1.2)
+        XCTAssertTrue(
+            springboard.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "SET 3 OF"))
+                .firstMatch.waitForExistence(timeout: 5),
+            "Activity should advance to the third set after two entered sets"
+        )
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        let updatedScreenshot = XCTAttachment(screenshot: springboard.screenshot())
+        updatedScreenshot.name = "live-activity-two-sets"
+        updatedScreenshot.lifetime = .keepAlways
+        add(updatedScreenshot)
+
+        app.activate()
+        tapElement(identifier: "workout-logger-finish", maxSwipes: 6, swipeUp: false)
+        if app.buttons["Finish Anyway"].waitForExistence(timeout: 3) {
+            app.buttons["Finish Anyway"].tap()
+        }
+        tapModalElement(identifier: "workout-rating-3")
+        if app.buttons["workout-celebration-primary"].waitForExistence(timeout: 3) {
+            app.buttons["workout-celebration-primary"].tap()
+        }
+        XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 10))
+
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(
+            waitUntil(timeout: 10) { !compactProgress.exists },
+            "Activity should leave the Island after workout finish"
+        )
+    }
+
+    func testLiveActivityRecountsTargetAndDeletedEnteredSet() throws {
+        launch(arguments: ["-UITestAppearance", "dark"])
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
+        tapTab(at: 1, expectedTitle: "Workout")
+        tapElement(identifier: "start-split-Push", maxSwipes: 8)
+        tapElement(identifier: "workout-preview-start", maxSwipes: 4)
+        XCTAssertTrue(app.descendants(matching: .any)["workout-logger-screen"].waitForExistence(timeout: 10))
+
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let compactProgress = springboard.staticTexts.matching(
+            NSPredicate(format: "label MATCHES %@", "[0-9]+/[0-9]+")
+        ).firstMatch
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(compactProgress.waitForExistence(timeout: 10))
+        let initialProgress = compactProgress.label.split(separator: "/").compactMap { Int($0) }
+        guard initialProgress.count == 2 else {
+            XCTFail("Expected a compact set count")
+            return
+        }
+        app.activate()
+
+        let increaseTarget = app.buttons["Increase target sets"]
+        for _ in 0..<6 where !increaseTarget.isHittable { app.swipeUp() }
+        XCTAssertTrue(increaseTarget.waitForExistence(timeout: 5))
+        increaseTarget.tap()
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(
+            waitUntil(timeout: 10) {
+                compactProgress.label == "\(initialProgress[0])/\(initialProgress[1] + 1)"
+            },
+            "The Island total should follow a target-set change"
+        )
+        app.activate()
+
+        tapElement(identifier: "workout-logger-add-set", maxSwipes: 8)
+        tapButton(identifier: "stepper-weight-increment", times: 1)
+        tapButton(identifier: "stepper-reps-increment", times: 1)
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(
+            waitUntil(timeout: 10) {
+                compactProgress.label == "\(initialProgress[0] + 1)/\(initialProgress[1] + 1)"
+            },
+            "The Island should count the entered set"
+        )
+        app.activate()
+
+        let setActions = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "workout-logger-set-actions-")
+        ).firstMatch
+        for _ in 0..<6 where !setActions.isHittable { app.swipeUp() }
+        XCTAssertTrue(setActions.waitForExistence(timeout: 5))
+        setActions.tap()
+        XCTAssertTrue(app.buttons["Delete Set"].waitForExistence(timeout: 5))
+        app.buttons["Delete Set"].tap()
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(
+            waitUntil(timeout: 10) {
+                compactProgress.label == "\(initialProgress[0])/\(initialProgress[1] + 1)"
+            },
+            "Deleting the entered set should remove its progress"
+        )
+        app.activate()
+
+        tapElement(identifier: "workout-logger-finish", maxSwipes: 6, swipeUp: false)
+        if app.buttons["Finish Anyway"].waitForExistence(timeout: 3) {
+            app.buttons["Finish Anyway"].tap()
+        }
+        tapModalElement(identifier: "workout-rating-3")
+        if app.buttons["workout-celebration-primary"].waitForExistence(timeout: 3) {
+            app.buttons["workout-celebration-primary"].tap()
+        }
+        XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 10))
+    }
+
     func testSeededWorkoutCanLogSetPauseFinishAndReachHistory() throws {
         launch(arguments: ["-UITestAppearance", "dark"])
         XCTAssertTrue(
