@@ -1428,7 +1428,7 @@ struct TodayView: View {
                     SummitRouteForkView(
                         plan: summitRoutePlan,
                         onTakeLowerRoute: previewLowerRoute,
-                        onClimbAnyway: nextLiftAction
+                        onClimbAnyway: previewPlannedRoute
                     )
 
                     switch summitRoutePlan {
@@ -2010,6 +2010,11 @@ struct TodayView: View {
     private func previewSuggestedSplit() {
         guard let suggestedSplit else { return }
         openPreview(WorkoutPreviewSplit(suggestedSplit), mode: trainingCall.recommendedMode)
+    }
+
+    private func previewPlannedRoute() {
+        guard let suggestedSplit else { return }
+        openPreview(WorkoutPreviewSplit(suggestedSplit), mode: .full)
     }
 
     private func previewLowerRoute() {
