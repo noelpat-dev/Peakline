@@ -368,6 +368,12 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         attachScreenshot(named: "wave3b-expedition-before-set-off-light")
 
         app.buttons["Set off on the Machame Route"].tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any).matching(
+                NSPredicate(format: "label CONTAINS[c] %@", "Machame Gate")
+            ).firstMatch.waitForExistence(timeout: 10),
+            "Expected Set off to complete before relaunching"
+        )
         app.terminate()
         app.launchArguments = [
             "-UITestInMemoryStore",
