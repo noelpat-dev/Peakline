@@ -305,6 +305,13 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         XCTAssertTrue(lowerRoute.isHittable, "Expected the recovery fork to be visible in the screenshot")
         attachScreenshot(named: "wave3b-today-recovery-storm-dark")
 
+        let lowerAction = app.buttons["Take the lower route"]
+        while !lowerAction.isHittable && swipes < 12 {
+            app.swipeUp()
+            swipes += 1
+        }
+        XCTAssertTrue(lowerAction.isHittable)
+        attachScreenshot(named: "wave3b-today-recovery-storm-actions-dark")
         tapButton(containing: "Take the lower route", maxSwipes: 8)
         XCTAssertTrue(waitForPreviewScreen(), "Expected the lower route to open the prepared Preview")
         let recoveryMode = app.buttons.matching(

@@ -223,6 +223,8 @@ final class WorkoutLoggingUITests: XCTestCase {
             ).firstMatch.exists,
             "Expected the summit screen to expose its direct postcard share action"
         )
+        // The metre counter finishes after the static title and controls mount.
+        RunLoop.current.run(until: Date().addingTimeInterval(2.3))
         attachScreenshot(named: "wave3b-summit-reached-dark")
 
         let done = app.buttons["Done"].firstMatch
