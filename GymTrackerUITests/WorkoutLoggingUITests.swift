@@ -181,6 +181,44 @@ final class WorkoutLoggingUITests: XCTestCase {
         )
     }
 
+    func testSummitPeakCrossingShowsReachedViewThenDoneOpensSummary() throws {
+        launch(arguments: [
+            "-SummitForceCrossing",
+            "-UITestCoachFatigueFixture",
+            "-UITestAppearance", "dark"
+        ])
+
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 12))
+        tapTab(at: 1, expectedTitle: "Workout")
+        tapElement(identifier: "start-split-Push", maxSwipes: 8)
+        XCTAssertTrue(app.navigationBars["Preview"].waitForExistence(timeout: 10))
+        tapElement(identifier: "workout-preview-start", maxSwipes: 5)
+        XCTAssertTrue(app.staticTexts["Workout Order"].waitForExistence(timeout: 10))
+
+        tapElement(identifier: "workout-logger-add-set", maxSwipes: 8)
+        XCTAssertTrue(app.descendants(matching: .any)["set-row-1"].waitForExistence(timeout: 5))
+        tapButton(identifier: "stepper-weight-increment", times: 2)
+        tapButton(identifier: "stepper-reps-increment", times: 2)
+
+        tapElement(identifier: "workout-logger-finish", maxSwipes: 8, swipeUp: false)
+        if app.buttons["Finish Anyway"].waitForExistence(timeout: 3) {
+            app.buttons["Finish Anyway"].tap()
+        }
+        tapModalElement(identifier: "workout-rating-3")
+
+        XCTAssertTrue(
+            app.staticTexts["SUMMIT REACHED"].waitForExistence(timeout: 10),
+            "Expected the forced peak crossing to present SummitReachedView after workout completion"
+        )
+        XCTAssertTrue(app.descendants(matching: .any)["workout-completion-copy"].exists)
+        attachScreenshot(named: "wave3b-summit-reached-dark")
+
+        let done = app.buttons["Done"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 5), "Expected SummitReachedView to offer Done")
+        done.tap()
+        XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 10))
+    }
+
     func testSubstitutePresentsOnFirstTapAndCanReopen() throws {
         launch()
         XCTAssertTrue(
@@ -286,6 +324,13 @@ final class WorkoutLoggingUITests: XCTestCase {
         for _ in 0..<times {
             button.tap()
         }
+    }
+
+    private func attachScreenshot(named name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     private func assertAccessibilityLabel(identifier: String, expectedLabel: String) {

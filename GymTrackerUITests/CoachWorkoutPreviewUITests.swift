@@ -284,6 +284,147 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         )
     }
 
+    func testSummitRecoveryStormForkOpensRecoveryPreview() throws {
+        launch(arguments: [
+            "-UITestCoachFatigueFixture",
+            "-SummitRecoveryFixture",
+            "-SummitCondition", "storm",
+            "-UITestAppearance", "dark"
+        ])
+
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 12))
+        let lowerRoute = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS[c] %@", "Lower route open. Recovery climb")
+        ).firstMatch
+        XCTAssertTrue(lowerRoute.waitForExistence(timeout: 12), "Expected the recovery fixture to expose its lower route")
+        attachScreenshot(named: "wave3b-today-recovery-storm-dark")
+
+        tapButton(containing: "Take the lower route", maxSwipes: 8)
+        XCTAssertTrue(waitForPreviewScreen(), "Expected the lower route to open the prepared Preview")
+        XCTAssertTrue(
+            app.staticTexts["Recovery mode"].waitForExistence(timeout: 8),
+            "Expected the lower route Preview to select Recovery mode"
+        )
+        attachScreenshot(named: "wave3b-recovery-preview-dark")
+    }
+
+    func testSummitClearConditionKeepsTheRecoveryRouteAvailable() throws {
+        launch(arguments: [
+            "-UITestCoachFatigueFixture",
+            "-SummitRecoveryFixture",
+            "-SummitCondition", "clear",
+            "-UITestAppearance", "light"
+        ])
+
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 12))
+        let lowerRoute = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS[c] %@", "Lower route open. Recovery climb")
+        ).firstMatch
+        XCTAssertTrue(lowerRoute.waitForExistence(timeout: 12), "The clear horizon should leave the recovery route unchanged")
+        XCTAssertTrue(app.buttons["quick-action-workout"].waitForExistence(timeout: 5))
+        attachScreenshot(named: "wave3b-today-recovery-clear-light")
+    }
+
+    func testSummitAltitudeSectionShowsTheHydratedReading() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture", "-UITestAppearance", "light"])
+
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 12))
+        _ = summitAltitudeButton()
+        attachScreenshot(named: "wave3b-altitude-section-light")
+    }
+
+    func testSummitExpeditionShowsBeforeAndAfterSetOff() throws {
+        // NSArgumentDomain value 0 guarantees the pre-Set off screen even when
+        // a previous UI run persisted the expedition start date. The write is
+        // stored in the app domain; relaunching without this override exposes it.
+        launch(arguments: [
+            "-summit.expedition.machame.start", "0",
+            "-UITestCoachFatigueFixture",
+            "-UITestAppearance", "light"
+        ])
+
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 12))
+        summitAltitudeButton().tap()
+        let chooseExpedition = app.staticTexts["Choose an expedition"]
+        XCTAssertTrue(chooseExpedition.waitForExistence(timeout: 8), "Expected the pre-Set off Expedition state")
+        XCTAssertTrue(app.buttons["Set off on the Machame Route"].exists)
+        attachScreenshot(named: "wave3b-expedition-before-set-off-light")
+
+        app.buttons["Set off on the Machame Route"].tap()
+        app.terminate()
+        app.launchArguments = [
+            "-UITestInMemoryStore",
+            "-UITestCoachFatigueFixture",
+            "-UITestAppearance", "light"
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 12))
+        summitAltitudeButton().tap()
+
+        let machameGate = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS[c] %@", "Machame Gate")
+        ).firstMatch
+        XCTAssertTrue(machameGate.waitForExistence(timeout: 10), "Expected the persisted Expedition to show Machame Gate")
+        attachScreenshot(named: "wave3b-expedition-after-set-off-light")
+    }
+
+    func testSummitCairnDetailShowsTheCurrentStreak() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture", "-UITestAppearance", "dark"])
+
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 12))
+        _ = summitAltitudeButton()
+        let cairnButton = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH[c] %@", "Cairn,")
+        ).firstMatch
+        XCTAssertTrue(cairnButton.waitForExistence(timeout: 8), "Expected the Cairn row in ALTITUDE")
+        var swipes = 0
+        while !cairnButton.isHittable && swipes < 8 {
+            app.swipeUp()
+            swipes += 1
+        }
+        XCTAssertTrue(cairnButton.isHittable)
+        cairnButton.tap()
+        XCTAssertTrue(app.staticTexts["Cairn"].waitForExistence(timeout: 8))
+        attachScreenshot(named: "wave3b-cairn-detail-dark")
+    }
+
+    func testSummitAppIconPickerShowsUnlockedAndLockedDesigns() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture", "-UITestAppearance", "light"])
+
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 12))
+        openSettingsFromToday()
+        tapElement(identifier: "settings-app-icon", maxSwipes: 10)
+        XCTAssertTrue(app.staticTexts["App icon"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["Topo, Unlocked"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Unlocks at")).firstMatch.waitForExistence(timeout: 5),
+            "Expected the picker to show locked designs with their unlock thresholds"
+        )
+        attachScreenshot(named: "wave3b-settings-app-icon-picker-light")
+    }
+
+    private func summitAltitudeButton() -> XCUIElement {
+        let altitudeButton = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH[c] %@", "Altitude,")
+        ).firstMatch
+        var swipes = 0
+        while (!altitudeButton.waitForExistence(timeout: 1) || !altitudeButton.isHittable) && swipes < 12 {
+            app.swipeUp()
+            swipes += 1
+        }
+        XCTAssertTrue(altitudeButton.waitForExistence(timeout: 8), "Expected the hydrated ALTITUDE section")
+        XCTAssertTrue(altitudeButton.isHittable, "Expected the Altitude row to be visible after scrolling Today")
+        return altitudeButton
+    }
+
+    private func attachScreenshot(named name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testTodayCoachSupportsNativeEdgeSwipeBack() throws {
         launch(arguments: ["-UITestCoachFatigueFixture"], performance: true)
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
