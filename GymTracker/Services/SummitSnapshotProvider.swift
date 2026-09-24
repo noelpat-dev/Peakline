@@ -17,10 +17,21 @@ final class SummitSnapshotProvider {
     private var bodyweights: [SummitBodyweightInput] = []
     private var profileBodyweightKg: Double?
     private var latestRefreshID = UUID()
+#if DEBUG
+    private var didApplyFreshExpeditionFixture = false
+#endif
 
     var totalMetres: Int? { snapshot?.altitude.totalMetres }
 
     func refresh(container: ModelContainer) async {
+#if DEBUG
+        if !didApplyFreshExpeditionFixture,
+           ProcessInfo.processInfo.arguments.contains("-UITestInMemoryStore"),
+           ProcessInfo.processInfo.arguments.contains("-SummitFreshExpeditionFixture") {
+            didApplyFreshExpeditionFixture = true
+            UserDefaults.standard.removeObject(forKey: SummitSnapshotProviderConstants.expeditionStartKey)
+        }
+#endif
         let refreshID = UUID()
         latestRefreshID = refreshID
 

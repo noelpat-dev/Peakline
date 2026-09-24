@@ -351,11 +351,10 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
     }
 
     func testSummitExpeditionShowsBeforeAndAfterSetOff() throws {
-        // NSArgumentDomain value 0 guarantees the pre-Set off screen even when
-        // a previous UI run persisted the expedition start date. The write is
-        // stored in the app domain; relaunching without this override exposes it.
+        // Reset the app's saved expedition once for this in-memory UI fixture,
+        // then let Set off update the visible state and persist for relaunch.
         launch(arguments: [
-            "-summit.expedition.machame.start", "0",
+            "-SummitFreshExpeditionFixture",
             "-UITestCoachFatigueFixture",
             "-UITestAppearance", "light"
         ])
