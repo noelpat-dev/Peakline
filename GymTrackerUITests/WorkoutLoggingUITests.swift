@@ -217,6 +217,12 @@ final class WorkoutLoggingUITests: XCTestCase {
             "Expected the forced peak crossing to present SummitReachedView after workout completion"
         )
         XCTAssertTrue(app.descendants(matching: .any)["workout-completion-copy"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any).matching(
+                NSPredicate(format: "label BEGINSWITH[c] %@", "Send a postcard from")
+            ).firstMatch.exists,
+            "Expected the summit screen to expose its direct postcard share action"
+        )
         attachScreenshot(named: "wave3b-summit-reached-dark")
 
         let done = app.buttons["Done"].firstMatch
