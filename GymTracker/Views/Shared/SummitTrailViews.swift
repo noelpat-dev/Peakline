@@ -320,8 +320,13 @@ private struct ExpeditionElevationProfile: View {
             let done = geometry.donePath.applying(CGAffineTransform(scaleX: scaleX, y: 1))
             context.stroke(done, with: .color(appTheme.colors.textPrimary), style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
 
+            let userPoint = CGPoint(x: geometry.userPoint.x * scaleX, y: geometry.userPoint.y)
             for tent in geometry.tents {
                 let path = tent.path.applying(CGAffineTransform(scaleX: scaleX, y: 1))
+                // When the climber stands at a camp, the "you" marker replaces
+                // that tent; drawing both merges them into a teardrop.
+                let tentCentre = CGPoint(x: path.boundingRect.midX, y: path.boundingRect.maxY)
+                if hypot(tentCentre.x - userPoint.x, tentCentre.y - userPoint.y) < 10 { continue }
                 if tent.reached {
                     context.fill(path, with: .color(appTheme.colors.textPrimary))
                 } else {
@@ -333,7 +338,6 @@ private struct ExpeditionElevationProfile: View {
             context.stroke(geometry.summitPole.applying(CGAffineTransform(scaleX: scaleX, y: 1)), with: .color(appTheme.colors.alpenglow), lineWidth: 1.5)
             context.stroke(geometry.summitFlag.applying(CGAffineTransform(scaleX: scaleX, y: 1)), with: .color(appTheme.colors.alpenglow), style: StrokeStyle(lineWidth: 1.2, lineJoin: .round))
 
-            let userPoint = CGPoint(x: geometry.userPoint.x * scaleX, y: geometry.userPoint.y)
             let halo = Path(ellipseIn: CGRect(x: userPoint.x - 10, y: userPoint.y - 10, width: 20, height: 20))
             context.stroke(halo, with: .color(appTheme.colors.textPrimary.opacity(0.35)), lineWidth: 1)
             let dot = Path(ellipseIn: CGRect(x: userPoint.x - 4.5, y: userPoint.y - 4.5, width: 9, height: 9))

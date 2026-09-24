@@ -14,6 +14,7 @@ struct ProgressContentView: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.modelContext) private var modelContext
+    @Environment(SummitSnapshotProvider.self) private var summitProvider: SummitSnapshotProvider?
     @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
 
     @Query private var observedExercises: [Exercise]
@@ -25,6 +26,7 @@ struct ProgressContentView: View {
     @State private var selectedExercise: ProgressExerciseRowSnapshot?
     @State private var isExerciseChartsPresented = false
     @State private var isPRTimelinePresented = false
+    @State private var isSummitRangePresented = false
     @State private var weeklySummary: WeeklyTrainingSummary?
     @State private var splitConsistency: SplitConsistencySummary?
     @State private var lastExercisesSignature: String?
@@ -103,6 +105,9 @@ struct ProgressContentView: View {
                         systemImage: "chart.xyaxis.line"
                     )
                 } else {
+                    if let lifts = summitProvider?.snapshot?.lifts, !lifts.isEmpty {
+                        summitRangeButton(liftCount: lifts.count)
+                    }
                     ViewThatFits(in: .horizontal) {
                         HStack(spacing: 12) {
                             exerciseChartsButton
@@ -181,6 +186,16 @@ struct ProgressContentView: View {
                 .onAppear {
                     NavigationInteraction.destinationDidAppear(key: "progress.exercise-charts")
                 }
+        }
+        .navigationDestination(isPresented: $isSummitRangePresented) {
+            SummitRangeView(
+                lifts: summitProvider?.snapshot?.lifts ?? [],
+                unitSystem: summitProvider?.unitSystem ?? .metric,
+                showsBackLink: false
+            )
+            .onAppear {
+                NavigationInteraction.destinationDidAppear(key: "progress.summit-range")
+            }
         }
         .navigationDestination(isPresented: $isPRTimelinePresented) {
             PRTimelineView()
@@ -269,6 +284,22 @@ struct ProgressContentView: View {
             ProgressActionCard(title: "Exercise Charts", subtitle: "Open lift trends", systemImage: "chart.xyaxis.line")
         }
         .buttonStyle(PressableCardButtonStyle())
+    }
+
+    private func summitRangeButton(liftCount: Int) -> some View {
+        Button {
+            navigate(key: "progress.summit-range", destinationClass: .deep) {
+                isSummitRangePresented = true
+            }
+        } label: {
+            ProgressActionCard(
+                title: "Your range",
+                subtitle: liftCount == 1 ? "1 lift as a peak" : "\(liftCount) lifts as peaks",
+                systemImage: "mountain.2"
+            )
+        }
+        .buttonStyle(PressableCardButtonStyle())
+        .accessibilityIdentifier("progress-summit-range-open")
     }
 
     private var prTimelineButton: some View {

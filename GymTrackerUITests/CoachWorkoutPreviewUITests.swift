@@ -1634,6 +1634,27 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 8))
     }
 
+    func testProgressOpensSummitRange() throws {
+        launch(arguments: ["-UITestCoachFatigueFixture"])
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
+        RunLoop.current.run(until: Date().addingTimeInterval(6))
+
+        openProgressHub()
+        let rangeEntry = app.descendants(matching: .any)["progress-summit-range-open"]
+        XCTAssertTrue(rangeEntry.waitForExistence(timeout: 8), "Expected the Your range entry once Summit data is ready")
+        let hub = XCTAttachment(screenshot: app.screenshot())
+        hub.name = "progress-range-entry"
+        hub.lifetime = .keepAlways
+        add(hub)
+
+        tapElement(identifier: "progress-summit-range-open", maxSwipes: 4)
+        RunLoop.current.run(until: Date().addingTimeInterval(2.5))
+        let range = XCTAttachment(screenshot: app.screenshot())
+        range.name = "progress-summit-range"
+        range.lifetime = .keepAlways
+        add(range)
+    }
+
     private func openProgressHub() {
         openSettingsFromToday()
         tapElement(identifier: "settings-progress", maxSwipes: 4)

@@ -329,6 +329,80 @@ final class SummitSnapshotBuilderTests: XCTestCase {
         return calendar
     }
 
+    // MARK: - History wiring
+
+    func testHistorySummitStateMatchesClimbsBySessionID() {
+        let snapshot = SummitSnapshot.preview
+        let state = HistorySummitState.empty.updated(
+            snapshot: snapshot,
+            month: date(2026, 9, 15),
+            now: date(2026, 9, 23),
+            calendar: calendar()
+        )
+
+        XCTAssertTrue(state.isReady)
+        for climb in snapshot.log {
+            XCTAssertEqual(state.climbsByID[climb.id], climb)
+        }
+        let septemberClimbs = snapshot.log.filter {
+            calendar().component(.month, from: $0.date) == 9
+        }
+        XCTAssertEqual(state.stats?.ascents, septemberClimbs.count)
+        XCTAssertEqual(state.stats?.metres, septemberClimbs.reduce(0) { $0 + $1.metres })
+    }
+
+    func testHistorySummitStateIsNotReadyBeforeTheSnapshotArrives() {
+        let state = HistorySummitState.empty
+        XCTAssertFalse(state.isReady)
+        XCTAssertTrue(state.climbsByID.isEmpty)
+        XCTAssertNil(state.ridge)
+        XCTAssertNil(state.stats)
+    }
+
+    func testHistorySummitStateKeepsTheLookupWhenOnlyTheMonthChanges() {
+        let september = HistorySummitState.empty.updated(
+            snapshot: .preview, month: date(2026, 9, 15), now: date(2026, 9, 23), calendar: calendar()
+        )
+        let august = september.updated(
+            snapshot: .preview, month: date(2026, 8, 15), now: date(2026, 9, 23), calendar: calendar()
+        )
+
+        XCTAssertEqual(august.climbsByID, september.climbsByID)
+        XCTAssertEqual(august.ridge?.monthStart, calendar().dateInterval(of: .month, for: date(2026, 8, 15))?.start)
+        XCTAssertEqual(
+            september.updated(snapshot: .preview, month: date(2026, 9, 2), now: date(2026, 9, 23), calendar: calendar()),
+            september,
+            "The same snapshot and month should not rebuild anything"
+        )
+    }
+
+    func testMonthRidgeForAPastMonthShowsEveryDayWithoutATodayTick() {
+        let ridge = SummitSnapshotBuilder.monthRidge(
+            forMonthContaining: date(2026, 8, 10),
+            climbs: Array(SummitSnapshot.preview.log.reversed()),
+            now: date(2026, 9, 23),
+            calendar: calendar()
+        )
+
+        XCTAssertNil(ridge.todayIndex)
+        XCTAssertEqual(ridge.dayLoads.count, 31)
+        XCTAssertFalse(ridge.dayLoads.contains(where: { $0 == nil }))
+    }
+
+    func testMonthRidgeForTheCurrentMonthStopsAtToday() {
+        let ridge = SummitSnapshotBuilder.monthRidge(
+            forMonthContaining: date(2026, 9, 5),
+            climbs: Array(SummitSnapshot.preview.log.reversed()),
+            now: date(2026, 9, 23),
+            calendar: calendar()
+        )
+
+        XCTAssertEqual(ridge.todayIndex, 22)
+        XCTAssertEqual(ridge.dayLoads.count, 30)
+        XCTAssertNotNil(ridge.dayLoads[22])
+        XCTAssertNil(ridge.dayLoads[23])
+    }
+
     private func date(_ year: Int, _ month: Int, _ day: Int) -> Date {
         calendar().date(from: DateComponents(year: year, month: month, day: day, hour: 12))!
     }

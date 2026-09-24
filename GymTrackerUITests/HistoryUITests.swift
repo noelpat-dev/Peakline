@@ -46,6 +46,34 @@ final class HistoryUITests: XCTestCase {
         XCTAssertTrue(firstSessionRow().waitForExistence(timeout: 5), "Expected History list to remain scrollable")
     }
 
+    func testHistoryShowsSummitRidgeAndRowLines() throws {
+        XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
+        // Give Today's post-reveal Summit refresh time to publish.
+        RunLoop.current.run(until: Date().addingTimeInterval(6))
+
+        tapTab(at: 3, expectedTitle: "History")
+        XCTAssertTrue(app.descendants(matching: .any)["history-screen"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["history-summit-month"].waitForExistence(timeout: 10))
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        attachScreenshot(named: "history-summit-top")
+
+        let firstRow = firstSessionRow()
+        XCTAssertTrue(firstRow.waitForExistence(timeout: 8))
+        scrollIntoHittableRegion(firstRow)
+        XCTAssertTrue(
+            firstRow.label.contains("Climbed") || firstRow.label.contains("metres"),
+            "Expected History rows to carry the Summit line: \(firstRow.label)"
+        )
+        attachScreenshot(named: "history-summit-rows")
+    }
+
+    private func attachScreenshot(named name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testHistoryCalendarFiltersAndSessionDetailOpen() throws {
         XCTAssertTrue(
             app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10),

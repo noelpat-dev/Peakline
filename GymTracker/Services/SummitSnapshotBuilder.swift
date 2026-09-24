@@ -125,7 +125,13 @@ enum SummitSnapshotBuilder {
                 setsByExercise[set.exerciseID, default: []].append(observation)
                 if session.date >= liftWindowStart {
                     var bestSets = bestSetsByExercise[set.exerciseID, default: []]
-                    bestSets.append(observation)
+                    // Identical sets from the same day are one "best set", not three.
+                    let isRepeat = bestSets.contains {
+                        $0.set.weightKg == set.weightKg
+                            && $0.set.reps == set.reps
+                            && calendar.isDate($0.date, inSameDayAs: session.date)
+                    }
+                    if !isRepeat { bestSets.append(observation) }
                     bestSets.sort { $0.e1RM > $1.e1RM }
                     bestSetsByExercise[set.exerciseID] = Array(bestSets.prefix(3))
                 }
@@ -247,9 +253,27 @@ enum SummitSnapshotBuilder {
     }
 
     private static func monthRidge(climbs: [SummitSessionClimb], now: Date, calendar: Calendar) -> SummitMonthRidge {
-        let monthStart = calendar.dateInterval(of: .month, for: now)?.start ?? calendar.startOfDay(for: now)
-        let currentDay = calendar.component(.day, from: now)
-        let currentDayCount = calendar.range(of: .day, in: .month, for: monthStart)?.count ?? currentDay
+        monthRidge(forMonthContaining: now, climbs: climbs, now: now, calendar: calendar)
+    }
+
+    /// Builds the ridge for any month. Past months show every day and no
+    /// today tick; future months are all future days.
+    static func monthRidge(
+        forMonthContaining month: Date,
+        climbs: [SummitSessionClimb],
+        now: Date,
+        calendar: Calendar
+    ) -> SummitMonthRidge {
+        let monthStart = calendar.dateInterval(of: .month, for: month)?.start ?? calendar.startOfDay(for: month)
+        let nowMonthStart = calendar.dateInterval(of: .month, for: now)?.start ?? calendar.startOfDay(for: now)
+        let currentDayCount = calendar.range(of: .day, in: .month, for: monthStart)?.count ?? 31
+        let isCurrentMonth = monthStart == nowMonthStart
+        let currentDay: Int
+        if isCurrentMonth {
+            currentDay = calendar.component(.day, from: now)
+        } else {
+            currentDay = monthStart < nowMonthStart ? currentDayCount : 0
+        }
         var currentLoads: [Int: Int] = [:]
         var previousLoadsByDay: [Int: Int] = [:]
 
@@ -291,7 +315,7 @@ enum SummitSnapshotBuilder {
         return SummitMonthRidge(
             monthStart: monthStart,
             dayLoads: dayLoads,
-            todayIndex: currentDay - 1,
+            todayIndex: isCurrentMonth ? currentDay - 1 : nil,
             prDayIndices: prDayIndices,
             summitDayIndices: summitDayIndices,
             previousMonthLoads: previousMonthLoads

@@ -282,9 +282,14 @@ struct SummitRangeView: View {
 
     @State private var selectedLiftID: UUID?
 
-    init(lifts: [SummitLiftPeak], unitSystem: UnitSystem) {
+    /// Pushed inside a navigation stack, the system back button is enough;
+    /// the board's "‹ History" link is for standalone presentation only.
+    private let showsBackLink: Bool
+
+    init(lifts: [SummitLiftPeak], unitSystem: UnitSystem, showsBackLink: Bool = true) {
         self.lifts = lifts
         self.unitSystem = unitSystem
+        self.showsBackLink = showsBackLink
         _selectedLiftID = State(initialValue: lifts.max(by: { $0.e1RMNow < $1.e1RMNow })?.id)
     }
 
@@ -299,17 +304,19 @@ struct SummitRangeView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
-                Button(action: { dismiss() }) {
-                    Text("‹ History")
-                        .font(.system(size: 16))
-                        .foregroundStyle(appTheme.colors.textSecondary)
-                        .frame(height: 32, alignment: .leading)
-                        .padding(.vertical, 6)
-                        .contentShape(Rectangle())
+                if showsBackLink {
+                    Button(action: { dismiss() }) {
+                        Text("‹ History")
+                            .font(.system(size: 16))
+                            .foregroundStyle(appTheme.colors.textSecondary)
+                            .frame(height: 32, alignment: .leading)
+                            .padding(.vertical, 6)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
 
-                Text("YOUR RANGE · \(lifts.count) LIFTS · 12 WEEKS")
+                Text("YOUR RANGE · \(lifts.count) \(lifts.count == 1 ? "LIFT" : "LIFTS") · 12 WEEKS")
                     .modifier(AppTypography.waypointLabel)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
