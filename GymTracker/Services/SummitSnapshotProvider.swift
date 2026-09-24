@@ -24,11 +24,16 @@ final class SummitSnapshotProvider {
         let refreshID = UUID()
         latestRefreshID = refreshID
 
-        let result = await Task.detached(priority: .utility) {
+        let worker = Task.detached(priority: .utility) {
             try? SummitSnapshotRefreshWorker.makeSnapshot(container: container)
-        }.value
+        }
+        let result = await withTaskCancellationHandler {
+            await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
 
-        guard latestRefreshID == refreshID, let result else { return }
+        guard !Task.isCancelled, latestRefreshID == refreshID, let result else { return }
 
         // Keep only value data from the background context. In particular, no
         // SwiftData model instance is retained or sent back to the main actor.
@@ -139,7 +144,9 @@ private enum SummitSnapshotRefreshWorker {
     )
 
     static func makeSnapshot(container: ModelContainer) throws -> SummitSnapshotRefreshResult {
+        try Task.checkCancellation()
         let fetched = try fetchInputs(container: container)
+        try Task.checkCancellation()
         let expeditionTimestamp = UserDefaults.standard.double(
             forKey: SummitSnapshotProviderConstants.expeditionStartKey
         )
@@ -149,8 +156,9 @@ private enum SummitSnapshotRefreshWorker {
         let now = Date()
         let calendar = Calendar.current
 
-        let snapshot = withRefreshInterval(stage: "build") {
-            SummitSnapshotBuilder.build(
+        let snapshot = try withRefreshInterval(stage: "build") {
+            try Task.checkCancellation()
+            let snapshot = SummitSnapshotBuilder.build(
                 sessions: fetched.sessions,
                 bodyweights: fetched.bodyweights,
                 profileBodyweightKg: fetched.profileBodyweightKg,
@@ -158,6 +166,8 @@ private enum SummitSnapshotRefreshWorker {
                 now: now,
                 calendar: calendar
             )
+            try Task.checkCancellation()
+            return snapshot
         }
 
         return SummitSnapshotRefreshResult(
@@ -171,6 +181,7 @@ private enum SummitSnapshotRefreshWorker {
 
     private static func fetchInputs(container: ModelContainer) throws -> SummitFetchedInputs {
         try withRefreshInterval(stage: "fetch") {
+            try Task.checkCancellation()
             let context = ModelContext(container)
             var sessionDescriptor = FetchDescriptor<WorkoutSession>(
                 predicate: #Predicate<WorkoutSession> { $0.completed }
@@ -178,13 +189,17 @@ private enum SummitSnapshotRefreshWorker {
             sessionDescriptor.relationshipKeyPathsForPrefetching = [\WorkoutSession.exerciseLogs]
 
             let sessions = try context.fetch(sessionDescriptor)
+            try Task.checkCancellation()
             let exercises = try context.fetch(FetchDescriptor<Exercise>())
+            try Task.checkCancellation()
             let weightLogs = try context.fetch(FetchDescriptor<BodyweightLog>())
+            try Task.checkCancellation()
             let profile = try context.fetch(FetchDescriptor<UserProfile>()).first
 
             // Resolve each set relationship while these models still belong to
             // this background context, before projecting to value inputs.
             for session in sessions {
+                try Task.checkCancellation()
                 for exerciseLog in session.exerciseLogs {
                     _ = exerciseLog.setLogs.count
                 }
