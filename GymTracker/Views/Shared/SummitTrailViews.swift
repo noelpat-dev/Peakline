@@ -120,6 +120,7 @@ struct ExpeditionView: View {
                     }
                 }
                 .padding(.top, 2)
+                .padding(.leading, 48)
             }
             .padding(.bottom, 20)
         }
@@ -215,18 +216,31 @@ struct ExpeditionView: View {
 
 private struct ExpeditionStatsRow: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let climbed: Int
     let ascentLeft: Int
     let summitWindow: String
 
     var body: some View {
-        HStack(spacing: 0) {
-            stat(value: "\(max(0, climbed).formatted()) M", label: "CLIMBED")
-            divider
-            stat(value: "\(max(0, ascentLeft).formatted()) M", label: "ASCENT LEFT")
-            divider
-            stat(value: summitWindow, label: "SUMMIT WINDOW")
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 7) {
+                    stat(value: "\(max(0, climbed).formatted()) M", label: "CLIMBED")
+                    dividerLine.padding(.leading, 10)
+                    stat(value: "\(max(0, ascentLeft).formatted()) M", label: "ASCENT LEFT")
+                    dividerLine.padding(.leading, 10)
+                    stat(value: summitWindow, label: "SUMMIT WINDOW")
+                }
+            } else {
+                HStack(spacing: 0) {
+                    stat(value: "\(max(0, climbed).formatted()) M", label: "CLIMBED")
+                    divider
+                    stat(value: "\(max(0, ascentLeft).formatted()) M", label: "ASCENT LEFT")
+                    divider
+                    stat(value: summitWindow, label: "SUMMIT WINDOW")
+                }
+            }
         }
         .padding(.vertical, 10)
         .overlay(alignment: .top) { dividerLine }
@@ -258,8 +272,8 @@ private struct ExpeditionStatsRow: View {
                 .minimumScaleFactor(0.65)
             Text(label)
                 .modifier(AppTypography.waypointLabelSmall)
-                .lineLimit(1)
-                .minimumScaleFactor(0.65)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.65)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
@@ -268,6 +282,7 @@ private struct ExpeditionStatsRow: View {
 
 private struct ExpeditionElevationProfile: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .caption) private var gridLabelSize: CGFloat = 10
     @ScaledMetric(relativeTo: .caption) private var userLabelSize: CGFloat = 12
     @ScaledMetric(relativeTo: .caption) private var descentLabelSize: CGFloat = 9.5
@@ -323,14 +338,23 @@ private struct ExpeditionElevationProfile: View {
             context.stroke(halo, with: .color(appTheme.colors.textPrimary.opacity(0.35)), lineWidth: 1)
             let dot = Path(ellipseIn: CGRect(x: userPoint.x - 4.5, y: userPoint.y - 4.5, width: 9, height: 9))
             context.fill(dot, with: .color(appTheme.colors.textPrimary))
-            context.draw(
-                Text("YOU · \(max(0, progress.currentAltitude).formatted()) M")
-                    .font(Font.system(size: userLabelSize, weight: .semibold).width(.condensed).monospacedDigit())
-                    .tracking(1)
-                    .foregroundColor(appTheme.colors.textPrimary),
-                at: CGPoint(x: max(4, userPoint.x - 30), y: userPoint.y + 24),
-                anchor: .leading
-            )
+            let userLabel = Text("YOU · \(max(0, progress.currentAltitude).formatted()) M")
+                .font(Font.system(size: userLabelSize, weight: .semibold).width(.condensed).monospacedDigit())
+                .tracking(1)
+                .foregroundColor(appTheme.colors.textPrimary)
+            if dynamicTypeSize.isAccessibilitySize {
+                context.draw(
+                    userLabel,
+                    at: CGPoint(x: userPoint.x, y: min(size.height - 18, userPoint.y + 64)),
+                    anchor: .center
+                )
+            } else {
+                context.draw(
+                    userLabel,
+                    at: CGPoint(x: max(4, userPoint.x - 30), y: userPoint.y + 24),
+                    anchor: .leading
+                )
+            }
 
             for label in geometry.descentLabels {
                 context.draw(
@@ -604,6 +628,7 @@ struct CairnDetailView: View {
                     }
                 }
                 .padding(.trailing, 20)
+                .padding(.leading, 48)
             }
             .padding(.top, 18)
             .padding(.bottom, 24)
@@ -692,6 +717,7 @@ private struct CairnWeekStrip: View {
 
 private struct CairnIllustration: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .caption) private var markerLabelSize: CGFloat = 11
     let state: CairnState
     private let drawing: CairnDrawing
@@ -748,7 +774,10 @@ private struct CairnIllustration: View {
                         .font(Font.system(size: markerLabelSize, weight: .medium).width(.condensed))
                         .tracking(1.2)
                         .foregroundColor(appTheme.colors.textSecondary),
-                    at: CGPoint(x: size.width - 8, y: pending.centerY + 4),
+                    at: CGPoint(
+                        x: size.width - 8,
+                        y: dynamicTypeSize.isAccessibilitySize ? max(36, markerLabelSize + 12) : pending.centerY + 4
+                    ),
                     anchor: .trailing
                 )
             }
@@ -759,7 +788,10 @@ private struct CairnIllustration: View {
                         .font(Font.system(size: markerLabelSize, weight: .medium).width(.condensed))
                         .tracking(1.2)
                         .foregroundColor(appTheme.colors.alpenglow),
-                    at: CGPoint(x: freshLabel.x * scaleX, y: freshLabel.y),
+                    at: CGPoint(
+                        x: dynamicTypeSize.isAccessibilitySize ? 8 : freshLabel.x * scaleX,
+                        y: dynamicTypeSize.isAccessibilitySize ? 118 : freshLabel.y
+                    ),
                     anchor: .leading
                 )
             }
@@ -918,6 +950,7 @@ private struct CairnDrawing {
 
 struct SummitRouteForkView: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .caption) private var plannedTitleSize: CGFloat = 12.5
     @ScaledMetric(relativeTo: .body) private var alternativeTitleSize: CGFloat = 16
     @ScaledMetric(relativeTo: .subheadline) private var alternativeDetailSize: CGFloat = 13
@@ -940,7 +973,88 @@ struct SummitRouteForkView: View {
         }
     }
 
+    @ViewBuilder
     private func lowerRouteView(plannedTitle: String, alternative: SummitLowerRoute) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            accessibilityLowerRouteView(plannedTitle: plannedTitle, alternative: alternative)
+        } else {
+            defaultLowerRouteView(plannedTitle: plannedTitle, alternative: alternative)
+        }
+    }
+
+    private func accessibilityLowerRouteView(plannedTitle: String, alternative: SummitLowerRoute) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                SummitForkLines()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 72)
+                    .clipped()
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    DimmedForkSign(text: "HIGH ROUTE · CLOSED")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Text(plannedTitle)
+                        .font(.system(size: plannedTitleSize))
+                        .foregroundStyle(appTheme.colors.textTertiary)
+                        .strikethrough(true, pattern: .solid, color: appTheme.colors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.leading, 48)
+                .padding(.trailing, 20)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("High route closed: \(plannedTitle)")
+
+            VStack(alignment: .leading, spacing: 4) {
+                TrailSignTag(text: "LOWER ROUTE · OPEN")
+                Text(alternative.title)
+                    .font(.system(size: alternativeTitleSize, weight: .semibold))
+                    .foregroundStyle(appTheme.colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
+                Text("\(alternative.minutes) min · \(alternative.detail)")
+                    .font(.system(size: alternativeDetailSize))
+                    .foregroundStyle(appTheme.colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 48)
+            .padding(.trailing, 20)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Lower route open. \(alternative.title), \(alternative.minutes) minutes. \(alternative.detail)")
+
+            Text("YOUR CAIRN IS SAFE · REST NEVER KNOCKS IT DOWN")
+                .modifier(AppTypography.waypointLabelSmall)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 48)
+                .padding(.trailing, 20)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Your cairn is safe. Rest never knocks it down.")
+
+            VStack(spacing: 8) {
+                SummitPrimaryButton(title: "Take the lower route", action: onTakeLowerRoute)
+                Button(action: onClimbAnyway) {
+                    Text("Climb as planned anyway")
+                        .font(.system(size: secondaryActionSize))
+                        .foregroundStyle(appTheme.colors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.leading, 48)
+            .padding(.trailing, 20)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func defaultLowerRouteView(plannedTitle: String, alternative: SummitLowerRoute) -> some View {
         VStack(spacing: 0) {
             ZStack(alignment: .topLeading) {
                 SummitForkLines()
