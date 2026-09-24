@@ -280,6 +280,7 @@ struct RootTabView: View {
                 scheduleWarmSleepAnalyticsRefresh(reason: "startup_reveal_complete")
                 presentSleepDeepLinkIfReady(sleepDeepLinkRouter.pendingRequest)
             }
+            PerformanceTracer.mark(.startupTodayInteractive, "root_reveal_propagated")
         }
         .onAppear {
             startRootTabPrewarmIfNeeded()

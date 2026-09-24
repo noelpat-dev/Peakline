@@ -3,15 +3,18 @@ import os
 
 enum PerformanceMetric: String {
     case appLaunchPreparation = "app.launch.preparation"
+    case startupAppDelegateReady = "startup.app_delegate_ready"
     case startupAccountCheck = "startup.account_check"
     case startupBackupMetadata = "startup.backup_metadata"
     case startupLocalPreparation = "startup.local_preparation"
     case startupSnapshotPreparation = "startup.snapshot_preparation"
     case startupCriticalReady = "startup.critical_ready"
     case startupPresentationStart = "startup.presentation.start"
+    case startupSplashAnimationCommitted = "startup.splash_animation.committed"
     case startupPresentationSlow = "startup.presentation.slow"
     case startupRevealStart = "startup.reveal.start"
     case startupRevealEnd = "startup.reveal.end"
+    case startupTodayInteractive = "startup.today_interactive"
     case rootNotificationRefresh = "root.notification.refresh"
     case rootNotificationInputSignature = "root.notification.input_signature"
     case rootNotificationSettingsLoad = "root.notification.settings_load"
@@ -96,13 +99,30 @@ enum PerformanceMetric: String {
     case historyDisplaySnapshot = "history.display_snapshot"
     case historyScroll = "history.scroll"
     case sleepSessionQuality = "sleep.session_quality"
+
+    var isColdLaunchMilestone: Bool {
+        switch self {
+        case .startupAppDelegateReady, .startupPresentationStart,
+             .startupSplashAnimationCommitted, .startupCriticalReady,
+             .startupRevealStart, .startupRevealEnd, .startupTodayInteractive:
+            true
+        default:
+            false
+        }
+    }
 }
 
 enum PerformanceTracer {
     static func mark(_ metric: PerformanceMetric, _ message: String = "") {
+        if metric.isColdLaunchMilestone {
+            os_signpost(.event, log: signpostLog, name: signpostName, "%{public}s", metric.rawValue)
+            if isConsoleLoggingEnabled {
+                logger.notice("\(metric.rawValue, privacy: .public) \(message, privacy: .public)")
+            }
+        }
         #if DEBUG
         PerformanceAcceptanceState.record(metric: metric, message: message)
-        if isConsoleLoggingEnabled {
+        if isConsoleLoggingEnabled && !metric.isColdLaunchMilestone {
             logger.debug("\(metric.rawValue, privacy: .public) \(message, privacy: .public)")
         }
         #endif
@@ -147,7 +167,6 @@ enum PerformanceTracer {
         return try await work()
     }
 
-    #if DEBUG
     private static let subsystem = Bundle.main.bundleIdentifier ?? "Peakline"
     private static let logger = Logger(subsystem: subsystem, category: "Performance")
     private static let signpostLog = OSLog(subsystem: subsystem, category: "Performance")
@@ -156,7 +175,6 @@ enum PerformanceTracer {
     private static var isConsoleLoggingEnabled: Bool {
         ProcessInfo.processInfo.arguments.contains("-PeaklinePerformanceConsoleLogging")
     }
-    #endif
 }
 
 #if DEBUG

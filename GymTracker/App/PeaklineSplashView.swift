@@ -338,6 +338,10 @@ private final class PeaklineWordmarkView: UIView {
         // Commit absolute begin times before launch preparation occupies the
         // main run loop.
         CATransaction.flush()
+        PerformanceTracer.mark(
+            .startupSplashAnimationCommitted,
+            "first_contour_delay_ms=120"
+        )
     }
 
     private func stopAtRest() {
