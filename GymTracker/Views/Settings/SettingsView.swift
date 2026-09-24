@@ -213,9 +213,12 @@ struct SettingsView: View {
                     .accessibilityIdentifier("settings-appearance")
 
                     NavigationLink {
-                        SummitAppIconPicker(totalMetres: summitProvider.totalMetres ?? 0)
-                            .navigationTitle("App icon")
-                            .navigationBarTitleDisplayMode(.inline)
+                        ScrollView {
+                            SummitAppIconPicker(totalMetres: summitProvider.totalMetres ?? 0)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(appTheme.metrics.spacing16)
+                        }
+                        .scrollIndicators(.hidden)
                     } label: {
                         SettingsCardRow(
                             title: "App icon",
