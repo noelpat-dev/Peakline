@@ -1430,6 +1430,13 @@ struct TodayView: View {
                         onTakeLowerRoute: previewLowerRoute,
                         onClimbAnyway: nextLiftAction
                     )
+
+                    switch summitRoutePlan {
+                    case .lowerRoute(_, _):
+                        EmptyView()
+                    case .planned, .steady(_):
+                        plannedTodayRoute
+                    }
                 } else if !isRoutePresentationReady {
                     TrailStop(
                         title: "Preparing your route",
@@ -1659,18 +1666,16 @@ struct TodayView: View {
 
     private var altitudePlaceholder: some View {
         VStack(alignment: .leading, spacing: appTheme.metrics.spacing8) {
-            FitnessCard {
-                VStack(alignment: .leading, spacing: appTheme.metrics.spacing12) {
-                    RoundedRectangle(cornerRadius: 6)
-                        .frame(width: 112, height: 58)
-                    RoundedRectangle(cornerRadius: 8)
-                        .frame(height: 66)
-                    RoundedRectangle(cornerRadius: 4)
-                        .frame(width: 190, height: 24)
-                }
-                .foregroundStyle(appTheme.colors.textTertiary.opacity(0.16))
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: appTheme.metrics.spacing12) {
+                RoundedRectangle(cornerRadius: 6)
+                    .frame(width: 112, height: 58)
+                RoundedRectangle(cornerRadius: 8)
+                    .frame(height: 66)
+                RoundedRectangle(cornerRadius: 4)
+                    .frame(width: 190, height: 24)
             }
+            .foregroundStyle(appTheme.colors.textTertiary.opacity(0.16))
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: appTheme.metrics.spacing12) {
                 VStack(alignment: .leading, spacing: appTheme.metrics.spacing8) {
