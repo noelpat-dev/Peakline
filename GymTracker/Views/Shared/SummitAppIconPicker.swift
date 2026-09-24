@@ -6,6 +6,18 @@ struct SummitAppIconPicker: View {
     let totalMetres: Int
 
     private let columns = [GridItem(.flexible()), GridItem(.flexible())]
+    @State private var currentIconName: String? = UIApplication.shared.alternateIconName
+    @State private var changeError: String?
+
+    private var unlockedIcons: [SummitAppIcon] {
+#if DEBUG
+        // Lets every icon be tried on a device before its altitude is reached.
+        if ProcessInfo.processInfo.arguments.contains("-SummitUnlockAllIcons") {
+            return SummitAppIcon.allCases
+        }
+#endif
+        return SummitProgressService.unlockedAppIcons(totalMetres: totalMetres)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -18,20 +30,38 @@ struct SummitAppIconPicker: View {
                 }
             }
         }
+        .alert(
+            "Couldn’t change the icon",
+            isPresented: Binding(get: { changeError != nil }, set: { if !$0 { changeError = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(changeError ?? "")
+        }
     }
 
     @ViewBuilder
     private func iconTile(_ icon: SummitAppIcon) -> some View {
-        let isUnlocked = SummitProgressService.unlockedAppIcons(totalMetres: totalMetres).contains(icon)
+        let isUnlocked = unlockedIcons.contains(icon)
+        let isCurrent = icon.alternateIconName == currentIconName
         let peakName = SummitCatalog.peaks.first { $0.metres == icon.unlockMetres }?.name ?? "the next summit"
-        let detail = isUnlocked
-            ? "Unlocked"
-            : "Unlocks at \(peakName) · \(icon.unlockMetres.formatted()) m"
+        let detail: String = isCurrent
+            ? "In use"
+            : isUnlocked
+                ? "Unlocked · tap to use"
+                : "Unlocks at \(peakName) · \(icon.unlockMetres.formatted()) m"
 
         Button {
-            guard isUnlocked else { return }
-            UIApplication.shared.setAlternateIconName(icon.alternateIconName) { _ in
-                // The system owns the confirmation UI; failures leave the current icon unchanged.
+            guard isUnlocked, !isCurrent else { return }
+            let requested = icon.alternateIconName
+            UIApplication.shared.setAlternateIconName(requested) { error in
+                DispatchQueue.main.async {
+                    if let error {
+                        changeError = error.localizedDescription
+                    } else {
+                        currentIconName = requested
+                    }
+                }
             }
         } label: {
             VStack(alignment: .leading, spacing: 9) {
