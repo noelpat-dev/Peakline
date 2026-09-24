@@ -359,6 +359,7 @@ struct SummitLogStatsRow: View {
 
 struct SummitLogEntryRow: View {
     @Environment(\.appTheme) private var appTheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .body) private var titleSize: CGFloat = 16
     @ScaledMetric(relativeTo: .caption) private var metadataSize: CGFloat = 11.5
     @ScaledMetric(relativeTo: .subheadline) private var noteSize: CGFloat = 13
@@ -397,6 +398,7 @@ struct SummitLogEntryRow: View {
 
     private var dateDay: String { Calendar.current.component(.day, from: climb.date).formatted() }
     private var weekday: String { climb.date.formatted(.dateTime.weekday(.abbreviated)).uppercased() }
+    private var dateColumnWidth: CGFloat { dynamicTypeSize.isAccessibilitySize ? 56 : 38 }
     private var gainColor: Color {
         if climb.isLowerRoute { return appTheme.colors.textSecondary }
         return isToday ? appTheme.colors.alpenglow : appTheme.colors.textPrimary
@@ -439,7 +441,7 @@ struct SummitLogEntryRow: View {
                     .foregroundStyle(appTheme.colors.textPrimary)
                     .lineLimit(1)
             }
-            .frame(width: 38, alignment: .leading)
+            .frame(width: dateColumnWidth, alignment: .leading)
             .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
