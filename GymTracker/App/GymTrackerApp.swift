@@ -67,7 +67,15 @@ struct GymTrackerApp: App {
 
     var body: some Scene {
         WindowGroup {
+#if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-SummitGallery") {
+                SummitGalleryView()
+            } else {
+                PeaklineModelContainerHost()
+            }
+#else
             PeaklineModelContainerHost()
+#endif
         }
     }
 }
