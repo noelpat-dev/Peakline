@@ -197,6 +197,7 @@ struct SummitMonthRidgeView: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .caption) private var labelSize: CGFloat = 11
+    @ScaledMetric(relativeTo: .caption2) private var previousMonthLabelInset: CGFloat = 43
 
     let month: SummitMonthRidge
 
@@ -257,7 +258,7 @@ struct SummitMonthRidgeView: View {
                     .modifier(AppTypography.waypointLabelSmall)
                     .foregroundStyle(appTheme.colors.textTertiary)
                     .lineLimit(1)
-                    .position(x: width - 43, y: 25)
+                    .position(x: width - previousMonthLabelInset, y: 25)
                     .accessibilityHidden(true)
             }
             .frame(width: width, height: 118)
