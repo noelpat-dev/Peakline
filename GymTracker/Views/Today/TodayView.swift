@@ -1430,9 +1430,7 @@ struct TodayView: View {
                         onTakeLowerRoute: previewLowerRoute,
                         onClimbAnyway: nextLiftAction
                     )
-                }
-
-                if !isRoutePresentationReady {
+                } else if !isRoutePresentationReady {
                     TrailStop(
                         title: "Preparing your route",
                         detail: "Your current plan will appear here."
@@ -1614,19 +1612,17 @@ struct TodayView: View {
                     Button {
                         openRoute(.expedition)
                     } label: {
-                        FitnessCard {
-                            AltimeterView(
-                                metres: snapshot.altitude.totalMetres,
-                                gainedToday: snapshot.altitude.gainedToday,
-                                nextMilestone: snapshot.altitude.next.map {
-                                    (name: $0.name, metres: $0.metres)
-                                },
-                                passedMilestones: snapshot.altitude.passed.map {
-                                    (name: $0.name, metres: $0.metres)
-                                },
-                                animatesIntro: false
-                            )
-                        }
+                        AltimeterView(
+                            metres: snapshot.altitude.totalMetres,
+                            gainedToday: snapshot.altitude.gainedToday,
+                            nextMilestone: snapshot.altitude.next.map {
+                                (name: $0.name, metres: $0.metres)
+                            },
+                            passedMilestones: snapshot.altitude.passed.map {
+                                (name: $0.name, metres: $0.metres)
+                            },
+                            animatesIntro: false
+                        )
                     }
                     .buttonStyle(.plain)
                     .accessibilityElement(children: .ignore)
