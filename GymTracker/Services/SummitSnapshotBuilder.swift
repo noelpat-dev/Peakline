@@ -390,7 +390,8 @@ enum SummitSnapshotBuilder {
         return candidates.sorted {
             if $0.isCompound != $1.isCompound { return $0.isCompound && !$1.isCompound }
             if $0.value.e1RMNow != $1.value.e1RMNow { return $0.value.e1RMNow > $1.value.e1RMNow }
-            return $0.value.name < $1.value.name
+            if $0.value.name != $1.value.name { return $0.value.name < $1.value.name }
+            return $0.value.id.uuidString < $1.value.id.uuidString
         }.prefix(6).map(\.value)
     }
 

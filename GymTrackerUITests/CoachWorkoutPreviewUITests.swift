@@ -232,6 +232,14 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         )
 
         tapElement(identifier: "readiness-signal-coverage", maxSwipes: 4)
+        // The simulator occasionally drops the first tap after a cold boot (it
+        // never happens on device). A route slower than 3 s fails the budget
+        // anyway, so re-tapping once only recovers a tap that never landed.
+        if !app.descendants(matching: .any)["coach-route-screen"].waitForExistence(timeout: 3),
+           tappableElement(identifier: "readiness-signal-coverage").isHittable {
+            add(XCTAttachment(string: "Today -> Coach tap was lost; re-tapped once"))
+            tapElement(identifier: "readiness-signal-coverage", maxSwipes: 4)
+        }
         XCTAssertTrue(waitForCoachScreen(), "Expected Today -> Coach to open")
         let coachCall = app.descendants(matching: .any)["coach-todays-call"]
         XCTAssertTrue(coachCall.waitForExistence(timeout: 12))

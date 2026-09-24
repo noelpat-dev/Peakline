@@ -635,7 +635,7 @@ struct RootTabView: View {
         // recomputes on push and the warm snapshot is accepted without a
         // visible correction pass.
         let requestedRevision = workoutWarmStartInvalidation.revision
-        let orderedNaps = naps.sorted { $0.startDate > $1.startDate }
+        let orderedNaps = naps.sorted(by: Self.napNewestFirst)
         PerformanceTracer.mark(.appLifecycle, "warm_sleep_refresh begin reason=\(reason)")
         _ = SleepAnalyticsSnapshotStore.shared.snapshot(
             sessions: sleepSessions,
@@ -816,7 +816,7 @@ struct RootTabView: View {
     private var deepLinkSleepAnalyticsSignature: SleepAnalyticsInputSignature {
         SleepAnalyticsInputSignature(
             sessions: sleepSessions,
-            naps: naps.sorted { $0.startDate > $1.startDate },
+            naps: naps.sorted(by: Self.napNewestFirst),
             workouts: workouts,
             settings: sleepSettingsStore.load(),
             workoutRevision: workoutWarmStartInvalidation.revision
@@ -1060,6 +1060,14 @@ struct RootTabView: View {
         sleepNotificationRefreshTask = nil
         queuedSleepNotificationRefreshSignature = nil
         PerformanceTracer.mark(.appLifecycle, "notification refresh task cancelled reason=\(reason)")
+    }
+
+    /// Newest nap first, with the id as a tie-break: Swift's sort isn't
+    /// stable, so naps sharing a start date could reorder between renders and
+    /// change the sleep analytics signature.
+    private static func napNewestFirst(_ lhs: NapSession, _ rhs: NapSession) -> Bool {
+        if lhs.startDate != rhs.startDate { return lhs.startDate > rhs.startDate }
+        return lhs.id.uuidString < rhs.id.uuidString
     }
 
     private static func sleepNotificationRefreshSignature(
