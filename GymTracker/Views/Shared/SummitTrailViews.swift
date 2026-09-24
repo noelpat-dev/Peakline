@@ -591,11 +591,11 @@ struct CairnDetailView: View {
                     Text("\(max(0, state.stones).formatted())")
                         .modifier(AppTypography.instrumentHero)
                         .foregroundStyle(appTheme.colors.textPrimary)
-                    Text("WEEKS")
+                    Text(state.stones == 1 ? "WEEK" : "WEEKS")
                         .modifier(AppTypography.instrumentUnit)
                 }
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(max(0, state.stones)) weeks")
+                .accessibilityLabel("\(max(0, state.stones)) \(state.stones == 1 ? "week" : "weeks")")
 
                 Text(subtitle)
                     .font(.system(size: subtitleSize, weight: .regular))
@@ -689,7 +689,7 @@ private struct CairnWeekStrip: View {
 
     private var weekStripLabel: String {
         let qualified = state.recentWeeks.filter(\.qualified).count
-        return "Recent weeks, \(qualified) qualified weeks in the last twelve, current week \(max(0, state.climbsThisWeek)) of \(max(1, state.climbsNeeded)) climbs"
+        return "Recent weeks, \(qualified) qualified \(qualified == 1 ? "week" : "weeks") in the last twelve; current week, \(max(0, state.climbsThisWeek)) climbs, weekly target \(max(1, state.climbsNeeded))"
     }
 
     private var newestFreshWeekIndex: Int? {
