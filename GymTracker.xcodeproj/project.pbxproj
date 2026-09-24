@@ -225,6 +225,8 @@
 		A3A00000000000000000000A /* SummitIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A10000000000000000000A /* SummitIcons.swift */; };
 		A3A00000000000000000000B /* SummitAppIconPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A10000000000000000000B /* SummitAppIconPicker.swift */; };
 		A3A00000000000000000000C /* SummitGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A10000000000000000000C /* SummitGalleryView.swift */; };
+		A3A00000000000000000000D /* SummitSnapshotProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A10000000000000000000D /* SummitSnapshotProvider.swift */; };
+		A3A00000000000000000000E /* SummitSnapshotProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A10000000000000000000E /* SummitSnapshotProviderTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -418,6 +420,8 @@
 		A3A10000000000000000000A /* SummitIcons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummitIcons.swift; sourceTree = "<group>"; };
 		A3A10000000000000000000B /* SummitAppIconPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummitAppIconPicker.swift; sourceTree = "<group>"; };
 		A3A10000000000000000000C /* SummitGalleryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummitGalleryView.swift; sourceTree = "<group>"; };
+		A3A10000000000000000000D /* SummitSnapshotProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummitSnapshotProvider.swift; sourceTree = "<group>"; };
+		A3A10000000000000000000E /* SummitSnapshotProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummitSnapshotProviderTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -624,6 +628,7 @@
 			children = (
 				A3A100000000000000000002 /* SummitProgressService.swift */,
 				A3A100000000000000000003 /* SummitSnapshotBuilder.swift */,
+				A3A10000000000000000000D /* SummitSnapshotProvider.swift */,
 				00200000000000000000000C /* SeedDataService.swift */,
 				00200000000000000000001A /* CoachRecommendationEngine.swift */,
 				00200000000000000000001F /* TargetSuggestionService.swift */,
@@ -775,6 +780,7 @@
 			children = (
 				A3A100000000000000000004 /* SummitProgressServiceTests.swift */,
 				A3A100000000000000000005 /* SummitSnapshotBuilderTests.swift */,
+				A3A10000000000000000000E /* SummitSnapshotProviderTests.swift */,
 				8C3AD24E9453E3998DFECC18 /* ExerciseGuideCatalogTests.swift */,
 				0020000000000000000000A1 /* CoachIntelligenceServiceTests.swift */,
 				0020000000000000000000A2 /* WorkoutReliabilityTests.swift */,
@@ -984,6 +990,7 @@
 				A3A00000000000000000000A /* SummitIcons.swift in Sources */,
 				A3A00000000000000000000B /* SummitAppIconPicker.swift in Sources */,
 				A3A00000000000000000000C /* SummitGalleryView.swift in Sources */,
+				A3A00000000000000000000D /* SummitSnapshotProvider.swift in Sources */,
 				16A3B42C69B46AC4863F4671 /* ExerciseArtworkCreditsView.swift in Sources */,
 				FE148485CF56AB9C00DBC7E4 /* ExerciseGuideView.swift in Sources */,
 				D6E1E5922D596DB71B3D2162 /* ExerciseGuideCatalog.swift in Sources */,
@@ -1146,6 +1153,7 @@
 			files = (
 				A3A000000000000000000004 /* SummitProgressServiceTests.swift in Sources */,
 				A3A000000000000000000005 /* SummitSnapshotBuilderTests.swift in Sources */,
+				A3A00000000000000000000E /* SummitSnapshotProviderTests.swift in Sources */,
 				645492999B905193C20BC3E3 /* ExerciseGuideCatalogTests.swift in Sources */,
 				0010000000000000000000A1 /* CoachIntelligenceServiceTests.swift in Sources */,
 				0010000000000000000000A2 /* WorkoutReliabilityTests.swift in Sources */,
