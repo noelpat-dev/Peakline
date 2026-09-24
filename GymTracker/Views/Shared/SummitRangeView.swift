@@ -379,6 +379,10 @@ struct SummitRangeView: View {
             guard let selectedLiftID, !currentIDs.contains(selectedLiftID) else { return }
             self.selectedLiftID = lifts.max(by: { $0.e1RMNow < $1.e1RMNow })?.id
         }
+        // Fill the screen with the app background, top-aligned, instead of a
+        // default white page with the content centred.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
     }
 
     private func liftButton(_ lift: SummitLiftPeak, scrollable: Bool = false) -> some View {

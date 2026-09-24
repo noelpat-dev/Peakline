@@ -188,19 +188,11 @@ struct ProgressContentView: View {
                 }
         }
         .navigationDestination(isPresented: $isSummitRangePresented) {
-            ScrollView {
-                SummitRangeView(
-                    lifts: summitProvider?.snapshot?.lifts ?? [],
-                    unitSystem: summitProvider?.unitSystem ?? .metric,
-                    showsBackLink: false
-                )
-                .padding(.bottom, 24)
-            }
-            // Inline, untitled bar: the range draws its own "Progress" heading,
-            // so a large-title area would leave an empty band above it.
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
-            .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
+            SummitRangeView(
+                lifts: summitProvider?.snapshot?.lifts ?? [],
+                unitSystem: summitProvider?.unitSystem ?? .metric,
+                showsBackLink: false
+            )
             .onAppear {
                 NavigationInteraction.destinationDidAppear(key: "progress.summit-range")
             }
@@ -237,6 +229,15 @@ struct ProgressContentView: View {
         }
     }
 
+    /// Newest first, with the id as a tie-break. Swift's sort isn't stable, so
+    /// items sharing an `updatedAt` (a catalogue installed in one go) could
+    /// reorder between renders and change the refresh signature forever.
+    private static func newestFirstThenID<T>(_ lhs: T, _ rhs: T) -> Bool
+    where T: ProgressUpdatedAtIdentified {
+        if lhs.updatedAt != rhs.updatedAt { return lhs.updatedAt > rhs.updatedAt }
+        return lhs.id.uuidString < rhs.id.uuidString
+    }
+
     private var progressSignatureForObservation: String? {
         isProgressVisible ? progressSourceSignature : nil
     }
@@ -245,14 +246,14 @@ struct ProgressContentView: View {
         WorkoutWarmStartSourceSignature.make(
             revision: workoutWarmStartInvalidation.revision,
             splitSignatures: observedActiveSplits
-                .sorted { $0.updatedAt > $1.updatedAt }
+                .sorted(by: Self.newestFirstThenID)
                 .prefix(12)
                 .map(WorkoutWarmStartSourceSignature.split),
             workoutSignatures: observedCompletedSessions
                 .prefix(40)
                 .map(WorkoutWarmStartSourceSignature.workout),
             exerciseSignatures: observedExercises
-                .sorted { $0.updatedAt > $1.updatedAt }
+                .sorted(by: Self.newestFirstThenID)
                 .prefix(180)
                 .map(WorkoutWarmStartSourceSignature.exercise)
         )
@@ -491,7 +492,7 @@ struct ProgressContentView: View {
 
     private func refreshExercises(force: Bool = false) {
         let signature = observedExercises
-            .sorted { $0.updatedAt > $1.updatedAt }
+            .sorted(by: Self.newestFirstThenID)
             .prefix(ProgressWarmStartLimits.exerciseRowLimit)
             .map { ProgressExerciseRowSnapshot($0) }
             .map { "\($0.id.uuidString):\($0.name):\($0.primaryMuscleGroup):\($0.updatedAt.timeIntervalSince1970)" }
@@ -1220,3 +1221,12 @@ private struct ExerciseProgressEntry: Identifiable, Sendable {
         value.formatted(.number.precision(.fractionLength(value.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 1)))
     }
 }
+
+/// Models Progress orders newest-first for its change signatures.
+protocol ProgressUpdatedAtIdentified {
+    var updatedAt: Date { get }
+    var id: UUID { get }
+}
+
+extension Exercise: ProgressUpdatedAtIdentified {}
+extension TrainingSplit: ProgressUpdatedAtIdentified {}
