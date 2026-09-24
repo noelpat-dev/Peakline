@@ -36,24 +36,25 @@ struct WorkoutLiveActivityWidget: Widget {
                     ExpandedIslandHeader(
                         attributes: context.attributes,
                         state: context.state,
-                        pr: activePR
+                        pr: activePR,
+                        restEndsAt: activeRestEnd
                     )
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     ExpandedIslandTrailing(
                         state: context.state,
-                        pr: activePR,
-                        restEndsAt: activeRestEnd
+                        pr: activePR
                     )
                 }
+                .contentMargins(activePR == nil ? .trailing : [], 12)
                 DynamicIslandExpandedRegion(.bottom) {
                     ExpandedIslandContent(
                         attributes: context.attributes,
                         state: context.state,
-                        pr: activePR,
-                        restEndsAt: activeRestEnd
+                        pr: activePR
                     )
                 }
+                .contentMargins(activePR == nil ? .horizontal : [], 12)
             } compactLeading: {
                 HStack(spacing: 5) {
                     SummitMountainGlyph()
@@ -63,6 +64,9 @@ struct WorkoutLiveActivityWidget: Widget {
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .fontWidth(.condensed)
                         .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .frame(width: 32, alignment: .leading)
                 }
                 .foregroundStyle(SummitWidgetStyle.primary)
             } compactTrailing: {
@@ -72,6 +76,7 @@ struct WorkoutLiveActivityWidget: Widget {
                     size: 16
                 )
                 .foregroundStyle(SummitWidgetStyle.primary)
+                .frame(width: 44, alignment: .trailing)
             } minimal: {
                 WorkoutProgressRing(
                     completedSetCount: context.state.completedSetCount,
@@ -223,6 +228,7 @@ private struct ExpandedIslandHeader: View {
     let attributes: WorkoutActivityAttributes
     let state: WorkoutActivityAttributes.ContentState
     let pr: WorkoutActivityAttributes.PRFlash?
+    let restEndsAt: Date?
 
     var body: some View {
         if let pr {
@@ -256,9 +262,19 @@ private struct ExpandedIslandHeader: View {
                     Text(attributes.sessionTitle.uppercased())
                         .lineLimit(1)
                         .minimumScaleFactor(0.6)
-                    Text("\(activeElapsedSeconds(attributes: attributes, state: state, now: .now) / 60) MIN")
-                        .monospacedDigit()
-                        .foregroundStyle(SummitWidgetStyle.secondary)
+                    HStack(spacing: 3) {
+                        if let restEndsAt {
+                            Text("REST")
+                            Text(timerInterval: Date.now...restEndsAt, countsDown: true)
+                                .monospacedDigit()
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                        } else {
+                            Text("\(activeElapsedSeconds(attributes: attributes, state: state, now: .now) / 60) MIN")
+                                .monospacedDigit()
+                        }
+                    }
+                    .foregroundStyle(SummitWidgetStyle.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
@@ -274,7 +290,6 @@ private struct ExpandedIslandHeader: View {
 private struct ExpandedIslandTrailing: View {
     let state: WorkoutActivityAttributes.ContentState
     let pr: WorkoutActivityAttributes.PRFlash?
-    let restEndsAt: Date?
 
     var body: some View {
         if let pr {
@@ -285,12 +300,6 @@ private struct ExpandedIslandTrailing: View {
                 .foregroundStyle(SummitWidgetStyle.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-        } else if let restEndsAt {
-            Text(timerInterval: Date.now...restEndsAt, countsDown: true)
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                .fontWidth(.condensed)
-                .monospacedDigit()
-                .foregroundStyle(SummitWidgetStyle.primary)
         } else {
             MetresLabel(metres: state.metresGained, size: 12)
         }
@@ -301,7 +310,6 @@ private struct ExpandedIslandContent: View {
     let attributes: WorkoutActivityAttributes
     let state: WorkoutActivityAttributes.ContentState
     let pr: WorkoutActivityAttributes.PRFlash?
-    let restEndsAt: Date?
 
     var body: some View {
         if pr != nil {
@@ -325,8 +333,7 @@ private struct ExpandedIslandContent: View {
         } else {
             ExpandedWorkoutProgressView(
                 attributes: attributes,
-                state: state,
-                restEndsAt: restEndsAt
+                state: state
             )
         }
     }
@@ -335,7 +342,6 @@ private struct ExpandedIslandContent: View {
 private struct ExpandedWorkoutProgressView: View {
     let attributes: WorkoutActivityAttributes
     let state: WorkoutActivityAttributes.ContentState
-    let restEndsAt: Date?
 
     var body: some View {
         VStack(spacing: 6) {
@@ -355,13 +361,6 @@ private struct ExpandedWorkoutProgressView: View {
                         .foregroundStyle(SummitWidgetStyle.secondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                }
-                if let restEndsAt {
-                    Text("REST")
-                    Text(timerInterval: Date.now...restEndsAt, countsDown: true)
-                        .monospacedDigit()
-                } else {
-                    Text("\(activeElapsedSeconds(attributes: attributes, state: state, now: .now) / 60) MIN")
                 }
             }
             .font(.system(size: 10, weight: .medium, design: .rounded))
@@ -388,10 +387,8 @@ private struct ExpandedWorkoutProgressView: View {
             .monospacedDigit()
             .tracking(1)
             .foregroundStyle(SummitWidgetStyle.quiet)
-            .padding(.horizontal, 4)
         }
         .padding(.top, 8)
-        .frame(maxWidth: .infinity)
     }
 
     private var nextPrescription: String? {
