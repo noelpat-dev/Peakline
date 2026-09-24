@@ -75,6 +75,7 @@ private struct SummitRangePRFlag: View {
 private struct SummitRangeChart: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .caption) private var legendSize: CGFloat = 10.5
 
     let lifts: [SummitLiftPeak]
@@ -113,7 +114,7 @@ private struct SummitRangeChart: View {
                     .font(Font.system(size: legendSize, weight: .medium).width(.condensed).monospacedDigit())
                     .tracking(1.1)
                     .foregroundStyle(appTheme.colors.textTertiary)
-                    .position(x: min(width / 2, 96), y: 228)
+                    .position(x: dynamicTypeSize.isAccessibilitySize ? width / 2 : min(width / 2, 96), y: 228)
                     .accessibilityHidden(true)
             }
             .frame(width: width, height: 236)
@@ -271,6 +272,7 @@ struct SummitRangeView: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .body) private var sectionTitleSize: CGFloat = 34
     @ScaledMetric(relativeTo: .body) private var trendLabelSize: CGFloat = 10.5
     @ScaledMetric(relativeTo: .body) private var deltaSize: CGFloat = 15
@@ -327,12 +329,33 @@ struct SummitRangeView: View {
                 }
                 .padding(.trailing, 20)
             } else {
-                LazyVGrid(columns: selectorColumns, spacing: 4) {
-                    ForEach(lifts) { lift in
-                        liftButton(lift)
+                Group {
+                    if dynamicTypeSize.isAccessibilitySize {
+                        ScrollViewReader { proxy in
+                            ScrollView(.horizontal) {
+                                HStack(spacing: 8) {
+                                    ForEach(lifts) { lift in
+                                        liftButton(lift, scrollable: true)
+                                            .id(lift.id)
+                                    }
+                                }
+                                .padding(.horizontal, 14)
+                            }
+                            .onAppear {
+                                if let selectedID = selectedLift?.id {
+                                    proxy.scrollTo(selectedID, anchor: .center)
+                                }
+                            }
+                        }
+                    } else {
+                        LazyVGrid(columns: selectorColumns, spacing: 4) {
+                            ForEach(lifts) { lift in
+                                liftButton(lift)
+                            }
+                        }
+                        .padding(.horizontal, 14)
                     }
                 }
-                .padding(.horizontal, 14)
                 .padding(.top, 6)
 
                 if let selectedLift {
@@ -351,7 +374,7 @@ struct SummitRangeView: View {
         }
     }
 
-    private func liftButton(_ lift: SummitLiftPeak) -> some View {
+    private func liftButton(_ lift: SummitLiftPeak, scrollable: Bool = false) -> some View {
         let isSelected = lift.id == selectedLift?.id
         let value = SummitWeightFormatting.displayString(lift.e1RMNow, unitSystem: unitSystem)
         return Button {
@@ -372,7 +395,13 @@ struct SummitRangeView: View {
                     .minimumScaleFactor(0.65)
             }
             .foregroundStyle(isSelected ? appTheme.colors.textPrimary : appTheme.colors.textSecondary)
-            .frame(maxWidth: .infinity, minHeight: 48)
+            .padding(.horizontal, scrollable ? 10 : 0)
+            .fixedSize(horizontal: scrollable, vertical: false)
+            .frame(
+                minWidth: scrollable ? 76 : nil,
+                maxWidth: scrollable ? nil : .infinity,
+                minHeight: 48
+            )
             .background {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(isSelected ? appTheme.colors.textPrimary : appTheme.colors.cardBorder, lineWidth: 1)
