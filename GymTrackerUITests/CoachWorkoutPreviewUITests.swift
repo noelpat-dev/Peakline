@@ -340,6 +340,15 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
             "Ready should keep the existing route without a recovery fork"
         )
         attachScreenshot(named: "wave3b-today-ready-clear-route-light")
+
+        plannedRoute.tap()
+        XCTAssertTrue(waitForPreviewScreen(), "Expected the unchanged planned route to open Preview")
+        XCTAssertTrue(
+            app.descendants(matching: .any).matching(
+                NSPredicate(format: "label CONTAINS[c] %@", "Full mode")
+            ).firstMatch.waitForExistence(timeout: 8),
+            "Expected the ready-day planned route to keep the normal full workout mode"
+        )
     }
 
     func testSummitAltitudeSectionShowsTheHydratedReading() throws {
