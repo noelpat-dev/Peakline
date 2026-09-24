@@ -76,6 +76,29 @@ final class SummitSnapshotProviderTests: XCTestCase {
         XCTAssertEqual(provider.totalMetres, provider.snapshot?.altitude.totalMetres)
     }
 
+    func testCancelledRefreshDoesNotPublishAfterItsCallerLeavesTheRoute() async throws {
+        let container = try makeContainer()
+        let provider = SummitSnapshotProvider()
+        let publications = PublicationCounter()
+        withObservationTracking {
+            _ = provider.snapshot
+        } onChange: {
+            publications.increment()
+        }
+
+        let refreshTask = Task { @MainActor in
+            // Cancel the caller before refresh installs its cancellation
+            // handler, exercising the same path as a route disappearing just
+            // before its refresh task starts.
+            withUnsafeCurrentTask { $0?.cancel() }
+            await provider.refresh(container: container)
+        }
+        await refreshTask.value
+
+        XCTAssertNil(provider.snapshot)
+        XCTAssertEqual(publications.value, 0)
+    }
+
     func testMetresForCompletedMatchesSnapshotEngineWithCachedInputs() async throws {
         let container = try makeContainer()
         let context = container.mainContext
