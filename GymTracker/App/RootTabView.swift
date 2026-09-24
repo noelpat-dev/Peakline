@@ -902,6 +902,10 @@ struct RootTabView: View {
                 PerformanceTracer.mark(.appLifecycle, "full_app_backup saved reason=\(reason) records=\(metadata.counts.totalRecordCount)")
             case .keptExistingBackup(let metadata):
                 PerformanceTracer.mark(.appLifecycle, "full_app_backup kept_existing reason=\(reason) records=\(metadata.counts.totalRecordCount)")
+            case .savedWithCredentialWarning(let metadata, _):
+                PerformanceTracer.mark(.appLifecycle, "full_app_backup saved_with_credential_warning reason=\(reason) records=\(metadata.counts.totalRecordCount)")
+            case .skippedUnchanged(let metadata):
+                PerformanceTracer.mark(.appLifecycle, "full_app_backup skipped_unchanged reason=\(reason) records=\(metadata.counts.totalRecordCount)")
             case .passphraseRequired:
                 PerformanceTracer.mark(.appLifecycle, "full_app_backup passphrase_required reason=\(reason)")
             case .unavailable(let message):

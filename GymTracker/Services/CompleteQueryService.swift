@@ -1,3 +1,4 @@
+import Foundation
 import SwiftData
 
 /// Reads a descriptor in bounded pages so routes can keep a small warm query

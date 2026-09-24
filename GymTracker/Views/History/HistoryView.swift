@@ -28,6 +28,25 @@ struct HistoryWorkoutSnapshot: Hashable, Sendable {
     let notes: String?
     let exercises: [Exercise]
 
+    init(
+        id: UUID, date: Date, splitName: String,
+        startedAt: Date?, endedAt: Date?, durationMinutes: Int?, durationSeconds: Int?,
+        accumulatedPausedSeconds: Int, rating: Int?, notes: String?,
+        exercises: [Exercise]
+    ) {
+        self.id = id
+        self.date = date
+        self.splitName = splitName
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.durationMinutes = durationMinutes
+        self.durationSeconds = durationSeconds
+        self.accumulatedPausedSeconds = accumulatedPausedSeconds
+        self.rating = rating
+        self.notes = notes
+        self.exercises = exercises
+    }
+
     @MainActor
     init(_ session: WorkoutSession) {
         id = session.id

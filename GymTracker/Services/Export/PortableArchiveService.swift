@@ -103,13 +103,13 @@ struct PortableArchiveService {
     private let encryptionService: BackupEncryptionService
 
     init(
-        fullAppService: FullAppBackupService = FullAppBackupService(),
-        encryptionService: BackupEncryptionService = BackupEncryptionService()
+        fullAppService: FullAppBackupService? = nil,
+        encryptionService: BackupEncryptionService? = nil
     ) {
-        self.fullAppService = fullAppService
+        self.fullAppService = fullAppService ?? FullAppBackupService()
         self.legacyExportService = LocalBackupExportService()
         self.legacyImportService = LocalBackupImportService()
-        self.encryptionService = encryptionService
+        self.encryptionService = encryptionService ?? BackupEncryptionService()
     }
 
     func makeFullArchive(
@@ -296,7 +296,7 @@ struct PortableArchiveService {
                 passphrase: passphrase,
                 salt: try encryptionService.randomData(count: BackupEncryptionService.saltByteCount)
             )
-            let encrypted = try encryptionService.encrypt(compressed, keyMaterial: material)
+            let encrypted = try encryptionService.encrypt(plaintext: compressed, keyMaterial: material)
             file = PortableArchiveFile(
                 protection: .passphrase,
                 crypto: encrypted.crypto,

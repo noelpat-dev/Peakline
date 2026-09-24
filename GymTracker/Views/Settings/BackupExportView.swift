@@ -204,11 +204,11 @@ struct BackupExportView: View {
         }
     }
 
-    private func handleArchiveSelection(_ result: Result<URL, Error>) {
+    private func handleArchiveSelection(_ result: Result<[URL], Error>) {
         do {
-            let url = try result.get()
+            guard let url = try result.get().first else { return }
             let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-            let preview = (try? archiveService.preview(data, passphrase: archivePassphrase.isEmpty ? nil : archivePassphrase)) ?? archiveService.previewLegacy(data)
+            let preview = try (try? archiveService.preview(data, passphrase: archivePassphrase.isEmpty ? nil : archivePassphrase)) ?? archiveService.previewLegacy(data)
             pendingArchiveData = data
             archivePreview = preview
             showingRestoreConfirmation = true

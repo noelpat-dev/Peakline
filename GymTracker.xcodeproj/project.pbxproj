@@ -213,6 +213,13 @@
 		AD801DEFB34D06A8E5E44E6B /* WorkoutGuide in Resources */ = {isa = PBXBuildFile; fileRef = 972666C4C12FB89883DD39DB /* WorkoutGuide */; };
 		0E00AE9C4F9BE622E6EDA33B /* ExerciseGuideUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F90A8222AAE63088EC3585FF /* ExerciseGuideUITests.swift */; };
 		645492999B905193C20BC3E3 /* ExerciseGuideCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C3AD24E9453E3998DFECC18 /* ExerciseGuideCatalogTests.swift */; };
+		0010000000000000000D0001 /* FirstRunView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000D0001 /* FirstRunView.swift */; };
+		0010000000000000000D0002 /* LocalWorkspaceMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000D0002 /* LocalWorkspaceMetadata.swift */; };
+		0010000000000000000D0003 /* CompleteQueryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000D0003 /* CompleteQueryService.swift */; };
+		0010000000000000000D0004 /* WorkspaceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000D0004 /* WorkspaceService.swift */; };
+		0010000000000000000D0005 /* PortableArchiveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000D0005 /* PortableArchiveService.swift */; };
+		0010000000000000000D0006 /* CompleteQueryServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000D0006 /* CompleteQueryServiceTests.swift */; };
+		0010000000000000000D0007 /* PortableArchiveServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0020000000000000000D0007 /* PortableArchiveServiceTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -397,6 +404,13 @@
 		A1B2C3D4E5F60123456789AB /* Peakline.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Peakline.xcconfig; sourceTree = SOURCE_ROOT; };
 		A1B2C3D4E5F60123456789AC /* Peakline.local.xcconfig.example */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Peakline.local.xcconfig.example; sourceTree = SOURCE_ROOT; };
 		A1B2C3D4E5F60123456789AD /* Config README.md */ = {isa = PBXFileReference; lastKnownFileType = text; path = README.md; sourceTree = "<group>"; };
+		0020000000000000000D0001 /* FirstRunView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstRunView.swift; sourceTree = "<group>"; };
+		0020000000000000000D0002 /* LocalWorkspaceMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalWorkspaceMetadata.swift; sourceTree = "<group>"; };
+		0020000000000000000D0003 /* CompleteQueryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompleteQueryService.swift; sourceTree = "<group>"; };
+		0020000000000000000D0004 /* WorkspaceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceService.swift; sourceTree = "<group>"; };
+		0020000000000000000D0005 /* PortableArchiveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Export/PortableArchiveService.swift; sourceTree = "<group>"; };
+		0020000000000000000D0006 /* CompleteQueryServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompleteQueryServiceTests.swift; sourceTree = "<group>"; };
+		0020000000000000000D0007 /* PortableArchiveServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortableArchiveServiceTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -472,6 +486,7 @@
 				0020000000000000000000D5 /* PeaklineModelSchema.swift */,
 				002000000000000000000002 /* RootTabView.swift */,
 				002000000000000000000098 /* AppStartupView.swift */,
+				0020000000000000000D0001 /* FirstRunView.swift */,
 				00200000000000000000007B /* StartupCoordination.swift */,
 				00200000000000000000007C /* PeaklineSplashView.swift */,
 				00200000000000000000007D /* AccountGateViews.swift */,
@@ -492,6 +507,7 @@
 				002000000000000000000009 /* SetLog.swift */,
 				00200000000000000000000A /* Recommendation.swift */,
 				00200000000000000000000B /* BodyweightLog.swift */,
+				0020000000000000000D0002 /* LocalWorkspaceMetadata.swift */,
 				002000000000000000000055 /* NutritionModels.swift */,
 				002000000000000000000058 /* FoodImportDraft.swift */,
 				00200000000000000000005D /* NutritionOCRModels.swift */,
@@ -624,6 +640,7 @@
 				002000000000000000000034 /* ExerciseIconMapper.swift */,
 				00200000000000000000003D /* LocalExportModels.swift */,
 				00200000000000000000003E /* LocalBackupExportService.swift */,
+				0020000000000000000D0005 /* PortableArchiveService.swift */,
 				00200000000000000000003F /* WorkoutCSVExporter.swift */,
 				002000000000000000000099 /* LocalBackupImportService.swift */,
 				00200000000000000000009A /* EmergencyBackupService.swift */,
@@ -664,6 +681,8 @@
 				C06AC0010000000000000003 /* CoachRouteSnapshotStore.swift */,
 				002000000000000000000095 /* CoachWorkoutAdjustmentService.swift */,
 				00200000000000000000009F /* WarmStartSnapshotStore.swift */,
+				0020000000000000000D0004 /* WorkspaceService.swift */,
+				0020000000000000000D0003 /* CompleteQueryService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -764,6 +783,8 @@
 				0020000000000000000000AB /* MotionBlueprintTests.swift */,
 				0020000000000000000000A4 /* NutritionExportReliabilityTests.swift */,
 				0020000000000000000000A5 /* WarmStartSnapshotStoreTests.swift */,
+				0020000000000000000D0007 /* PortableArchiveServiceTests.swift */,
+				0020000000000000000D0006 /* CompleteQueryServiceTests.swift */,
 				0020000000000000000000A6 /* BackupRestoreReliabilityTests.swift */,
 				0020000000000000000000A7 /* FullAppBackupReliabilityTests.swift */,
 				0020000000000000000000AD /* InteractionQualityTests.swift */,
@@ -959,6 +980,7 @@
 				0010000000000000000000D5 /* PeaklineModelSchema.swift in Sources */,
 				001000000000000000000002 /* RootTabView.swift in Sources */,
 				001000000000000000000098 /* AppStartupView.swift in Sources */,
+				0010000000000000000D0001 /* FirstRunView.swift in Sources */,
 				001000000000000000000003 /* Enums.swift in Sources */,
 				001000000000000000000004 /* UserProfile.swift in Sources */,
 				001000000000000000000005 /* TrainingSplit.swift in Sources */,
@@ -968,6 +990,7 @@
 				001000000000000000000009 /* SetLog.swift in Sources */,
 				00100000000000000000000A /* Recommendation.swift in Sources */,
 				00100000000000000000000B /* BodyweightLog.swift in Sources */,
+				0010000000000000000D0002 /* LocalWorkspaceMetadata.swift in Sources */,
 				00100000000000000000000C /* SeedDataService.swift in Sources */,
 				001000000000000000000017 /* AppTheme.swift in Sources */,
 				00100000000000000000000E /* TodayView.swift in Sources */,
@@ -1016,6 +1039,7 @@
 				00100000000000000000003B /* WorkoutCelebrationOverlay.swift in Sources */,
 				00100000000000000000003C /* LocalExportModels.swift in Sources */,
 				00100000000000000000003D /* LocalBackupExportService.swift in Sources */,
+				0010000000000000000D0005 /* PortableArchiveService.swift in Sources */,
 				00100000000000000000003E /* WorkoutCSVExporter.swift in Sources */,
 				001000000000000000000099 /* LocalBackupImportService.swift in Sources */,
 				00100000000000000000009A /* EmergencyBackupService.swift in Sources */,
@@ -1080,6 +1104,8 @@
 				001000000000000000000096 /* CoachWorkoutAdjustmentViews.swift in Sources */,
 				001000000000000000000097 /* PerformanceTracer.swift in Sources */,
 				00100000000000000000009F /* WarmStartSnapshotStore.swift in Sources */,
+				0010000000000000000D0004 /* WorkspaceService.swift in Sources */,
+				0010000000000000000D0003 /* CompleteQueryService.swift in Sources */,
 				001000000000000000000073 /* SleepDashboardView.swift in Sources */,
 				001000000000000000000074 /* NapTimerViews.swift in Sources */,
 				001000000000000000000075 /* SleepSessionViews.swift in Sources */,
@@ -1123,6 +1149,8 @@
 				0010000000000000000000AB /* MotionBlueprintTests.swift in Sources */,
 				0010000000000000000000A4 /* NutritionExportReliabilityTests.swift in Sources */,
 				0010000000000000000000A5 /* WarmStartSnapshotStoreTests.swift in Sources */,
+				0010000000000000000D0007 /* PortableArchiveServiceTests.swift in Sources */,
+				0010000000000000000D0006 /* CompleteQueryServiceTests.swift in Sources */,
 				0010000000000000000000A6 /* BackupRestoreReliabilityTests.swift in Sources */,
 				0010000000000000000000A7 /* FullAppBackupReliabilityTests.swift in Sources */,
 				0010000000000000000000AD /* InteractionQualityTests.swift in Sources */,

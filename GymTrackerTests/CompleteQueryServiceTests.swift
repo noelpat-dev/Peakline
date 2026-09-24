@@ -12,8 +12,8 @@ final class CompleteQueryServiceTests: XCTestCase {
 
     func testCollectHandlesEmptyAndExactPageBoundaries() throws {
         XCTAssertEqual(
-            try CompleteQueryService.collect(pageSize: 3) { _, _ in [] },
-            []
+            try CompleteQueryService.collect(pageSize: 3) { _, _ -> [Int] in [] },
+            [Int]()
         )
         let values = Array(0..<6)
         let result = try CompleteQueryService.collect(pageSize: 3) { offset, limit in

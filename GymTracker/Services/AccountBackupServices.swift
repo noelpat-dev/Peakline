@@ -139,7 +139,7 @@ struct FirebaseAccountService {
         guard FirebaseBootstrap.isConfigured else { throw FirebaseAccountError.notConfigured }
         let address = email.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !address.isEmpty else { throw FirebaseAccountError.invalidEmail }
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             Auth.auth().sendPasswordReset(withEmail: address) { error in
                 if let error { continuation.resume(throwing: error) }
                 else { continuation.resume(returning: ()) }
@@ -172,7 +172,7 @@ struct FirebaseAccountService {
     }
 
     private func deleteUser(_ user: User) async throws {
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             user.delete { error in
                 if let error { continuation.resume(throwing: error) }
                 else { continuation.resume(returning: ()) }
