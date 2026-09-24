@@ -52,6 +52,8 @@ struct TodayView: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.modelContext) private var modelContext
+    @Environment(SummitSnapshotProvider.self) private var summitProvider
     @ObservedObject private var readinessRefreshClock = ReadinessRefreshClock.shared
     @ObservedObject private var workoutWarmStartInvalidation = WorkoutWarmStartInvalidation.shared
 
@@ -115,6 +117,8 @@ struct TodayView: View {
     @State private var lastRecoveryCardOutputSignature: String?
     @State private var lastNutritionCardOutputSignature: String?
     @State private var dashboardRefreshTask: Task<Void, Never>?
+    @State private var summitSnapshotRefreshTask: Task<Void, Never>?
+    @ScaledMetric(relativeTo: .body) private var altitudeSectionContentHeight: CGFloat = 300
 
     private let initialStartupSnapshot: StartupSnapshotBundle?
     private let startupRevealComplete: Bool
@@ -608,6 +612,20 @@ struct TodayView: View {
         if launchArguments.contains("-SummitCondition=clear") { condition = .clear }
         if launchArguments.contains("-SummitCondition=changeable") { condition = .changeable }
         if launchArguments.contains("-SummitCondition=storm") { condition = .storm }
+        let conditionArgumentPrefix = "-SummitCondition="
+        let conditionArgument = launchArguments.first(where: { $0.hasPrefix(conditionArgumentPrefix) })
+            .map { String($0.dropFirst(conditionArgumentPrefix.count)) }
+            ?? launchArguments.firstIndex(of: "-SummitCondition").flatMap { optionIndex in
+                let valueIndex = launchArguments.index(after: optionIndex)
+                guard valueIndex < launchArguments.endIndex else { return nil }
+                return launchArguments[valueIndex]
+            }
+        switch conditionArgument {
+        case "clear": condition = .clear
+        case "changeable": condition = .changeable
+        case "storm": condition = .storm
+        default: break
+        }
         if launchArguments.contains("-SummitTime=day") { timeOfDay = .day }
         if launchArguments.contains("-SummitTime=dawn") { timeOfDay = .dawn }
         if launchArguments.contains("-SummitTime=night") { timeOfDay = .night }
@@ -776,6 +794,8 @@ struct TodayView: View {
 
                         weeklyActivitySection
                             .dashboardArrival(isVisible: dashboardArrival.isVisible(index: 3), index: 3)
+
+                        altitudeSection
                     }
                 }
                 .padding(.horizontal, appTheme.metrics.screenPadding)
@@ -819,6 +839,7 @@ struct TodayView: View {
                 reentryComparisonPending = isReentry
                 isDashboardVisible = true
                 dashboardArrival.start(itemCount: 4, reduceMotion: reduceMotion)
+                scheduleSummitSnapshotRefresh()
                 readinessRefreshClock.start()
                 sleepSettings = sleepSettingsStore.load()
                 hydrationTargetML = hydrationSettingsStore.dailyTargetML()
@@ -854,6 +875,10 @@ struct TodayView: View {
                 guard signature != nil, lastCoachSnapshotSignature != nil else { return }
                 refreshCoachSnapshot()
             }
+            .onChange(of: startupRevealComplete) { _, isComplete in
+                guard isComplete else { return }
+                scheduleSummitSnapshotRefresh()
+            }
             .onReceive(NotificationCenter.default.publisher(for: .workoutCompletionPresentationBegan)) { _ in
                 isWorkoutCompletionPresentationActive = true
                 PerformanceTracer.mark(.workoutLoggerFinish, "today_refresh_suspended")
@@ -861,10 +886,13 @@ struct TodayView: View {
             .onReceive(NotificationCenter.default.publisher(for: .workoutCompletionPresentationEnded)) { _ in
                 isWorkoutCompletionPresentationActive = false
                 PerformanceTracer.mark(.workoutLoggerFinish, "today_refresh_resumed")
+                refreshSummitSnapshotAfterWorkout()
             }
             .onDisappear {
                 isDashboardVisible = false
                 wasAwayForReentry = true
+                summitSnapshotRefreshTask?.cancel()
+                summitSnapshotRefreshTask = nil
                 dashboardRefreshTask?.cancel()
                 dashboardRefreshTask = nil
                 reentryWashTask?.cancel()
@@ -878,6 +906,42 @@ struct TodayView: View {
                 .frame(height: 0)
                 .background(appTheme.colors.backgroundPrimary.ignoresSafeArea(edges: .top))
                 .allowsHitTesting(false)
+        }
+    }
+
+    private func scheduleSummitSnapshotRefresh() {
+        summitSnapshotRefreshTask?.cancel()
+        guard startupRevealComplete else { return }
+
+        summitSnapshotRefreshTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled, isDashboardVisible else { return }
+
+            do {
+                // Start after the startup reveal; SummitHorizonView's intro then needs 2.15 seconds.
+                try await Task.sleep(nanoseconds: 2_300_000_000)
+            } catch {
+                return
+            }
+
+            guard !Task.isCancelled,
+                  isDashboardVisible,
+                  scenePhase == .active,
+                  !isWorkoutCompletionPresentationActive,
+                  selectedRoute == nil,
+                  previewRoute == nil,
+                  startWorkoutRoute == nil else { return }
+
+            await summitProvider.refresh(container: modelContext.container)
+        }
+    }
+
+    private func refreshSummitSnapshotAfterWorkout() {
+        summitSnapshotRefreshTask?.cancel()
+        summitSnapshotRefreshTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            await summitProvider.refresh(container: modelContext.container)
         }
     }
 
@@ -998,6 +1062,25 @@ struct TodayView: View {
                 )
             case .hydration:
                 HydrationView()
+            case .expedition:
+                ScrollView {
+                    ExpeditionView(
+                        progress: summitProvider.snapshot?.expedition,
+                        onSetOff: {
+                            Task { @MainActor in
+                                await summitProvider.setOff(container: modelContext.container)
+                            }
+                        }
+                    )
+                }
+                .background(appTheme.colors.backgroundPrimary)
+            case .cairn:
+                ScrollView {
+                    if let cairn = summitProvider.snapshot?.cairn {
+                        CairnDetailView(state: cairn)
+                    }
+                }
+                .background(appTheme.colors.backgroundPrimary)
             }
         }
         .toolbar(.visible, for: .navigationBar)
@@ -1190,6 +1273,27 @@ struct TodayView: View {
             : { openRoute(.workout) }
     }
 
+    private var summitRoutePlanForToday: SummitRoutePlan? {
+        guard isRoutePresentationReady,
+              hasReadinessEvidence,
+              !hasBaseCampState,
+              !routePresentation.isCompletedToday,
+              suggestedSplit != nil else { return nil }
+
+        switch readinessScore.category {
+        case .recovery, .low, .cautious:
+            return SummitProgressService.routePlan(
+                category: readinessScore.category,
+                plannedTitle: suggestedSplit?.name ?? routePresentation.dayName,
+                plannedMinutes: routePresentation.estimatedMinutes > 0
+                    ? routePresentation.estimatedMinutes
+                    : nil
+            )
+        case .peak, .ready:
+            return nil
+        }
+    }
+
     private var sleepValueText: String {
         guard sleepSummary.primarySession != nil else { return "Not logged" }
         return SleepScoringService.durationText(minutes: sleepSummary.totalSleepMinutes)
@@ -1258,6 +1362,14 @@ struct TodayView: View {
                 .buttonStyle(.plain)
                 .accessibilityHint("Opens your prepared workout preview")
                 .accessibilityIdentifier("quick-action-workout")
+
+                if let summitRoutePlan = summitRoutePlanForToday {
+                    SummitRouteForkView(
+                        plan: summitRoutePlan,
+                        onTakeLowerRoute: previewLowerRoute,
+                        onClimbAnyway: nextLiftAction
+                    )
+                }
 
                 if !isRoutePresentationReady {
                     TrailStop(
@@ -1432,6 +1544,108 @@ struct TodayView: View {
             .accessibilityHint("Opens your activity history")
             .accessibilityIdentifier("today-weekly-activity")
         }
+    }
+
+    private var altitudeSection: some View {
+        TrailSection(index: 5, label: "ALTITUDE") {
+            if let snapshot = summitProvider.snapshot {
+                VStack(alignment: .leading, spacing: appTheme.metrics.spacing8) {
+                    Button {
+                        openRoute(.expedition)
+                    } label: {
+                        FitnessCard {
+                            AltimeterView(
+                                metres: snapshot.altitude.totalMetres,
+                                gainedToday: snapshot.altitude.gainedToday,
+                                nextMilestone: snapshot.altitude.next.map {
+                                    (name: $0.name, metres: $0.metres)
+                                },
+                                passedMilestones: snapshot.altitude.passed.map {
+                                    (name: $0.name, metres: $0.metres)
+                                },
+                                animatesIntro: false
+                            )
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(altitudeAccessibilityLabel(snapshot.altitude))
+                    .accessibilityHint("Opens your Machame expedition")
+
+                    Button {
+                        openRoute(.cairn)
+                    } label: {
+                        TrailStop(
+                            title: "Cairn",
+                            detail: cairnWeeksText(snapshot.cairn.stones)
+                        ) {
+                            CairnView(
+                                stones: snapshot.cairn.stones,
+                                newestIsFresh: snapshot.cairn.newestIsFresh
+                            )
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Cairn, \(cairnWeeksText(snapshot.cairn.stones))")
+                    .accessibilityHint("Opens your cairn streak")
+                }
+                .frame(minHeight: altitudeSectionContentHeight, alignment: .top)
+            } else {
+                altitudePlaceholder
+                    .frame(height: altitudeSectionContentHeight)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    private var altitudePlaceholder: some View {
+        VStack(alignment: .leading, spacing: appTheme.metrics.spacing8) {
+            FitnessCard {
+                VStack(alignment: .leading, spacing: appTheme.metrics.spacing12) {
+                    RoundedRectangle(cornerRadius: 6)
+                        .frame(width: 112, height: 58)
+                    RoundedRectangle(cornerRadius: 8)
+                        .frame(height: 66)
+                    RoundedRectangle(cornerRadius: 4)
+                        .frame(width: 190, height: 24)
+                }
+                .foregroundStyle(appTheme.colors.textTertiary.opacity(0.16))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            HStack(spacing: appTheme.metrics.spacing12) {
+                VStack(alignment: .leading, spacing: appTheme.metrics.spacing8) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .frame(width: 72, height: 14)
+                    RoundedRectangle(cornerRadius: 4)
+                        .frame(width: 56, height: 10)
+                }
+                Spacer(minLength: 0)
+                RoundedRectangle(cornerRadius: appTheme.metrics.radius12)
+                    .frame(width: 60, height: 64)
+            }
+            .foregroundStyle(appTheme.colors.textTertiary.opacity(0.16))
+            .padding(.vertical, 9)
+        }
+    }
+
+    private func altitudeAccessibilityLabel(_ altitude: SummitAltitude) -> String {
+        let currentAltitude = max(0, altitude.totalMetres).formatted()
+        guard let nextPeak = altitude.next else {
+            return "Altitude, \(currentAltitude) metres, all peaks reached"
+        }
+        let remainingMetres = max(
+            0,
+            altitude.metresToNext ?? (nextPeak.metres - altitude.totalMetres)
+        )
+        return "Altitude, \(currentAltitude) metres, next \(nextPeak.name) in \(remainingMetres.formatted()) metres"
+    }
+
+    private func cairnWeeksText(_ stones: Int) -> String {
+        let weeks = max(0, stones)
+        return "\(weeks.formatted()) \(weeks == 1 ? "week" : "weeks")"
     }
 
     private var baseCampChecklistItems: [(title: String, detail: String, done: Bool, action: () -> Void)] {
@@ -1718,6 +1932,11 @@ struct TodayView: View {
         openPreview(WorkoutPreviewSplit(suggestedSplit), mode: trainingCall.recommendedMode)
     }
 
+    private func previewLowerRoute() {
+        guard let suggestedSplit else { return }
+        openPreview(WorkoutPreviewSplit(suggestedSplit), mode: .recovery)
+    }
+
     private func openPreview(_ split: WorkoutPreviewSplit, mode: WorkoutMode = .full) {
         PerformanceTracer.mark(.previewRouteTap, "source=today split=\(split.name) mode=\(mode.rawValue)")
         PerformanceTracer.mark(.workoutPreviewRenderSnapshot, "navigation request source=today split=\(split.id.uuidString) active=\(previewRoute?.split.id.uuidString ?? "none")")
@@ -1850,6 +2069,8 @@ private enum TodayRoute: Hashable, Identifiable {
     case nutrition
     case sleep
     case hydration
+    case expedition
+    case cairn
 
     var id: Self { self }
 
@@ -1867,6 +2088,10 @@ private enum TodayRoute: Hashable, Identifiable {
             return "sleep"
         case .hydration:
             return "hydration"
+        case .expedition:
+            return "expedition"
+        case .cairn:
+            return "cairn"
         }
     }
 
@@ -1874,7 +2099,7 @@ private enum TodayRoute: Hashable, Identifiable {
         switch self {
         case .coach, .progress:
             return .deep
-        case .workout, .nutrition, .sleep, .hydration:
+        case .workout, .nutrition, .sleep, .hydration, .expedition, .cairn:
             return .warm
         }
     }
