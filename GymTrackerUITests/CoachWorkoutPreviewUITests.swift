@@ -270,9 +270,9 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
 
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 10))
 
-        tapElement(identifier: "today-review-plan", maxSwipes: 8)
+        tapElement(identifier: "quick-action-workout", maxSwipes: 8)
 
-        XCTAssertTrue(waitForPreviewScreen(), "Expected Review Today’s Plan to open Preview")
+        XCTAssertTrue(waitForPreviewScreen(), "Expected the Today route title to open Preview")
         XCTAssertTrue(
             app.buttons["workout-preview-start"].waitForExistence(timeout: 8)
                 || app.buttons["workout-preview-start-footer"].waitForExistence(timeout: 8),
@@ -280,7 +280,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         )
         XCTAssertFalse(
             app.descendants(matching: .any)["workout-logger-screen"].exists,
-            "Reviewing Today’s Plan must not start the Logger"
+            "Opening the Today route preview must not start the Logger"
         )
     }
 
