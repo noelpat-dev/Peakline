@@ -875,6 +875,10 @@ struct TodayView: View {
                 guard signature != nil, lastCoachSnapshotSignature != nil else { return }
                 refreshCoachSnapshot()
             }
+            .onChange(of: startupRevealComplete) { _, isComplete in
+                guard isComplete else { return }
+                scheduleSummitSnapshotRefresh()
+            }
             .onReceive(NotificationCenter.default.publisher(for: .workoutCompletionPresentationBegan)) { _ in
                 isWorkoutCompletionPresentationActive = true
                 PerformanceTracer.mark(.workoutLoggerFinish, "today_refresh_suspended")
@@ -910,13 +914,11 @@ struct TodayView: View {
         guard startupRevealComplete else { return }
 
         summitSnapshotRefreshTask = Task { @MainActor in
-            while !dashboardArrival.isPresented {
-                guard !Task.isCancelled, isDashboardVisible else { return }
-                await Task.yield()
-            }
+            await Task.yield()
+            guard !Task.isCancelled, isDashboardVisible else { return }
 
             do {
-                // SummitHorizonView's intro ends 2.15 seconds after its reveal begins.
+                // Start after the startup reveal; SummitHorizonView's intro then needs 2.15 seconds.
                 try await Task.sleep(nanoseconds: 2_300_000_000)
             } catch {
                 return
