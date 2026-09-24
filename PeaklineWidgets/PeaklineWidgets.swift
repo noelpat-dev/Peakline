@@ -466,7 +466,8 @@ private struct MetresLabel: View {
             .font(.system(size: size, weight: .semibold, design: .rounded))
             .fontWidth(.condensed)
             .monospacedDigit()
-            .foregroundStyle(SummitWidgetStyle.alpenglow)
+            // Alpenglow marks an achievement; nothing climbed yet stays neutral.
+            .foregroundStyle(metres > 0 ? SummitWidgetStyle.alpenglow : SummitWidgetStyle.secondary)
             .lineLimit(1)
             .minimumScaleFactor(minimumScaleFactor)
     }

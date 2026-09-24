@@ -188,11 +188,19 @@ struct ProgressContentView: View {
                 }
         }
         .navigationDestination(isPresented: $isSummitRangePresented) {
-            SummitRangeView(
-                lifts: summitProvider?.snapshot?.lifts ?? [],
-                unitSystem: summitProvider?.unitSystem ?? .metric,
-                showsBackLink: false
-            )
+            ScrollView {
+                SummitRangeView(
+                    lifts: summitProvider?.snapshot?.lifts ?? [],
+                    unitSystem: summitProvider?.unitSystem ?? .metric,
+                    showsBackLink: false
+                )
+                .padding(.bottom, 24)
+            }
+            // Inline, untitled bar: the range draws its own "Progress" heading,
+            // so a large-title area would leave an empty band above it.
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .background(appTheme.colors.backgroundPrimary.ignoresSafeArea())
             .onAppear {
                 NavigationInteraction.destinationDidAppear(key: "progress.summit-range")
             }
