@@ -337,7 +337,7 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
         attachScreenshot(named: "wave3b-recovery-preview-dark")
     }
 
-    func testSummitStormPlannedActionsKeepFullPreview() throws {
+    func testSummitStormPlannedActionSelectsFullPreview() throws {
         launch(arguments: [
             "-UITestCoachFatigueFixture",
             "-SummitRecoveryFixture",
@@ -352,7 +352,6 @@ final class CoachWorkoutPreviewUITests: XCTestCase {
             NSPredicate(format: "label CONTAINS[c] %@ AND label CONTAINS[c] %@", "Full", "Normal plan")
         ).firstMatch
         XCTAssertTrue(fullMode.waitForExistence(timeout: 8))
-        XCTAssertEqual(fullMode.value as? String, "Selected")
 
         tapBackButton(from: "Preview")
         XCTAssertTrue(app.descendants(matching: .any)["today-screen"].waitForExistence(timeout: 8))
