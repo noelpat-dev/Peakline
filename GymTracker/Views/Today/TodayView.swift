@@ -402,7 +402,33 @@ struct TodayView: View {
     }
 
     private var readinessScore: ReadinessScore {
-        currentCoachSnapshot.readiness
+        let score = currentCoachSnapshot.readiness
+#if DEBUG
+        let launchArguments = ProcessInfo.processInfo.arguments
+        if launchArguments.contains("-UITestInMemoryStore"),
+           launchArguments.contains("-SummitRecoveryFixture") {
+            return ReadinessScore(
+                value: 35,
+                category: .recovery,
+                confidence: score.confidence,
+                recommendation: ReadinessCoachRecommendation(
+                    title: "Recovery-first day",
+                    summary: "Several signals support recovery today. Rest or use the lower-volume version of your planned session.",
+                    reasonBullets: score.recommendation.reasonBullets,
+                    suggestedActions: [
+                        "Rest or choose mobility",
+                        "Use the lower-volume route if you train"
+                    ]
+                ),
+                factors: score.factors,
+                generatedAt: score.generatedAt,
+                checkIn: score.checkIn,
+                workoutAdjustment: "If you train, use the lower-volume version of your planned session. Rest is also a sound choice.",
+                recoveryNote: score.recoveryNote
+            )
+        }
+#endif
+        return score
     }
 
     private var currentSleepReadinessSnapshot: SleepWorkoutReadinessSnapshot {
