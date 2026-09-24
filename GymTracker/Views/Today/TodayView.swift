@@ -406,6 +406,28 @@ struct TodayView: View {
 #if DEBUG
         let launchArguments = ProcessInfo.processInfo.arguments
         if launchArguments.contains("-UITestInMemoryStore"),
+           launchArguments.contains("-SummitReadyFixture") {
+            return ReadinessScore(
+                value: 75,
+                category: .ready,
+                confidence: score.confidence,
+                recommendation: ReadinessCoachRecommendation(
+                    title: "Train as planned",
+                    summary: "Your recovery looks balanced. Follow the planned session and avoid unnecessary extra volume.",
+                    reasonBullets: score.recommendation.reasonBullets,
+                    suggestedActions: [
+                        "Follow the planned session",
+                        "Add reps only where execution feels solid"
+                    ]
+                ),
+                factors: score.factors,
+                generatedAt: score.generatedAt,
+                checkIn: score.checkIn,
+                workoutAdjustment: "Train as planned. Add volume only if performance feels stable.",
+                recoveryNote: "Current recovery inputs support a normal training day. Keep logging to follow trends."
+            )
+        }
+        if launchArguments.contains("-UITestInMemoryStore"),
            launchArguments.contains("-SummitRecoveryFixture") {
             return ReadinessScore(
                 value: 35,
@@ -903,6 +925,12 @@ struct TodayView: View {
             }
             .onChange(of: startupRevealComplete) { _, isComplete in
                 guard isComplete else { return }
+                scheduleSummitSnapshotRefresh()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active,
+                      isDashboardVisible,
+                      summitProvider.snapshot == nil else { return }
                 scheduleSummitSnapshotRefresh()
             }
             .onReceive(NotificationCenter.default.publisher(for: .workoutCompletionPresentationBegan)) { _ in
