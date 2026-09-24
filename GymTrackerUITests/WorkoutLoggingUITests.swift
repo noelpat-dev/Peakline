@@ -37,6 +37,34 @@ final class WorkoutLoggingUITests: XCTestCase {
         add(screenshot)
     }
 
+    func testLiveActivityRestIslandShowsCountdownAndMetrics() throws {
+        app.launchArguments = ["-LiveActivityDemo"]
+        app.launch()
+        if !app.staticTexts["Live Activity Demo"].waitForExistence(timeout: 3) {
+            app.terminate()
+            app.launch()
+        }
+        XCTAssertTrue(app.staticTexts["Live Activity Demo"].waitForExistence(timeout: 10))
+
+        XCUIDevice.shared.press(.home)
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        XCTAssertTrue(springboard.staticTexts["7/18"].waitForExistence(timeout: 10))
+        let compactScreenshot = XCTAttachment(screenshot: springboard.screenshot())
+        compactScreenshot.name = "live-activity-compact-rest"
+        compactScreenshot.lifetime = .keepAlways
+        add(compactScreenshot)
+
+        springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.045))
+            .press(forDuration: 1.2)
+        XCTAssertTrue(springboard.staticTexts["Bench press"].waitForExistence(timeout: 5))
+        XCTAssertTrue(springboard.staticTexts["REST"].exists)
+        XCTAssertTrue(springboard.staticTexts["▲ +32 M"].exists)
+        let expandedScreenshot = XCTAttachment(screenshot: springboard.screenshot())
+        expandedScreenshot.name = "live-activity-expanded-rest"
+        expandedScreenshot.lifetime = .keepAlways
+        add(expandedScreenshot)
+    }
+
     func testLiveActivityPRFlagAppearsAndExpires() throws {
         app.launchArguments = ["-LiveActivityDemo", "-LiveActivityDemoNoRest"]
         app.launch()
