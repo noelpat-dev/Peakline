@@ -224,6 +224,8 @@ struct SummitReachedView: View {
                 .padding(.horizontal, 24)
                 .accessibilityHidden(true)
         }
+        // Separate the top hairline from the fact line above it.
+        .padding(.top, 14)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             "Altitude gained today, \(max(moment.gainedMetres, 0).formatted()) metres. " +
